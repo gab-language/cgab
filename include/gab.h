@@ -10,10 +10,12 @@
 #include <errno.h>
 #include <inttypes.h>
 #include <stdarg.h>
+#include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <stdatomic.h>
+#include <stdlib.h>
+#include <wchar.h>
 
 #include "core.h"
 #include "platform.h"
@@ -130,7 +132,7 @@ enum gab_kind {
   kGAB_BINARY = 1,
   kGAB_SIGIL = 2,
   kGAB_MESSAGE = 3,
-  kGAB_SYMBOL = 4,
+  kGAB_SYMBOL = 4, // Only relevant for parsing.
   kGAB_PRIMITIVE = 5,
   kGAB_UNDEFINED = 6,
   kGAB_NUMBER,
@@ -1151,6 +1153,13 @@ struct gab_obj_string {
   uint64_t hash;
 
   /**
+   * The number of utf8 (thus potentially multi-byte) characters.
+   * -1 is used to denote strings which *are not valid utf8*. These can only
+   *  represent kGAB_BINARY, not kGAB_SIGIL, kGAB_STRING, or kGAB_MESSAGE.
+   */
+  uint64_t mb_len;
+
+  /**
    * The number of bytes in 'data'
    */
   uint64_t len;
@@ -1196,7 +1205,27 @@ static inline gab_value gab_string(struct gab_triple gab, const char *data) {
 gab_value gab_strcat(struct gab_triple gab, gab_value a, gab_value b);
 
 /**
- * @brief Get the length of a string. This is constant-time.
+ * @brief Get a pointer to the start of the string.
+ *
+ * This accepts a pointer because of the short string optimization, where
+ * the gab_value itself embeds the string data.
+ *
+ * @param str The string
+ * @return A pointer to the start of the string
+ */
+static inline const char *gab_strdata(gab_value *str) {
+  assert(gab_valkind(*str) == kGAB_STRING || gab_valkind(*str) == kGAB_SIGIL ||
+         gab_valkind(*str) == kGAB_MESSAGE ||
+         gab_valkind(*str) == kGAB_SYMBOL || gab_valkind(*str) == kGAB_BINARY);
+
+  if (gab_valiso(*str))
+    return GAB_VAL_TO_STRING(*str)->data;
+
+  return ((const char *)str);
+}
+
+/**
+ * @brief Get the number of bytes in string. This is constant-time.
  *
  * @param str The string.
  * @return The length of the string.
@@ -1212,23 +1241,23 @@ static inline uint64_t gab_strlen(gab_value str) {
 };
 
 /**
- * @brief Get a pointer to the start of the string.
+ * @brief Get the number multi-byte codepoints in a string. This is
+ * constant-time. (more or less)
  *
- * This accepts a pointer because of the short string optimization, where
- * the gab_value itself embeds the string data.
- *
- * @param str The string
- * @return A pointer to the start of the string
+ * This should not be called on kGAB_BINARY. (As that might not be valid utf8)
  */
-static inline const char *gab_strdata(gab_value *str) {
-  assert(gab_valkind(*str) == kGAB_STRING || gab_valkind(*str) == kGAB_SIGIL ||
-         gab_valkind(*str) == kGAB_MESSAGE || gab_valkind(*str) == kGAB_SYMBOL);
+static inline uint64_t gab_strmblen(gab_value str) {
+  assert(gab_valkind(str) == kGAB_STRING || gab_valkind(str) == kGAB_SYMBOL ||
+         gab_valkind(str) == kGAB_SIGIL);
 
-  if (gab_valiso(*str))
-    return GAB_VAL_TO_STRING(*str)->data;
+  if (gab_valiso(str))
+    return GAB_VAL_TO_STRING(str)->mb_len;
 
-  return ((const char *)str);
-}
+  // This is a small string. No space to store mb_len, so just recompute.
+  mbstate_t state = {0};
+  const char *cursor = gab_strdata(&str);
+  return mbsrtowcs(NULL, &cursor, 0, &state);
+};
 
 /**
  * @brief Get a string's hash. This a constant-time.
@@ -1352,8 +1381,19 @@ static inline gab_value gab_symtostr(gab_value sym) {
   return sym & ~((uint64_t)kGAB_SYMBOL << __GAB_TAGOFFSET);
 }
 
+/**
+ * @brief Convert a binary into a string. This *can* fail, as a binary is not
+ * guaranteed to be valid utf8.
+ *
+ * @param bin The binary to convert
+ * @return The string if bin is valid utf8, otherwise gab_undefined.
+ */
 static inline gab_value gab_bintostr(gab_value bin) {
   assert(gab_valkind(bin) == kGAB_BINARY);
+
+  if (gab_strmblen(bin) == -1)
+    return gab_undefined;
+
   return bin & ~((uint64_t)kGAB_BINARY << __GAB_TAGOFFSET);
 }
 

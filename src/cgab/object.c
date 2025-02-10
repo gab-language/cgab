@@ -3,6 +3,8 @@
 #include "engine.h"
 #include "gab.h"
 #include "lexer.h"
+#include <stdlib.h>
+#include <wchar.h>
 
 #define GAB_CREATE_OBJ(obj_type, kind)                                         \
   ((struct obj_type *)gab_obj_create(gab, sizeof(struct obj_type), kind))
@@ -356,8 +358,11 @@ gab_value nstring(struct gab_triple gab, uint64_t hash, uint64_t len,
   self->len = str.len;
   self->hash = hash;
 
+  mbstate_t state = { 0 };
+  const char *cursor = self->data;
+  self->mb_len = mbsrtowcs(NULL, &cursor, 0, &state);
+
   /* The strings table should hold a reference to this string */
-  /* This does mean that strings will never die */
   d_strings_insert(&gab.eg->strings, self, 0);
   gab_iref(gab, __gab_obj(self));
 

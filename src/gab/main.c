@@ -1,5 +1,6 @@
 #include "gab.h"
 #include "os.h"
+#include <locale.h>
 
 #define TOSTRING(x) #x
 #define STR(x) TOSTRING(x)
@@ -11,14 +12,13 @@ void run_repl(int flags) {
       .flags = flags,
   });
 
-  gab_repl(
-      gab,
-      (struct gab_repl_argt){
-          .name = MAIN_MODULE,
-          .flags = flags,
-          .welcome_message = "Gab " GAB_VERSION_MAJOR "." GAB_VERSION_MINOR,
-          .prompt_prefix = " > ",
-      });
+  gab_repl(gab, (struct gab_repl_argt){
+                    .name = MAIN_MODULE,
+                    .flags = flags,
+                    .welcome_message =
+                        "Gab " GAB_VERSION_MAJOR "." GAB_VERSION_MINOR,
+                    .prompt_prefix = " > ",
+                });
 
   gab_destroy(gab);
 }
@@ -313,6 +313,11 @@ int help(int argc, const char **argv, int flags) {
 int main(int argc, const char **argv) {
   /*register_printf_specifier('V', gab_val_printf_handler,*/
   /*                          gab_val_printf_arginfo);*/
+
+  /**
+   * Pull locale from ENV
+   */
+  setlocale(LC_ALL, "");
 
   if (argc < 2)
     goto fin;

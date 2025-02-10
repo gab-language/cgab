@@ -94,7 +94,7 @@ a_gab_value *gab_strlib_len(struct gab_triple gab, uint64_t argc,
     return gab_fpanic(gab, "&:len expects 1 argument");
   }
 
-  gab_value result = gab_number(gab_strlen(argv[0]));
+  gab_value result = gab_number(gab_strmblen(argv[0]));
 
   gab_vmpush(gab_vm(gab), result);
   return nullptr;
