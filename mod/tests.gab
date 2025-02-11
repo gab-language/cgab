@@ -2,7 +2,7 @@
 
 test?: .def! ('gab\message' () => self.strings\into.ends_with? '\\test')
 
-implementations = gab\message: .specializations
+implementations = Messages.specializations
 
 xf = td:.filter((_ m) => m .test?)
   |> td:.map((impls m) => do
@@ -20,7 +20,7 @@ tests\all = implementations.transduce(
 
 suites\all = tests\all.reduce(
   {}
-  (suites _ suite) => suites.put(suite gab\channel:.make)
+  (suites _ suite) => suites.put(suite Channels.make)
 )
 
 test\compare: .def! (
@@ -63,7 +63,7 @@ end
 
 () => do
   fibers = tests\all.map (behaviors suite) => do 
-      gab\fiber:.make () => do
+      Fibers.make () => do
         behaviors.each (runnable) => do 
           (path body) = runnable**
           body.each(t r) => do

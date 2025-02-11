@@ -185,7 +185,7 @@ channels\t .def\seq!
   reduce\done: acc => acc
 }
 
-records\t = 'gab\\record'
+records\t = Records.strings\into
 
 cons: .def! (nil: (o) => [o])
 
