@@ -1,75 +1,79 @@
-'transducers':use
+'transducers'.use
 
-implementations = .gab.message :specializations
+test?: .def! ('gab\message' () => self.strings\into.ends_with? '\\test')
 
-xf = .td:filter((_ m) => m:strings.into:ends_with? '.test')
-  |> .td:map((impls m) => do
-      (path[] _) = m:strings.into:split '.'
+implementations = gab\message: .specializations
 
-      (path { \path path, \impls impls })
+xf = td:.filter((_ m) => m .test?)
+  |> td:.map((impls m) => do
+      (path[] _) = m.strings\into.split '\\'
+
+      (path { path: path, impls: impls })
   end)
 
 # Collect all the implementations into a giant, nested map.
-tests.all = implementations:transduce(
+tests\all = implementations.transduce(
   {}
-  (t p i) => t:put_via(i p**)
+  (t p i) => t.put_via(i p**)
   xf
 )
 
-suites.all = tests.all:reduce(
+suites\all = tests\all.reduce(
   {}
-  (suites _ suite) => suites:put(suite .gab.channel:make)
+  (suites _ suite) => suites.put(suite gab\channel:.make)
 )
 
-\test.compare :def! (
-  'gab.block' 'gab.message'
-  (lhs rhs) => self:(lhs, rhs)
+test\compare: .def! (
+  'gab\block' 'gab\message'
+  (lhs rhs) => self.(lhs, rhs)
 )
 
-test.result.t = { \test.path .nil \test.receiver .nil }?
-test.result.pass.t = { \test.path .nil \test.receiver .nil \test.meta .nil  .true .nil }?
-test.result.fail.t = { \test.path .nil \test.receiver .nil \test.meta .nil .false .nil }?
+test\result\t = { test\path: nil: test\receiver: nil: }?
+test\result\pass\t = { test\path: nil: test\receiver: nil: test\meta: nil:  true: nil: }?
+test\result\fail\t = { test\path: nil: test\receiver: nil: test\meta: nil: false: nil: }?
 
-[test.result.t] :defmodule! {
-  \expect (lhs cmp rhs) => do
+[test\result\t] .defmodule! {
+  expect: (lhs cmp rhs) => do
     # Run the comparison of the expect
-    test.outcome = cmp :test.compare (lhs, rhs)
+    test\outcome = cmp .test\compare (lhs, rhs)
     # Get the suite we're executing
-    suite = self:test.path :at! 0
+    suite = self.test\path .at! 0
     # Queue up the outcome of the comparison
-    suites.all :at! suite <! self :put (\test.meta, { \lhs lhs, \cmp cmp, \rhs rhs }) :put test.outcome
+    suites\all .at! suite <! self .put (test\meta: { lhs: lhs, cmp: cmp, rhs: rhs }) .put test\outcome
   end,
 }
 
-\test.result.display :defcase! {
-  test.result.pass.t _ => do
+test\result\display: .defcase! {
+  test\result\pass\t _ => do
     #" ✔ $ $ $\n" :printf (self:test.meta**)
-    .nil
+    nil:
   end
-  test.result.fail.t _ => do
-    (suite behavior) = self:test.path**
-    " ❌$ should $\n\t$ $ $\n" :printf (suite, behavior, self:test.meta**)
+  test\result\fail\t  _ => do
+    (suite behavior) = self.test\path**
+    " ❌$ should $\n\t$ $ $\n" .printf (suite, behavior, self.test\meta**)
   end,
 }
 
-.gab.fiber:make () => do
-  suites.all :each (c s) => do
-    "✔ $\n" :printf (s)
-    c :each \test.result.display
+gab\fiber:.make () => do
+  suites\all .each (c s) => do
+    "✔ $\n" .printf (s)
+    c .each test\result\display:
   end
 end
 
-run = () => tests.all:each(behaviors suite) => do 
-  .gab.fiber:make () => do
-    behaviors:each (runnable) => do 
-      (path body) = runnable**
-      body:each(t r) => do
-        t: { \test.path path, \test.receiver r }
+() => do
+  fibers = tests\all.map (behaviors suite) => do 
+      gab\fiber:.make () => do
+        behaviors.each (runnable) => do 
+          (path body) = runnable**
+          body.each(t r) => do
+            t. { test\path: path, test\receiver: r }
+          end
+        end
+
+        suites\all .at! suite .close!
       end
     end
 
-    suites.all :at! suite :close!
+    fibers .each await!:
   end
-end
-
-run

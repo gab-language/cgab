@@ -1,249 +1,243 @@
-'transducers':use
-'strings':use
+'transducers' .use
+'strings' .use
 
-\int.between:def!(
-  .gab.number
-  (floor ceil) => self:float.between(floor ceil):floor)
+int\between: .def! (
+  gab\number:,
+  (floor ceil) => self.float\between(floor ceil).floor)
 
 truthy_values = []
-falsey_values = [.nil .false .none .err]
+falsey_values = [nil: false: none: err:]
 
-\self :def! do _ => self end
-\first :def! do x => x end
-\second :def! do (_, x) => x end
-\all :def! do (xs[]) => xs end
+self: .def! _ => self
+first: .def! x => x
+second: .def! (_, x) => x
+all: .def! (xs[]) => xs
 
-\is? :def! do other => self:?:== other end
+is?: .def! other => self.? == other
 
-truthy_values :defmodule! {
-  \and (alt[]) => alt**
-  \then f => f: self
-  \or _ => self
-  \else _ => self
-  \assert! _ => self
+truthy_values .defmodule! {
+  and: (alt[]) => alt**
+  then: f => f . self
+  or: _ => self
+  else: _ => self
+  assert!: _ => self
 }
 
-falsey_values :defmodule! {
-  \and _ => self
-  \then _ => self
-  \or (alt[]) => alt**
-  \else f => f: self
-  \assert! msg => ('Assert failed: ' + msg):panic
-  \options.into .none,
-  \results.into .err,
+falsey_values .defmodule! {
+  and: _ => self
+  then: _ => self
+  or: (alt[]) => alt**
+  else: f => f.(self)
+  assert!: msg => ('Assert failed: ' + msg).panic
+  options\into: none:,
+  results\into: err:,
 }
 
-[] :defmodule! {
-  \options.into (args[]) => (.ok, self, args**)
-  \results.into (args[]) => (.ok, self, args**)
+[] .defmodule! {
+  options\into: (args[]) => (ok: self args**)
+  results\into: (args[]) => (ok: self args**)
 }
 
-\cond.check :defcase! {
-  'gab.block'   (args[]) => self:(args**)
-  'gab.message' (args[]) => self:(args**)
-  .else     .ok
+cond\check: .defcase! {
+  'gab\block'   (args[]) => self.(args**)
+  'gab\message' (args[]) => self.(args**)
+  else: ok:
 }
 
-\docond :def! (fs[]) => do
+docond: .def! (fs[]) => do
   args = self
-  fs:reduce(
-    .nil
+  fs.reduce(
+    nil:
     (acc f)
-      => acc:else ()
-        => f :cond.check(args**) :and f)
+      => acc.else ()
+        => f .cond\check(args**) .and f)
 end
 
-\cond :def! (vs[] branches) => do
+cond: .def! (vs[] branches) => do
   args = [self vs**]
 
-  k = args:docond(branches:keys)
+  k = args.docond(branches.keys)
 
-  branches :at! k
+  branches .at! k
 end
 
-\put_by:def!(
-  'gab.record'
+put_by: .def! (
+  'gab\record'
   (k v f) => do
-    x = self:at k :unwrap
+    x = self.at k .unwrap
 
-    self:put(k f: v)
+    self.put(k f.(v))
   end)
 
-\:def!(
-  .option
+:.def!(
+  option:
   (cond, data[]) => do
-    (cond:options.into, data**)
+    (cond.options\into, data**)
   end)
 
-\:def!(
-  .result
-  (cond, data[]) => (cond:results.into, data**))
+:.def!(
+  result:
+  (cond, data[]) => (cond.results\into, data**))
 
-[.ok] :defmodule! {
-  \ok? (args[]) => (.true, args**)
-  \unwrap (args[]) => args**
-  \unwrap! (args[]) => args**
+[ok:] .defmodule! {
+  ok?: (args[]) => (true: args**)
+  unwrap: (args[]) => args**
+  unwrap!: (args[]) => args**
 }
 
-[] :defmodule! {
-  \ok? .false,
-  \unwrap .nil,
-  \unwrap! msg => ('failed to unwrap' + self + ": " + msg):panic
+[] .defmodule! {
+  ok?: false:
+  unwrap: nil:
+  unwrap!: msg => ('failed to unwrap' + self + ": " + msg).panic
 }
 
-## Can we refactor this and iter mod into tail calls?
-\doreduce :defcase! {
+doreduce: .defcase! {
   ## The sequence continues
-  .ok (seq.i seq.v acc r xs) => do
+  ok: (seq\i seq\v acc r xs) => do
     # Apply the reducer
-    (cmd r acc) = r:reduce.step(acc xs**)
+    (cmd r acc) = r.reduce\step(acc xs**)
     # proceed to the next sep
-    cmd:doreduce(seq.i seq.v acc r)
+    cmd.doreduce(seq\i seq\v acc r)
   end
   ## The sequence is done
-  .none (seq.i seq.v acc r) => do
-    r:reduce.done(acc)
+  none: (seq\i seq\v acc r) => do
+    r.reduce\done(acc)
   end
   ## The reducer continues
-  .next (seq.i seq.v acc r) => do
+  next: (seq\i seq\v acc r) => do
     # Apply the producer resolving new values for the next step
-    (ok seq.v xs[]) = seq.i :seq.next seq.v
+    (ok seq\v xs[]) = seq\i .seq\next seq\v
     # Tailcall to the next step
-    ok:doreduce(seq.i seq.v acc r xs)
+    ok.doreduce(seq\i seq\v acc r xs)
   end
   ## The reducer is done
-  .stop (seq.i seq.v acc r) => do
-    r:reduce.done(acc)
+  stop: (seq\i seq\v acc r) => do
+    r.reduce\done(acc)
   end
 }
 
-\def.seq! :def! do
-  _ => [self] :defmodule! {
-    \reduce (acc, r) => do
-      (ok, seq.v, xs[]) = self :seq.init
-      ok:doreduce(self, seq.v, acc, r, xs)
+def\seq!: .def! do
+  _ => [self] .defmodule! {
+    reduce: (acc r) => do
+      (ok seq\v xs[]) = self.seq\init
+      ok.doreduce(self seq\v acc r xs)
     end,
-    \transduce (acc, r, td) => do
-      self:reduce(acc, td :td.apply r)
+    transduce: (acc r td) => do
+      self.reduce(acc td .td\apply r)
     end,
-    \each f => do
-      self:transduce(.nil, \all, .td:tap f)
+    each: f => do
+      self.transduce(nil: all: td:.tap f)
     end,
-    \map f => do
-      self:collect(.td:map f)
+    map: f => do
+      self.collect(td:.map f)
     end,
-    \filter f => do
-      self:collect(.td:filter f)
+    filter: f => do
+      self.collect(td:.filter f)
     end,
-    \skip f => do
-      self:collect(.td:skip f)
+    skip: f => do
+      self.collect(td:.skip f)
     end,
-    \all? f => do
-      xf = .td:drop_while f
-        |> .td:take 1
+    all?: f => do
+      xf = td:.drop_while f
+        |> td:.take 1
 
-      self:collect(xf):empty?
+      self.collect xf .empty?
     end,
-    \any? f => do
-      xf = .td:filter f
-        |> .td:take 1
+    any?: f => do
+      xf = td:.filter f
+        |> td:.take 1
 
-      self:collect(xf):empty?:!
+      self.collect xf .empty?.!
     end,
-    \join (xf) => do
-      self:transduce("", \+, xf)
+    join: xf => do
+      self.transduce("" +: xf)
     end,
-    \collect xf => do
-      self:transduce({}, \cons, xf)
+    collect: xf => do
+      self.transduce({} cons: xf)
     end,
   }
 end
 
-channels.t = 'gab.channel'
+channels\t = 'gab\channel'
 
 # Channel's implementation of the seq protocol.
 # It isn't totally true to the requirements - 
 # The keys aren't a pure function, because channels
 # Forget about their values as soon as they're taken
-[channels.t] :defmodule! {
-  \seq.init _ => do
+[channels\t] .defmodule! {
+  seq\init: _ => do
     (ok v) = self >!
     (ok v v)
   end
-  \seq.next _ => do
+  seq\next: _ => do
     (ok v) = self >!
     (ok v v)
   end
 }
 
-channels.t :def.seq!
+channels\t .def\seq!
 
 # Implement the reducer protocol for blocks and messages
-['gab.block' 'gab.message'] :defmodule! {
-  \reduce.step (acc, xs[]) => do
-    (.next self self:(acc xs**))
+['gab\block' 'gab\message'] .defmodule! {
+  reduce\step: (acc, xs[]) => do
+    (next: self self.(acc xs**))
   end
-  \reduce.done acc => acc
+  reduce\done: acc => acc
 }
 
-records.t = 'gab.record'
+records\t = 'gab\\record'
 
-\cons :def! (
-  .nil
-  (o) => [o])
+cons: .def! (nil: (o) => [o])
 
-[records.t] :defmodule! {
-  \has? key => do
-    self:at key :ok?
+[records\t] .defmodule! {
+  has?: key => do
+    self.at key .ok?
   end
-  \at! key => do
-    self:at key :unwrap!
-  end,
+  at!: key => do
+    self.at key .unwrap!
+  end
 }
 
-records.t :def.seq!
+records\t .def\seq!
 
-range.t = { \from .nil, \to .nil }?
+range\t = gab\shape: .make (from: to:)
 
-range.t :def.seq!
+range\t .def\seq!
 
-[range.t] :defmodule! {
-  \seq.init _ => do
-    (.ok, self:from, self:from)
+[range\t] .defmodule! {
+  seq\init: _ => do
+    (ok: self.from, self.from)
   end
-  \seq.next n => do
+  seq\next: n => do
     nx = n + 1
-    .option:(n < self:to, nx, nx)
+    option:.(n < self.to, nx, nx)
   end
 }
 
-\range.into :defcase! {
-  .nil to => do
-    { \from 0, \to to }
-  end
-  'gab.number' from => do
-    { \from from, \to self }
-  end
+range\into: .defcase! {
+  nil: to => { from: 0, to: to }
+  'gab\number' from => { from: from, to: self }
 }
 
-\make :def! (.range (from to) => do
-  (to from) :range.into
+make: .def! (range: (from to) => do
+  (to from) .range\into
 end)
 
-numbers.t = 'gab.number'
+numbers\t = 'gab\number'
 
-\is_n? :def! .false
-\is_n? :def! (numbers.t, .true)
+is_n?: .def! false:
+is_n?: .def! (numbers\t, true:)
 
-\numbers.into :def! (falsey_values, 0)
+numbers\into: .def! (falsey_values, 0)
+numbers\into: .def! (truthy_values, 1)
 
-[numbers.t] :defmodule! {
-  \-> to => (to self) :range.into
-  \++ _ => self + 1
-  \-- _ => self - 1
-  \even? _ => self :% 2 :== 0
-  \odd? _ => self :even? :!
-  \pos? _ => self > 0
-  \neg? _ => self < 0
-  \numbers.into _ => self
+[numbers\t] .defmodule! {
+  ->: to => (to self) .range\into
+  ++: _ => self + 1
+  --: _ => self - 1
+  even?: _ => self .% 2 .== 0
+  odd?: _ => self .even? .!
+  pos?: _ => self > 0
+  neg?: _ => self < 0
+  numbers\into: _ => self
 }

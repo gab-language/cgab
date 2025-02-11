@@ -356,12 +356,6 @@ a_gab_value *gab_strlib_string_into(struct gab_triple gab, uint64_t argc,
   return nullptr;
 }
 
-a_gab_value *gab_siglib_binary_into(struct gab_triple gab, uint64_t argc,
-                                    gab_value argv[argc]) {
-  gab_vmpush(gab_vm(gab), gab_strtobin(gab_sigtostr(gab_arg(0))));
-  return nullptr;
-}
-
 a_gab_value *gab_strlib_binary_into(struct gab_triple gab, uint64_t argc,
                                     gab_value argv[argc]) {
   gab_vmpush(gab_vm(gab), gab_strtobin(gab_arg(0)));
@@ -378,12 +372,6 @@ a_gab_value *gab_numlib_binary_into(struct gab_triple gab, uint64_t argc,
                                     gab_value argv[argc]) {
   uint64_t f = gab_valton(gab_arg(0));
   gab_vmpush(gab_vm(gab), gab_nbinary(gab, sizeof(f), (void *)&f));
-  return nullptr;
-}
-
-a_gab_value *gab_strlib_sigil_into(struct gab_triple gab, uint64_t argc,
-                                   gab_value argv[argc]) {
-  gab_vmpush(gab_vm(gab), gab_strtosig(gab_arg(0)));
   return nullptr;
 }
 

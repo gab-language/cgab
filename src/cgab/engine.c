@@ -50,9 +50,6 @@ a_gab_value *gab_strlib_has(struct gab_triple gab, uint64_t argc,
 a_gab_value *gab_strlib_string_into(struct gab_triple gab, uint64_t argc,
                                     gab_value argv[argc]);
 
-a_gab_value *gab_strlib_sigil_into(struct gab_triple gab, uint64_t argc,
-                                   gab_value argv[argc]);
-
 a_gab_value *gab_strlib_messages_into(struct gab_triple gab, uint64_t argc,
                                       gab_value argv[argc]);
 
@@ -79,9 +76,6 @@ a_gab_value *gab_msglib_has(struct gab_triple gab, uint64_t argc,
 
 a_gab_value *gab_msglib_string_into(struct gab_triple gab, uint64_t argc,
                                     gab_value argv[argc]);
-
-a_gab_value *gab_msglib_sigil_into(struct gab_triple gab, uint64_t argc,
-                                   gab_value argv[argc]);
 
 a_gab_value *gab_msglib_specs(struct gab_triple gab, uint64_t argc,
                               gab_value argv[argc]);
@@ -182,6 +176,12 @@ a_gab_value *gab_siglib_binary_into(struct gab_triple gab, uint64_t argc,
 a_gab_value *gab_numlib_binary_into(struct gab_triple gab, uint64_t argc,
                                     gab_value argv[argc]);
 
+a_gab_value *gab_fiblib_await(struct gab_triple gab, uint64_t argc,
+                              gab_value argv[argc]);
+
+a_gab_value *gab_fiblib_is_done(struct gab_triple gab, uint64_t argc,
+                                gab_value argv[argc]);
+
 a_gab_value *gab_fmtlib_printf(struct gab_triple gab, uint64_t argc,
                                gab_value argv[argc]) {
   gab_value fmtstr = gab_arg(0);
@@ -217,7 +217,7 @@ struct primitive {
   const char *name;
   union {
     enum gab_kind kind;
-    const char *sigil;
+    const char *message;
   };
   gab_value primitive;
 };
@@ -229,60 +229,60 @@ struct primitive all_primitives[] = {
     },
 };
 
-struct primitive sigil_primitives[] = {
+struct primitive msg_primitives[] = {
     {
         .name = mGAB_MAKE,
-        .sigil = tGAB_LIST,
+        .message = tGAB_LIST,
         .primitive = gab_primitive(OP_SEND_PRIMITIVE_LIST),
     },
     {
         .name = mGAB_MAKE,
-        .sigil = tGAB_FIBER,
+        .message = tGAB_FIBER,
         .primitive = gab_primitive(OP_SEND_PRIMITIVE_FIBER),
     },
     {
         .name = mGAB_MAKE,
-        .sigil = tGAB_RECORD,
+        .message = tGAB_RECORD,
         .primitive = gab_primitive(OP_SEND_PRIMITIVE_RECORD),
     },
     {
         .name = mGAB_MAKE,
-        .sigil = tGAB_SHAPE,
+        .message = tGAB_SHAPE,
         .primitive = gab_primitive(OP_SEND_PRIMITIVE_SHAPE),
     },
     {
         .name = mGAB_MAKE,
-        .sigil = tGAB_CHANNEL,
+        .message = tGAB_CHANNEL,
         .primitive = gab_primitive(OP_SEND_PRIMITIVE_CHANNEL),
     },
     {
         .name = mGAB_BND,
-        .sigil = "false",
+        .message = "false",
         .primitive = gab_primitive(OP_SEND_PRIMITIVE_LND),
     },
     {
         .name = mGAB_BOR,
-        .sigil = "false",
+        .message = "false",
         .primitive = gab_primitive(OP_SEND_PRIMITIVE_LOR),
     },
     {
         .name = mGAB_LIN,
-        .sigil = "false",
+        .message = "false",
         .primitive = gab_primitive(OP_SEND_PRIMITIVE_LIN),
     },
     {
         .name = mGAB_BND,
-        .sigil = "true",
+        .message = "true",
         .primitive = gab_primitive(OP_SEND_PRIMITIVE_LND),
     },
     {
         .name = mGAB_BOR,
-        .sigil = "true",
+        .message = "true",
         .primitive = gab_primitive(OP_SEND_PRIMITIVE_LOR),
     },
     {
         .name = mGAB_LIN,
-        .sigil = "true",
+        .message = "true",
         .primitive = gab_primitive(OP_SEND_PRIMITIVE_LIN),
     },
 };
@@ -369,11 +369,6 @@ struct primitive kind_primitives[] = {
         .primitive = gab_primitive(OP_SEND_PRIMITIVE_CONCAT),
     },
     {
-        .name = mGAB_ADD,
-        .kind = kGAB_SIGIL,
-        .primitive = gab_primitive(OP_SEND_PRIMITIVE_CONCAT),
-    },
-    {
         .name = mGAB_EQ,
         .kind = kGAB_UNDEFINED,
         .primitive = gab_primitive(OP_SEND_PRIMITIVE_EQ),
@@ -439,7 +434,7 @@ struct native {
   const char *name;
   union {
     enum gab_kind kind;
-    const char *sigil;
+    const char *message;
     const char *box_type;
   };
   gab_native_f native;
@@ -507,22 +502,17 @@ struct native kind_natives[] = {
         .native = gab_strlib_begins,
     },
     {
-        .name = "sigils.into",
-        .kind = kGAB_STRING,
-        .native = gab_strlib_sigil_into,
-    },
-    {
-        .name = "messages.into",
+        .name = "messages\\into",
         .kind = kGAB_STRING,
         .native = gab_strlib_messages_into,
     },
     {
-        .name = "numbers.into",
+        .name = "numbers\\into",
         .kind = kGAB_STRING,
         .native = gab_strlib_numbers_into,
     },
     {
-        .name = "strings.into",
+        .name = "strings\\into",
         .kind = kGAB_UNDEFINED,
         .native = gab_strlib_string_into,
     },
@@ -552,14 +542,9 @@ struct native kind_natives[] = {
         .native = gab_msglib_has,
     },
     {
-        .name = "strings.into",
+        .name = "strings\\into",
         .kind = kGAB_MESSAGE,
         .native = gab_msglib_string_into,
-    },
-    {
-        .name = "sigils.into",
-        .kind = kGAB_MESSAGE,
-        .native = gab_msglib_sigil_into,
     },
     {
         .name = "at",
@@ -612,27 +597,27 @@ struct native kind_natives[] = {
         .native = gab_reclib_len,
     },
     {
-        .name = "strings_into",
+        .name = "strings\\into",
         .kind = kGAB_RECORD,
         .native = gab_reclib_strings_into,
     },
     {
-        .name = "seq.init",
+        .name = "seq\\init",
         .kind = kGAB_RECORD,
         .native = gab_reclib_seqinit,
     },
     {
-        .name = "seq.next",
+        .name = "seq\\next",
         .kind = kGAB_RECORD,
         .native = gab_reclib_seqnext,
     },
     {
-        .name = "io.open",
+        .name = "io\\open",
         .kind = kGAB_STRING,
         .native = gab_iolib_open,
     },
     {
-        .name = "json.decode",
+        .name = "json\\decode",
         .kind = kGAB_STRING,
         .native = gab_jsonlib_decode,
 
@@ -658,14 +643,14 @@ struct native kind_natives[] = {
         .native = gab_chnlib_is_empty,
     },
     {
-        .name = "strings.into",
-        .kind = kGAB_SIGIL,
-        .native = gab_siglib_string_into,
+        .name = "await!",
+        .kind = kGAB_FIBER,
+        .native = gab_fiblib_await,
     },
     {
-        .name = "messages.into",
-        .kind = kGAB_SIGIL,
-        .native = gab_siglib_message_into,
+        .name = "done?",
+        .kind = kGAB_FIBER,
+        .native = gab_fiblib_is_done,
     },
     {
         .name = "floor",
@@ -673,22 +658,17 @@ struct native kind_natives[] = {
         .native = gab_numlib_floor,
     },
     {
-        .name = "binary.into",
+        .name = "binary\\into",
         .kind = kGAB_NUMBER,
         .native = gab_numlib_binary_into,
     },
     {
-        .name = "binary.into",
-        .kind = kGAB_SIGIL,
-        .native = gab_siglib_binary_into,
-    },
-    {
-        .name = "binary.into",
+        .name = "binary\\into",
         .kind = kGAB_MESSAGE,
         .native = gab_msglib_binary_into,
     },
     {
-        .name = "binary.into",
+        .name = "binary\\into",
         .kind = kGAB_STRING,
         .native = gab_strlib_binary_into,
     },
@@ -717,20 +697,20 @@ struct native box_natives[] = {
     },
 };
 
-struct native sig_natives[] = {
+struct native msg_natives[] = {
     {
         .name = "float.between",
-        .sigil = tGAB_NUMBER,
+        .message = tGAB_NUMBER,
         .native = gab_numlib_between,
     },
     {
         .name = mGAB_MAKE,
-        .sigil = tGAB_MESSAGE,
+        .message = tGAB_MESSAGE,
         .native = gab_msglib_message,
     },
     {
         .name = "specializations",
-        .sigil = tGAB_MESSAGE,
+        .message = tGAB_MESSAGE,
         .native = gab_msglib_specs,
     },
 };
@@ -782,7 +762,8 @@ int32_t worker_job(void *data) {
             cGAB_WORKER_IDLEWAIT_MS / 1000);
 #endif
 
-    gab_value fiber = gab_tchntake(gab, gab.eg->work_channel, cGAB_WORKER_IDLEWAIT_MS);
+    gab_value fiber =
+        gab_tchntake(gab, gab.eg->work_channel, cGAB_WORKER_IDLEWAIT_MS);
 
 #if cGAB_LOG_EG
     fprintf(stdout, "[WORKER %i] chntake yielded: ", gab.wkid);
@@ -919,7 +900,6 @@ struct gab_triple gab_create(struct gab_create_argt args) {
   eg->types[kGAB_BINARY] = gab_string(gab, tGAB_BINARY);
   eg->types[kGAB_STRING] = gab_string(gab, tGAB_STRING);
   eg->types[kGAB_SYMBOL] = gab_string(gab, tGAB_SYMBOL);
-  eg->types[kGAB_SIGIL] = gab_string(gab, tGAB_SIGIL);
   eg->types[kGAB_MESSAGE] = gab_string(gab, tGAB_MESSAGE);
   eg->types[kGAB_PROTOTYPE] = gab_string(gab, tGAB_PROTOTYPE);
   eg->types[kGAB_NATIVE] = gab_string(gab, tGAB_NATIVE);
@@ -959,14 +939,14 @@ struct gab_triple gab_create(struct gab_create_argt args) {
                                                    box_natives[i].native)})));
   }
 
-  for (int i = 0; i < LEN_CARRAY(sig_natives); i++) {
+  for (int i = 0; i < LEN_CARRAY(msg_natives); i++) {
     gab_egkeep(
         gab.eg,
         gab_iref(gab, gab_def(gab, (struct gab_def_argt){
-                                       gab_message(gab, sig_natives[i].name),
-                                       gab_sigil(gab, sig_natives[i].sigil),
-                                       gab_snative(gab, sig_natives[i].name,
-                                                   sig_natives[i].native)})));
+                                       gab_message(gab, msg_natives[i].name),
+                                       gab_message(gab, msg_natives[i].message),
+                                       gab_snative(gab, msg_natives[i].name,
+                                                   msg_natives[i].native)})));
   }
 
   for (int i = 0; i < LEN_CARRAY(kind_primitives); i++) {
@@ -980,14 +960,14 @@ struct gab_triple gab_create(struct gab_create_argt args) {
                               })));
   }
 
-  for (int i = 0; i < LEN_CARRAY(sigil_primitives); i++) {
+  for (int i = 0; i < LEN_CARRAY(msg_primitives); i++) {
     gab_egkeep(
         gab.eg,
         gab_iref(gab,
                  gab_def(gab, (struct gab_def_argt){
-                                  gab_message(gab, sigil_primitives[i].name),
-                                  gab_sigil(gab, sigil_primitives[i].sigil),
-                                  sigil_primitives[i].primitive,
+                                  gab_message(gab, msg_primitives[i].name),
+                                  gab_message(gab, msg_primitives[i].message),
+                                  msg_primitives[i].primitive,
                               })));
   }
 
@@ -1106,11 +1086,12 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
 
     iterations++;
 
-    a_gab_value *result = gab_exec(gab, (struct gab_exec_argt){
-                                            .name = unique_name,
-                                            .source = (char *)src->data,
-                                            .flags = args.flags,
-                                        });
+    a_gab_value *result =
+        gab_exec(gab, (struct gab_exec_argt){
+                          .name = unique_name,
+                          .source = (char *)src->data,
+                          .flags = args.flags | fGAB_RUN_INCLUDEDEFAULTARGS,
+                      });
 
     if (result == nullptr)
       continue;
@@ -1133,28 +1114,41 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
   }
 }
 
-a_gab_value *gab_exec(struct gab_triple gab, struct gab_exec_argt args) {
-  gab_value main = gab_build(gab, (struct gab_build_argt){
-                                      .name = args.name,
-                                      .source = args.source,
-                                      .flags = args.flags,
-                                      .len = args.len,
-                                      .argv = args.sargv,
-                                  });
-
-  if (main == gab_undefined || args.flags & fGAB_BUILD_CHECK) {
-    return nullptr;
-  }
-
-  return gab_run(gab, (struct gab_run_argt){
-                          .main = main,
-                          .flags = args.flags,
-                          .len = args.len,
-                          .argv = args.argv,
-                      });
-}
+static const char *default_argvals[] = {
+    tGAB_STRING, tGAB_BINARY, tGAB_MESSAGE, tGAB_RECORD,
+    tGAB_LIST,   tGAB_SHAPE,  tGAB_FIBER,   tGAB_CHANNEL,
+};
+static const char *default_argnames[] = {
+    tGAB_STRING_NAME, tGAB_BINARY_NAME, tGAB_MESSAGE_NAME, tGAB_RECORD_NAME,
+    tGAB_LIST_NAME,   tGAB_SHAPE_NAME,  tGAB_FIBER_NAME,   tGAB_CHANNEL_NAME,
+};
+static const size_t default_arglen =
+    sizeof(default_argvals) / sizeof(const char *);
 
 gab_value gab_aexec(struct gab_triple gab, struct gab_exec_argt args) {
+  const char *sargv[default_arglen + args.len];
+  gab_value vargv[default_arglen + args.len];
+
+  if (gab.flags & fGAB_RUN_INCLUDEDEFAULTARGS) {
+
+    // Copy given args in.
+    if (args.len && args.sargv && args.argv) {
+      memcpy(sargv, args.sargv, args.len * sizeof(const char *));
+      memcpy(vargv, args.argv, args.len * sizeof(gab_value));
+    }
+
+    // Append default args.
+    for (size_t i = 0; i < default_arglen; i++) {
+      sargv[args.len + i] = default_argnames[i];
+      vargv[args.len + i] = gab_message(gab, default_argvals[i]);
+    }
+
+    // Update args to point to appended buffers
+    args.len = args.len + default_arglen;
+    args.argv = vargv;
+    args.sargv = sargv;
+  }
+
   gab_value main = gab_build(gab, (struct gab_build_argt){
                                       .name = args.name,
                                       .source = args.source,
@@ -1173,6 +1167,15 @@ gab_value gab_aexec(struct gab_triple gab, struct gab_exec_argt args) {
                            .len = args.len,
                            .argv = args.argv,
                        });
+}
+
+a_gab_value *gab_exec(struct gab_triple gab, struct gab_exec_argt args) {
+  gab_value fib = gab_aexec(gab, args);
+
+  if (fib == gab_undefined)
+    return nullptr;
+
+  return gab_fibawait(gab, fib);
 }
 
 gab_value dodef(struct gab_triple gab, gab_value messages, uint64_t len,
@@ -1516,37 +1519,29 @@ a_gab_value *gab_use_file(struct gab_triple gab, const char *path) {
     return gab_fpanic(gab, "Failed to load module: $", reason);
   }
 
-  gab_value pkg = gab_build(gab, (struct gab_build_argt){
-                                     .name = path,
-                                     .source = (const char *)src->data,
-                                     .flags = gab.flags,
-                                     .len = 0,
-                                 });
+  gab_value fiber =
+      gab_aexec(gab, (struct gab_exec_argt){
+                         .name = path,
+                         .source = (const char *)src->data,
+                         .flags = gab.flags | fGAB_RUN_INCLUDEDEFAULTARGS,
+                     });
+
+  if (fiber == gab_undefined)
+    return nullptr;
+
+  a_gab_value *res = gab_fibawait(gab, fiber);
 
   a_char_destroy(src);
 
-  if (pkg == gab_undefined)
-    return nullptr;
-
-  gab_value fb = gab_arun(gab, (struct gab_run_argt){
-                                   .main = pkg,
-                                   .flags = gab.flags,
-                               });
-
-  if (fb == gab_undefined)
-    return nullptr;
-
-  a_gab_value *res = gab_fibawait(gab, fb);
-
   if (res == nullptr)
-    return gab_fpanic(gab, "Failed to load module: module did not run");
+    return gab_fpanic(gab, "Failed to load module.");
 
   if (res->data[0] != gab_ok)
     return gab_fpanic(gab,
                       "Failed to load module: module returned $, expected $",
                       res->data[0], gab_ok);
 
-  struct gab_obj_fiber *f = GAB_VAL_TO_FIBER(fb);
+  struct gab_obj_fiber *f = GAB_VAL_TO_FIBER(fiber);
   gab_value fbparent = gab_thisfiber(gab);
 
   if (fbparent == gab_undefined) {
@@ -1557,7 +1552,7 @@ a_gab_value *gab_use_file(struct gab_triple gab, const char *path) {
   }
 
   a_gab_value *final =
-      gab_segmodput(gab.eg, path, pkg, res->len - 1, res->data + 1);
+      gab_segmodput(gab.eg, path, fiber, res->len - 1, res->data + 1);
 
   return final;
 }

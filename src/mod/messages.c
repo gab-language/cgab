@@ -4,9 +4,6 @@ a_gab_value *gab_msglib_message(struct gab_triple gab, uint64_t argc,
                              gab_value argv[static argc]) {
   gab_value name = gab_arg(1);
 
-  if (gab_valkind(name) == kGAB_SIGIL)
-    name = gab_sigtostr(name);
-
   if (gab_valkind(name) != kGAB_STRING)
     return gab_pktypemismatch(gab, name, kGAB_STRING);
 
@@ -66,15 +63,6 @@ a_gab_value *gab_msglib_at(struct gab_triple gab, uint64_t argc,
   }
 
   gab_nvmpush(gab_vm(gab), 2, values);
-  return nullptr;
-}
-
-a_gab_value *gab_msglib_sigil_into(struct gab_triple gab, uint64_t argc,
-                                gab_value argv[static argc]) {
-  gab_value m = gab_arg(0);
-
-  gab_vmpush(gab_vm(gab), gab_strtosig(gab_msgtostr(m)));
-
   return nullptr;
 }
 

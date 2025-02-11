@@ -12,7 +12,7 @@ bool is_alpha(uint8_t c) {
 
 bool can_start_symbol(uint8_t c) { return is_alpha(c) || c == '_'; }
 
-bool can_continue_symbol(uint8_t c) { return can_start_symbol(c) || c == '.'; }
+bool can_continue_symbol(uint8_t c) { return can_start_symbol(c) || c == '\\'; }
 
 bool can_end_symbol(uint8_t c) { return c == '?' || c == '!'; }
 
@@ -203,6 +203,9 @@ gab_token operator(gab_lx *self) {
   while (can_continue_operator(peek(self)))
     advance(self);
 
+  if (peek(self) == ':')
+    return advance(self), TOKEN_MESSAGE;
+
   return check_special_operator(self);
 }
 
@@ -219,7 +222,10 @@ gab_token symbol(gab_lx *self) {
   }
 
   if (can_end_symbol(peek(self)))
-    return end_symbol(self);
+    advance(self);
+
+  if (peek(self) == ':')
+    return advance(self), TOKEN_MESSAGE;
 
   return TOKEN_SYMBOL;
 }
@@ -281,34 +287,11 @@ gab_token other(gab_lx *self) {
 
     return TOKEN_RBRACK;
 
-  case '\\':
+  case ':':
     advance(self);
-
-    if (can_start_operator(peek(self))) {
-      advance(self);
-
-      enum gab_token t = operator(self);
-
-      if (t == TOKEN_OPERATOR)
-        return TOKEN_MESSAGE;
-
-      return lexer_error(self, GAB_MALFORMED_SEND);
-    }
-
-    if (can_start_symbol(peek(self))) {
-      advance(self);
-
-      enum gab_token t = symbol(self);
-
-      if (t == TOKEN_SYMBOL)
-        return TOKEN_MESSAGE;
-
-      return lexer_error(self, GAB_MALFORMED_TOKEN);
-    }
-
     return TOKEN_MESSAGE;
 
-  case ':':
+  case '.':
     advance(self);
 
     if (can_start_operator(peek(self))) {
@@ -334,20 +317,6 @@ gab_token other(gab_lx *self) {
     }
 
     return TOKEN_SEND;
-
-  case '.':
-    advance(self);
-
-    if (can_continue_symbol(peek(self))) {
-      enum gab_token t = symbol(self);
-
-      if (t == TOKEN_SYMBOL)
-        return TOKEN_SIGIL;
-
-      return lexer_error(self, GAB_MALFORMED_TOKEN);
-    }
-
-    return lexer_error(self, GAB_MALFORMED_TOKEN);
 
   default:
     if (can_start_operator(peek(self)))
@@ -501,8 +470,8 @@ fin:
   return src;
 }
 
-uint64_t gab_srcappend(struct gab_src *self, uint64_t len, uint8_t bc[static len],
-                     uint64_t toks[static len]) {
+uint64_t gab_srcappend(struct gab_src *self, uint64_t len,
+                       uint8_t bc[static len], uint64_t toks[static len]) {
   v_uint8_t_cap(&self->bytecode, self->bytecode.len + len);
   v_uint64_t_cap(&self->bytecode_toks, self->bytecode_toks.len + len);
 

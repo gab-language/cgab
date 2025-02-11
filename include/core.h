@@ -21,12 +21,12 @@
 #endif
 
 // Limit the prefix length of a string that gab will hash.
-// This means that strings with an identical prefix of length cGAB_STRING_HASHLEN
-// will hash to the same value - even if they are different *after* that prefix.
-// This puts a cap on how *much* time gab will spend hashing strings - but
-// it is a tradeoff, because all strings that share that prefix will basically
-// be in a linked-list. (hash-bucket-chaining, etc)
-// If this macro is 0, then gab will not limit hashing.
+// This means that strings with an identical prefix of length
+// cGAB_STRING_HASHLEN will hash to the same value - even if they are different
+// *after* that prefix. This puts a cap on how *much* time gab will spend
+// hashing strings - but it is a tradeoff, because all strings that share that
+// prefix will basically be in a linked-list. (hash-bucket-chaining, etc) If
+// this macro is 0, then gab will not limit hashing.
 #ifndef cGAB_STRING_HASHLEN
 #define cGAB_STRING_HASHLEN 0
 #endif
@@ -52,20 +52,20 @@
 
 // Workers (os threads that can actually run gab code)
 // will wait this long before exiting, if they haven't received work.
-// New workers are spawned as needed up until a maximum is reached (specified at runtime)
-// Worker threads wait about half a second before spinning down.
+// New workers are spawned as needed up until a maximum is reached (specified at
+// runtime) Worker threads wait about half a second before spinning down.
 #ifndef cGAB_WORKER_IDLEWAIT_MS
-#define cGAB_WORKER_IDLEWAIT_MS ((size_t) 496)
+#define cGAB_WORKER_IDLEWAIT_MS ((size_t)496)
 #endif
 
 // A worker (os thread) may need to yield at an arbitrary point.
 // This is done using the gab_yield function, which handles
 // sleeping, context switching, and checking if the worker needs
-// to participate in a garbage collection. 
+// to participate in a garbage collection.
 // A sleeptime of 0ms will result in *a lot* of context switching,
 // which is undesirable for the OS Scheduler. To help this, a small
 // amount of sleeping in the yield function is useful
-#define GAB_YIELD_SLEEPTIME_NS ((size_t) 1 << 8)
+#define GAB_YIELD_SLEEPTIME_NS ((size_t)1 << 8)
 
 // Collect as frequently as possible (on every RC push)
 #ifndef cGAB_DEBUG_GC
@@ -211,6 +211,7 @@ enum gab_flags {
   fGAB_ERR_STRUCTURED = 1 << 5,
   fGAB_ENV_EMPTY = 1 << 6,
   fGAB_JOB_RUNNERS = 1 << 7,
+  fGAB_RUN_INCLUDEDEFAULTARGS = 1 << 8,
 };
 
 // VERSION
@@ -248,24 +249,39 @@ enum gab_flags {
 #define mGAB_BLOCK "=>"
 #define mGAB_MAKE "make"
 
-#define tGAB_STRING "gab.string"
-#define tGAB_BINARY "gab.binary"
-#define tGAB_SIGIL "gab.sigil"
-#define tGAB_MESSAGE "gab.message"
-#define tGAB_SYMBOL "gab.symbol"
-#define tGAB_PRIMITIVE "gab.primitive"
-#define tGAB_NUMBER "gab.number"
-#define tGAB_NATIVE "gab.native"
-#define tGAB_PROTOTYPE "gab.prototype"
-#define tGAB_BLOCK "gab.block"
-#define tGAB_RECORD "gab.record"
-#define tGAB_LIST "gab.list"
-#define tGAB_SHAPE "gab.shape"
-#define tGAB_BOX "gab.box"
-#define tGAB_FIBER "gab.fiber"
-#define tGAB_CHANNEL "gab.channel"
+#define tGAB_STRING "gab\\string"
+#define tGAB_BINARY "gab\\binary"
+#define tGAB_MESSAGE "gab\\message"
+#define tGAB_SYMBOL "gab\\symbol"
+#define tGAB_PRIMITIVE "gab\\primitive"
+#define tGAB_NUMBER "gab\\number"
+#define tGAB_NATIVE "gab\\native"
+#define tGAB_PROTOTYPE "gab\\prototype"
+#define tGAB_BLOCK "gab\\block"
+#define tGAB_RECORD "gab\\record"
+#define tGAB_LIST "gab\\list"
+#define tGAB_SHAPE "gab\\shape"
+#define tGAB_BOX "gab\\box"
+#define tGAB_FIBER "gab\\fiber"
+#define tGAB_CHANNEL "gab\\channel"
 
-#define tGAB_IOSTREAM "io.stream"
+#define tGAB_STRING_NAME "Strings"
+#define tGAB_BINARY_NAME "Binaries"
+#define tGAB_MESSAGE_NAME "Messages"
+#define tGAB_SYMBOL_NAME "Symbols"
+#define tGAB_PRIMITIVE_NAME "Primatives"
+#define tGAB_NUMBER_NAME "Numbers"
+#define tGAB_NATIVE_NAME "Natives"
+#define tGAB_PROTOTYPE_NAME "Prototypes"
+#define tGAB_BLOCK_NAME "Blocks"
+#define tGAB_RECORD_NAME "Records"
+#define tGAB_LIST_NAME "Lists"
+#define tGAB_SHAPE_NAME "Shapes"
+#define tGAB_BOX_NAME "Boxes"
+#define tGAB_FIBER_NAME "Fibers"
+#define tGAB_CHANNEL_NAME "Channels"
+
+#define tGAB_IOSTREAM "io\\stream"
 
 #define T char
 #include "slice.h"

@@ -72,30 +72,6 @@
   And thats it! All Gab code can be described here. There are some nuances
  though:
 
-  (1 + 2, 3):print =>
-    { [ { [ { [ 1 2 ], \+ } ], \gab.runtime.trim ] 3 ], \print }
-
-  a = 2 => { [this, \a, 2], \gab.runtime.put! }
-
-  Sometimes we need to call special messages in the runtime. There are three
- special cases so far:
-
-    \gab.runtime.trim : This is a special message for trimming values up and
- down on the stack. Since gab has multiple return values, any expression can
- return any number of values. At each callsite, we need to specify how many
- values we need returned, and adjust accordingly
-
-    \gab.runtime.pack : Blocks and assignments can declare _rest_ parameters,
- which collect all extra values, like so: In place of a call to
- \gab.runtime.trim, we emit a call to \gab.runtime.pack, and include special
- arguments for how to pack the values.
-
-      a, b[] = 1,2,3,4,5 => 1, [2 3 4 5]
-
-    \gab.runtime.put! : This one is still a little fuzzy / up for debate. We
- need to express variable assignment as a send. The following changes describe
- this implementation:
-
       - Blocks (more specifically, prototypes) are given a shape just like
  records have.
       - gab_compile() accepts a *shape* as an argument. This shape determines
@@ -288,10 +264,21 @@ static a_char *parse_raw_str(struct parser *parser, s_char raw_str) {
   return a_char_create(buffer, buf_end);
 };
 
-static gab_value trim_prev_id(struct gab_triple gab, struct parser *parser) {
+static gab_value trimfront_prev_id(struct gab_triple gab,
+                                   struct parser *parser) {
   s_char s = prev_src(parser);
 
   s.data++;
+  s.len--;
+
+  // These can cause collections during compilation.
+  return gab_nstring(gab, s.len, s.data);
+}
+
+static gab_value trimback_prev_id(struct gab_triple gab,
+                                  struct parser *parser) {
+  s_char s = prev_src(parser);
+
   s.len--;
 
   // These can cause collections during compilation.
@@ -477,11 +464,6 @@ gab_value node_send(struct gab_triple gab, gab_value lhs, gab_value msg,
   return node_value(gab, gab_srecord(gab, 3, keys, vals));
 }
 
-gab_value wrap_in_trim(struct gab_triple gab, gab_value node, uint8_t want) {
-  // Wrap the given node in a send to \gab.runtime.trim
-  return node;
-}
-
 static gab_value parse_expressions_body(struct gab_triple gab,
                                         struct parser *parser) {
 
@@ -606,7 +588,7 @@ gab_value parse_exp_num(struct gab_triple gab, struct parser *parser,
 
 gab_value parse_exp_msg(struct gab_triple gab, struct parser *parser,
                         gab_value lhs) {
-  gab_value id = trim_prev_id(gab, parser);
+  gab_value id = trimback_prev_id(gab, parser);
 
   return node_value(gab, gab_strtomsg(id));
 }
@@ -616,13 +598,6 @@ gab_value parse_exp_sym(struct gab_triple gab, struct parser *parser,
   gab_value id = prev_id(gab, parser);
 
   return node_value(gab, gab_strtosym(id));
-}
-
-gab_value parse_exp_sig(struct gab_triple gab, struct parser *parser,
-                        gab_value lhs) {
-  gab_value id = trim_prev_id(gab, parser);
-
-  return node_value(gab, gab_strtosig(id));
 }
 
 gab_value parse_exp_str(struct gab_triple gab, struct parser *parser,
@@ -660,7 +635,7 @@ gab_value parse_exp_rec(struct gab_triple gab, struct parser *parser,
   if (result == gab_undefined)
     return gab_undefined;
 
-  gab_value lhs_node = node_value(gab, gab_sigil(gab, tGAB_RECORD));
+  gab_value lhs_node = node_value(gab, gab_message(gab, tGAB_RECORD));
   gab_value msg_node = gab_message(gab, mGAB_MAKE);
 
   gab_value node = node_send(gab, lhs_node, msg_node, result);
@@ -684,7 +659,7 @@ gab_value parse_exp_lst(struct gab_triple gab, struct parser *parser,
   if (result == gab_undefined)
     return gab_undefined;
 
-  gab_value lhs_node = node_value(gab, gab_sigil(gab, tGAB_LIST));
+  gab_value lhs_node = node_value(gab, gab_message(gab, tGAB_LIST));
   gab_value msg_node = gab_message(gab, mGAB_MAKE);
 
   gab_value node = node_send(gab, lhs_node, msg_node, result);
@@ -718,7 +693,7 @@ gab_value parse_exp_send(struct gab_triple gab, struct parser *parser,
                          gab_value lhs) {
   size_t begin = parser->offset;
 
-  gab_value msg = trim_prev_id(gab, parser);
+  gab_value msg = trimfront_prev_id(gab, parser);
 
   gab_value rhs = parse_optional_expression_prec(gab, parser, kSEND + 1);
 
@@ -790,7 +765,6 @@ const struct parse_rule parse_rules[] = {
     {nullptr, parse_exp_send_op, kBINARY_SEND},       // OPERATOR
     {nullptr, parse_exp_send_special, kSPECIAL_SEND}, // SPECIAL
     {parse_exp_sym, nullptr, kNONE},                  // SYMBOL
-    {parse_exp_sig, nullptr, kNONE},                  // SIGIL
     {parse_exp_msg, nullptr, kNONE},                  // MESSAGE
     {parse_exp_str, nullptr, kNONE},                  // STRING
     {parse_exp_num, nullptr, kNONE},                  // NUMBER
@@ -1490,7 +1464,6 @@ gab_value compile_value(struct gab_triple gab, struct bc *bc, gab_value tuple,
   gab_value node = gab_uvrecat(tuple, n);
 
   switch (gab_valkind(node)) {
-  case kGAB_SIGIL:
   case kGAB_NUMBER:
   case kGAB_STRING:
   case kGAB_MESSAGE:
@@ -1545,7 +1518,7 @@ gab_value unpack_binding_into_env(struct gab_triple gab, struct bc *bc,
 
         gab_value rec = gab_uvrecat(lhs, 0);
 
-        if (rec == gab_sigil(gab, tGAB_LIST)) {
+        if (rec == gab_message(gab, tGAB_LIST)) {
           if (m != gab_message(gab, mGAB_MAKE))
             goto err;
 
@@ -1563,7 +1536,7 @@ gab_value unpack_binding_into_env(struct gab_triple gab, struct bc *bc,
           continue;
         }
 
-        if (rec == gab_sigil(gab, tGAB_RECORD)) {
+        if (rec == gab_message(gab, tGAB_RECORD)) {
           if (m != gab_message(gab, mGAB_MAKE))
             goto err;
 
@@ -1961,22 +1934,22 @@ gab_value gab_build(struct gab_triple gab, struct gab_build_argt args) {
   if (src == nullptr)
     return gab_gcunlock(gab), gab_undefined;
 
-  gab_value *vargs = nullptr;
+  // Default to empty list here
+  gab_value bindings = gab_listof(gab);
 
   if (args.len) {
-    gab_value vargv[args.len];
-    for (int i = 0; i < args.len; i++)
-      vargv[i] = gab_symbol(gab, args.argv[i]);
+    gab_value vargs[args.len];
 
-    vargs = vargv;
+    for (int i = 0; i < args.len; i++)
+      vargs[i] = gab_symbol(gab, args.argv[i]);
+
+    bindings = gab_list(gab, args.len, vargs);
   }
+
+  node_storeinfo(src, bindings, 0, 0);
 
   gab_value env =
       gab_listof(gab, gab_recordof(gab, gab_symbol(gab, "self"), gab_nil));
-
-  gab_value bindings = gab_list(gab, args.len, vargs);
-
-  node_storeinfo(src, bindings, 0, 0);
 
   union gab_value_pair res = gab_compile(gab, ast, env, bindings, mod);
 

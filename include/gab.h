@@ -81,7 +81,7 @@
  Immediate values *don't* have the pointer bit set.
  They also store a tag in the 3 bits just below the NaN.
 
-      kGAB_SYMBOL, kGAB_STRING, kGAB_SIGIL, kGAB_MESSAGE, kGAB_UNDEFINED
+      kGAB_SYMBOL, kGAB_STRING, kGAB_MESSAGE, kGAB_MESSAGE, kGAB_UNDEFINED
                    |
  [0][....NaN....1][---][------------------------------------------------]
 
@@ -130,11 +130,10 @@ typedef uint64_t gab_value;
 enum gab_kind {
   kGAB_STRING = 0, // MUST_STAY_ZERO
   kGAB_BINARY = 1,
-  kGAB_SIGIL = 2,
-  kGAB_MESSAGE = 3,
-  kGAB_SYMBOL = 4, // Only relevant for parsing.
-  kGAB_PRIMITIVE = 5,
-  kGAB_UNDEFINED = 6,
+  kGAB_MESSAGE = 2,
+  kGAB_SYMBOL = 3, // Only relevant for parsing.
+  kGAB_PRIMITIVE = 4,
+  kGAB_UNDEFINED = 5,
   kGAB_NUMBER,
   kGAB_NATIVE,
   kGAB_PROTOTYPE,
@@ -207,7 +206,7 @@ static inline gab_value __gab_dtoval(double value) {
  */
 
 #define gab_nil                                                                \
-  ((gab_value)(__GAB_QNAN | (uint64_t)kGAB_SIGIL << __GAB_TAGOFFSET |          \
+  ((gab_value)(__GAB_QNAN | (uint64_t)kGAB_MESSAGE << __GAB_TAGOFFSET |          \
                (uint64_t)2 << 40 | (uint64_t)'n' | (uint64_t)'i' << 8 |        \
                (uint64_t)'l' << 16))
 
@@ -215,27 +214,27 @@ static inline gab_value __gab_dtoval(double value) {
   ((gab_value)(__GAB_QNAN | (uint64_t)kGAB_UNDEFINED << __GAB_TAGOFFSET))
 
 #define gab_false                                                              \
-  ((gab_value)(__GAB_QNAN | (uint64_t)kGAB_SIGIL << __GAB_TAGOFFSET |          \
+  ((gab_value)(__GAB_QNAN | (uint64_t)kGAB_MESSAGE << __GAB_TAGOFFSET |          \
                (uint64_t)0 << 40 | (uint64_t)'f' | (uint64_t)'a' << 8 |        \
                (uint64_t)'l' << 16 | (uint64_t)'s' << 24 |                     \
                (uint64_t)'e' << 32))
 
 #define gab_true                                                               \
-  ((gab_value)(__GAB_QNAN | (uint64_t)kGAB_SIGIL << __GAB_TAGOFFSET |          \
+  ((gab_value)(__GAB_QNAN | (uint64_t)kGAB_MESSAGE << __GAB_TAGOFFSET |          \
                (uint64_t)1 << 40 | (uint64_t)'t' | (uint64_t)'r' << 8 |        \
                (uint64_t)'u' << 16 | (uint64_t)'e' << 24))
 
 #define gab_ok                                                                 \
-  ((gab_value)(__GAB_QNAN | (uint64_t)kGAB_SIGIL << __GAB_TAGOFFSET |          \
+  ((gab_value)(__GAB_QNAN | (uint64_t)kGAB_MESSAGE << __GAB_TAGOFFSET |          \
                (uint64_t)3 << 40 | (uint64_t)'o' | (uint64_t)'k' << 8))
 
 #define gab_none                                                               \
-  ((gab_value)(__GAB_QNAN | (uint64_t)kGAB_SIGIL << __GAB_TAGOFFSET |          \
+  ((gab_value)(__GAB_QNAN | (uint64_t)kGAB_MESSAGE << __GAB_TAGOFFSET |          \
                (uint64_t)1 << 40 | (uint64_t)'n' | (uint64_t)'o' << 8 |        \
                (uint64_t)'n' << 16 | (uint64_t)'e' << 24))
 
 #define gab_err                                                                \
-  ((gab_value)(__GAB_QNAN | (uint64_t)kGAB_SIGIL << __GAB_TAGOFFSET |          \
+  ((gab_value)(__GAB_QNAN | (uint64_t)kGAB_MESSAGE << __GAB_TAGOFFSET |          \
                (uint64_t)2 << 40 | (uint64_t)'e' | (uint64_t)'r' << 8 |        \
                (uint64_t)'r' << 16))
 
@@ -1132,7 +1131,7 @@ static inline enum gab_kind gab_valkind(gab_value value) {
 static inline bool gab_valhast(gab_value value) {
   enum gab_kind k = gab_valkind(value);
   switch (k) {
-  case kGAB_SIGIL:
+  case kGAB_MESSAGE:
   case kGAB_BOX:
   case kGAB_RECORD:
     return true;
@@ -1155,7 +1154,7 @@ struct gab_obj_string {
   /**
    * The number of utf8 (thus potentially multi-byte) characters.
    * -1 is used to denote strings which *are not valid utf8*. These can only
-   *  represent kGAB_BINARY, not kGAB_SIGIL, kGAB_STRING, or kGAB_MESSAGE.
+   *  represent kGAB_BINARY, not kGAB_MESSAGE, kGAB_STRING, or kGAB_MESSAGE.
    */
   uint64_t mb_len;
 
@@ -1214,7 +1213,7 @@ gab_value gab_strcat(struct gab_triple gab, gab_value a, gab_value b);
  * @return A pointer to the start of the string
  */
 static inline const char *gab_strdata(gab_value *str) {
-  assert(gab_valkind(*str) == kGAB_STRING || gab_valkind(*str) == kGAB_SIGIL ||
+  assert(gab_valkind(*str) == kGAB_STRING ||
          gab_valkind(*str) == kGAB_MESSAGE ||
          gab_valkind(*str) == kGAB_SYMBOL || gab_valkind(*str) == kGAB_BINARY);
 
@@ -1231,8 +1230,7 @@ static inline const char *gab_strdata(gab_value *str) {
  * @return The length of the string.
  */
 static inline uint64_t gab_strlen(gab_value str) {
-  assert(gab_valkind(str) == kGAB_STRING || gab_valkind(str) == kGAB_SYMBOL ||
-         gab_valkind(str) == kGAB_SIGIL);
+  assert(gab_valkind(str) == kGAB_STRING || gab_valkind(str) == kGAB_SYMBOL || gab_valkind(str) == kGAB_MESSAGE);
 
   if (gab_valiso(str))
     return GAB_VAL_TO_STRING(str)->len;
@@ -1247,8 +1245,7 @@ static inline uint64_t gab_strlen(gab_value str) {
  * This should not be called on kGAB_BINARY. (As that might not be valid utf8)
  */
 static inline uint64_t gab_strmblen(gab_value str) {
-  assert(gab_valkind(str) == kGAB_STRING || gab_valkind(str) == kGAB_SYMBOL ||
-         gab_valkind(str) == kGAB_SIGIL);
+  assert(gab_valkind(str) == kGAB_STRING || gab_valkind(str) == kGAB_SYMBOL);
 
   if (gab_valiso(str))
     return GAB_VAL_TO_STRING(str)->mb_len;
@@ -1301,17 +1298,6 @@ static inline gab_value gab_strslice(struct gab_triple gab, gab_value str,
 
   return gab_nstring(gab, len, cstr + offset);
 };
-
-/**
- * @brief Convert a string into it's corresponding sigil. This is constant-time.
- *
- * @param str The string
- * @return The sigil
- */
-static inline gab_value gab_strtosig(gab_value str) {
-  assert(gab_valkind(str) == kGAB_STRING);
-  return str | (uint64_t)kGAB_SIGIL << __GAB_TAGOFFSET;
-}
 
 /**
  * @brief Convert a string into it's corresponding message. This is
@@ -1398,17 +1384,6 @@ static inline gab_value gab_bintostr(gab_value bin) {
 }
 
 /**
- * @brief Convert a sigil into it's corresponding string. This is constant-time.
- *
- * @param str The string
- * @return The sigil
- */
-static inline gab_value gab_sigtostr(gab_value sigil) {
-  assert(gab_valkind(sigil) == kGAB_SIGIL);
-  return sigil & ~((uint64_t)kGAB_SIGIL << __GAB_TAGOFFSET);
-}
-
-/**
  * @brief Create a symbol value from a cstring.
  *
  * @param data the cstring
@@ -1431,40 +1406,6 @@ static inline gab_value gab_binary(struct gab_triple gab, const char *data) {
 static inline gab_value gab_nbinary(struct gab_triple gab, size_t len,
                                     const char *data) {
   return gab_strtobin(gab_nstring(gab, len, data));
-}
-
-/**
- * @brief Create a sigil value from a cstring.
- *
- * @param data The cstring
- * @return The sigil
- */
-static inline gab_value gab_sigil(struct gab_triple gab, const char *data) {
-  return gab_strtosig(gab_string(gab, data));
-}
-
-/**
- * @brief Create a sigil value from a cstring.
- *
- * @param len The number of bytes in data
- * @param data The cstring
- * @return The sigil
- */
-static inline gab_value gab_nsigil(struct gab_triple gab, uint64_t len,
-                                   const char *data) {
-  return gab_strtosig(gab_nstring(gab, len, data));
-}
-
-/**
- * @brief Convert a sigil into it's corresponding message. This is
- * constant-time.
- *
- * @param str The string
- * @return The sigil
- */
-static inline gab_value gab_sigtomsg(gab_value sigil) {
-  assert(gab_valkind(sigil) == kGAB_SIGIL);
-  return gab_strtomsg(gab_sigtostr(sigil));
 }
 
 /**
@@ -2330,7 +2271,7 @@ static inline gab_value gab_valtype(struct gab_triple gab, gab_value value) {
   enum gab_kind k = gab_valkind(value);
   switch (k) {
   /* These values have a runtime type of themselves */
-  case kGAB_SIGIL:
+  case kGAB_MESSAGE:
     return value;
   /* These are special cases for the practical type */
   case kGAB_BOX:
@@ -2644,8 +2585,6 @@ static inline gab_value gab_valintos(struct gab_triple gab, gab_value value) {
   switch (gab_valkind(value)) {
   case kGAB_STRING:
     return value;
-  case kGAB_SIGIL:
-    return gab_sigtostr(value);
   case kGAB_MESSAGE:
     return gab_msgtostr(value);
   case kGAB_SYMBOL:

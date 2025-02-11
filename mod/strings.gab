@@ -1,6 +1,6 @@
-\make:def!(
-  .gab.string
-  (values[]) => values:transduce('' \+ .td:map \strings.into))
+make:.def!(
+  gab\string:
+  (values[]) => values.transduce('' +: td:.map strings\into:))
 
-\sigils.into:def! () => self:strings.into:sigils.into
+sigils\into:.def! () => self.strings\into.sigils\into
   

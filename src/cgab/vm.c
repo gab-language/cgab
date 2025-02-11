@@ -848,7 +848,7 @@ a_gab_value *gab_vmexec(struct gab_triple gab, gab_value f) {
   if (__gab_unlikely(!__gab_valisb(value))) {                                  \
     STORE_PRIMITIVE_ERROR_FRAME(have);                                         \
     ERROR(GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, value,                          \
-          gab_valtype(GAB(), value), gab_type(GAB(), kGAB_SIGIL));             \
+          gab_valtype(GAB(), value), gab_type(GAB(), kGAB_MESSAGE));           \
   }
 
 #define ERROR_GUARD_ISN(value)                                                 \
@@ -860,7 +860,7 @@ a_gab_value *gab_vmexec(struct gab_triple gab, gab_value f) {
 
 #define ERROR_GUARD_ISS(value)                                                 \
   if (__gab_unlikely(gab_valkind(value) != kGAB_STRING &&                      \
-                     gab_valkind(value) != kGAB_SIGIL)) {                      \
+                     gab_valkind(value) != kGAB_MESSAGE)) {                    \
     STORE_PRIMITIVE_ERROR_FRAME(have);                                         \
     ERROR(GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, value,                          \
           gab_valtype(GAB(), value), gab_type(GAB(), kGAB_STRING));            \

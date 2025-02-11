@@ -209,6 +209,11 @@ a_gab_value *gab_reclib_putvia(struct gab_triple gab, uint64_t argc,
   if (gab_valkind(rec) != kGAB_RECORD)
     return gab_pktypemismatch(gab, rec, kGAB_RECORD);
 
+  if (argc == 2) {
+    gab_vmpush(gab_vm(gab), rec);
+    return nullptr;
+  }
+
   gab_value result = doputvia(gab, rec, val, argc - 2, argv + 2);
 
   if (result == gab_undefined)

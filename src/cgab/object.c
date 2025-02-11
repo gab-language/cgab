@@ -195,8 +195,6 @@ int gab_fvalinspect(FILE *stream, gab_value self, int depth) {
     return fprintf(stream, "undefined");
   case kGAB_NUMBER:
     return fprintf(stream, "%lg", gab_valton(self));
-  case kGAB_SIGIL:
-    return fprintf(stream, ".%s", gab_strdata(&self));
   case kGAB_SYMBOL:
   case kGAB_STRING:
     return fprintf(stream, "%s", gab_strdata(&self));
@@ -214,7 +212,7 @@ int gab_fvalinspect(FILE *stream, gab_value self, int depth) {
     return bytes;
   }
   case kGAB_MESSAGE:
-    return fprintf(stream, "\\%s", gab_strdata(&self));
+    return fprintf(stream, "%s:", gab_strdata(&self));
   case kGAB_SHAPE:
   case kGAB_SHAPELIST:
     return fprintf(stream, "<" tGAB_SHAPE " ") +
@@ -320,8 +318,8 @@ gab_value gab_shorstr(uint64_t len, const char *data) {
 }
 
 gab_value gab_shortstrcat(gab_value _a, gab_value _b) {
-  assert(gab_valkind(_a) == kGAB_STRING || gab_valkind(_a) == kGAB_SIGIL);
-  assert(gab_valkind(_b) == kGAB_STRING || gab_valkind(_b) == kGAB_SIGIL);
+  assert(gab_valkind(_a) == kGAB_STRING || gab_valkind(_a) == kGAB_MESSAGE);
+  assert(gab_valkind(_b) == kGAB_STRING || gab_valkind(_b) == kGAB_MESSAGE);
 
   uint64_t alen = gab_strlen(_a);
   uint64_t blen = gab_strlen(_b);
@@ -397,8 +395,8 @@ gab_value gab_nstring(struct gab_triple gab, uint64_t len, const char *data) {
   Given two strings, create a third which is the concatenation a+b
 */
 gab_value gab_strcat(struct gab_triple gab, gab_value _a, gab_value _b) {
-  assert(gab_valkind(_a) == kGAB_STRING || gab_valkind(_a) == kGAB_SIGIL);
-  assert(gab_valkind(_b) == kGAB_STRING || gab_valkind(_b) == kGAB_SIGIL);
+  assert(gab_valkind(_a) == kGAB_STRING || gab_valkind(_a) == kGAB_MESSAGE);
+  assert(gab_valkind(_b) == kGAB_STRING || gab_valkind(_b) == kGAB_MESSAGE);
 
   uint64_t alen = gab_strlen(_a);
   uint64_t blen = gab_strlen(_b);
@@ -484,7 +482,7 @@ gab_value gab_prototype(struct gab_triple gab, struct gab_src *src,
 }
 
 gab_value gab_native(struct gab_triple gab, gab_value name, gab_native_f f) {
-  assert(gab_valkind(name) == kGAB_STRING || gab_valkind(name) == kGAB_SIGIL);
+  assert(gab_valkind(name) == kGAB_STRING || gab_valkind(name) == kGAB_MESSAGE);
 
   struct gab_obj_native *self = GAB_CREATE_OBJ(gab_obj_native, kGAB_NATIVE);
 
