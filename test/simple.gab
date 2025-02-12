@@ -1,52 +1,49 @@
-s = 'specs':use
+s = 'specs'.use
 
-\string? :def! .false
-\string? :def! ('gab.string' .true)
+string?: .def! false:
+string?: .def! ('gab\string' true:)
 
-.http.status :defspec! {
-  \help "The http status code"
-  \spec \string?
+http\status: .defspec! {
+  help: "The http status code"
+  spec: string?:
 }
 
-.http.method :defspec! {
-  \help "The http method of a request"
-  \spec s:any('GET' 'PUT' 'PATCH' 'DEL')
+http\method: .defspec! {
+  help: "The http method of a request"
+  spec: s.any('GET' 'PUT' 'PATCH' 'DEL')
 }
 
-.http.header :defspec! {
-  \help "A single header"
-  \spec s:pat(
-    .name s *\string?
-    .colon ':'
-    .value s *\string?)
+http\header: .defspec! {
+  help: "A single header"
+  spec: s.pat(
+    name: s *string?:
+    colon: ':'
+    value: s *string?:)
 }
 
-.http.body :defspec! {
-  \help "The body of an HTTP req/res"
-  \spec s *\string?
+http\body: .defspec! {
+  help: "The body of an HTTP req/res"
+  spec: s *string?:
 }
 
-http_spec = s:cat(
-  .status  .http.status
-  .method  .http.method
-  .headers s *.http.header
-  .empty_line ''
-  .body    .http.body)
+http_spec = s.cat(
+  status:  http\status:
+  method:  http\method:
+  headers: s *http\header:
+  empty_line: ''
+  body:    http\body:)
 
 req = '200\nGET\nContentLength:10\nContentType:text\n\nHelloWorld\nTest'
 
-
-http_spec:spec.fits?(req:split '\n') :println # => true
-http_spec:spec.fits?(req:split '\n') :println # => true
-http_spec:spec.fits?(req:split '\n') :println # => true
-http_spec:spec.fits?(req:split '\n') :println # => true
-http_spec:spec.fits?(req:split '\n') :println # => true
-http_spec:spec.fits?(req:split '\n') :println # => true
-http_spec:spec.fits?(req:split '\n') :println # => true
-http_spec:spec.fits?(req:split '\n') :println # => true
-http_spec:spec.fits?(req:split '\n') :println # => true
-http_spec:spec.fits?(req:split '\n') :println # => true
-
-() => do 'hi' end :forever
+http_spec.spec\fits?(req.split '\n') .println # => true
+http_spec.spec\fits?(req.split '\n') .println # => true
+http_spec.spec\fits?(req.split '\n') .println # => true
+http_spec.spec\fits?(req.split '\n') .println # => true
+http_spec.spec\fits?(req.split '\n') .println # => true
+http_spec.spec\fits?(req.split '\n') .println # => true
+http_spec.spec\fits?(req.split '\n') .println # => true
+http_spec.spec\fits?(req.split '\n') .println # => true
+http_spec.spec\fits?(req.split '\n') .println # => true
+http_spec.spec\fits?(req.split '\n') .println # => true
 
 #.http.header:spec.into:spec.fits?("ContentLength:10"):println

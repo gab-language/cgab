@@ -1,6 +1,6 @@
 'transducers'.use
 
-test?: .def! ('gab\message' () => self.strings\into.ends_with? '\\test')
+test?: .def! ('gab\\message' () => self.strings\into.ends_with? '\\test')
 
 implementations = Messages.specializations
 
@@ -24,7 +24,7 @@ suites\all = tests\all.reduce(
 )
 
 test\compare: .def! (
-  'gab\block' 'gab\message'
+  'gab\\block' 'gab\\message'
   (lhs rhs) => self.(lhs, rhs)
 )
 
