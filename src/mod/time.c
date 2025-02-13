@@ -1,7 +1,7 @@
 #include "gab.h"
 
-a_gab_value *gab_lib_now(struct gab_triple gab, uint64_t argc,
-                         gab_value argv[argc]) {
+a_gab_value *gab_timelib_now(struct gab_triple gab, uint64_t argc,
+                             gab_value argv[argc]) {
   if (argc != 1) {
     return gab_fpanic(gab, "Invalid call to gab_lib_clock");
   }
@@ -13,3 +13,15 @@ a_gab_value *gab_lib_now(struct gab_triple gab, uint64_t argc,
   gab_vmpush(gab_vm(gab), res);
   return nullptr;
 };
+
+GAB_DYNLIB_MAIN_FN {
+  gab_value mod = gab_message(gab, "time");
+
+  gab_def(gab, {
+                   gab_message(gab, "now"),
+                   mod,
+                   gab_snative(gab, "json\\decode", gab_timelib_now),
+               });
+
+  return a_gab_value_one(gab_ok);
+}

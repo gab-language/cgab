@@ -77,7 +77,7 @@ gab_value *push_value(struct gab_triple gab, const char *json, gab_value *sp,
 }
 
 a_gab_value *gab_jsonlib_decode(struct gab_triple gab, uint64_t argc,
-                                 gab_value argv[static argc]) {
+                                gab_value argv[static argc]) {
   gab_value str = gab_arg(0);
 
   if (gab_valkind(str) != kGAB_STRING)
@@ -119,4 +119,14 @@ a_gab_value *gab_jsonlib_decode(struct gab_triple gab, uint64_t argc,
 
   gab_vmpush(gab_vm(gab), gab_ok, res);
   return nullptr;
+}
+
+GAB_DYNLIB_MAIN_FN {
+  gab_def(gab, {
+                   gab_message(gab, "json\\decode"),
+                   gab_type(gab, kGAB_STRING),
+                   gab_snative(gab, "json\\decode", gab_jsonlib_decode),
+               });
+
+  return a_gab_value_one(gab_ok);
 }

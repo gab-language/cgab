@@ -67,7 +67,7 @@ a_gab_value *gab_reclib_slice(struct gab_triple gab, uint64_t argc,
     gab_vmpush(gab_vm(gab), gab_listof(gab));
     return nullptr;
   }
-  
+
   gab_value vs[size];
   for (uint64_t i = 0; i < size; i++) {
     vs[i] = gab_uvrecat(rec, start + i);
@@ -93,7 +93,7 @@ a_gab_value *gab_reclib_push(struct gab_triple gab, uint64_t argc,
 }
 
 a_gab_value *gab_reclib_pop(struct gab_triple gab, uint64_t argc,
-                             gab_value argv[argc]) {
+                            gab_value argv[argc]) {
   gab_value rec = gab_arg(0);
 
   if (gab_valkind(rec) != kGAB_RECORD)
@@ -122,7 +122,7 @@ a_gab_value *gab_reclib_put(struct gab_triple gab, uint64_t argc,
 }
 
 a_gab_value *gab_reclib_take(struct gab_triple gab, uint64_t argc,
-                            gab_value argv[argc]) {
+                             gab_value argv[argc]) {
   gab_value rec = gab_arg(0);
   gab_value key = gab_arg(1);
 
@@ -139,7 +139,7 @@ a_gab_value *gab_reclib_take(struct gab_triple gab, uint64_t argc,
 }
 
 a_gab_value *gab_reclib_is_empty(struct gab_triple gab, uint64_t argc,
-                                gab_value argv[argc]) {
+                                 gab_value argv[argc]) {
   gab_value rec = gab_arg(0);
 
   if (gab_valkind(rec) != kGAB_RECORD)
@@ -315,4 +315,72 @@ a_gab_value *gab_reclib_seqnext(struct gab_triple gab, uint64_t argc,
 fin:
   gab_vmpush(gab_vm(gab), gab_none);
   return nullptr;
+}
+
+GAB_DYNLIB_MAIN_FN {
+  gab_value t = gab_type(gab, kGAB_RECORD);
+
+  gab_def(gab,
+          {
+              gab_message(gab, "slice"),
+              t,
+              gab_snative(gab, "slice", gab_reclib_slice),
+          },
+          {
+              gab_message(gab, "put_via"),
+              t,
+              gab_snative(gab, "put_via", gab_reclib_putvia),
+          },
+          {
+              gab_message(gab, "push"),
+              t,
+              gab_snative(gab, "push", gab_reclib_push),
+          },
+          {
+              gab_message(gab, "empty?"),
+              t,
+              gab_snative(gab, "empty?", gab_reclib_is_empty),
+          },
+          {
+              gab_message(gab, "list?"),
+              t,
+              gab_snative(gab, "list?", gab_reclib_is_list),
+          },
+          {
+              gab_message(gab, "take"),
+              t,
+              gab_snative(gab, "take", gab_reclib_take),
+          },
+          {
+              gab_message(gab, "pop"),
+              t,
+              gab_snative(gab, "pop", gab_reclib_pop),
+          },
+          {
+              gab_message(gab, "put"),
+              t,
+              gab_snative(gab, "put", gab_reclib_put),
+          },
+          {
+              gab_message(gab, "at"),
+              t,
+              gab_snative(gab, "at", gab_reclib_at),
+          },
+          {
+              gab_message(gab, "len"),
+              t,
+              gab_snative(gab, "len", gab_reclib_len),
+          },
+          {
+              gab_message(gab, "seq\\next"),
+              t,
+              gab_snative(gab, "seq\\next", gab_reclib_seqnext),
+          },
+          {
+              gab_message(gab, "seq\\next"),
+              t,
+              gab_snative(gab, "seq\\next", gab_reclib_seqinit),
+          });
+
+  return a_gab_value_one(gab_ok);
 }

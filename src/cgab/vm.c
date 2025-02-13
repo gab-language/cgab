@@ -58,7 +58,7 @@ static handler handlers[] = {
 
 #define NEXT() DISPATCH(*IP()++);
 
-#define ERROR(status, help, ...)                                               \
+#define VM_PANIC(status, help, ...)                                               \
   ({                                                                           \
     STORE();                                                                   \
     return vm_error(GAB(), status, help __VA_OPT__(, ) __VA_ARGS__);           \
@@ -142,7 +142,7 @@ static handler handlers[] = {
     uint64_t have = compute_arity(VAR(), READ_BYTE);                           \
                                                                                \
     SEND_GUARD_CACHED_RECEIVER_TYPE(PEEK_N(have));                             \
-    ERROR_GUARD_ISN(PEEK_N(have));                                             \
+    VM_PANIC_GUARD_ISN(PEEK_N(have));                                             \
                                                                                \
     operation_type val = gab_valton(PEEK_N(have));                             \
                                                                                \
@@ -164,8 +164,8 @@ static handler handlers[] = {
     if (__gab_unlikely(have < 2))                                              \
       PUSH(gab_nil), have++;                                                   \
                                                                                \
-    ERROR_GUARD_ISN(PEEK_N(have));                                             \
-    ERROR_GUARD_ISN(PEEK_N(have - 1));                                         \
+    VM_PANIC_GUARD_ISN(PEEK_N(have));                                             \
+    VM_PANIC_GUARD_ISN(PEEK_N(have - 1));                                         \
                                                                                \
     operation_type val_b = gab_valton(PEEK_N(have - 1));                       \
     operation_type val_a = gab_valton(PEEK_N(have));                           \
@@ -188,7 +188,7 @@ static handler handlers[] = {
                                                                                \
     SEND_GUARD_CACHED_RECEIVER_TYPE(PEEK_N(have));                             \
                                                                                \
-    ERROR_GUARD_ISB(PEEK_N(have));                                             \
+    VM_PANIC_GUARD_ISB(PEEK_N(have));                                             \
                                                                                \
     operation_type val = gab_valintob(PEEK_N(have));                           \
                                                                                \
@@ -210,8 +210,8 @@ static handler handlers[] = {
     if (__gab_unlikely(have < 2))                                              \
       PUSH(gab_nil), have++;                                                   \
                                                                                \
-    ERROR_GUARD_ISB(PEEK_N(have));                                             \
-    ERROR_GUARD_ISB(PEEK_N(have - 1));                                         \
+    VM_PANIC_GUARD_ISB(PEEK_N(have));                                             \
+    VM_PANIC_GUARD_ISB(PEEK_N(have - 1));                                         \
                                                                                \
     operation_type val_b = gab_valintob(PEEK_N(have));                         \
     operation_type val_a = gab_valintob(PEEK_N(have - 1));                     \
@@ -275,14 +275,14 @@ static handler handlers[] = {
     SP()[-(int64_t)have - 3] = (uintptr_t)b;                                   \
   })
 
-#define PUSH_ERROR_FRAME(have) ({})
+#define PUSH_VM_PANIC_FRAME(have) ({})
 
-#define STORE_PRIMITIVE_ERROR_FRAME(have)                                      \
+#define STORE_PRIMITIVE_VM_PANIC_FRAME(have)                                      \
   ({                                                                           \
     STORE_FP();                                                                \
     STORE_SP();                                                                \
     STORE_IP();                                                                \
-    PUSH_ERROR_FRAME(have);                                                    \
+    PUSH_VM_PANIC_FRAME(have);                                                    \
   })
 
 #define RETURN_FB() ((gab_value *)(void *)FB()[-1])
@@ -581,7 +581,7 @@ inline uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc,
     struct gab_obj_prototype *p = GAB_VAL_TO_PROTOTYPE(blk->p);                \
                                                                                \
     if (__gab_unlikely(!has_callspace(SP(), SB(), p->nslots - have)))          \
-      ERROR(GAB_OVERFLOW, "");                                                 \
+      VM_PANIC(GAB_OVERFLOW, "");                                                 \
                                                                                \
     PUSH_FRAME(blk, have);                                                     \
                                                                                \
@@ -599,7 +599,7 @@ inline uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc,
     struct gab_obj_prototype *p = GAB_VAL_TO_PROTOTYPE(blk->p);                \
                                                                                \
     if (__gab_unlikely(!has_callspace(SP(), SB(), 3 + p->nslots - have)))      \
-      ERROR(GAB_OVERFLOW, "");                                                 \
+      VM_PANIC(GAB_OVERFLOW, "");                                                 \
                                                                                \
     PUSH_FRAME(blk, have);                                                     \
                                                                                \
@@ -837,32 +837,32 @@ a_gab_value *gab_vmexec(struct gab_triple gab, gab_value f) {
   return do_vmexecfiber(gab, f, res);
 }
 
-#define ERROR_GUARD_KIND(value, kind)                                          \
+#define VM_PANIC_GUARD_KIND(value, kind)                                          \
   if (__gab_unlikely(gab_valkind(value) != kind)) {                            \
-    STORE_PRIMITIVE_ERROR_FRAME(1);                                            \
-    ERROR(GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, value,                          \
+    STORE_PRIMITIVE_VM_PANIC_FRAME(1);                                            \
+    VM_PANIC(GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, value,                          \
           gab_valtype(GAB(), value), gab_type(GAB(), kind));                   \
   }
 
-#define ERROR_GUARD_ISB(value)                                                 \
+#define VM_PANIC_GUARD_ISB(value)                                                 \
   if (__gab_unlikely(!__gab_valisb(value))) {                                  \
-    STORE_PRIMITIVE_ERROR_FRAME(have);                                         \
-    ERROR(GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, value,                          \
+    STORE_PRIMITIVE_VM_PANIC_FRAME(have);                                         \
+    VM_PANIC(GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, value,                          \
           gab_valtype(GAB(), value), gab_type(GAB(), kGAB_MESSAGE));           \
   }
 
-#define ERROR_GUARD_ISN(value)                                                 \
+#define VM_PANIC_GUARD_ISN(value)                                                 \
   if (__gab_unlikely(!__gab_valisn(value))) {                                  \
-    STORE_PRIMITIVE_ERROR_FRAME(have);                                         \
-    ERROR(GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, value,                          \
+    STORE_PRIMITIVE_VM_PANIC_FRAME(have);                                         \
+    VM_PANIC(GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, value,                          \
           gab_valtype(GAB(), value), gab_type(GAB(), kGAB_NUMBER));            \
   }
 
-#define ERROR_GUARD_ISS(value)                                                 \
+#define VM_PANIC_GUARD_ISS(value)                                                 \
   if (__gab_unlikely(gab_valkind(value) != kGAB_STRING &&                      \
                      gab_valkind(value) != kGAB_MESSAGE)) {                    \
-    STORE_PRIMITIVE_ERROR_FRAME(have);                                         \
-    ERROR(GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, value,                          \
+    STORE_PRIMITIVE_VM_PANIC_FRAME(have);                                         \
+    VM_PANIC(GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, value,                          \
           gab_valtype(GAB(), value), gab_type(GAB(), kGAB_STRING));            \
   }
 
@@ -940,7 +940,7 @@ CASE_CODE(MATCHSEND_BLOCK) {
   struct gab_obj_prototype *p = GAB_VAL_TO_PROTOTYPE(blk->p);
 
   if (__gab_unlikely(!has_callspace(SP(), SB(), p->nslots - have)))
-    ERROR(GAB_OVERFLOW, "");
+    VM_PANIC(GAB_OVERFLOW, "");
 
   IP() = (void *)ks[GAB_SEND_KOFFSET + idx];
   FB() = SP() - have;
@@ -1134,7 +1134,7 @@ CASE_CODE(SEND_PRIMITIVE_CALL_BLOCK) {
 
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
 
-  ERROR_GUARD_KIND(r, kGAB_BLOCK);
+  VM_PANIC_GUARD_KIND(r, kGAB_BLOCK);
 
   struct gab_obj_block *blk = GAB_VAL_TO_BLOCK(r);
 
@@ -1149,7 +1149,7 @@ CASE_CODE(TAILSEND_PRIMITIVE_CALL_BLOCK) {
 
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
 
-  ERROR_GUARD_KIND(r, kGAB_BLOCK);
+  VM_PANIC_GUARD_KIND(r, kGAB_BLOCK);
 
   struct gab_obj_block *blk = GAB_VAL_TO_BLOCK(r);
 
@@ -1164,7 +1164,7 @@ CASE_CODE(SEND_PRIMITIVE_CALL_NATIVE) {
 
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
 
-  ERROR_GUARD_KIND(r, kGAB_NATIVE);
+  VM_PANIC_GUARD_KIND(r, kGAB_NATIVE);
 
   struct gab_obj_native *n = GAB_VAL_TO_NATIVE(r);
 
@@ -1221,8 +1221,8 @@ CASE_CODE(SEND_PRIMITIVE_CONCAT) {
   if (__gab_unlikely(have < 2))
     PUSH(gab_nil), have++;
 
-  ERROR_GUARD_ISS(PEEK_N(have));
-  ERROR_GUARD_ISS(PEEK_N(have - 1));
+  VM_PANIC_GUARD_ISS(PEEK_N(have));
+  VM_PANIC_GUARD_ISS(PEEK_N(have - 1));
 
   gab_value val_a = PEEK_N(have);
   gab_value val_b = PEEK_N(have - 1);
@@ -1255,7 +1255,7 @@ CASE_CODE(SEND_PRIMITIVE_USE) {
   DROP_N(have);
 
   if (!mod)
-    ERROR(GAB_PANIC, "Couldn't locate module $.", r);
+    VM_PANIC(GAB_PANIC, "Couldn't locate module $.", r);
 
   for (uint64_t i = 1; i < mod->len; i++)
     PUSH(mod->data[i]);
@@ -1622,7 +1622,7 @@ CASE_CODE(SEND) {
 
   if (__gab_unlikely(!res.status)) {
     STORE();
-    ERROR(GAB_IMPLEMENTATION_MISSING, FMT_MISSINGIMPL, m, r,
+    VM_PANIC(GAB_IMPLEMENTATION_MISSING, FMT_MISSINGIMPL, m, r,
           gab_valtype(GAB(), r));
   }
 
@@ -1812,13 +1812,13 @@ CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE) {
   gab_value r = PEEK_N(have - 1);
   gab_value t = gab_valtype(GAB(), r);
 
-  ERROR_GUARD_KIND(m, kGAB_MESSAGE);
+  VM_PANIC_GUARD_KIND(m, kGAB_MESSAGE);
 
   struct gab_impl_rest res = gab_impl(GAB(), m, r);
 
   if (__gab_unlikely(!res.status)) {
     STORE();
-    ERROR(GAB_IMPLEMENTATION_MISSING, FMT_MISSINGIMPL, m, r,
+    VM_PANIC(GAB_IMPLEMENTATION_MISSING, FMT_MISSINGIMPL, m, r,
           gab_valtype(GAB(), r));
   }
 
@@ -1924,7 +1924,7 @@ CASE_CODE(SEND_PRIMITIVE_FIBER) {
 
   gab_value block = PEEK_N(have - 1);
 
-  ERROR_GUARD_KIND(block, kGAB_BLOCK);
+  VM_PANIC_GUARD_KIND(block, kGAB_BLOCK);
 
   STORE_SP();
   gab_value fib = gab_arun(GAB(), (struct gab_run_argt){
@@ -1987,7 +1987,7 @@ CASE_CODE(SEND_PRIMITIVE_MAKE_SHAPE) {
   uint64_t len = have - 1;
 
   if (__gab_unlikely(gab_shplen(shape) != len))
-    ERROR(GAB_PANIC, "Expected $ arguments, got $",
+    VM_PANIC(GAB_PANIC, "Expected $ arguments, got $",
           gab_number(gab_shplen(shape)), gab_number(len));
 
   STORE_SP();

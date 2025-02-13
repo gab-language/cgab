@@ -1,5 +1,4 @@
 #include "gab.h"
-#include "os.h"
 #include <locale.h>
 
 #define TOSTRING(x) #x

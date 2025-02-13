@@ -564,7 +564,7 @@ void assert_workers_have_epoch(struct gab_triple gab, int32_t e) {
 
   for (uint64_t i = 1; i < gab.eg->len; i++) {
     int32_t this_e = epochget((struct gab_triple){gab.eg, .wkid = i});
-    printf("WORKER %li IN EPOCH %i (%i)\n", i, this_e, gab.eg->jobs[i].epoch);
+    printf("WORKER %lu IN EPOCH %i (%i)\n", i, this_e, gab.eg->jobs[i].epoch);
     assert(this_e == e);
   }
 }

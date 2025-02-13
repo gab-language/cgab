@@ -1,3 +1,4 @@
+#include "core.h"
 #include "gab.h"
 
 typedef struct {
@@ -108,4 +109,23 @@ a_gab_value *gab_numlib_floor(struct gab_triple gab, uint64_t argc,
 
   gab_vmpush(gab_vm(gab), res);
   return nullptr;
+}
+
+GAB_DYNLIB_MAIN_FN {
+  gab_value mod = gab_message(gab, tGAB_NUMBER);
+  gab_value t = gab_type(gab, kGAB_NUMBER);
+
+  gab_def(gab,
+          {
+              gab_message(gab, "floor"),
+              t,
+              gab_snative(gab, "floor", gab_numlib_floor),
+          },
+          {
+              gab_message(gab, "float\\between"),
+              mod,
+              gab_snative(gab, "float\\between", gab_numlib_between),
+          });
+
+  return a_gab_value_one(gab_ok);
 }

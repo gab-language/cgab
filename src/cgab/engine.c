@@ -12,205 +12,60 @@
 #include "core.h"
 #include "gab.h"
 #include "lexer.h"
-#include "os.h"
 
-a_gab_value *gab_strlib_trim(struct gab_triple gab, uint64_t argc,
-                             gab_value argv[argc]);
+a_char *gab_fosread(FILE *fd) {
+  v_char buffer = {0};
 
-a_gab_value *gab_strlib_split(struct gab_triple gab, uint64_t argc,
-                              gab_value argv[argc]);
+  while (1) {
+    int c = fgetc(fd);
 
-a_gab_value *gab_strlib_len(struct gab_triple gab, uint64_t argc,
-                            gab_value argv[argc]);
+    if (c == EOF)
+      break;
 
-a_gab_value *gab_strlib_blank(struct gab_triple gab, uint64_t argc,
-                              gab_value argv[argc]);
+    v_char_push(&buffer, c);
+  }
 
-a_gab_value *gab_strlib_ends(struct gab_triple gab, uint64_t argc,
-                             gab_value argv[argc]);
+  v_char_push(&buffer, '\0');
 
-a_gab_value *gab_strlib_begins(struct gab_triple gab, uint64_t argc,
-                               gab_value argv[argc]);
+  a_char *data = a_char_create(buffer.data, buffer.len);
 
-a_gab_value *gab_strlib_number(struct gab_triple gab, uint64_t argc,
-                               gab_value argv[argc]);
+  v_char_destroy(&buffer);
 
-a_gab_value *gab_strlib_to_byte(struct gab_triple gab, uint64_t argc,
-                                gab_value argv[argc]);
-
-a_gab_value *gab_strlib_at(struct gab_triple gab, uint64_t argc,
-                           gab_value argv[argc]);
-
-a_gab_value *gab_strlib_slice(struct gab_triple gab, uint64_t argc,
-                              gab_value argv[argc]);
-
-a_gab_value *gab_strlib_has(struct gab_triple gab, uint64_t argc,
-                            gab_value argv[argc]);
-
-a_gab_value *gab_strlib_string_into(struct gab_triple gab, uint64_t argc,
-                                    gab_value argv[argc]);
-
-a_gab_value *gab_strlib_messages_into(struct gab_triple gab, uint64_t argc,
-                                      gab_value argv[argc]);
-
-a_gab_value *gab_strlib_new(struct gab_triple gab, uint64_t argc,
-                            gab_value argv[argc]);
-
-a_gab_value *gab_strlib_numbers_into(struct gab_triple gab, uint64_t argc,
-                                     gab_value argv[argc]);
-
-a_gab_value *gab_msglib_def(struct gab_triple gab, uint64_t argc,
-                            gab_value argv[argc]);
-
-a_gab_value *gab_msglib_case(struct gab_triple gab, uint64_t argc,
-                             gab_value argv[argc]);
-
-a_gab_value *gab_msglib_module(struct gab_triple gab, uint64_t argc,
-                               gab_value argv[argc]);
-
-a_gab_value *gab_msglib_at(struct gab_triple gab, uint64_t argc,
-                           gab_value argv[argc]);
-
-a_gab_value *gab_msglib_has(struct gab_triple gab, uint64_t argc,
-                            gab_value argv[argc]);
-
-a_gab_value *gab_msglib_string_into(struct gab_triple gab, uint64_t argc,
-                                    gab_value argv[argc]);
-
-a_gab_value *gab_msglib_specs(struct gab_triple gab, uint64_t argc,
-                              gab_value argv[argc]);
-
-a_gab_value *gab_msglib_message(struct gab_triple gab, uint64_t argc,
-                                gab_value argv[argc]);
-
-a_gab_value *gab_reclib_at(struct gab_triple gab, uint64_t argc,
-                           gab_value argv[argc]);
-
-a_gab_value *gab_reclib_slice(struct gab_triple gab, uint64_t argc,
-                              gab_value argv[argc]);
-
-a_gab_value *gab_reclib_put(struct gab_triple gab, uint64_t argc,
-                            gab_value argv[argc]);
-
-a_gab_value *gab_reclib_take(struct gab_triple gab, uint64_t argc,
-                             gab_value argv[argc]);
-
-a_gab_value *gab_reclib_push(struct gab_triple gab, uint64_t argc,
-                             gab_value argv[argc]);
-
-a_gab_value *gab_reclib_pop(struct gab_triple gab, uint64_t argc,
-                            gab_value argv[argc]);
-
-a_gab_value *gab_reclib_is_list(struct gab_triple gab, uint64_t argc,
-                                gab_value argv[argc]);
-
-a_gab_value *gab_reclib_is_empty(struct gab_triple gab, uint64_t argc,
-                                 gab_value argv[argc]);
-
-a_gab_value *gab_reclib_putvia(struct gab_triple gab, uint64_t argc,
-                               gab_value argv[argc]);
-
-a_gab_value *gab_reclib_len(struct gab_triple gab, uint64_t argc,
-                            gab_value argv[argc]);
-
-a_gab_value *gab_reclib_strings_into(struct gab_triple gab, uint64_t argc,
-                                     gab_value argv[argc]);
-
-a_gab_value *gab_reclib_seqinit(struct gab_triple gab, uint64_t argc,
-                                gab_value argv[argc]);
-
-a_gab_value *gab_reclib_seqnext(struct gab_triple gab, uint64_t argc,
-                                gab_value argv[argc]);
-
-a_gab_value *gab_iolib_open(struct gab_triple gab, uint64_t argc,
-                            gab_value argv[argc]);
-
-a_gab_value *gab_iolib_read(struct gab_triple gab, uint64_t argc,
-                            gab_value argv[argc]);
-
-a_gab_value *gab_iolib_write(struct gab_triple gab, uint64_t argc,
-                             gab_value argv[argc]);
-
-a_gab_value *gab_iolib_scan(struct gab_triple gab, uint64_t argc,
-                            gab_value argv[argc]);
-
-a_gab_value *gab_iolib_until(struct gab_triple gab, uint64_t argc,
-                             gab_value argv[argc]);
-
-a_gab_value *gab_jsonlib_decode(struct gab_triple gab, uint64_t argc,
-                                gab_value argv[argc]);
-
-a_gab_value *gab_chnlib_close(struct gab_triple gab, uint64_t argc,
-                              gab_value argv[argc]);
-
-a_gab_value *gab_chnlib_is_closed(struct gab_triple gab, uint64_t argc,
-                                  gab_value argv[argc]);
-
-a_gab_value *gab_chnlib_is_full(struct gab_triple gab, uint64_t argc,
-                                gab_value argv[argc]);
-
-a_gab_value *gab_chnlib_is_empty(struct gab_triple gab, uint64_t argc,
-                                 gab_value argv[argc]);
-
-a_gab_value *gab_siglib_string_into(struct gab_triple gab, uint64_t argc,
-                                    gab_value argv[argc]);
-
-a_gab_value *gab_siglib_message_into(struct gab_triple gab, uint64_t argc,
-                                     gab_value argv[argc]);
-
-a_gab_value *gab_numlib_floor(struct gab_triple gab, uint64_t argc,
-                              gab_value argv[argc]);
-
-a_gab_value *gab_numlib_between(struct gab_triple gab, uint64_t argc,
-                                gab_value argv[argc]);
-
-a_gab_value *gab_strlib_binary_into(struct gab_triple gab, uint64_t argc,
-                                    gab_value argv[argc]);
-
-a_gab_value *gab_msglib_binary_into(struct gab_triple gab, uint64_t argc,
-                                    gab_value argv[argc]);
-
-a_gab_value *gab_siglib_binary_into(struct gab_triple gab, uint64_t argc,
-                                    gab_value argv[argc]);
-
-a_gab_value *gab_numlib_binary_into(struct gab_triple gab, uint64_t argc,
-                                    gab_value argv[argc]);
-
-a_gab_value *gab_fiblib_await(struct gab_triple gab, uint64_t argc,
-                              gab_value argv[argc]);
-
-a_gab_value *gab_fiblib_is_done(struct gab_triple gab, uint64_t argc,
-                                gab_value argv[argc]);
-
-a_gab_value *gab_fmtlib_printf(struct gab_triple gab, uint64_t argc,
-                               gab_value argv[argc]) {
-  gab_value fmtstr = gab_arg(0);
-
-  if (gab_valkind(fmtstr) != kGAB_STRING)
-    return gab_pktypemismatch(gab, fmtstr, kGAB_STRING);
-
-  const char *fmt = gab_strdata(&fmtstr);
-
-  if (gab_nfprintf(stdout, fmt, argc - 1, argv + 1) < 0)
-    return gab_fpanic(gab,
-                      "Wrong number of format arguments to printf (expected $)",
-                      gab_number(argc - 1));
-
-  return nullptr;
+  return data;
 }
 
-a_gab_value *gab_fmtlib_println(struct gab_triple gab, uint64_t argc,
-                                gab_value argv[argc]) {
+a_char *gab_osread(const char *path) {
+  FILE *file = fopen(path, "rb");
 
-  for (uint64_t i = 0; i < argc; i++) {
-    gab_value v = gab_arg(i);
-    gab_fvalinspect(stdout, v, -1);
-    if (i + 1 < argc)
-      fputc(' ', stdout);
+  if (file == nullptr)
+    return nullptr;
+
+  a_char *data = gab_fosread(file);
+
+  fclose(file);
+  return data;
+}
+
+a_char *gab_fosreadl(FILE *fd) {
+  v_char buffer;
+  v_char_create(&buffer, 1024);
+
+  for (;;) {
+    int c = fgetc(fd);
+
+    v_char_push(&buffer, c);
+
+    if (c == '\n' || c == EOF)
+      break;
   }
-  fputc('\n', stdout);
 
-  return nullptr;
+  v_char_push(&buffer, '\0');
+
+  a_char *data = a_char_create(buffer.data, buffer.len);
+
+  v_char_destroy(&buffer);
+
+  return data;
 }
 
 struct primitive {
@@ -440,281 +295,6 @@ struct native {
   gab_native_f native;
 };
 
-struct native kind_natives[] = {
-    {
-        .name = "printf",
-        .kind = kGAB_STRING,
-        .native = gab_fmtlib_printf,
-    },
-    {
-        .name = "println",
-        .kind = kGAB_UNDEFINED,
-        .native = gab_fmtlib_println,
-    },
-    {
-        .name = "len",
-        .kind = kGAB_STRING,
-        .native = gab_strlib_len,
-    },
-    {
-        .name = "at",
-        .kind = kGAB_STRING,
-        .native = gab_strlib_at,
-    },
-    {
-        .name = "trim",
-        .kind = kGAB_STRING,
-        .native = gab_strlib_trim,
-    },
-    {
-        .name = "slice",
-        .kind = kGAB_STRING,
-        .native = gab_strlib_slice,
-    },
-    {
-        .name = "split",
-        .kind = kGAB_STRING,
-        .native = gab_strlib_split,
-    },
-    {
-        .name = "blank?",
-        .kind = kGAB_STRING,
-        .native = gab_strlib_blank,
-    },
-    {
-        .name = "number?",
-        .kind = kGAB_STRING,
-        .native = gab_strlib_number,
-    },
-    {
-        .name = "has?",
-        .kind = kGAB_STRING,
-        .native = gab_strlib_has,
-    },
-    {
-        .name = "ends_with?",
-        .kind = kGAB_STRING,
-        .native = gab_strlib_ends,
-    },
-    {
-        .name = "begins_with?",
-        .kind = kGAB_STRING,
-        .native = gab_strlib_begins,
-    },
-    {
-        .name = "messages\\into",
-        .kind = kGAB_STRING,
-        .native = gab_strlib_messages_into,
-    },
-    {
-        .name = "numbers\\into",
-        .kind = kGAB_STRING,
-        .native = gab_strlib_numbers_into,
-    },
-    {
-        .name = "strings\\into",
-        .kind = kGAB_UNDEFINED,
-        .native = gab_strlib_string_into,
-    },
-    {
-        .name = "def!",
-        .kind = kGAB_MESSAGE,
-        .native = gab_msglib_def,
-    },
-    {
-        .name = "defcase!",
-        .kind = kGAB_MESSAGE,
-        .native = gab_msglib_case,
-    },
-    {
-        .name = "defmodule!",
-        .kind = kGAB_RECORD,
-        .native = gab_msglib_module,
-    },
-    {
-        .name = "at",
-        .kind = kGAB_MESSAGE,
-        .native = gab_msglib_at,
-    },
-    {
-        .name = "has?",
-        .kind = kGAB_MESSAGE,
-        .native = gab_msglib_has,
-    },
-    {
-        .name = "strings\\into",
-        .kind = kGAB_MESSAGE,
-        .native = gab_msglib_string_into,
-    },
-    {
-        .name = "at",
-        .kind = kGAB_RECORD,
-        .native = gab_reclib_at,
-    },
-    {
-        .name = "slice",
-        .kind = kGAB_RECORD,
-        .native = gab_reclib_slice,
-    },
-    {
-        .name = "push",
-        .kind = kGAB_RECORD,
-        .native = gab_reclib_push,
-    },
-    {
-        .name = "pop",
-        .kind = kGAB_RECORD,
-        .native = gab_reclib_pop,
-    },
-    {
-        .name = "put",
-        .kind = kGAB_RECORD,
-        .native = gab_reclib_put,
-    },
-    {
-        .name = "take",
-        .kind = kGAB_RECORD,
-        .native = gab_reclib_take,
-    },
-    {
-        .name = "list?",
-        .kind = kGAB_RECORD,
-        .native = gab_reclib_is_list,
-    },
-    {
-        .name = "empty?",
-        .kind = kGAB_RECORD,
-        .native = gab_reclib_is_empty,
-    },
-    {
-        .name = "put_via",
-        .kind = kGAB_RECORD,
-        .native = gab_reclib_putvia,
-    },
-    {
-        .name = "len",
-        .kind = kGAB_RECORD,
-        .native = gab_reclib_len,
-    },
-    {
-        .name = "strings\\into",
-        .kind = kGAB_RECORD,
-        .native = gab_reclib_strings_into,
-    },
-    {
-        .name = "seq\\init",
-        .kind = kGAB_RECORD,
-        .native = gab_reclib_seqinit,
-    },
-    {
-        .name = "seq\\next",
-        .kind = kGAB_RECORD,
-        .native = gab_reclib_seqnext,
-    },
-    {
-        .name = "io\\open",
-        .kind = kGAB_STRING,
-        .native = gab_iolib_open,
-    },
-    {
-        .name = "json\\decode",
-        .kind = kGAB_STRING,
-        .native = gab_jsonlib_decode,
-
-    },
-    {
-        .name = "close!",
-        .kind = kGAB_CHANNEL,
-        .native = gab_chnlib_close,
-    },
-    {
-        .name = "closed?",
-        .kind = kGAB_CHANNEL,
-        .native = gab_chnlib_is_closed,
-    },
-    {
-        .name = "full?",
-        .kind = kGAB_CHANNEL,
-        .native = gab_chnlib_is_full,
-    },
-    {
-        .name = "empty?",
-        .kind = kGAB_CHANNEL,
-        .native = gab_chnlib_is_empty,
-    },
-    {
-        .name = "await!",
-        .kind = kGAB_FIBER,
-        .native = gab_fiblib_await,
-    },
-    {
-        .name = "done?",
-        .kind = kGAB_FIBER,
-        .native = gab_fiblib_is_done,
-    },
-    {
-        .name = "floor",
-        .kind = kGAB_NUMBER,
-        .native = gab_numlib_floor,
-    },
-    {
-        .name = "binary\\into",
-        .kind = kGAB_NUMBER,
-        .native = gab_numlib_binary_into,
-    },
-    {
-        .name = "binary\\into",
-        .kind = kGAB_MESSAGE,
-        .native = gab_msglib_binary_into,
-    },
-    {
-        .name = "binary\\into",
-        .kind = kGAB_STRING,
-        .native = gab_strlib_binary_into,
-    },
-};
-
-struct native box_natives[] = {
-    {
-        .name = "read",
-        .box_type = tGAB_IOSTREAM,
-        .native = gab_iolib_read,
-    },
-    {
-        .name = "write",
-        .box_type = tGAB_IOSTREAM,
-        .native = gab_iolib_write,
-    },
-    {
-        .name = "scan",
-        .box_type = tGAB_IOSTREAM,
-        .native = gab_iolib_scan,
-    },
-    {
-        .name = "until",
-        .box_type = tGAB_IOSTREAM,
-        .native = gab_iolib_until,
-    },
-};
-
-struct native msg_natives[] = {
-    {
-        .name = "float.between",
-        .message = tGAB_NUMBER,
-        .native = gab_numlib_between,
-    },
-    {
-        .name = mGAB_MAKE,
-        .message = tGAB_MESSAGE,
-        .native = gab_msglib_message,
-    },
-    {
-        .name = "specializations",
-        .message = tGAB_MESSAGE,
-        .native = gab_msglib_specs,
-    },
-};
-
 static const struct timespec t = {.tv_nsec = GAB_YIELD_SLEEPTIME_NS};
 
 void gab_yield(struct gab_triple gab) {
@@ -918,36 +498,6 @@ struct gab_triple gab_create(struct gab_create_argt args) {
 
   gab_niref(gab, 1, kGAB_NKINDS, eg->types);
   gab_negkeep(gab.eg, kGAB_NKINDS, eg->types);
-
-  for (int i = 0; i < LEN_CARRAY(kind_natives); i++) {
-    gab_egkeep(
-        gab.eg,
-        gab_iref(gab, gab_def(gab, (struct gab_def_argt){
-                                       gab_message(gab, kind_natives[i].name),
-                                       gab_type(gab, kind_natives[i].kind),
-                                       gab_snative(gab, kind_natives[i].name,
-                                                   kind_natives[i].native)})));
-  }
-
-  for (int i = 0; i < LEN_CARRAY(box_natives); i++) {
-    gab_egkeep(
-        gab.eg,
-        gab_iref(gab, gab_def(gab, (struct gab_def_argt){
-                                       gab_message(gab, box_natives[i].name),
-                                       gab_string(gab, box_natives[i].box_type),
-                                       gab_snative(gab, box_natives[i].name,
-                                                   box_natives[i].native)})));
-  }
-
-  for (int i = 0; i < LEN_CARRAY(msg_natives); i++) {
-    gab_egkeep(
-        gab.eg,
-        gab_iref(gab, gab_def(gab, (struct gab_def_argt){
-                                       gab_message(gab, msg_natives[i].name),
-                                       gab_message(gab, msg_natives[i].message),
-                                       gab_snative(gab, msg_natives[i].name,
-                                                   msg_natives[i].native)})));
-  }
 
   for (int i = 0; i < LEN_CARRAY(kind_primitives); i++) {
     gab_egkeep(
@@ -1261,22 +811,14 @@ a_gab_value *gab_segmodat(struct gab_eg *eg, const char *name) {
   return module;
 }
 
-a_gab_value *gab_segmodput(struct gab_eg *eg, const char *name, gab_value mod,
-                           uint64_t len, gab_value *values) {
+a_gab_value *gab_segmodput(struct gab_eg *eg, const char *name,
+                           a_gab_value *module) {
   uint64_t hash = s_char_hash(s_char_cstr(name));
 
   mtx_lock(&eg->modules_mtx);
 
   if (d_gab_modules_read(&eg->modules, hash) != nullptr)
     return mtx_unlock(&eg->modules_mtx), nullptr;
-
-  a_gab_value *module = a_gab_value_empty(len + 1);
-  module->data[0] = mod;
-
-  if (len) {
-    assert(values);
-    memcpy(module->data + 1, values, len * sizeof(gab_value));
-  }
 
   d_gab_modules_insert(&eg->modules, hash, module);
   return mtx_unlock(&eg->modules_mtx), module;
@@ -1510,9 +1052,36 @@ typedef a_gab_value *(*module_f)(struct gab_triple);
 typedef struct {
   const char *prefix;
   const char *suffix;
+
+  const handler_f handler;
 } resource;
 
-a_gab_value *gab_use_file(struct gab_triple gab, const char *path) {
+a_gab_value *gab_use_dynlib(struct gab_triple gab, const char *path) {
+  gab_dynlib lib = gab_libopen(path);
+
+  if (lib == nullptr) {
+    gab_value reason = gab_string(gab, strerror(errno));
+    return gab_fpanic(gab, "Failed to load module: $", reason);
+  }
+
+  module_f mod = gab_libfind(lib, GAB_DYNLIB_MAIN);
+
+  a_gab_value *res = mod(gab);
+
+  if (res == nullptr)
+    return gab_fpanic(gab, "Failed to load module.");
+
+  if (res->data[0] != gab_ok)
+    return gab_fpanic(gab,
+                      "Failed to load module: module returned $, expected $",
+                      res->data[0], gab_ok);
+
+  a_gab_value *final = gab_segmodput(gab.eg, path, res);
+
+  return final;
+}
+
+a_gab_value *gab_use_source(struct gab_triple gab, const char *path) {
   a_char *src = gab_osread(path);
 
   if (src == nullptr) {
@@ -1552,8 +1121,7 @@ a_gab_value *gab_use_file(struct gab_triple gab, const char *path) {
     parent->messages = f->messages;
   }
 
-  a_gab_value *final =
-      gab_segmodput(gab.eg, path, fiber, res->len - 1, res->data + 1);
+  a_gab_value *final = gab_segmodput(gab.eg, path, res);
 
   return final;
 }
@@ -1567,31 +1135,53 @@ resource resources[] = {
     {
         .prefix = "./mod/",
         .suffix = ".gab",
+        .handler = gab_use_source,
     },
     {
         .prefix = "./",
         .suffix = "/mod/mod.gab",
+        .handler = gab_use_source,
     },
     {
         .prefix = "./",
         .suffix = ".gab",
+        .handler = gab_use_source,
     },
     {
         .prefix = "./",
         .suffix = "/mod.gab",
+        .handler = gab_use_source,
+    },
+    {
+        .prefix = "./",
+        .suffix = "." GAB_DYNLIB_FILEENDING,
+        .handler = gab_use_dynlib,
+    },
+    {
+        .prefix = "./mod/",
+        .suffix = "." GAB_DYNLIB_FILEENDING,
+        .handler = gab_use_dynlib,
     },
     // Installed resources
     {
         .prefix = GAB_PREFIX "/gab/modules/",
         .suffix = ".gab",
+        .handler = gab_use_source,
+    },
+    {
+        .prefix = GAB_PREFIX "/gab/modules/",
+        .suffix = "." GAB_DYNLIB_FILEENDING,
+        .handler = gab_use_dynlib,
     },
     {
         .prefix = GAB_PREFIX "/gab/modules/",
         .suffix = "/mod.gab",
+        .handler = gab_use_source,
     },
     {
         .prefix = GAB_PREFIX "/gab/modules/",
         .suffix = "/mod/mod.gab",
+        .handler = gab_use_source,
     },
 };
 
@@ -1637,7 +1227,7 @@ a_gab_value *gab_use(struct gab_triple gab, gab_value path) {
         return cached;
       }
 
-      a_gab_value *result = gab_use_file(gab, (char *)path->data);
+      a_gab_value *result = res->handler(gab, path->data);
 
       if (result != nullptr) {
         /* Skip the first argument, which is the module's data */

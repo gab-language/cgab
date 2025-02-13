@@ -642,8 +642,7 @@ a_gab_value *gab_use(struct gab_triple gab, gab_value name);
  * @param values The values returned by the module.
  * @returns The module if it was added, nullptr otherwise.
  */
-a_gab_value *gab_segmodput(struct gab_eg *eg, const char *name, gab_value mod,
-                           uint64_t len, gab_value *values);
+a_gab_value *gab_segmodput(struct gab_eg *eg, const char *name, a_gab_value* module);
 
 /**
  * @brief Check if an engine has a module by name.

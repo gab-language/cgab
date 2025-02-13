@@ -1,12 +1,11 @@
+#include "core.h"
 #include "gab.h"
-
-#define GAB_IOSTREAM "gab.io.stream"
 
 void file_cb(uint64_t len, char data[static len]) { fclose(*(FILE **)data); }
 
 gab_value iostream(struct gab_triple gab, FILE *stream, bool owning) {
   return gab_box(gab, (struct gab_box_argt){
-                          .type = gab_string(gab, GAB_IOSTREAM),
+                          .type = gab_string(gab, tGAB_IOSTREAM),
                           .data = &stream,
                           .size = sizeof(FILE *),
                           .destructor = owning ? file_cb : nullptr,
@@ -46,7 +45,7 @@ a_gab_value *gab_iolib_until(struct gab_triple gab, uint64_t argc,
   gab_value delim = gab_arg(1);
 
   if (gab_valkind(iostream) != kGAB_BOX)
-    return gab_ptypemismatch(gab, iostream, gab_string(gab, GAB_IOSTREAM));
+    return gab_ptypemismatch(gab, iostream, gab_string(gab, tGAB_IOSTREAM));
 
   if (delim == gab_nil)
     delim = gab_string(gab, "\n");
@@ -79,7 +78,7 @@ a_gab_value *gab_iolib_scan(struct gab_triple gab, uint64_t argc,
   gab_value bytesToRead = gab_arg(1);
 
   if (gab_valkind(iostream) != kGAB_BOX)
-    return gab_ptypemismatch(gab, iostream, gab_string(gab, GAB_IOSTREAM));
+    return gab_ptypemismatch(gab, iostream, gab_string(gab, tGAB_IOSTREAM));
 
   if (gab_valkind(bytesToRead) != kGAB_NUMBER)
     return gab_pktypemismatch(gab, bytesToRead, kGAB_NUMBER);
@@ -136,7 +135,7 @@ a_gab_value *gab_iolib_write(struct gab_triple gab, uint64_t argc,
   gab_value stream = gab_arg(0);
 
   if (gab_valkind(stream) != kGAB_BOX)
-    return gab_ptypemismatch(gab, stream, gab_string(gab, GAB_IOSTREAM));
+    return gab_ptypemismatch(gab, stream, gab_string(gab, tGAB_IOSTREAM));
 
   FILE *fs = *(FILE **)gab_boxdata(stream);
 
@@ -155,4 +154,37 @@ a_gab_value *gab_iolib_write(struct gab_triple gab, uint64_t argc,
     gab_vmpush(gab_vm(gab), gab_ok);
 
   return nullptr;
+}
+
+GAB_DYNLIB_MAIN_FN {
+  gab_value t = gab_string(gab, tGAB_IOSTREAM);
+
+  gab_def(gab,
+          {
+              gab_message(gab, "open"),
+              gab_message(gab, "io"),
+              gab_snative(gab, "printf", gab_iolib_open),
+          },
+          {
+              gab_message(gab, "until"),
+              t,
+              gab_snative(gab, "until", gab_iolib_until),
+          },
+          {
+              gab_message(gab, "read"),
+              t,
+              gab_snative(gab, "read", gab_iolib_read),
+          },
+          {
+              gab_message(gab, "scan"),
+              t,
+              gab_snative(gab, "scan", gab_iolib_scan),
+          },
+          {
+              gab_message(gab, "write"),
+              t,
+              gab_snative(gab, "write", gab_iolib_write),
+          });
+
+  return a_gab_value_one(gab_ok);
 }

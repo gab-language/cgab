@@ -416,3 +416,71 @@ a_gab_value *gab_strlib_numbers_into(struct gab_triple gab, uint64_t argc,
   gab_vmpush(gab_vm(gab), res);
   return nullptr;
 };
+
+GAB_DYNLIB_MAIN_FN {
+  gab_value t = gab_type(gab, kGAB_STRING);
+
+  gab_def(gab,
+          {
+              gab_message(gab, "numbers\\into"),
+              t,
+              gab_snative(gab, "numbers\\into", gab_strlib_numbers_into),
+          },
+          {
+              gab_message(gab, "blank"),
+              t,
+              gab_snative(gab, "blank", gab_strlib_blank),
+          },
+          {
+              gab_message(gab, "split"),
+              t,
+              gab_snative(gab, "split", gab_strlib_split),
+          },
+          {
+              gab_message(gab, "has?"),
+              t,
+              gab_snative(gab, "has?", gab_strlib_has),
+          },
+          {
+              gab_message(gab, "ends_with?"),
+              t,
+              gab_snative(gab, "ends_with?", gab_strlib_ends),
+          },
+          {
+              gab_message(gab, "starts_with?"),
+              t,
+              gab_snative(gab, "starts_with?", gab_strlib_begins),
+          },
+          {
+              gab_message(gab, "number?"),
+              t,
+              gab_snative(gab, "number?", gab_strlib_number),
+          },
+          {
+              gab_message(gab, "byte\\into"),
+              t,
+              gab_snative(gab, "byte\\into", gab_strlib_to_byte),
+          },
+          {
+              gab_message(gab, "len"),
+              t,
+              gab_snative(gab, "len", gab_strlib_len),
+          },
+          {
+              gab_message(gab, "at"),
+              t,
+              gab_snative(gab, "at", gab_strlib_at),
+          },
+          {
+              gab_message(gab, "slice"),
+              t,
+              gab_snative(gab, "slice", gab_strlib_slice),
+          },
+          {
+              gab_message(gab, "trim"),
+              t,
+              gab_snative(gab, "trim", gab_strlib_trim),
+          });
+
+  return a_gab_value_one(gab_ok);
+}

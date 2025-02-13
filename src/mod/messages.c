@@ -1,7 +1,7 @@
 #include "gab.h"
 
 a_gab_value *gab_msglib_message(struct gab_triple gab, uint64_t argc,
-                             gab_value argv[static argc]) {
+                                gab_value argv[static argc]) {
   gab_value name = gab_arg(1);
 
   if (gab_valkind(name) != kGAB_STRING)
@@ -12,7 +12,7 @@ a_gab_value *gab_msglib_message(struct gab_triple gab, uint64_t argc,
 }
 
 a_gab_value *gab_msglib_specs(struct gab_triple gab, uint64_t argc,
-                           gab_value argv[static argc]) {
+                              gab_value argv[static argc]) {
   if (argc == 1) {
     gab_value rec = GAB_VAL_TO_FIBER(gab_thisfiber(gab))->messages;
     gab_vmpush(gab_vm(gab), rec);
@@ -34,7 +34,7 @@ a_gab_value *gab_msglib_specs(struct gab_triple gab, uint64_t argc,
 }
 
 a_gab_value *gab_msglib_has(struct gab_triple gab, uint64_t argc,
-                         gab_value argv[static argc]) {
+                            gab_value argv[static argc]) {
   switch (argc) {
   case 2: {
 
@@ -49,7 +49,7 @@ a_gab_value *gab_msglib_has(struct gab_triple gab, uint64_t argc,
 }
 
 a_gab_value *gab_msglib_at(struct gab_triple gab, uint64_t argc,
-                        gab_value argv[static argc]) {
+                           gab_value argv[static argc]) {
   gab_value m = gab_arg(0);
   gab_value k = gab_arg(1);
 
@@ -67,7 +67,7 @@ a_gab_value *gab_msglib_at(struct gab_triple gab, uint64_t argc,
 }
 
 a_gab_value *gab_msglib_string_into(struct gab_triple gab, uint64_t argc,
-                                 gab_value argv[static argc]) {
+                                    gab_value argv[static argc]) {
   gab_value m = gab_arg(0);
 
   gab_vmpush(gab_vm(gab), gab_msgtostr(m));
@@ -76,7 +76,7 @@ a_gab_value *gab_msglib_string_into(struct gab_triple gab, uint64_t argc,
 }
 
 a_gab_value *gab_msglib_put(struct gab_triple gab, uint64_t argc,
-                         gab_value argv[static argc]) {
+                            gab_value argv[static argc]) {
   gab_value msg = gab_arg(0);
   gab_value rec = gab_arg(1);
   gab_value spec = gab_arg(2);
@@ -92,7 +92,7 @@ a_gab_value *gab_msglib_put(struct gab_triple gab, uint64_t argc,
 }
 
 a_gab_value *gab_msglib_def(struct gab_triple gab, uint64_t argc,
-                         gab_value argv[static argc]) {
+                            gab_value argv[static argc]) {
   gab_value msg = gab_arg(0);
   gab_value spec = gab_arg(argc - 1);
 
@@ -122,7 +122,7 @@ a_gab_value *gab_msglib_def(struct gab_triple gab, uint64_t argc,
 }
 
 a_gab_value *gab_msglib_case(struct gab_triple gab, uint64_t argc,
-                          gab_value argv[static argc]) {
+                             gab_value argv[static argc]) {
   gab_value msg = gab_arg(0);
   gab_value cases = gab_arg(1);
 
@@ -144,7 +144,7 @@ a_gab_value *gab_msglib_case(struct gab_triple gab, uint64_t argc,
 }
 
 a_gab_value *gab_msglib_module(struct gab_triple gab, uint64_t argc,
-                            gab_value argv[static argc]) {
+                               gab_value argv[static argc]) {
   gab_value cases = gab_arg(0);
   gab_value messages = gab_arg(1);
 
@@ -187,4 +187,48 @@ a_gab_value *gab_msglib_module(struct gab_triple gab, uint64_t argc,
   }
 
   return nullptr;
+}
+
+GAB_DYNLIB_MAIN_FN {
+  gab_value mod = gab_message(gab, tGAB_MESSAGE);
+  gab_value t = gab_type(gab, kGAB_MESSAGE);
+
+  gab_def(gab,
+          {
+              gab_message(gab, "def!"),
+              mod,
+              gab_snative(gab, "def!", gab_msglib_def),
+          },
+          {
+              gab_message(gab, "defcase!"),
+              mod,
+              gab_snative(gab, "defcase!", gab_msglib_case),
+          },
+          {
+              gab_message(gab, "defmodule!"),
+              mod,
+              gab_snative(gab, "defmodule!", gab_msglib_module),
+          },
+          {
+              gab_message(gab, "has?"),
+              t,
+              gab_snative(gab, "has?", gab_msglib_has),
+          },
+          {
+              gab_message(gab, "specs"),
+              mod,
+              gab_snative(gab, "specs", gab_msglib_specs),
+          },
+          {
+              gab_message(gab, "at"),
+              mod,
+              gab_snative(gab, "at", gab_msglib_at),
+          },
+          {
+              gab_message(gab, "put"),
+              mod,
+              gab_snative(gab, "put", gab_msglib_put),
+          });
+
+  return a_gab_value_one(gab_ok);
 }
