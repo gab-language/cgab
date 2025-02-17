@@ -149,12 +149,10 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: 'gab-${{ matrix.build_type }}-${{ matrix.target }}-modules'
+          path: 'gab-${{ matrix.build_type }}-${{ matrix.target }}-modules'
 
       - name: Rename binary
         run: mv gab 'gab-${{ matrix.build_type }}-${{ matrix.target }}'
-
-      - name: Rename modules
-        run: mv mod 'gab-${{ matrix.build_type }}-${{ matrix.target }}-modules'
 
       - name: Attach binary to release
         run: gh release upload -R '${{ github.repository }}' '${{ env.version }}' 'gab-${{ matrix.build_type }}-${{ matrix.target }}' || exit 0
