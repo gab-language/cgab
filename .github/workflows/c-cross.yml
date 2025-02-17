@@ -98,6 +98,9 @@ jobs:
         with:
           name: gab-${{ matrix.build_type }}-${{ matrix.target }}-modules
 
+      - name: Log Downloaded Artifacts
+        run: ls -R
+
       - name: Unpack Modules
         run: unzip mod
 
