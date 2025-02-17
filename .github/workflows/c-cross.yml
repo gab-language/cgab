@@ -59,7 +59,7 @@ jobs:
         path: 'build-${{ matrix.target }}/gab'
 
     - name: Collect modules
-      run: cp 'build-${{ matrix.target }}/mod/*' mod
+      run: cp build-${{ matrix.target }}/mod/* mod
 
     - name: Upload Module Artifacts
       uses: actions/upload-artifact@v4
