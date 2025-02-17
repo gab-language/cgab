@@ -61,7 +61,7 @@ function build {
   # doesn't require a second libcgab.so linked dynamically at runtime.
   # Verified this with:
   # strace -e trace=open,openat ./build-x86_64-linux-gnu/gab run test
-  zig cc $flags $platform -o "build-$1/gab" "build-$1/libcgab.a" src/gab/*.c || exit 1
+  zig cc $flags $platform -rdynamic -o "build-$1/gab" "build-$1/libcgab.a" src/gab/*.c || exit 1
   echo "   Done!"
   echo "   $(file "build-$1/gab")"
 
