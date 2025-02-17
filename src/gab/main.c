@@ -14,20 +14,11 @@ void run_repl(int flags) {
   gab_repl(gab, (struct gab_repl_argt){
                     .name = MAIN_MODULE,
                     .flags = flags,
-                    .welcome_message =
-                        "Gab " GAB_VERSION_MAJOR "." GAB_VERSION_MINOR,
+                    .welcome_message = "Gab version " GAB_VERSION_TAG "",
                     .prompt_prefix = " > ",
                 });
 
   gab_destroy(gab);
-}
-
-void run_src(struct gab_triple gab, s_char src, int flags, size_t jobs) {
-  gab_exec(gab, (struct gab_exec_argt){
-                    .name = MAIN_MODULE,
-                    .source = (char *)src.data,
-                    .flags = flags,
-                });
 }
 
 void run_string(const char *string, int flags, size_t jobs) {
@@ -39,7 +30,11 @@ void run_string(const char *string, int flags, size_t jobs) {
   // This is a weird case where we actually want to include the null terminator
   s_char src = s_char_create(string, strlen(string) + 1);
 
-  run_src(gab, src, flags, 8);
+  gab_exec(gab, (struct gab_exec_argt){
+                    .name = MAIN_MODULE,
+                    .source = (char *)src.data,
+                    .flags = flags,
+                });
 
   gab_destroy(gab);
   return;
@@ -77,6 +72,7 @@ struct command {
   struct option options[MAX_OPTIONS];
 };
 
+int install(int argc, const char **argv, int flags);
 int run(int argc, const char **argv, int flags);
 int exec(int argc, const char **argv, int flags);
 int repl(int argc, const char **argv, int flags);
@@ -89,6 +85,11 @@ static struct command commands[] = {
         "help",
         "Print this help message",
         .handler = help,
+    },
+    {
+        "install",
+        "Install different versions of gab",
+        .handler = install,
     },
     {
         "run",
@@ -256,8 +257,43 @@ struct parse_options_result parse_options(int argc, const char **argv,
   return (struct parse_options_result){0, flags};
 }
 
+#define GAB_RELEASE_DOWNLOAD_URL                                               \
+  "https://github.com/gab-language/cgab/releases/download/"
+
+int install(int argc, const char **argv, int flags) {
+  const char *tag = argc ? argv[0] : GAB_VERSION_TAG;
+
+  v_char url = {};
+
+  v_char_spush(&url, s_char_cstr(GAB_RELEASE_DOWNLOAD_URL));
+  v_char_spush(&url, s_char_cstr(tag));
+  v_char_spush(&url, s_char_cstr("/gab-release-" GAB_TARGET_TRIPLE));
+  v_char_push(&url, '\0');
+
+  const char *location_prefix = gab_osprefix();
+
+  v_char location = {};
+  v_char_spush(&location, s_char_cstr(location_prefix));
+  v_char_spush(&location, s_char_cstr("/gab/"));
+  v_char_spush(&location, s_char_cstr(tag));
+  v_char_push(&location, '/');
+  v_char_spush(&location, s_char_cstr("gab"));
+  v_char_push(&location, '\0');
+
+  int res = gab_osproc("curl", "-L", "-o", location.data, url.data);
+
+  if (res) {
+    printf("ERROR: Failed to download release %s", tag);
+    return 1;
+  }
+
+}
+
 int run(int argc, const char **argv, int flags) {
-  assert(argc > 0);
+  if (argc < 1) {
+    printf("ERROR: Not enough arguments\n");
+    return 1;
+  }
 
   const char *path = argv[0];
   size_t jobs = 8;

@@ -216,7 +216,9 @@ enum gab_flags {
 
 // VERSION
 #define GAB_VERSION_MAJOR "0"
-#define GAB_VERSION_MINOR "1"
+#define GAB_VERSION_MINOR "0"
+#define GAB_VERSION_PATCH "1"
+#define GAB_VERSION_TAG GAB_VERSION_MAJOR "." GAB_VERSION_MINOR "." GAB_VERSION_PATCH
 
 // Message constants
 #define mGAB_LT "<"
@@ -344,6 +346,12 @@ static inline s_char s_char_tok(s_char str, uint64_t start, char ch) {
     cursor++;
 
   return (s_char){.data = str.data + start, .len = cursor - start};
+}
+
+static inline void v_char_spush(v_char* self, s_char slice) {
+  for (size_t i = 0; i < slice.len; i++) {
+    v_char_push(self, slice.data[i]);
+  }
 }
 
 #define LEN_CARRAY(a) (sizeof(a) / sizeof(a[0]))

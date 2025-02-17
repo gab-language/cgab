@@ -1,3 +1,9 @@
 [submodule "vendor/jsmn"]
 	path = vendor/jsmn
 	url = https://github.com/zserge/jsmn
+[submodule "vendor/curl"]
+	path = vendor/curl
+	url = https://github.com/curl/curl.git
+[submodule "vendor/zip"]
+	path = vendor/zip
+	url = https://github.com/nih-at/libzip.git

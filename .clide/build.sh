@@ -17,7 +17,7 @@ export winflags="-DGAB_PLATFORM_WIN"
 function build {
   echo "Building $1"
 
-  flags="-std=c23 -fPIC -Wall --target=$1 -Iinclude -Ivendor -Lbuild-$1 $GAB_CCFLAGS"
+  flags="-std=c23 -fPIC -Wall --target=$1 -Iinclude -Ivendor -Lbuild-$1 -DGAB_TARGET_TRIPLE=\"$1\" $GAB_CCFLAGS"
 
   platform=""
   mod_fileending=""

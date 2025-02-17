@@ -1057,14 +1057,14 @@ typedef struct {
 } resource;
 
 a_gab_value *gab_use_dynlib(struct gab_triple gab, const char *path) {
-  gab_dynlib lib = gab_libopen(path);
+  gab_osdynlib lib = gab_oslibopen(path);
 
   if (lib == nullptr) {
     gab_value reason = gab_string(gab, strerror(errno));
     return gab_fpanic(gab, "Failed to load module: $", reason);
   }
 
-  module_f mod = gab_libfind(lib, GAB_DYNLIB_MAIN);
+  module_f mod = gab_oslibfind(lib, GAB_DYNLIB_MAIN);
 
   a_gab_value *res = mod(gab);
 
