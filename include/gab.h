@@ -2524,6 +2524,12 @@ gab_impl(struct gab_triple gab, gab_value message, gab_value receiver) {
   /* Check for a default, generic implementation */
   /* Previously, this had a higher priority than
    * record properties - I don't remember why I made that change.
+   *
+   * Ahh, I remember the issue. The `Messages.specializations` record
+   * is impossible to do anything with, because it is a record with a key
+   * for every message in the system.
+   *
+   * .
    */
   type = gab_undefined;
   spec = gab_thisfibmsgat(gab, message, type);

@@ -11,6 +11,15 @@ a_gab_value *gab_msglib_message(struct gab_triple gab, uint64_t argc,
   return nullptr;
 }
 
+a_gab_value *gab_msglib_to_string(struct gab_triple gab, uint64_t argc,
+                                gab_value argv[static argc]) {
+  gab_value msg = gab_arg(0);
+
+  gab_vmpush(gab_vm(gab), gab_msgtostr(msg));
+
+  return nullptr;
+}
+
 a_gab_value *gab_msglib_specs(struct gab_triple gab, uint64_t argc,
                               gab_value argv[static argc]) {
   if (argc == 1) {
@@ -195,19 +204,29 @@ GAB_DYNLIB_MAIN_FN {
 
   gab_def(gab,
           {
-              gab_message(gab, "def!"),
+              gab_message(gab, "specializations"),
               mod,
+              gab_snative(gab, "specializations", gab_msglib_specs),
+          },
+          {
+              gab_message(gab, "def!"),
+              t,
               gab_snative(gab, "def!", gab_msglib_def),
           },
           {
               gab_message(gab, "defcase!"),
-              mod,
+              t,
               gab_snative(gab, "defcase!", gab_msglib_case),
           },
           {
               gab_message(gab, "defmodule!"),
-              mod,
+              gab_type(gab, kGAB_RECORD),
               gab_snative(gab, "defmodule!", gab_msglib_module),
+          },
+          {
+              gab_message(gab, "strings\\into"),
+              t,
+              gab_snative(gab, "strings\\into", gab_msglib_to_string),
           },
           {
               gab_message(gab, "has?"),
@@ -215,18 +234,13 @@ GAB_DYNLIB_MAIN_FN {
               gab_snative(gab, "has?", gab_msglib_has),
           },
           {
-              gab_message(gab, "specs"),
-              mod,
-              gab_snative(gab, "specs", gab_msglib_specs),
-          },
-          {
               gab_message(gab, "at"),
-              mod,
+              t,
               gab_snative(gab, "at", gab_msglib_at),
           },
           {
               gab_message(gab, "put"),
-              mod,
+              t,
               gab_snative(gab, "put", gab_msglib_put),
           });
 

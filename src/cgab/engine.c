@@ -1060,8 +1060,7 @@ a_gab_value *gab_use_dynlib(struct gab_triple gab, const char *path) {
   gab_osdynlib lib = gab_oslibopen(path);
 
   if (lib == nullptr) {
-    gab_value reason = gab_string(gab, strerror(errno));
-    return gab_fpanic(gab, "Failed to load module: $", reason);
+    return gab_fpanic(gab, "Failed to load module '$'", gab_string(gab, path));
   }
 
   module_f mod = gab_oslibfind(lib, GAB_DYNLIB_MAIN);
@@ -1154,12 +1153,12 @@ resource resources[] = {
     },
     {
         .prefix = "./",
-        .suffix = "." GAB_DYNLIB_FILEENDING,
+        .suffix = GAB_DYNLIB_FILEENDING,
         .handler = gab_use_dynlib,
     },
     {
         .prefix = "./mod/",
-        .suffix = "." GAB_DYNLIB_FILEENDING,
+        .suffix = GAB_DYNLIB_FILEENDING,
         .handler = gab_use_dynlib,
     },
     // Installed resources
@@ -1170,7 +1169,7 @@ resource resources[] = {
     },
     {
         .prefix = GAB_PREFIX "/gab/modules/",
-        .suffix = "." GAB_DYNLIB_FILEENDING,
+        .suffix = GAB_DYNLIB_FILEENDING,
         .handler = gab_use_dynlib,
     },
     {

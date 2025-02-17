@@ -70,7 +70,7 @@
 
 #define gab_osdynlib void *
 #define GAB_DYNLIB_FILEENDING ".so"
-#define gab_oslibopen(path) dlopen(path, RTLD_LAZY)
+#define gab_oslibopen(path) dlopen(path, RTLD_NOW)
 #define gab_oslibfind(dynlib, name) dlsym(dynlib, name)
 
 static const char* gab_osprefix()  {

@@ -41,9 +41,9 @@ GAB_DYNLIB_MAIN_FN {
 
   gab_def(gab,
           {
-              gab_message(gab, "close"),
+              gab_message(gab, "close!"),
               t,
-              gab_snative(gab, "close", gab_chnlib_close),
+              gab_snative(gab, "close!", gab_chnlib_close),
           },
           {
               gab_message(gab, "closed?"),

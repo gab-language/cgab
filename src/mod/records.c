@@ -377,9 +377,9 @@ GAB_DYNLIB_MAIN_FN {
               gab_snative(gab, "seq\\next", gab_reclib_seqnext),
           },
           {
-              gab_message(gab, "seq\\next"),
+              gab_message(gab, "seq\\init"),
               t,
-              gab_snative(gab, "seq\\next", gab_reclib_seqinit),
+              gab_snative(gab, "seq\\init", gab_reclib_seqinit),
           });
 
   return a_gab_value_one(gab_ok);

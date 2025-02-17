@@ -20,17 +20,17 @@ function build {
   flags="-std=c23 -fPIC -Wall --target=$1 -Iinclude -Ivendor -Lbuild-$1 -DGAB_TARGET_TRIPLE=\"$1\" $GAB_CCFLAGS"
 
   platform=""
-  mod_fileending=""
+  dynlib_fileending=""
 
   if [[ "$1" =~ "linux" ]]; then
     platform="$unixflags"
-    mod_fileending=".so"
+    dynlib_fileending=".so"
   elif [[ "$1" =~ "mac" ]]; then
     platform="$unixflags"
-    mod_fileending=".dylib"
+    dynlib_fileending=".dylib"
   elif [[ "$1" =~ "windows" ]]; then
     platform="$winflags"
-    mod_fileending=".dll"
+    dynlib_fileending=".dll"
   fi
 
   echo "   $flags $platform"
@@ -46,21 +46,37 @@ function build {
   echo "   Done!"
   echo "   $(file "build-$1/libcgab.a")"
 
+  echo "   Building dynamic cgab library..."
+  zig cc $flags $platform -shared -o "build-$1/libcgab$dynlib_fileending" build-"$1"/*.o || exit 1
+  echo "   Done!"
+  echo "   $(file "build-$1/libcgab$dynlib_fileending")"
+
   echo "   Building gab..."
-  zig cc $flags $platform -o "build-$1/gab" -lcgab src/gab/*.c || exit 1
+  # Its important to link with cgab statically here. This is what
+  # allows users to download the released binaries and install everything
+  # they need from there.
+  #
+  # potentially need flag -rdynamic to export all libcgab symbols in the gab executable.
+  # Locally on linux, this doesn't seem to be a problem - loading shared objects at runtime
+  # doesn't require a second libcgab.so linked dynamically at runtime.
+  # Verified this with:
+  # strace -e trace=open,openat ./build-x86_64-linux-gnu/gab run test
+  zig cc $flags $platform -o "build-$1/gab" "build-$1/libcgab.a" src/gab/*.c || exit 1
   echo "   Done!"
   echo "   $(file "build-$1/gab")"
 
   mkdir -p "build-$1/mod"
 
   # Compile all src/mod c files into shared objects
+  # These modules link *dynamically* to libcgab - since they are loaded at runtime in gab process that already have all the necessary symbols.
+  # Linking statically here would be redundant.
   echo "    Building shared libraries..."
   for file in src/mod/*.c; do
     name=$(basename "$file" ".c")
     echo "       Building gab$name..."
-    zig cc -c $flags $platform -o "build-$1/mod/$name$mod_fileending" "$file" || exit 1
+    zig cc -shared $flags $platform -lcgab -o "build-$1/mod/c$name$dynlib_fileending" "$file" || exit 1
     echo "       Done!"
-    echo "       $(file "build-$1/mod/$name$mod_fileending")"
+    echo "       $(file "build-$1/mod/c$name$dynlib_fileending")"
   done
   echo "   Done!"
 
