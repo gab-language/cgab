@@ -1060,7 +1060,12 @@ a_gab_value *gab_use_dynlib(struct gab_triple gab, const char *path) {
   gab_osdynlib lib = gab_oslibopen(path);
 
   if (lib == nullptr) {
+#ifdef GAB_PLATFORM_UNIX
+    return gab_fpanic(gab, "Failed to load module '$': $",
+                      gab_string(gab, path), gab_string(gab, dlerror()));
+#else
     return gab_fpanic(gab, "Failed to load module '$'", gab_string(gab, path));
+#endif
   }
 
   module_f mod = gab_oslibfind(lib, GAB_DYNLIB_MAIN);
