@@ -151,10 +151,10 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: 'gab-${{ matrix.build_type }}-${{ matrix.target }}-modules'
-          path: 'modules'
+          path: 'mod'
 
       - name: Create Module Archive
-        run: tar -cvzf 'gab-${{ matrix.build_type }}-${{ matrix.target }}-modules' modules/*
+        run: tar -cvzf 'gab-${{ matrix.build_type }}-${{ matrix.target }}-modules' mod/*
       
       - name: Rename binary
         run: mv gab 'gab-${{ matrix.build_type }}-${{ matrix.target }}'

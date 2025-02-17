@@ -42,7 +42,11 @@ LINKAGE void METHOD(copy)(TYPENAME *self, TYPENAME *other) {
   memcpy(self->data, other->data, other->len * sizeof(T));
 }
 
-LINKAGE void METHOD(destroy)(TYPENAME *self) { free(self->data); }
+LINKAGE void METHOD(destroy)(TYPENAME *self) {
+  free(self->data);
+  self->cap = 0;
+  self->len = 0;
+}
 
 LINKAGE size_t METHOD(set)(TYPENAME *self, size_t index, T value) {
   assert(index < self->len);
@@ -74,7 +78,7 @@ LINKAGE T METHOD(val_at)(TYPENAME *self, size_t index) {
   return self->data[index];
 }
 
-LINKAGE void METHOD(cap)(TYPENAME* self, size_t cap) {
+LINKAGE void METHOD(cap)(TYPENAME *self, size_t cap) {
   if (self->cap < cap) {
     self->data = GROW(T, self->data, MAX(8, cap));
     self->cap = cap;

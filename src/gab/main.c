@@ -277,8 +277,7 @@ int install(int argc, const char **argv, int flags) {
   v_char_spush(&location, s_char_cstr(location_prefix));
   v_char_spush(&location, s_char_cstr("/gab/"));
   v_char_spush(&location, s_char_cstr(tag));
-  v_char_push(&location, '/');
-  v_char_spush(&location, s_char_cstr("gab"));
+  v_char_spush(&location, s_char_cstr("/gab"));
   v_char_push(&location, '\0');
 
   // Fetch release binary
@@ -300,8 +299,7 @@ int install(int argc, const char **argv, int flags) {
   v_char_spush(&location, s_char_cstr(location_prefix));
   v_char_spush(&location, s_char_cstr("/gab/"));
   v_char_spush(&location, s_char_cstr(tag));
-  v_char_push(&location, '/');
-  v_char_spush(&location, s_char_cstr("gab/mod/"));
+  v_char_spush(&location, s_char_cstr("/modules"));
   v_char_push(&location, '\0');
 
   // Fetch release modules
@@ -315,8 +313,24 @@ int install(int argc, const char **argv, int flags) {
     return 1;
   }
 
-  res = gab_osproc("tar", "-xvzf", "");
+  v_char_spush(&location, s_char_cstr(location_prefix));
+  v_char_spush(&location, s_char_cstr("/gab/"));
+  v_char_spush(&location, s_char_cstr(tag));
+  v_char_spush(&location, s_char_cstr("/modules"));
+  v_char_push(&location, '\0');
 
+  v_char_spush(&url, s_char_cstr(location_prefix));
+  v_char_spush(&url, s_char_cstr("/gab/"));
+  v_char_spush(&url, s_char_cstr(tag));
+  v_char_push(&url, '/');
+  v_char_push(&url, '\0');
+
+  res = gab_osproc("tar", "-xzf", location.data, "-C", url.data);
+
+  if (res) {
+    printf("ERROR: Failed to download release %s", tag);
+    return 1;
+  }
 }
 
 int run(int argc, const char **argv, int flags) {
