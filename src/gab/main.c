@@ -281,7 +281,7 @@ int install(int argc, const char **argv, int flags) {
   v_char_push(&location, '\0');
 
   // Fetch release binary
-  int res = gab_osproc("curl", "-L", "-o", location.data, url.data);
+  int res = gab_osproc("curl", "-L", "-#", "-o", location.data, url.data);
 
   v_char_destroy(&location);
   v_char_destroy(&url);
@@ -303,7 +303,7 @@ int install(int argc, const char **argv, int flags) {
   v_char_push(&location, '\0');
 
   // Fetch release modules
-  res = gab_osproc("curl", "-L", "-o", location.data, url.data);
+  res = gab_osproc("curl", "-L", "-#", "-o", location.data, url.data);
 
   v_char_destroy(&location);
   v_char_destroy(&url);
@@ -325,7 +325,7 @@ int install(int argc, const char **argv, int flags) {
   v_char_push(&url, '/');
   v_char_push(&url, '\0');
 
-  res = gab_osproc("tar", "-xzf", location.data, "-C", url.data);
+  res = gab_osproc("tar", "xzf", location.data, "-C", url.data);
 
   if (res) {
     printf("ERROR: Failed to download release %s", tag);

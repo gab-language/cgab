@@ -54,7 +54,7 @@
 
 #define gab_osproc(cmd, ...)                                                   \
   ({                                                                           \
-    const char *_args[] = {__VA_ARGS__};                                       \
+    char *_args[] = {__VA_ARGS__};                                       \
     gab_nosproc(cmd, sizeof(_args) / sizeof(const char *), _args);             \
   })
 
@@ -73,8 +73,8 @@
 #define gab_oslibopen(path) dlopen(path, RTLD_NOW)
 #define gab_oslibfind(dynlib, name) dlsym(dynlib, name)
 
-static const char* gab_osprefix()  {
-  char* home = getenv("HOME");
+static const char *gab_osprefix() {
+  char *home = getenv("HOME");
 
   if (!home)
     return nullptr;
@@ -82,57 +82,62 @@ static const char* gab_osprefix()  {
   return home;
 }
 
-static int gab_nosproc(const char *cmd, size_t nargs, const char *args[]) {
+static int gab_nosproc(char *cmd, size_t nargs, const char *args[]) {
   pid_t pid = fork();
-
-  printf("PID: %d\n", pid);
 
   if (pid < 0)
     return 1;
 
   if (pid > 0) {
     for (;;) {
-      printf("WAITING\n");
       int status = 0;
       if (waitpid(pid, &status, 0) < 0) {
         printf("[ERROR]: Could not wait for child. %s\n", strerror(errno));
         return 1;
       }
 
-      if (WIFEXITED(status))
-        return WEXITSTATUS(status);
+      if (WIFEXITED(status)) {
+        int code = WEXITSTATUS(status);
+        /*printf("[INFO]: %s completed with status code %d\n", cmd, code);*/
+        return code;
+      }
 
-      if (WIFSIGNALED(status))
-        return WTERMSIG(status);
+      if (WIFSIGNALED(status)) {
+        int code = WTERMSIG(status);
+        /*printf("[INFO]: %s exited with status code %d\n", cmd, code);*/
+        return code;
+      }
     }
   }
 
   // This implicitly appends a null-value, as it is initialized to zero.
-  char *cmd_args[nargs + 1] = {};
+  char *cmd_args[nargs + 2] = {};
 
-  memcpy(cmd_args, args, sizeof(const char *) * nargs);
+  cmd_args[0] = cmd;
+  memcpy(cmd_args + 1, args, sizeof(const char *) * nargs);
+  cmd_args[nargs + 1] = nullptr;
 
   printf("[CMD]: %s", cmd);
-  for (size_t i = 0; i < nargs; i++) {
+  for (size_t i = 1; i < nargs + 1; i++) {
     printf(" %s", cmd_args[i]);
   }
   printf("\n");
 
   int code = execvp(cmd, cmd_args);
 
-  printf("%s exited with code %d\n", cmd, code);
+  printf("Failed to execute command\n");
   if (code < 0)
     printf("Error: %s\n", strerror(errno));
 
-  return code;
+  return 1;
 }
 
 #elifdef GAB_PLATFORM_WIN
 #include <io.h>
+#include <shlobj.h>
 #include <stdio.h>
 #include <tchar.h>
 #include <windows.h>
-#include <shlobj.h>
 
 #define gab_fisatty(f) _isatty(_fileno(f))
 
