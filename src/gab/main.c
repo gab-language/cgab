@@ -278,6 +278,7 @@ int install(int argc, const char **argv, int flags) {
     return 1;
   }
 
+  printf("[gab]: resolved installation prefix: %s.\n", location_prefix);
 
   v_char location = {};
   v_char_spush(&location, s_char_cstr(location_prefix));
@@ -329,6 +330,8 @@ int install(int argc, const char **argv, int flags) {
     printf("ERROR: Failed to download release %s", tag);
     return 1;
   }
+
+  return 0;
 }
 
 int run(int argc, const char **argv, int flags) {

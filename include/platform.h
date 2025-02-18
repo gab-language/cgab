@@ -83,6 +83,7 @@ static const char *gab_osprefix() {
 
   v_char_spush(&str, s_char_cstr(home));
   v_char_spush(&str, s_char_cstr("/gab/" GAB_VERSION_TAG));
+  v_char_push(&str, '\0');
 
   return str.data;
 }
@@ -160,20 +161,19 @@ static const char *gab_osprefix() {
     return nullptr;
 
   mbstate_t state = {0};
-  size_t length = mbsrtowcs(NULL, &path, 0, &state);
+  size_t length = wcsrtombs(NULL, &path, 0, &state);
 
-  if (length == 0)
+  if (length == -1)
     return nullptr;
 
-  char *buffer[length];
-  mbsrtowcs(buffer, &path, length, &state);
-
-  CoTaskMemFree(path);
+  char *buffer[length + 1];
+  wcsrtombs(buffer, &path, length, &state);
 
   v_char str = {0};
 
   v_char_spush(&str, s_char_cstr(buffer));
   v_char_spush(&str, s_char_cstr("/gab/" GAB_VERSION_TAG));
+  v_char_push(&str, '\0');
 
   return str.data;
 }
