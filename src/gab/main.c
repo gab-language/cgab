@@ -22,7 +22,7 @@ void run_repl(int flags) {
   gab_destroy(gab);
 }
 
-void run_string(const char *string, int flags, size_t jobs) {
+int run_string(const char *string, int flags, size_t jobs) {
   struct gab_triple gab = gab_create((struct gab_create_argt){
       .flags = flags,
       .jobs = jobs,
@@ -31,17 +31,29 @@ void run_string(const char *string, int flags, size_t jobs) {
   // This is a weird case where we actually want to include the null terminator
   s_char src = s_char_create(string, strlen(string) + 1);
 
-  gab_exec(gab, (struct gab_exec_argt){
-                    .name = MAIN_MODULE,
-                    .source = (char *)src.data,
-                    .flags = flags,
-                });
+  a_gab_value *result = gab_exec(gab, (struct gab_exec_argt){
+                                          .name = MAIN_MODULE,
+                                          .source = (char *)src.data,
+                                          .flags = flags,
+                                      });
+
+  int exit_code = 1;
+
+  if (result) {
+
+    if (result->len)
+      if (result->data[0] == gab_ok)
+        exit_code = 1;
+
+    free(result);
+  }
 
   gab_destroy(gab);
-  return;
+
+  return exit_code;
 }
 
-void run_file(const char *path, int flags, size_t jobs) {
+int run_file(const char *path, int flags, size_t jobs) {
   struct gab_triple gab = gab_create((struct gab_create_argt){
       .flags = flags,
       .jobs = jobs,
@@ -49,11 +61,20 @@ void run_file(const char *path, int flags, size_t jobs) {
 
   a_gab_value *result = gab_suse(gab, path);
 
-  if (result)
+  int exit_code = 1;
+
+  if (result) {
+
+    if (result->len)
+      if (result->data[0] == gab_ok)
+        exit_code = 1;
+
     free(result);
+  }
 
   gab_destroy(gab);
-  return;
+
+  return exit_code;
 }
 
 struct option {
@@ -355,17 +376,13 @@ int run(int argc, const char **argv, int flags) {
     path = argv[1];
   }
 
-  run_file(path, flags, jobs);
-
-  return 0;
+  return run_file(path, flags, jobs);
 }
 
 int exec(int argc, const char **argv, int flags) {
   assert(argc > 0);
 
-  run_string(argv[0], flags, 8);
-
-  return 0;
+  return run_string(argv[0], flags, 8);
 }
 
 int repl(int argc, const char **argv, int flags) {
