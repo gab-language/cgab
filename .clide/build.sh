@@ -19,21 +19,25 @@ function build {
 
   platform=""
   dynlib_fileending=""
+  platform_bundle=""
 
   if [[ "$1" =~ "linux" ]]; then
     platform="$unixflags"
+    platform_bundle="-shared"
     dynlib_fileending=".so"
   elif [[ "$1" =~ "mac" ]]; then
     platform="$unixflags"
-    dynlib_fileending=".dylib"
+    platform_bundle="-shared"
+    dynlib_fileending=".so"
   elif [[ "$1" =~ "windows" ]]; then
     platform="$winflags"
     dynlib_fileending=".dll"
+    platform_bundle="-shared"
   fi
 
   flags="-std=c23 -fPIC -Wall --target=$1 -Iinclude -Ivendor -Lbuild-$1 -DGAB_TARGET_TRIPLE=\"$1\" -DGAB_DYNLIB_FILEENDING=\"$dynlib_fileending\" $GAB_CCFLAGS"
 
-  echo "   $flags $platform"
+  echo "   $flags $platform ($platform_bundle)"
 
   echo "   Building static cgab library..."
   for file in src/cgab/*.c; do
@@ -43,6 +47,7 @@ function build {
     echo "      $(file "build-$1/cgab$name.o")"
   done
   zig ar rcs "build-$1/libcgab.a" build-"$1"/*.o
+  zig ranlib "build-$1/libcgab.a"
   echo "   Done!"
   echo "   $(file "build-$1/libcgab.a")"
 
@@ -53,8 +58,8 @@ function build {
   #
   # need flag -rdynamic to export all libcgab symbols in the gab executable.
   # This way they are available to gab modules written in c which are loaded at runtime.
-  # any .dll or .so or .dylib modules, ie: everything built in the following step
-  zig cc $flags $platform -Wl,--export-dynamic -o "build-$1/gab" "build-$1/libcgab.a" src/gab/*.c || exit 1
+  # any .dll or .so or .so modules, ie: everything built in the following step
+  zig cc $flags $platform -rdynamic -o "build-$1/gab" "build-$1/libcgab.a" src/gab/*.c || exit 1
   echo "   Done!"
   echo "   $(file "build-$1/gab")"
 
@@ -73,7 +78,7 @@ function build {
   for file in src/mod/*.c; do
     name=$(basename "$file" ".c")
     echo "       Building gab$name..."
-    zig cc -shared -Wl,-undefined,dynamic_lookup $flags $platform -o "build-$1/mod/c$name$dynlib_fileending" "$file" || exit 1
+    zig cc $platform_bundle -Wl,-undefined,dynamic_lookup $flags $platform -o "build-$1/mod/c$name$dynlib_fileending" "$file" || exit 1
     echo "       Done!"
     echo "       $(file "build-$1/mod/c$name$dynlib_fileending")"
   done

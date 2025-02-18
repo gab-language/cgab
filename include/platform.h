@@ -164,7 +164,7 @@ static const char *gab_osprefix() {
   if (length == -1)
     return nullptr;
 
-  char *buffer[length + 1];
+  char buffer[length + 1];
   wcsrtombs(buffer, &path, length, &state);
 
   v_char str = {0};
