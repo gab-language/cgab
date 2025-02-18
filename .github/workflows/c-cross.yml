@@ -105,7 +105,7 @@ jobs:
         run: ls -R .
 
       - name: Make the binary executable (*nix)
-        if: ${{ contains(matrix.target, 'mac') || contains(matrix.target, llinux') }}
+        if: ${{ contains(matrix.target, 'mac') || contains(matrix.target, 'linux') }}
         run: chmod +x gab
 
       - name: Make the binary executable (win)
