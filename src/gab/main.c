@@ -43,7 +43,7 @@ int run_string(const char *string, int flags, size_t jobs) {
 
     if (result->len)
       if (result->data[0] == gab_ok)
-        exit_code = 1;
+        exit_code = 0;
 
     free(result);
   }
@@ -67,7 +67,7 @@ int run_file(const char *path, int flags, size_t jobs) {
 
     if (result->len)
       if (result->data[0] == gab_ok)
-        exit_code = 1;
+        exit_code = 0;
 
     free(result);
   }
