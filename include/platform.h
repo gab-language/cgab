@@ -142,6 +142,7 @@ static int gab_nosproc(char *cmd, size_t nargs, char *args[]) {
 #include <stdio.h>
 #include <tchar.h>
 #include <windows.h>
+#include <wchar.h>
 
 #define gab_fisatty(f) _isatty(_fileno(f))
 
@@ -153,13 +154,28 @@ static int gab_nosproc(char *cmd, size_t nargs, char *args[]) {
 static const char *gab_osprefix() {
   PWSTR path = NULL;
 
-  HRESULT status =
-      SHGetKnownFolderPath(&FOLDERID_LocalAppData, 0, NULL, &path);
+  HRESULT status = SHGetKnownFolderPath(&FOLDERID_LocalAppData, 0, NULL, &path);
 
-  if (SUCCEEDED(status))
-    return path;
+  if (!SUCCEEDED(status))
+    return nullptr;
 
-  return nullptr;
+  mbstate_t state = {0};
+  size_t length = mbsrtowcs(NULL, &path, 0, &state);
+
+  if (length == 0)
+    return nullptr;
+
+  char *buffer[length];
+  mbsrtowcs(buffer, &path, length, &state);
+
+  CoTaskMemFree(path);
+
+  v_char str = {0};
+
+  v_char_spush(&str, s_char_cstr(buffer));
+  v_char_spush(&str, s_char_cstr("/gab/" GAB_VERSION_TAG));
+
+  return str.data;
 }
 
 static int gab_nosproc(char *cmd, size_t nargs, char *args[]) {
