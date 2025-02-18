@@ -273,10 +273,14 @@ int install(int argc, const char **argv, int flags) {
 
   const char *location_prefix = gab_osprefix();
 
+  if (location_prefix == nullptr) {
+    printf("[ERROR]: Could not determine install prefix.\n");
+    return 1;
+  }
+
+
   v_char location = {};
   v_char_spush(&location, s_char_cstr(location_prefix));
-  v_char_spush(&location, s_char_cstr("/gab/"));
-  v_char_spush(&location, s_char_cstr(tag));
   v_char_spush(&location, s_char_cstr("/gab"));
   v_char_push(&location, '\0');
 
@@ -297,8 +301,6 @@ int install(int argc, const char **argv, int flags) {
   v_char_push(&url, '\0');
 
   v_char_spush(&location, s_char_cstr(location_prefix));
-  v_char_spush(&location, s_char_cstr("/gab/"));
-  v_char_spush(&location, s_char_cstr(tag));
   v_char_spush(&location, s_char_cstr("/modules"));
   v_char_push(&location, '\0');
 
@@ -314,14 +316,10 @@ int install(int argc, const char **argv, int flags) {
   }
 
   v_char_spush(&location, s_char_cstr(location_prefix));
-  v_char_spush(&location, s_char_cstr("/gab/"));
-  v_char_spush(&location, s_char_cstr(tag));
   v_char_spush(&location, s_char_cstr("/modules"));
   v_char_push(&location, '\0');
 
   v_char_spush(&url, s_char_cstr(location_prefix));
-  v_char_spush(&url, s_char_cstr("/gab/"));
-  v_char_spush(&url, s_char_cstr(tag));
   v_char_push(&url, '/');
   v_char_push(&url, '\0');
 

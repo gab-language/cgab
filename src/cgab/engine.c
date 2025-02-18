@@ -535,8 +535,10 @@ struct gab_triple gab_create(struct gab_create_argt args) {
     }
   }
 
-  if (!(gab.flags & fGAB_ENV_EMPTY))
-    gab_suse(gab, "core");
+  if (!(gab.flags & fGAB_ENV_EMPTY)) {
+    if (gab_suse(gab, "core") == nullptr)
+      printf("[Error]: Failed to find core library\n");
+  }
 
   return gab_gcunlock(gab), gab;
 }
@@ -1130,83 +1132,68 @@ a_gab_value *gab_use_source(struct gab_triple gab, const char *path) {
   return final;
 }
 
-#ifndef GAB_PREFIX
-#define GAB_PREFIX "."
-#endif
-
 resource resources[] = {
-    // Local resources
     {
-        .prefix = "./mod/",
+        // [PREFIX]/<module>.gab
+        .prefix = "/",
         .suffix = ".gab",
         .handler = gab_use_source,
     },
     {
-        .prefix = "./",
-        .suffix = "/mod/mod.gab",
-        .handler = gab_use_source,
-    },
-    {
-        .prefix = "./",
+        // [PREFIX]/mod/<module>.gab
+        .prefix = "/mod/",
         .suffix = ".gab",
         .handler = gab_use_source,
     },
     {
-        .prefix = "./",
+        // [PREFIX]/mod/<module>/mod.gab
+        .prefix = "/",
         .suffix = "/mod.gab",
         .handler = gab_use_source,
     },
     {
-        .prefix = "./",
+        // [PREFIX]/<module>.[so | dylib | dll]
+        .prefix = "/",
         .suffix = GAB_DYNLIB_FILEENDING,
         .handler = gab_use_dynlib,
     },
     {
-        .prefix = "./mod/",
+        // [PREFIX]/mod/<module>.[so | dylib | dll]
+        .prefix = "/mod/",
         .suffix = GAB_DYNLIB_FILEENDING,
         .handler = gab_use_dynlib,
-    },
-    // Installed resources
-    {
-        .prefix = GAB_PREFIX "/gab/modules/",
-        .suffix = ".gab",
-        .handler = gab_use_source,
-    },
-    {
-        .prefix = GAB_PREFIX "/gab/modules/",
-        .suffix = GAB_DYNLIB_FILEENDING,
-        .handler = gab_use_dynlib,
-    },
-    {
-        .prefix = GAB_PREFIX "/gab/modules/",
-        .suffix = "/mod.gab",
-        .handler = gab_use_source,
-    },
-    {
-        .prefix = GAB_PREFIX "/gab/modules/",
-        .suffix = "/mod/mod.gab",
-        .handler = gab_use_source,
     },
 };
 
 a_char *match_resource(resource *res, const char *name, uint64_t len) {
-  const uint64_t p_len = strlen(res->prefix);
-  const uint64_t s_len = strlen(res->suffix);
-  const uint64_t total_len = p_len + len + s_len + 1;
+  const char *roots[] = {".", gab_osprefix()};
 
-  char buffer[total_len];
+  for (int i = 0; i < LEN_CARRAY(roots); i++) {
+    if (roots[i] == nullptr)
+      continue;
 
-  memcpy(buffer, res->prefix, p_len);
-  memcpy(buffer + p_len, name, len);
-  memcpy(buffer + p_len + len, res->suffix, s_len + 1);
+    const uint64_t r_len = strlen(roots[i]);
+    const uint64_t p_len = strlen(res->prefix);
+    const uint64_t s_len = strlen(res->suffix);
+    const uint64_t total_len = r_len + p_len + len + s_len + 1;
 
-  FILE *f = fopen(buffer, "r");
+    char buffer[total_len];
 
-  if (!f)
-    return nullptr;
+    memcpy(buffer, roots[i], r_len);
+    memcpy(buffer + r_len, res->prefix, p_len);
+    memcpy(buffer + r_len + p_len, name, len);
+    memcpy(buffer + r_len + p_len + len, res->suffix, s_len + 1);
 
-  fclose(f);
-  return a_char_create(buffer, total_len);
+    FILE *f = fopen(buffer, "r");
+
+    if (!f)
+      continue;
+
+    fclose(f);
+    return a_char_create(buffer, total_len);
+  }
+
+  return nullptr;
 }
 
 a_gab_value *gab_suse(struct gab_triple gab, const char *name) {

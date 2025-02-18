@@ -54,8 +54,8 @@
 
 #define gab_osproc(cmd, ...)                                                   \
   ({                                                                           \
-    char *_args[] = {__VA_ARGS__};                                       \
-    gab_nosproc(cmd, sizeof(_args) / sizeof(const char *), _args);             \
+    char *_args[] = {__VA_ARGS__};                                             \
+    gab_nosproc(cmd, sizeof(_args) / sizeof(char *), _args);                   \
   })
 
 #ifdef GAB_PLATFORM_UNIX
@@ -79,10 +79,15 @@ static const char *gab_osprefix() {
   if (!home)
     return nullptr;
 
-  return home;
+  v_char str = {0};
+
+  v_char_spush(&str, s_char_cstr(home));
+  v_char_spush(&str, s_char_cstr("/gab/" GAB_VERSION_TAG));
+
+  return str.data;
 }
 
-static int gab_nosproc(char *cmd, size_t nargs, const char *args[]) {
+static int gab_nosproc(char *cmd, size_t nargs, char *args[]) {
   pid_t pid = fork();
 
   if (pid < 0)
@@ -117,17 +122,16 @@ static int gab_nosproc(char *cmd, size_t nargs, const char *args[]) {
   memcpy(cmd_args + 1, args, sizeof(const char *) * nargs);
   cmd_args[nargs + 1] = nullptr;
 
-  printf("[CMD]: %s", cmd);
-  for (size_t i = 1; i < nargs + 1; i++) {
-    printf(" %s", cmd_args[i]);
-  }
-  printf("\n");
+  /*printf("[CMD]: %s", cmd);*/
+  /*for (size_t i = 1; i < nargs + 1; i++) {*/
+  /*  printf(" %s", cmd_args[i]);*/
+  /*}*/
+  /*printf("\n");*/
 
   int code = execvp(cmd, cmd_args);
 
-  printf("Failed to execute command\n");
   if (code < 0)
-    printf("Error: %s\n", strerror(errno));
+    printf("[Error]: %s\n", strerror(errno));
 
   return 1;
 }
@@ -150,7 +154,7 @@ static const char *gab_osprefix() {
   PWSTR path = NULL;
 
   HRESULT status =
-      SHGetKnownFolderPath(&FOLDERID_AppDataProgramData, 0, NULL, &path);
+      SHGetKnownFolderPath(&FOLDERID_LocalAppData, 0, NULL, &path);
 
   if (SUCCEEDED(status))
     return path;
@@ -158,7 +162,7 @@ static const char *gab_osprefix() {
   return nullptr;
 }
 
-static int gab_nosproc(const char *cmd, size_t nargs, const char *args[]) {
+static int gab_nosproc(char *cmd, size_t nargs, char *args[]) {
   STARTUPINFO si;
   PROCESS_INFORMATION pi;
 
