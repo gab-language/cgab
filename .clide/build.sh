@@ -46,11 +46,6 @@ function build {
   echo "   Done!"
   echo "   $(file "build-$1/libcgab.a")"
 
-  echo "   Building dynamic cgab library..."
-  zig cc $flags $platform -shared -o "build-$1/libcgab$dynlib_fileending" build-"$1"/*.o || exit 1
-  echo "   Done!"
-  echo "   $(file "build-$1/libcgab$dynlib_fileending")"
-
   echo "   Building gab..."
   # Its important to link with cgab statically here. This is what
   # allows users to download the released binaries and install everything
@@ -59,7 +54,7 @@ function build {
   # need flag -rdynamic to export all libcgab symbols in the gab executable.
   # This way they are available to gab modules written in c which are loaded at runtime.
   # any .dll or .so or .dylib modules, ie: everything built in the following step
-  zig cc $flags $platform -rdynamic -o "build-$1/gab" "build-$1/libcgab.a" src/gab/*.c || exit 1
+  zig cc $flags $platform -Wl,--export-dynamic -o "build-$1/gab" "build-$1/libcgab.a" src/gab/*.c || exit 1
   echo "   Done!"
   echo "   $(file "build-$1/gab")"
 
@@ -78,7 +73,7 @@ function build {
   for file in src/mod/*.c; do
     name=$(basename "$file" ".c")
     echo "       Building gab$name..."
-    zig cc -shared -undefined dynamic_lookup $flags $platform -o "build-$1/mod/c$name$dynlib_fileending" "$file" || exit 1
+    zig cc -shared -Wl,-undefined,dynamic_lookup $flags $platform -o "build-$1/mod/c$name$dynlib_fileending" "$file" || exit 1
     echo "       Done!"
     echo "       $(file "build-$1/mod/c$name$dynlib_fileending")"
   done
