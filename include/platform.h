@@ -69,7 +69,6 @@
 #define gab_fisatty(f) isatty(fileno(f))
 
 #define gab_osdynlib void *
-#define GAB_DYNLIB_FILEENDING ".so"
 #define gab_oslibopen(path) dlopen(path, RTLD_NOW)
 #define gab_oslibfind(dynlib, name) dlsym(dynlib, name)
 
@@ -148,7 +147,6 @@ static int gab_nosproc(char *cmd, size_t nargs, char *args[]) {
 #define gab_fisatty(f) _isatty(_fileno(f))
 
 #define gab_osdynlib HMODULE
-#define GAB_DYNLIB_FILEENDING ".dll"
 #define gab_oslibopen(path) LoadLibrary(path)
 #define gab_oslibfind(dynlib, name) ((void *)GetProcAddress(dynlib, path))
 

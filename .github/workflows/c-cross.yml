@@ -88,6 +88,9 @@ jobs:
     needs: build_artifacts
 
     steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
       - name: Download Binary
         uses: actions/download-artifact@v4
         with:

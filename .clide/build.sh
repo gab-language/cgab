@@ -17,8 +17,6 @@ export winflags="-DGAB_PLATFORM_WIN"
 function build {
   echo "Building $1"
 
-  flags="-std=c23 -fPIC -Wall --target=$1 -Iinclude -Ivendor -Lbuild-$1 -DGAB_TARGET_TRIPLE=\"$1\" $GAB_CCFLAGS"
-
   platform=""
   dynlib_fileending=""
 
@@ -32,6 +30,8 @@ function build {
     platform="$winflags"
     dynlib_fileending=".dll"
   fi
+
+  flags="-std=c23 -fPIC -Wall --target=$1 -Iinclude -Ivendor -Lbuild-$1 -DGAB_TARGET_TRIPLE=\"$1\" -DGAB_DYNLIB_FILEENDING=\"$dynlib_fileending\" $GAB_CCFLAGS"
 
   echo "   $flags $platform"
 
