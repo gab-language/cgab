@@ -105,11 +105,11 @@ jobs:
         run: ls -R .
 
       - name: Make the binary executable (*nix)
-        if: ${{ contains(matrix.target, "mac") || contains(matrix.target, "linux") }}
+        if: ${{ contains(matrix.target, 'mac') || contains(matrix.target, llinux') }}
         run: chmod +x gab
 
       - name: Make the binary executable (win)
-        if: ${{ contains(matrix.target, "windows") }}
+        if: ${{ contains(matrix.target, 'windows') }}
         run: move gab gab.exe
 
       - name: Run tests
