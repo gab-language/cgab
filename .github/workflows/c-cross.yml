@@ -82,7 +82,7 @@ jobs:
             cmd: ./gab
           - os: windows-latest
             target: x86_64-windows-gnu
-            cmd: .\gab.exe
+            cmd: gab
           - os: macos-latest
             target: x86_64-macos-none
             cmd: ./gab
@@ -113,7 +113,7 @@ jobs:
         run: |
           move gab gab.exe
           where.exe "gab"
-          Get-Command "gab"
+          Get-Command ".\gab"
 
       - name: Log for debugging purposes
         run: ls -R .
