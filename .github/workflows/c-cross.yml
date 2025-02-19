@@ -79,10 +79,13 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-linux-gnu
+            cmd: ./gab
           - os: windows-latest
             target: x86_64-windows-gnu
+            cmd: .\gab
           - os: macos-latest
             target: x86_64-macos-none
+            cmd: ./gab
 
     runs-on: ${{ matrix.os }}
     needs: build_artifacts
@@ -113,7 +116,7 @@ jobs:
         run: ls -R .
 
       - name: Run tests
-        run: ./gab run test
+        run: ${{ matrix.cmd }} run test
 
   create_release:
     runs-on: ubuntu-latest

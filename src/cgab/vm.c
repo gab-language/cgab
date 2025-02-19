@@ -29,7 +29,7 @@ static handler handlers[] = {
 };
 
 #if cGAB_LOG_VM
-#define LOG(op) printf("OP_%s\n", gab_opcode_names[op]);
+#define LOG(op) printf("OP_%s: %p\n", gab_opcode_names[op], handlers[op]);
 #else
 #define LOG(op)
 #endif
