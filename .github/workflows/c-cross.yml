@@ -118,6 +118,9 @@ jobs:
       - name: Log for debugging purposes
         run: ls -R .
 
+      - name: Run Smallest Hello World
+        run: ${{ matrix.cmd }} exec -e "'hello world!'
+
       - name: Run Hello World
         run: ${{ matrix.cmd }} exec "'hello world!' .println"
 
