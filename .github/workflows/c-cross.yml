@@ -118,6 +118,9 @@ jobs:
       - name: Log for debugging purposes
         run: ls -R .
 
+      - name: Run Hello World
+        run: ${{ matrix.cmd }} exec "'hello world!' .println"
+
       - name: Run tests
         run: ${{ matrix.cmd }} run test
 
