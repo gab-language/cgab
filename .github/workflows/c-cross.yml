@@ -110,7 +110,10 @@ jobs:
 
       - name: Make the binary executable (win)
         if: ${{ contains(matrix.target, 'windows') }}
-        run: move gab gab.exe
+        run: |
+          move gab gab.exe
+          where.exe "gab"
+          Get-Command "gab"
 
       - name: Log for debugging purposes
         run: ls -R .
