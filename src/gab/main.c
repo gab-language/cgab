@@ -65,11 +65,14 @@ int run_file(const char *path, int flags, size_t jobs) {
 
   if (result) {
 
-    if (result->len)
+    if (result->len) {
       if (result->data[0] == gab_ok)
         exit_code = 0;
+    }
 
     free(result);
+  } else {
+    gab_fpanic(gab, "Module not found");
   }
 
   gab_destroy(gab);
