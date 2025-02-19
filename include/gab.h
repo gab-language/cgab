@@ -168,7 +168,7 @@ enum gab_kind {
                         : ((val) >> __GAB_TAGOFFSET) & __GAB_TAGMASK)))
 
 // Sneakily use a union to get around the type system
-GAB_API static inline double __gab_valtod(gab_value value) {
+GAB_API_INLINE double __gab_valtod(gab_value value) {
   union {
     uint64_t bits;
     double num;
@@ -177,7 +177,7 @@ GAB_API static inline double __gab_valtod(gab_value value) {
   return data.num;
 }
 
-GAB_API static inline gab_value __gab_dtoval(double value) {
+GAB_API_INLINE gab_value __gab_dtoval(double value) {
   union {
     uint64_t bits;
     double num;
@@ -567,9 +567,8 @@ struct gab_impl_rest {
  * @param receiver The receiver to find the implementation for.
  * @return The result of the implementation search.
  */
-GAB_API static inline struct gab_impl_rest gab_impl(struct gab_triple gab,
-                                                    gab_value message,
-                                                    gab_value receiver);
+GAB_API_INLINE struct gab_impl_rest
+gab_impl(struct gab_triple gab, gab_value message, gab_value receiver);
 
 /**
  * @brief Push any number of value onto the vm's internal stack.
@@ -939,8 +938,7 @@ GAB_API int gab_ndef(struct gab_triple gab, uint64_t len,
  * @param kind The type to retrieve the value for.
  * @return The runtime value corresponding to that type.
  */
-GAB_API static inline gab_value gab_type(struct gab_triple gab,
-                                         enum gab_kind kind);
+GAB_API_INLINE gab_value gab_type(struct gab_triple gab, enum gab_kind kind);
 
 /**
  * @brief If fGAB_SILENT is not set, print an error message to the engine's
@@ -961,7 +959,7 @@ GAB_API a_gab_value *gab_fpanic(struct gab_triple gab, const char *fmt, ...);
  * @returns An array of gab_values.
  */
 /*a_gab_value *gab_nfpanic(struct gab_triple gab, const char *fmt, uint64_t
- * argc, gab_value argv[static argc]);*/
+ * argc, gab_value argv[argc]);*/
 
 /**
  * @brief Panic the triple with an 'unexpected type' message.
@@ -984,9 +982,9 @@ GAB_API a_gab_value *gab_ptypemismatch(struct gab_triple gab, gab_value found,
  * @param texpected The expected type.
  * @returns false.
  */
-GAB_API static inline a_gab_value *gab_pktypemismatch(struct gab_triple gab,
-                                                      gab_value found,
-                                                      enum gab_kind texpected) {
+GAB_API_INLINE a_gab_value *gab_pktypemismatch(struct gab_triple gab,
+                                               gab_value found,
+                                               enum gab_kind texpected) {
   return gab_ptypemismatch(gab, found, gab_type(gab, texpected));
 };
 
@@ -1118,7 +1116,7 @@ GAB_API uint64_t gab_srcline(struct gab_src *src, uint64_t offset);
  * @param value The value.
  * @return The kind of the value.
  */
-GAB_API static inline enum gab_kind gab_valkind(gab_value value) {
+GAB_API_INLINE enum gab_kind gab_valkind(gab_value value) {
   if (gab_valiso(value))
     return gab_valtoo(value)->kind + __GAB_VAL_TAG(value);
 
@@ -1132,7 +1130,7 @@ GAB_API static inline enum gab_kind gab_valkind(gab_value value) {
  * @param value The value to check.
  * @return true if the value supports types other than its kind.
  */
-GAB_API static inline bool gab_valhast(gab_value value) {
+GAB_API_INLINE bool gab_valhast(gab_value value) {
   enum gab_kind k = gab_valkind(value);
   switch (k) {
   case kGAB_MESSAGE:
@@ -1194,8 +1192,7 @@ GAB_API gab_value gab_nstring(struct gab_triple gab, uint64_t len,
  * @param data The data.
  * @return The value.
  */
-GAB_API static inline gab_value gab_string(struct gab_triple gab,
-                                           const char *data) {
+GAB_API_INLINE gab_value gab_string(struct gab_triple gab, const char *data) {
   return gab_nstring(gab, strlen(data), data);
 }
 
@@ -1218,7 +1215,7 @@ GAB_API gab_value gab_strcat(struct gab_triple gab, gab_value a, gab_value b);
  * @param str The string
  * @return A pointer to the start of the string
  */
-GAB_API static inline const char *gab_strdata(gab_value *str) {
+GAB_API_INLINE const char *gab_strdata(gab_value *str) {
   assert(gab_valkind(*str) == kGAB_STRING ||
          gab_valkind(*str) == kGAB_MESSAGE ||
          gab_valkind(*str) == kGAB_SYMBOL || gab_valkind(*str) == kGAB_BINARY);
@@ -1235,7 +1232,7 @@ GAB_API static inline const char *gab_strdata(gab_value *str) {
  * @param str The string.
  * @return The length of the string.
  */
-GAB_API static inline uint64_t gab_strlen(gab_value str) {
+GAB_API_INLINE uint64_t gab_strlen(gab_value str) {
   assert(gab_valkind(str) == kGAB_STRING || gab_valkind(str) == kGAB_SYMBOL ||
          gab_valkind(str) == kGAB_MESSAGE);
 
@@ -1251,7 +1248,7 @@ GAB_API static inline uint64_t gab_strlen(gab_value str) {
  *
  * This should not be called on kGAB_BINARY. (As that might not be valid utf8)
  */
-GAB_API static inline uint64_t gab_strmblen(gab_value str) {
+GAB_API_INLINE uint64_t gab_strmblen(gab_value str) {
   assert(gab_valkind(str) == kGAB_STRING || gab_valkind(str) == kGAB_SYMBOL);
 
   if (gab_valiso(str))
@@ -1269,7 +1266,7 @@ GAB_API static inline uint64_t gab_strmblen(gab_value str) {
  * @param str The string
  * @return The hash
  */
-GAB_API static inline uint64_t gab_strhash(gab_value str) {
+GAB_API_INLINE uint64_t gab_strhash(gab_value str) {
   assert(gab_valkind(str) == kGAB_STRING);
 
   if (gab_valiso(str))
@@ -1278,8 +1275,8 @@ GAB_API static inline uint64_t gab_strhash(gab_value str) {
   return str;
 }
 
-GAB_API static inline uint64_t gab_sstrendswith(gab_value str, const char *pat,
-                                                uint64_t offset) {
+GAB_API_INLINE uint64_t gab_sstrendswith(gab_value str, const char *pat,
+                                         uint64_t offset) {
   assert(gab_valkind(str) == kGAB_STRING);
 
   const char *cstr = gab_strdata(&str);
@@ -1293,9 +1290,8 @@ GAB_API static inline uint64_t gab_sstrendswith(gab_value str, const char *pat,
   return !memcmp(cstr + cstrlen - offset - len, pat, len);
 }
 
-GAB_API static inline gab_value gab_strslice(struct gab_triple gab,
-                                             gab_value str, uint64_t offset,
-                                             uint64_t len) {
+GAB_API_INLINE gab_value gab_strslice(struct gab_triple gab, gab_value str,
+                                      uint64_t offset, uint64_t len) {
   assert(gab_valkind(str) == kGAB_STRING);
 
   const char *cstr = gab_strdata(&str);
@@ -1314,7 +1310,7 @@ GAB_API static inline gab_value gab_strslice(struct gab_triple gab,
  * @param str The string
  * @return The message
  */
-GAB_API static inline gab_value gab_strtomsg(gab_value str) {
+GAB_API_INLINE gab_value gab_strtomsg(gab_value str) {
   assert(gab_valkind(str) == kGAB_STRING);
   return str | (uint64_t)kGAB_MESSAGE << __GAB_TAGOFFSET;
 }
@@ -1322,7 +1318,7 @@ GAB_API static inline gab_value gab_strtomsg(gab_value str) {
 /**
  * @brief Convert a string into a symbol. This is constant-time.
  */
-GAB_API static inline gab_value gab_strtosym(gab_value str) {
+GAB_API_INLINE gab_value gab_strtosym(gab_value str) {
   assert(gab_valkind(str) == kGAB_STRING);
   return str | (uint64_t)kGAB_SYMBOL << __GAB_TAGOFFSET;
 }
@@ -1330,7 +1326,7 @@ GAB_API static inline gab_value gab_strtosym(gab_value str) {
 /**
  * @brief Convert a string into a binary. This is constant-time.
  */
-GAB_API static inline gab_value gab_strtobin(gab_value str) {
+GAB_API_INLINE gab_value gab_strtobin(gab_value str) {
   assert(gab_valkind(str) == kGAB_STRING);
   return str | (uint64_t)kGAB_BINARY << __GAB_TAGOFFSET;
 }
@@ -1343,8 +1339,8 @@ GAB_API static inline gab_value gab_strtobin(gab_value str) {
  * @param data The name of the message.
  * @return The new message object.
  */
-GAB_API static inline gab_value gab_nmessage(struct gab_triple gab,
-                                             uint64_t len, const char *data) {
+GAB_API_INLINE gab_value gab_nmessage(struct gab_triple gab, uint64_t len,
+                                      const char *data) {
   return gab_strtomsg(gab_nstring(gab, len, data));
 }
 
@@ -1355,8 +1351,7 @@ GAB_API static inline gab_value gab_nmessage(struct gab_triple gab,
  * @param data The name of the message.
  * @return The new message object.
  */
-GAB_API static inline gab_value gab_message(struct gab_triple gab,
-                                            const char *data) {
+GAB_API_INLINE gab_value gab_message(struct gab_triple gab, const char *data) {
   return gab_strtomsg(gab_string(gab, data));
 }
 
@@ -1366,12 +1361,12 @@ GAB_API static inline gab_value gab_message(struct gab_triple gab,
  * @param msg The message.
  * @return the name.
  */
-GAB_API static inline gab_value gab_msgtostr(gab_value msg) {
+GAB_API_INLINE gab_value gab_msgtostr(gab_value msg) {
   assert(gab_valkind(msg) == kGAB_MESSAGE);
   return msg & ~((uint64_t)kGAB_MESSAGE << __GAB_TAGOFFSET);
 }
 
-GAB_API static inline gab_value gab_symtostr(gab_value sym) {
+GAB_API_INLINE gab_value gab_symtostr(gab_value sym) {
   assert(gab_valkind(sym) == kGAB_SYMBOL);
   return sym & ~((uint64_t)kGAB_SYMBOL << __GAB_TAGOFFSET);
 }
@@ -1383,7 +1378,7 @@ GAB_API static inline gab_value gab_symtostr(gab_value sym) {
  * @param bin The binary to convert
  * @return The string if bin is valid utf8, otherwise gab_undefined.
  */
-GAB_API static inline gab_value gab_bintostr(gab_value bin) {
+GAB_API_INLINE gab_value gab_bintostr(gab_value bin) {
   assert(gab_valkind(bin) == kGAB_BINARY);
 
   if (gab_strmblen(bin) == -1)
@@ -1398,8 +1393,7 @@ GAB_API static inline gab_value gab_bintostr(gab_value bin) {
  * @param data the cstring
  * @return The symbol
  */
-GAB_API static inline gab_value gab_symbol(struct gab_triple gab,
-                                           const char *data) {
+GAB_API_INLINE gab_value gab_symbol(struct gab_triple gab, const char *data) {
   return gab_strtosym(gab_string(gab, data));
 }
 
@@ -1409,13 +1403,12 @@ GAB_API static inline gab_value gab_symbol(struct gab_triple gab,
  * @param data the cstring
  * @return the binary
  */
-GAB_API static inline gab_value gab_binary(struct gab_triple gab,
-                                           const char *data) {
+GAB_API_INLINE gab_value gab_binary(struct gab_triple gab, const char *data) {
   return gab_strtobin(gab_string(gab, data));
 }
 
-GAB_API static inline gab_value gab_nbinary(struct gab_triple gab, size_t len,
-                                            const char *data) {
+GAB_API_INLINE gab_value gab_nbinary(struct gab_triple gab, size_t len,
+                                     const char *data) {
   return gab_strtobin(gab_nstring(gab, len, data));
 }
 
@@ -1496,25 +1489,25 @@ GAB_API gab_value gab_shape(struct gab_triple gab, uint64_t stride,
 
 GAB_API gab_value __gab_shape(struct gab_triple gab, uint64_t len);
 
-GAB_API static inline uint64_t gab_shpislist(gab_value shp) {
+GAB_API_INLINE uint64_t gab_shpislist(gab_value shp) {
   assert(gab_valkind(shp) == kGAB_SHAPE || gab_valkind(shp) == kGAB_SHAPELIST);
   struct gab_obj_shape *s = GAB_VAL_TO_SHAPE(shp);
   return s->header.kind == kGAB_SHAPELIST;
 }
 
-GAB_API static inline uint64_t gab_shplen(gab_value shp) {
+GAB_API_INLINE uint64_t gab_shplen(gab_value shp) {
   assert(gab_valkind(shp) == kGAB_SHAPE || gab_valkind(shp) == kGAB_SHAPELIST);
   struct gab_obj_shape *s = GAB_VAL_TO_SHAPE(shp);
   return s->len;
 }
 
-GAB_API static inline gab_value gab_ushpat(gab_value shp, uint64_t idx) {
+GAB_API_INLINE gab_value gab_ushpat(gab_value shp, uint64_t idx) {
   assert(gab_valkind(shp) == kGAB_SHAPE || gab_valkind(shp) == kGAB_SHAPELIST);
   struct gab_obj_shape *s = GAB_VAL_TO_SHAPE(shp);
   return s->keys[idx];
 }
 
-GAB_API static inline uint64_t gab_shpfind(gab_value shp, gab_value key) {
+GAB_API_INLINE uint64_t gab_shpfind(gab_value shp, gab_value key) {
   assert(gab_valkind(shp) == kGAB_SHAPE || gab_valkind(shp) == kGAB_SHAPELIST);
   struct gab_obj_shape *s = GAB_VAL_TO_SHAPE(shp);
 
@@ -1528,11 +1521,11 @@ GAB_API static inline uint64_t gab_shpfind(gab_value shp, gab_value key) {
   return -1;
 }
 
-GAB_API static inline bool gab_shphas(gab_value shape, gab_value key) {
+GAB_API_INLINE bool gab_shphas(gab_value shape, gab_value key) {
   return gab_shpfind(shape, key) != -1;
 }
 
-GAB_API static inline uint64_t gab_shptfind(gab_value shp, gab_value key) {
+GAB_API_INLINE uint64_t gab_shptfind(gab_value shp, gab_value key) {
   assert(gab_valkind(shp) == kGAB_SHAPE || gab_valkind(shp) == kGAB_SHAPELIST);
   struct gab_obj_shape *s = GAB_VAL_TO_SHAPE(shp);
 
@@ -1661,7 +1654,7 @@ GAB_API gab_value gab_recordfrom(struct gab_triple gab, gab_value shape,
                                  uint64_t stride, uint64_t len,
                                  gab_value *vals);
 
-GAB_API static inline gab_value gab_erecord(struct gab_triple gab) {
+GAB_API_INLINE gab_value gab_erecord(struct gab_triple gab) {
   return gab_record(gab, 0, 0, nullptr, nullptr);
 }
 
@@ -1675,9 +1668,8 @@ GAB_API static inline gab_value gab_erecord(struct gab_triple gab) {
  * @param vals The vals
  * @return The new record
  */
-GAB_API static inline gab_value gab_srecord(struct gab_triple gab, uint64_t len,
-                                            const char **keys,
-                                            gab_value *vals) {
+GAB_API_INLINE gab_value gab_srecord(struct gab_triple gab, uint64_t len,
+                                     const char **keys, gab_value *vals) {
   gab_value vkeys[len];
 
   gab_gclock(gab);
@@ -1698,7 +1690,7 @@ GAB_API static inline gab_value gab_srecord(struct gab_triple gab, uint64_t len,
  * @param rec The record
  * @return The shape of the record
  */
-GAB_API static inline gab_value gab_recshp(gab_value record) {
+GAB_API_INLINE gab_value gab_recshp(gab_value record) {
   assert(gab_valkind(record) == kGAB_RECORD);
   return GAB_VAL_TO_REC(record)->shape;
 };
@@ -1709,7 +1701,7 @@ GAB_API static inline gab_value gab_recshp(gab_value record) {
  * @param rec The record
  * @return The number of key-value pairs in the record
  */
-GAB_API static inline uint64_t gab_reclen(gab_value record) {
+GAB_API_INLINE uint64_t gab_reclen(gab_value record) {
   assert(gab_valkind(record) == kGAB_RECORD);
   struct gab_obj_rec *r = GAB_VAL_TO_REC(record);
   return gab_shplen(r->shape);
@@ -1722,7 +1714,7 @@ GAB_API static inline uint64_t gab_reclen(gab_value record) {
  * @param key The key to search for
  * @return The offset, or -1 if not found
  */
-GAB_API static inline uint64_t gab_recfind(gab_value record, gab_value key) {
+GAB_API_INLINE uint64_t gab_recfind(gab_value record, gab_value key) {
   return gab_shpfind(gab_recshp(record), key);
 }
 
@@ -1733,7 +1725,7 @@ GAB_API static inline uint64_t gab_recfind(gab_value record, gab_value key) {
  * @param key The key to check for
  * @return true if the key exists in the record.
  */
-GAB_API static inline bool gab_rechas(gab_value record, gab_value key) {
+GAB_API_INLINE bool gab_rechas(gab_value record, gab_value key) {
   return gab_shphas(gab_recshp(record), key);
 }
 
@@ -1744,7 +1736,7 @@ GAB_API static inline bool gab_rechas(gab_value record, gab_value key) {
  * @param idx The index to check
  * @return true if the index is valid within the record
  */
-GAB_API static inline bool gab_urechas(gab_value record, uint64_t index) {
+GAB_API_INLINE bool gab_urechas(gab_value record, uint64_t index) {
   assert(gab_valkind(record) == kGAB_RECORD);
   struct gab_obj_rec *m = GAB_VAL_TO_REC(record);
   return index < gab_shplen(m->shape);
@@ -1758,7 +1750,7 @@ GAB_API static inline bool gab_urechas(gab_value record, uint64_t index) {
  *
  * @return The key at that index
  */
-GAB_API static inline gab_value gab_ukrecat(gab_value record, uint64_t index) {
+GAB_API_INLINE gab_value gab_ukrecat(gab_value record, uint64_t index) {
   assert(gab_valkind(record) == kGAB_RECORD);
   assert(gab_urechas(record, index));
   return gab_ushpat(gab_recshp(record), index);
@@ -1793,7 +1785,7 @@ GAB_API gab_value gab_urecput(struct gab_triple gab, gab_value record,
  * @param key The key to look for
  * @return the value associated with key, or undefined.
  */
-GAB_API static inline gab_value gab_recat(gab_value record, gab_value key) {
+GAB_API_INLINE gab_value gab_recat(gab_value record, gab_value key) {
   assert(gab_valkind(record) == kGAB_RECORD);
   uint64_t i = gab_recfind(record, key);
 
@@ -1811,8 +1803,8 @@ GAB_API static inline gab_value gab_recat(gab_value record, gab_value key) {
  * @param key A c-string to convert into a gab string
  * @return the value at gab_string(key)
  */
-GAB_API static inline gab_value gab_srecat(struct gab_triple gab,
-                                           gab_value record, const char *key) {
+GAB_API_INLINE gab_value gab_srecat(struct gab_triple gab, gab_value record,
+                                    const char *key) {
   return gab_recat(record, gab_string(gab, key));
 }
 
@@ -1824,8 +1816,8 @@ GAB_API static inline gab_value gab_srecat(struct gab_triple gab,
  * @param key A c-string to convert into a gab message
  * @return the value at gab_message(key)
  */
-GAB_API static inline gab_value gab_mrecat(struct gab_triple gab, gab_value rec,
-                                           const char *key) {
+GAB_API_INLINE gab_value gab_mrecat(struct gab_triple gab, gab_value rec,
+                                    const char *key) {
   return gab_recat(rec, gab_message(gab, key));
 }
 
@@ -1880,7 +1872,7 @@ GAB_API gab_value gab_nlstpush(struct gab_triple gab, gab_value list,
 GAB_API gab_value gab_lstpop(struct gab_triple gab, gab_value list,
                              gab_value *out_val);
 
-GAB_API static inline uint64_t gab_recisl(gab_value rec) {
+GAB_API_INLINE uint64_t gab_recisl(gab_value rec) {
   gab_value shp = gab_recshp(rec);
   assert(gab_valkind(shp) == kGAB_SHAPE || gab_valkind(shp) == kGAB_SHAPELIST);
   struct gab_obj_shape *s = GAB_VAL_TO_SHAPE(shp);
@@ -1963,15 +1955,15 @@ GAB_API gab_value gab_fiber(struct gab_triple gab, struct gab_fiber_argt args);
  */
 GAB_API a_gab_value *gab_fibawait(struct gab_triple gab, gab_value fiber);
 
-GAB_API static inline bool gab_fibisrunning(gab_value fiber) {
+GAB_API_INLINE bool gab_fibisrunning(gab_value fiber) {
   return gab_valkind(fiber) == kGAB_FIBERRUNNING;
 }
 
-GAB_API static inline bool gab_fibisdone(gab_value fiber) {
+GAB_API_INLINE bool gab_fibisdone(gab_value fiber) {
   return gab_valkind(fiber) == kGAB_FIBERDONE;
 }
 
-GAB_API static inline gab_value gab_thisfiber(struct gab_triple gab);
+GAB_API_INLINE gab_value gab_thisfiber(struct gab_triple gab);
 
 /*
  * @brief Return the specialization for a given message and receiver.
@@ -1982,11 +1974,11 @@ GAB_API static inline gab_value gab_thisfiber(struct gab_triple gab);
  *
  * @return The spec
  */
-GAB_API static inline gab_value
+GAB_API_INLINE gab_value
 gab_thisfibmsgat(struct gab_triple gab, gab_value message, gab_value receiver);
 
-GAB_API static inline gab_value gab_thisfibmsgrec(struct gab_triple gab,
-                                                  gab_value message);
+GAB_API_INLINE gab_value gab_thisfibmsgrec(struct gab_triple gab,
+                                           gab_value message);
 
 /**
  * @brief A primitive for sending data between fibers.
@@ -2162,7 +2154,7 @@ GAB_API gab_value gab_box(struct gab_triple gab, struct gab_box_argt args);
  * @param box The box.
  * @return The user data.
  */
-GAB_API static inline uint64_t gab_boxlen(gab_value box) {
+GAB_API_INLINE uint64_t gab_boxlen(gab_value box) {
   assert(gab_valkind(box) == kGAB_BOX);
   return GAB_VAL_TO_BOX(box)->len;
 }
@@ -2173,7 +2165,7 @@ GAB_API static inline uint64_t gab_boxlen(gab_value box) {
  * @param box The box.
  * @return The user data.
  */
-GAB_API static inline void *gab_boxdata(gab_value box) {
+GAB_API_INLINE void *gab_boxdata(gab_value box) {
   assert(gab_valkind(box) == kGAB_BOX);
   return GAB_VAL_TO_BOX(box)->data;
 }
@@ -2184,7 +2176,7 @@ GAB_API static inline void *gab_boxdata(gab_value box) {
  * @param box The box.
  * @return The user type.
  */
-GAB_API static inline gab_value gab_boxtype(gab_value value) {
+GAB_API_INLINE gab_value gab_boxtype(gab_value value) {
   assert(gab_valkind(value) == kGAB_BOX);
   return GAB_VAL_TO_BOX(value)->type;
 }
@@ -2281,7 +2273,7 @@ GAB_API gab_value gab_snative(struct gab_triple gab, const char *name,
  * @return The new record.
  */
 GAB_API gab_value gab_list(struct gab_triple gab, uint64_t len,
-                           gab_value values[static len]);
+                           gab_value values[len]);
 
 /**
  * @brief Get the practical runtime type of a value.
@@ -2290,8 +2282,7 @@ GAB_API gab_value gab_list(struct gab_triple gab, uint64_t len,
  * @param value The value
  * @return The runtime value corresponding to the type of the given value
  */
-GAB_API static inline gab_value gab_valtype(struct gab_triple gab,
-                                            gab_value value) {
+GAB_API_INLINE gab_value gab_valtype(struct gab_triple gab, gab_value value) {
   enum gab_kind k = gab_valkind(value);
   switch (k) {
   /* These values have a runtime type of themselves */
@@ -2451,21 +2442,20 @@ struct gab_src {
   } thread_bytecode[];
 };
 
-GAB_API static inline gab_value gab_type(struct gab_triple gab,
-                                         enum gab_kind k) {
+GAB_API_INLINE gab_value gab_type(struct gab_triple gab, enum gab_kind k) {
   assert(k < kGAB_NKINDS);
   return gab.eg->types[k];
 }
 
-GAB_API static inline struct gab_gc *gab_gc(struct gab_triple gab) {
+GAB_API_INLINE struct gab_gc *gab_gc(struct gab_triple gab) {
   return gab.eg->gc;
 }
 
-GAB_API static inline gab_value gab_fb(struct gab_triple gab) {
+GAB_API_INLINE gab_value gab_fb(struct gab_triple gab) {
   return gab.eg->jobs[gab.wkid].fiber;
 }
 
-GAB_API static inline struct gab_vm *gab_vm(struct gab_triple gab) {
+GAB_API_INLINE struct gab_vm *gab_thisvm(struct gab_triple gab) {
   gab_value fiber = gab.eg->jobs[gab.wkid].fiber;
 
   if (fiber == gab_undefined)
@@ -2484,8 +2474,8 @@ GAB_API void gab_yield(struct gab_triple gab);
  * @param type The type
  * @return true if the value's type matches the given type.
  */
-GAB_API static inline bool gab_valisa(struct gab_triple gab, gab_value value,
-                                      gab_value type) {
+GAB_API_INLINE bool gab_valisa(struct gab_triple gab, gab_value value,
+                               gab_value type) {
   return gab_valeq(gab_valtype(gab, value), type);
 }
 
@@ -2495,7 +2485,7 @@ GAB_API static inline bool gab_valisa(struct gab_triple gab, gab_value value,
  * @param gab The engine
  * @return The fiber
  */
-GAB_API static inline gab_value gab_thisfiber(struct gab_triple gab) {
+GAB_API_INLINE gab_value gab_thisfiber(struct gab_triple gab) {
   return gab.eg->jobs[gab.wkid].fiber;
 }
 
@@ -2508,7 +2498,7 @@ GAB_API static inline gab_value gab_thisfiber(struct gab_triple gab) {
  * @param spec The specialization.
  * @return The message, or gab_undefined if it already had the spec.
  */
-GAB_API static inline struct gab_impl_rest
+GAB_API_INLINE struct gab_impl_rest
 gab_impl(struct gab_triple gab, gab_value message, gab_value receiver) {
   gab_value spec = gab_undefined;
   gab_value type = receiver;
@@ -2566,7 +2556,7 @@ gab_impl(struct gab_triple gab, gab_value message, gab_value receiver) {
   return (struct gab_impl_rest){.status = kGAB_IMPL_NONE};
 }
 
-GAB_API static inline gab_value gab_thisfibmsg(struct gab_triple gab) {
+GAB_API_INLINE gab_value gab_thisfibmsg(struct gab_triple gab) {
   gab_value fiber = gab_thisfiber(gab);
 
   if (fiber == gab_undefined)
@@ -2576,14 +2566,13 @@ GAB_API static inline gab_value gab_thisfibmsg(struct gab_triple gab) {
   return f->messages;
 }
 
-GAB_API static inline gab_value gab_thisfibmsgrec(struct gab_triple gab,
-                                                  gab_value message) {
+GAB_API_INLINE gab_value gab_thisfibmsgrec(struct gab_triple gab,
+                                           gab_value message) {
   return gab_recat(gab_thisfibmsg(gab), message);
 }
 
-GAB_API static inline gab_value gab_thisfibmsgat(struct gab_triple gab,
-                                                 gab_value message,
-                                                 gab_value receiver) {
+GAB_API_INLINE gab_value
+gab_thisfibmsgat(struct gab_triple gab, gab_value message, gab_value receiver) {
   gab_value spec_rec = gab_thisfibmsgrec(gab, message);
 
   if (spec_rec == gab_undefined)
@@ -2598,7 +2587,7 @@ GAB_API static inline gab_value gab_thisfibmsgat(struct gab_triple gab,
  * @param value The value to coerce.
  * @return False if the value is gab_false or gab_nil. Otherwise true.
  */
-GAB_API static inline bool gab_valintob(gab_value value) {
+GAB_API_INLINE bool gab_valintob(gab_value value) {
   return !(gab_valeq(value, gab_false) || gab_valeq(value, gab_nil));
 }
 
@@ -2609,8 +2598,7 @@ GAB_API static inline bool gab_valintob(gab_value value) {
  * @param value The value to convert
  * @return The string representation of the value.
  */
-GAB_API static inline gab_value gab_valintos(struct gab_triple gab,
-                                             gab_value value) {
+GAB_API_INLINE gab_value gab_valintos(struct gab_triple gab, gab_value value) {
   char buffer[128];
 
   switch (gab_valkind(value)) {

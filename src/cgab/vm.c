@@ -34,7 +34,7 @@ static handler handlers[] = {
 #define LOG(op)
 #endif
 
-#define ATTRIBUTES [[gnu::hot, gnu::flatten]]
+#define ATTRIBUTES 
 
 #define CASE_CODE(name)                                                        \
   ATTRIBUTES a_gab_value *OP_##name##_HANDLER(OP_HANDLER_ARGS)
@@ -71,7 +71,7 @@ static handler handlers[] = {
 #define EG() (GAB().eg)
 #define FIBER() (GAB_VAL_TO_FIBER(gab_thisfiber(GAB())))
 #define GC() (GAB().eg->gc)
-#define VM() (gab_vm(GAB()))
+#define VM() (gab_thisvm(GAB()))
 #define SET_BLOCK(b) (FB()[-3] = (uintptr_t)(b));
 #define BLOCK() ((struct gab_obj_block *)(uintptr_t)FB()[-3])
 #define BLOCK_PROTO() (GAB_VAL_TO_PROTOTYPE(BLOCK()->p))
@@ -376,7 +376,7 @@ struct gab_err_argt vm_frame_build_err(struct gab_triple gab,
 a_gab_value *vvm_error(struct gab_triple gab, enum gab_status s,
                        const char *fmt, va_list va) {
   gab_value fiber = gab_thisfiber(gab);
-  struct gab_vm *vm = gab_vm(gab);
+  struct gab_vm *vm = gab_thisvm(gab);
   gab_value *f = vm->fp;
   uint8_t *ip = vm->ip;
 
@@ -441,7 +441,7 @@ a_gab_value *gab_fpanic(struct gab_triple gab, const char *fmt, ...) {
   va_list va;
   va_start(va, fmt);
 
-  if (!gab_vm(gab)) {
+  if (!gab_thisvm(gab)) {
     gab_vfpanic(gab, stderr, va,
                 (struct gab_err_argt){
                     .status = GAB_PANIC,

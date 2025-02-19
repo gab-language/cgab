@@ -214,8 +214,6 @@ enum gab_flags {
   fGAB_RUN_INCLUDEDEFAULTARGS = 1 << 8,
 };
 
-#define GAB_API [[__gnu__::__used__]]
-
 // VERSION
 #define GAB_VERSION_MAJOR "0"
 #define GAB_VERSION_MINOR "0"

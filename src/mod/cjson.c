@@ -97,14 +97,14 @@ a_gab_value *gab_jsonlib_decode(struct gab_triple gab, uint64_t argc,
     switch (ntokens) {
     case 0:
     case JSMN_ERROR_PART:
-      gab_vmpush(gab_vm(gab), gab_err,
+      gab_vmpush(gab_thisvm(gab), gab_err,
                  gab_string(gab, "Incomplete JSON value"));
       break;
     case JSMN_ERROR_NOMEM:
-      gab_vmpush(gab_vm(gab), gab_err, gab_string(gab, "Internal Error"));
+      gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, "Internal Error"));
       break;
     case JSMN_ERROR_INVAL:
-      gab_vmpush(gab_vm(gab), gab_err, gab_string(gab, "Invalid character"));
+      gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, "Invalid character"));
       break;
     }
     return nullptr;
@@ -117,7 +117,7 @@ a_gab_value *gab_jsonlib_decode(struct gab_triple gab, uint64_t argc,
 
   gab_value res = *(--sp);
 
-  gab_vmpush(gab_vm(gab), gab_ok, res);
+  gab_vmpush(gab_thisvm(gab), gab_ok, res);
   return nullptr;
 }
 

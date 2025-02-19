@@ -10,7 +10,7 @@ a_gab_value *gab_timelib_now(struct gab_triple gab, uint64_t argc,
 
   gab_value res = gab_number((double)t / CLOCKS_PER_SEC);
 
-  gab_vmpush(gab_vm(gab), res);
+  gab_vmpush(gab_thisvm(gab), res);
   return nullptr;
 };
 
@@ -20,7 +20,7 @@ GAB_DYNLIB_MAIN_FN {
   gab_def(gab, {
                    gab_message(gab, "now"),
                    mod,
-                   gab_snative(gab, "json\\decode", gab_timelib_now),
+                   gab_snative(gab, "now", gab_timelib_now),
                });
 
   return a_gab_value_one(gab_ok);

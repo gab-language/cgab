@@ -50,6 +50,15 @@
  */
 
 #define GAB_DYNLIB_MAIN "gab_lib"
+
+#define GAB_API_INLINE static inline
+
+#ifdef GAB_CORE
+#define GAB_API [[__gnu__::__used__]]
+#else
+#define GAB_API extern
+#endif
+
 #define GAB_DYNLIB_MAIN_FN a_gab_value *gab_lib(struct gab_triple gab)
 
 #define gab_osproc(cmd, ...)                                                   \
@@ -70,7 +79,7 @@
 
 #define gab_osdynlib void *
 #define gab_oslibopen(path) dlopen(path, RTLD_NOW)
-#define gab_oslibfind(dynlib, name) dlsym(dynlib, name)
+#define gab_oslibfind(dynlib, name) (void(*)(void))dlsym(dynlib, name)
 
 static const char *gab_osprefix() {
   char *home = getenv("HOME");
@@ -147,8 +156,8 @@ static int gab_nosproc(char *cmd, size_t nargs, char *args[]) {
 #define gab_fisatty(f) _isatty(_fileno(f))
 
 #define gab_osdynlib HMODULE
-#define gab_oslibopen(path) LoadLibrary(path)
-#define gab_oslibfind(dynlib, name) ((void *)GetProcAddress(dynlib, path))
+#define gab_oslibopen(path) LoadLibraryA(path)
+#define gab_oslibfind(dynlib, name) ((void(*)(void))GetProcAddress(dynlib, name))
 
 static const char *gab_osprefix() {
   PWSTR path = NULL;

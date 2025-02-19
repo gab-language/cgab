@@ -26,7 +26,7 @@ a_gab_value *gab_strlib_trim(struct gab_triple gab, uint64_t argc,
     return gab_pktypemismatch(gab, trimset, kGAB_STRING);
 
   if (cstrlen == 0) {
-    gab_vmpush(gab_vm(gab), str);
+    gab_vmpush(gab_thisvm(gab), str);
     return nullptr;
   }
 
@@ -43,7 +43,7 @@ a_gab_value *gab_strlib_trim(struct gab_triple gab, uint64_t argc,
 
   uint64_t result_len = back - front + 1;
 
-  gab_vmpush(gab_vm(gab), gab_nstring(gab, result_len, front));
+  gab_vmpush(gab_thisvm(gab), gab_nstring(gab, result_len, front));
   return nullptr;
 }
 
@@ -73,7 +73,7 @@ a_gab_value *gab_strlib_split(struct gab_triple gab, uint64_t argc,
       // Memcmp to test for full sep match
       if (!memcmp(cstr + offset, csep, csep_len)) {
         // Full match found - push a string
-        gab_vmpush(gab_vm(gab), gab_nstring(gab, offset - begin, cstr + begin));
+        gab_vmpush(gab_thisvm(gab), gab_nstring(gab, offset - begin, cstr + begin));
         begin = offset + csep_len;
         offset = begin;
         continue;
@@ -83,7 +83,7 @@ a_gab_value *gab_strlib_split(struct gab_triple gab, uint64_t argc,
     offset++;
   }
 
-  gab_vmpush(gab_vm(gab), gab_nstring(gab, cstr_len - begin, cstr + begin));
+  gab_vmpush(gab_thisvm(gab), gab_nstring(gab, cstr_len - begin, cstr + begin));
 
   return nullptr;
 }
@@ -96,7 +96,7 @@ a_gab_value *gab_strlib_len(struct gab_triple gab, uint64_t argc,
 
   gab_value result = gab_number(gab_strmblen(argv[0]));
 
-  gab_vmpush(gab_vm(gab), result);
+  gab_vmpush(gab_thisvm(gab), result);
   return nullptr;
 };
 
@@ -129,14 +129,14 @@ a_gab_value *gab_strlib_blank(struct gab_triple gab, uint64_t argc,
 
   while (*cstr) {
     if (!isspace(*cstr)) {
-      gab_vmpush(gab_vm(gab), gab_false);
+      gab_vmpush(gab_thisvm(gab), gab_false);
       return nullptr;
     }
 
     cstr++;
   }
 
-  gab_vmpush(gab_vm(gab), gab_true);
+  gab_vmpush(gab_thisvm(gab), gab_true);
   return nullptr;
 }
 
@@ -151,7 +151,7 @@ a_gab_value *gab_strlib_ends(struct gab_triple gab, uint64_t argc,
     const char *str = gab_strdata(argv + 0);
     const char *pat = gab_strdata(argv + 1);
 
-    gab_vmpush(gab_vm(gab), gab_bool(ends(str, pat, 0)));
+    gab_vmpush(gab_thisvm(gab), gab_bool(ends(str, pat, 0)));
     return nullptr;
   }
 
@@ -166,7 +166,7 @@ a_gab_value *gab_strlib_ends(struct gab_triple gab, uint64_t argc,
     const char *pat = gab_strdata(argv + 0);
     const char *str = gab_strdata(argv + 1);
 
-    gab_vmpush(gab_vm(gab), gab_bool(ends(str, pat, gab_valton(argv[2]))));
+    gab_vmpush(gab_thisvm(gab), gab_bool(ends(str, pat, gab_valton(argv[2]))));
     return nullptr;
   }
   }
@@ -187,7 +187,7 @@ a_gab_value *gab_strlib_begins(struct gab_triple gab, uint64_t argc,
     const char *pat = gab_strdata(&vpat);
     const char *str = gab_strdata(&vstr);
 
-    gab_vmpush(gab_vm(gab), gab_bool(begins(str, pat, 0)));
+    gab_vmpush(gab_thisvm(gab), gab_bool(begins(str, pat, 0)));
     return nullptr;
   }
   case 3: {
@@ -201,7 +201,7 @@ a_gab_value *gab_strlib_begins(struct gab_triple gab, uint64_t argc,
     const char *pat = gab_strdata(&vpat);
     const char *str = gab_strdata(&vstr);
 
-    gab_vmpush(gab_vm(gab), gab_bool(begins(str, pat, gab_valton(argv[2]))));
+    gab_vmpush(gab_thisvm(gab), gab_bool(begins(str, pat, gab_valton(argv[2]))));
     return nullptr;
   }
   }
@@ -231,7 +231,7 @@ a_gab_value *gab_strlib_number(struct gab_triple gab, uint64_t argc,
 
   int byte = gab_strdata(argv + 0)[index];
 
-  gab_vmpush(gab_vm(gab), gab_bool(isdigit(byte)));
+  gab_vmpush(gab_thisvm(gab), gab_bool(isdigit(byte)));
   return nullptr;
 }
 
@@ -258,7 +258,7 @@ a_gab_value *gab_strlib_to_byte(struct gab_triple gab, uint64_t argc,
 
   char byte = gab_strdata(argv + 0)[index];
 
-  gab_vmpush(gab_vm(gab), gab_number(byte));
+  gab_vmpush(gab_thisvm(gab), gab_number(byte));
   return nullptr;
 }
 
@@ -281,7 +281,7 @@ a_gab_value *gab_strlib_at(struct gab_triple gab, uint64_t argc,
 
   char byte = gab_strdata(argv + 0)[index];
 
-  gab_vmpush(gab_vm(gab), gab_nstring(gab, 1, &byte));
+  gab_vmpush(gab_thisvm(gab), gab_nstring(gab, 1, &byte));
   return nullptr;
 }
 
@@ -333,7 +333,7 @@ a_gab_value *gab_strlib_slice(struct gab_triple gab, uint64_t argc,
 
   gab_value res = gab_nstring(gab, size, str + start);
 
-  gab_vmpush(gab_vm(gab), res);
+  gab_vmpush(gab_thisvm(gab), res);
   return nullptr;
 }
 
@@ -346,52 +346,52 @@ a_gab_value *gab_strlib_has(struct gab_triple gab, uint64_t argc,
   const char *str = gab_strdata(argv + 0);
   const char *pat = gab_strdata(argv + 1);
 
-  gab_vmpush(gab_vm(gab), gab_bool(strstr(str, pat)));
+  gab_vmpush(gab_thisvm(gab), gab_bool(strstr(str, pat)));
   return nullptr;
 }
 
 a_gab_value *gab_strlib_string_into(struct gab_triple gab, uint64_t argc,
                                     gab_value argv[argc]) {
-  gab_vmpush(gab_vm(gab), gab_valintos(gab, gab_arg(0)));
+  gab_vmpush(gab_thisvm(gab), gab_valintos(gab, gab_arg(0)));
   return nullptr;
 }
 
 a_gab_value *gab_strlib_binary_into(struct gab_triple gab, uint64_t argc,
                                     gab_value argv[argc]) {
-  gab_vmpush(gab_vm(gab), gab_strtobin(gab_arg(0)));
+  gab_vmpush(gab_thisvm(gab), gab_strtobin(gab_arg(0)));
   return nullptr;
 }
 
 a_gab_value *gab_msglib_binary_into(struct gab_triple gab, uint64_t argc,
                                     gab_value argv[argc]) {
-  gab_vmpush(gab_vm(gab), gab_strtobin(gab_msgtostr(gab_arg(0))));
+  gab_vmpush(gab_thisvm(gab), gab_strtobin(gab_msgtostr(gab_arg(0))));
   return nullptr;
 }
 
 a_gab_value *gab_numlib_binary_into(struct gab_triple gab, uint64_t argc,
                                     gab_value argv[argc]) {
   uint64_t f = gab_valton(gab_arg(0));
-  gab_vmpush(gab_vm(gab), gab_nbinary(gab, sizeof(f), (void *)&f));
+  gab_vmpush(gab_thisvm(gab), gab_nbinary(gab, sizeof(f), (void *)&f));
   return nullptr;
 }
 
 a_gab_value *gab_strlib_messages_into(struct gab_triple gab, uint64_t argc,
                                       gab_value argv[argc]) {
-  gab_vmpush(gab_vm(gab), gab_strtomsg(gab_arg(0)));
+  gab_vmpush(gab_thisvm(gab), gab_strtomsg(gab_arg(0)));
   return nullptr;
 }
 
 a_gab_value *gab_strlib_new(struct gab_triple gab, uint64_t argc,
                             gab_value argv[argc]) {
   if (argc < 2) {
-    gab_vmpush(gab_vm(gab), gab_string(gab, ""));
+    gab_vmpush(gab_thisvm(gab), gab_string(gab, ""));
     return nullptr;
   }
 
   gab_value str = gab_valintos(gab, gab_arg(1));
 
   if (argc == 2) {
-    gab_vmpush(gab_vm(gab), str);
+    gab_vmpush(gab_thisvm(gab), str);
     return nullptr;
   }
 
@@ -402,7 +402,7 @@ a_gab_value *gab_strlib_new(struct gab_triple gab, uint64_t argc,
     str = gab_strcat(gab, str, curr);
   }
 
-  gab_vmpush(gab_vm(gab), str);
+  gab_vmpush(gab_thisvm(gab), str);
   gab_gcunlock(gab);
   return nullptr;
 }
@@ -413,7 +413,7 @@ a_gab_value *gab_strlib_numbers_into(struct gab_triple gab, uint64_t argc,
 
   gab_value res = gab_number(strtod(str, nullptr));
 
-  gab_vmpush(gab_vm(gab), res);
+  gab_vmpush(gab_thisvm(gab), res);
   return nullptr;
 };
 

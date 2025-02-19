@@ -7,7 +7,7 @@ a_gab_value *gab_msglib_message(struct gab_triple gab, uint64_t argc,
   if (gab_valkind(name) != kGAB_STRING)
     return gab_pktypemismatch(gab, name, kGAB_STRING);
 
-  gab_vmpush(gab_vm(gab), gab_strtomsg(name));
+  gab_vmpush(gab_thisvm(gab), gab_strtomsg(name));
   return nullptr;
 }
 
@@ -15,7 +15,7 @@ a_gab_value *gab_msglib_to_string(struct gab_triple gab, uint64_t argc,
                                 gab_value argv[static argc]) {
   gab_value msg = gab_arg(0);
 
-  gab_vmpush(gab_vm(gab), gab_msgtostr(msg));
+  gab_vmpush(gab_thisvm(gab), gab_msgtostr(msg));
 
   return nullptr;
 }
@@ -24,7 +24,7 @@ a_gab_value *gab_msglib_specs(struct gab_triple gab, uint64_t argc,
                               gab_value argv[static argc]) {
   if (argc == 1) {
     gab_value rec = GAB_VAL_TO_FIBER(gab_thisfiber(gab))->messages;
-    gab_vmpush(gab_vm(gab), rec);
+    gab_vmpush(gab_thisvm(gab), rec);
 
     return nullptr;
   }
@@ -35,9 +35,9 @@ a_gab_value *gab_msglib_specs(struct gab_triple gab, uint64_t argc,
   rec = rec == gab_undefined ? rec : gab_recat(rec, msg);
 
   if (rec == gab_undefined)
-    gab_vmpush(gab_vm(gab), gab_nil);
+    gab_vmpush(gab_thisvm(gab), gab_nil);
   else
-    gab_vmpush(gab_vm(gab), rec);
+    gab_vmpush(gab_thisvm(gab), rec);
 
   return nullptr;
 }
@@ -49,7 +49,7 @@ a_gab_value *gab_msglib_has(struct gab_triple gab, uint64_t argc,
 
     struct gab_impl_rest res = gab_impl(gab, argv[0], argv[1]);
 
-    gab_vmpush(gab_vm(gab), gab_bool(res.status));
+    gab_vmpush(gab_thisvm(gab), gab_bool(res.status));
     return nullptr;
   }
   default:
@@ -71,7 +71,7 @@ a_gab_value *gab_msglib_at(struct gab_triple gab, uint64_t argc,
     values[1] = res.as.spec;
   }
 
-  gab_nvmpush(gab_vm(gab), 2, values);
+  gab_nvmpush(gab_thisvm(gab), 2, values);
   return nullptr;
 }
 
@@ -79,7 +79,7 @@ a_gab_value *gab_msglib_string_into(struct gab_triple gab, uint64_t argc,
                                     gab_value argv[static argc]) {
   gab_value m = gab_arg(0);
 
-  gab_vmpush(gab_vm(gab), gab_msgtostr(m));
+  gab_vmpush(gab_thisvm(gab), gab_msgtostr(m));
 
   return nullptr;
 }

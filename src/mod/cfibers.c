@@ -6,7 +6,7 @@ a_gab_value *gab_fiblib_await(struct gab_triple gab, uint64_t argc,
 
   a_gab_value *res = gab_fibawait(gab, fib);
 
-  gab_nvmpush(gab_vm(gab), res->len, res->data);
+  gab_nvmpush(gab_thisvm(gab), res->len, res->data);
 
   return nullptr;
 }
@@ -17,7 +17,7 @@ a_gab_value *gab_fiblib_is_done(struct gab_triple gab, uint64_t argc,
 
   bool is_done = gab_fibisdone(fib);
 
-  gab_vmpush(gab_vm(gab), gab_bool(is_done));
+  gab_vmpush(gab_thisvm(gab), gab_bool(is_done));
 
   return nullptr;
 }

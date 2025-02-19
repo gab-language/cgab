@@ -93,7 +93,7 @@ a_gab_value *gab_numlib_between(struct gab_triple gab, uint64_t argc,
 
   gab_value res = gab_number(num);
 
-  gab_vmpush(gab_vm(gab), res);
+  gab_vmpush(gab_thisvm(gab), res);
   return nullptr;
 }
 
@@ -107,7 +107,7 @@ a_gab_value *gab_numlib_floor(struct gab_triple gab, uint64_t argc,
 
   gab_value res = gab_number(int_num + (float_num < 0));
 
-  gab_vmpush(gab_vm(gab), res);
+  gab_vmpush(gab_thisvm(gab), res);
   return nullptr;
 }
 

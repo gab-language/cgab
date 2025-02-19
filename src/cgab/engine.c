@@ -1066,11 +1066,39 @@ a_gab_value *gab_use_dynlib(struct gab_triple gab, const char *path) {
     return gab_fpanic(gab, "Failed to load module '$': $",
                       gab_string(gab, path), gab_string(gab, dlerror()));
 #else
+  {
+    int error = GetLastError();
+    char buffer[128];
+    if (FormatMessageA(
+            FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_FROM_SYSTEM, NULL,
+            error, 0, buffer, sizeof(buffer) / sizeof(char), NULL))
+      return gab_fpanic(gab, "Failed to load module '$': $",
+                        gab_string(gab, path), gab_string(gab, buffer));
+
     return gab_fpanic(gab, "Failed to load module '$'", gab_string(gab, path));
+  }
 #endif
   }
 
-  module_f mod = gab_oslibfind(lib, GAB_DYNLIB_MAIN);
+  module_f mod = (module_f) gab_oslibfind(lib, GAB_DYNLIB_MAIN);
+
+  if (mod == nullptr)
+#ifdef GAB_PLATFORM_UNIX
+    return gab_fpanic(gab, "Failed to load module '$': $",
+                      gab_string(gab, path), gab_string(gab, dlerror()));
+#else
+  {
+    int error = GetLastError();
+    char buffer[128];
+    if (FormatMessageA(
+            FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_FROM_SYSTEM, NULL,
+            error, 0, buffer, sizeof(buffer) / sizeof(char), NULL))
+      return gab_fpanic(gab, "Failed to load module '$': $",
+                        gab_string(gab, path), gab_string(gab, buffer));
+
+    return gab_fpanic(gab, "Failed to load module '$'", gab_string(gab, path));
+  }
+#endif
 
   a_gab_value *res = mod(gab);
 

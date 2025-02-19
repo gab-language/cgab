@@ -30,11 +30,11 @@ a_gab_value *gab_iolib_open(struct gab_triple gab, uint64_t argc,
   FILE *stream = fopen(cpath, cperm);
 
   if (stream == nullptr) {
-    gab_vmpush(gab_vm(gab), gab_err, gab_string(gab, strerror(errno)));
+    gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, strerror(errno)));
     return nullptr;
   }
 
-  gab_vmpush(gab_vm(gab), gab_ok, iostream(gab, stream, true));
+  gab_vmpush(gab_thisvm(gab), gab_ok, iostream(gab, stream, true));
 
   return nullptr;
 }
@@ -67,7 +67,7 @@ a_gab_value *gab_iolib_until(struct gab_triple gab, uint64_t argc,
       break;
   }
 
-  gab_vmpush(gab_vm(gab), gab_ok, gab_nstring(gab, buffer.len, buffer.data));
+  gab_vmpush(gab_thisvm(gab), gab_ok, gab_nstring(gab, buffer.len, buffer.data));
 
   return nullptr;
 }
@@ -86,7 +86,7 @@ a_gab_value *gab_iolib_scan(struct gab_triple gab, uint64_t argc,
   uint64_t bytes = gab_valton(bytesToRead);
 
   if (bytes == 0) {
-    gab_vmpush(gab_vm(gab), gab_string(gab, ""));
+    gab_vmpush(gab_thisvm(gab), gab_string(gab, ""));
     return nullptr;
   }
 
@@ -98,9 +98,9 @@ a_gab_value *gab_iolib_scan(struct gab_triple gab, uint64_t argc,
   int bytes_read = fread(buffer, 1, sizeof(buffer), stream);
 
   if (bytes_read < bytes)
-    gab_vmpush(gab_vm(gab), gab_err, gab_string(gab, strerror(errno)));
+    gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, strerror(errno)));
   else
-    gab_vmpush(gab_vm(gab), gab_ok, gab_nstring(gab, bytes_read, buffer));
+    gab_vmpush(gab_thisvm(gab), gab_ok, gab_nstring(gab, bytes_read, buffer));
 
   return nullptr;
 }
@@ -121,11 +121,11 @@ a_gab_value *gab_iolib_read(struct gab_triple gab, uint64_t argc,
   uint64_t bytesRead = fread(buffer, sizeof(char), fileSize, file);
 
   if (bytesRead < fileSize) {
-    gab_vmpush(gab_vm(gab), gab_string(gab, "FILE_COULD_NOT_READ"));
+    gab_vmpush(gab_thisvm(gab), gab_string(gab, "FILE_COULD_NOT_READ"));
     return nullptr;
   }
 
-  gab_vmpush(gab_vm(gab), gab_ok, gab_nstring(gab, bytesRead, buffer));
+  gab_vmpush(gab_thisvm(gab), gab_ok, gab_nstring(gab, bytesRead, buffer));
 
   return nullptr;
 }
@@ -149,9 +149,9 @@ a_gab_value *gab_iolib_write(struct gab_triple gab, uint64_t argc,
   int32_t result = fputs(data, fs);
 
   if (result <= 0 || fflush(fs))
-    gab_vmpush(gab_vm(gab), gab_err, gab_string(gab, strerror(errno)));
+    gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, strerror(errno)));
   else
-    gab_vmpush(gab_vm(gab), gab_ok);
+    gab_vmpush(gab_thisvm(gab), gab_ok);
 
   return nullptr;
 }
