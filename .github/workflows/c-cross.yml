@@ -119,7 +119,7 @@ jobs:
         run: ls -R .
 
       - name: Run Smallest Hello World
-        run: ${{ matrix.cmd }} exec -e "'hello world!'
+        run: ${{ matrix.cmd }} exec -e "'hello world!'"
 
       - name: Run Hello World
         run: ${{ matrix.cmd }} exec "'hello world!' .println"
