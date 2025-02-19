@@ -85,7 +85,7 @@ jobs:
             cmd: .\gab
           - os: macos-latest
             target: x86_64-macos-none
-            cmd: ./gab
+            cmd: ./gab.exe
 
     runs-on: ${{ matrix.os }}
     needs: build_artifacts
