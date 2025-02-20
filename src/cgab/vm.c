@@ -11,7 +11,7 @@
 #include <string.h>
 
 #define OP_HANDLER_ARGS                                                        \
-  struct gab_triple __gab, uint8_t *__ip, gab_value *__kb, gab_value *__fb,    \
+  struct gab_triple *__gab, uint8_t *__ip, gab_value *__kb, gab_value *__fb,   \
       gab_value *__sp
 
 typedef a_gab_value *(*handler)(OP_HANDLER_ARGS);
@@ -34,31 +34,33 @@ static handler handlers[] = {
 #define LOG(op)
 #endif
 
-#define ATTRIBUTES 
+#define ATTRIBUTES
 
 #define CASE_CODE(name)                                                        \
   ATTRIBUTES a_gab_value *OP_##name##_HANDLER(OP_HANDLER_ARGS)
 
-#define DISPATCH_ARGS() GAB(), IP(), KB(), FB(), SP()
+#define DISPATCH_ARGS() __gab, IP(), KB(), FB(), SP()
 
 #define DISPATCH(op)                                                           \
   ({                                                                           \
-    uint8_t o = (op);                                                          \
-                                                                               \
-    LOG(o)                                                                     \
     if (GC()->schedule == GAB().wkid) {                                        \
       STORE_SP();                                                              \
       gab_gcepochnext(GAB());                                                  \
     }                                                                          \
+                                                                               \
+    uint8_t o = (op);                                                          \
+                                                                               \
+    LOG(o)                                                                     \
+                                                                               \
     assert(SP() < VM()->sb + cGAB_STACK_MAX);                                  \
     assert(SP() > FB());                                                       \
                                                                                \
     [[clang::musttail]] return handlers[o](DISPATCH_ARGS());                   \
   })
 
-#define NEXT() DISPATCH(*IP()++);
+#define NEXT() DISPATCH(*(IP()++));
 
-#define VM_PANIC(status, help, ...)                                               \
+#define VM_PANIC(status, help, ...)                                            \
   ({                                                                           \
     STORE();                                                                   \
     return vm_error(GAB(), status, help __VA_OPT__(, ) __VA_ARGS__);           \
@@ -67,7 +69,7 @@ static handler handlers[] = {
 /*
   Lots of helper macros.
 */
-#define GAB() (__gab)
+#define GAB() (*__gab)
 #define EG() (GAB().eg)
 #define FIBER() (GAB_VAL_TO_FIBER(gab_thisfiber(GAB())))
 #define GC() (GAB().eg->gc)
@@ -142,7 +144,7 @@ static handler handlers[] = {
     uint64_t have = compute_arity(VAR(), READ_BYTE);                           \
                                                                                \
     SEND_GUARD_CACHED_RECEIVER_TYPE(PEEK_N(have));                             \
-    VM_PANIC_GUARD_ISN(PEEK_N(have));                                             \
+    VM_PANIC_GUARD_ISN(PEEK_N(have));                                          \
                                                                                \
     operation_type val = gab_valton(PEEK_N(have));                             \
                                                                                \
@@ -164,8 +166,8 @@ static handler handlers[] = {
     if (__gab_unlikely(have < 2))                                              \
       PUSH(gab_nil), have++;                                                   \
                                                                                \
-    VM_PANIC_GUARD_ISN(PEEK_N(have));                                             \
-    VM_PANIC_GUARD_ISN(PEEK_N(have - 1));                                         \
+    VM_PANIC_GUARD_ISN(PEEK_N(have));                                          \
+    VM_PANIC_GUARD_ISN(PEEK_N(have - 1));                                      \
                                                                                \
     operation_type val_b = gab_valton(PEEK_N(have - 1));                       \
     operation_type val_a = gab_valton(PEEK_N(have));                           \
@@ -188,7 +190,7 @@ static handler handlers[] = {
                                                                                \
     SEND_GUARD_CACHED_RECEIVER_TYPE(PEEK_N(have));                             \
                                                                                \
-    VM_PANIC_GUARD_ISB(PEEK_N(have));                                             \
+    VM_PANIC_GUARD_ISB(PEEK_N(have));                                          \
                                                                                \
     operation_type val = gab_valintob(PEEK_N(have));                           \
                                                                                \
@@ -210,8 +212,8 @@ static handler handlers[] = {
     if (__gab_unlikely(have < 2))                                              \
       PUSH(gab_nil), have++;                                                   \
                                                                                \
-    VM_PANIC_GUARD_ISB(PEEK_N(have));                                             \
-    VM_PANIC_GUARD_ISB(PEEK_N(have - 1));                                         \
+    VM_PANIC_GUARD_ISB(PEEK_N(have));                                          \
+    VM_PANIC_GUARD_ISB(PEEK_N(have - 1));                                      \
                                                                                \
     operation_type val_b = gab_valintob(PEEK_N(have));                         \
     operation_type val_a = gab_valintob(PEEK_N(have - 1));                     \
@@ -277,12 +279,12 @@ static handler handlers[] = {
 
 #define PUSH_VM_PANIC_FRAME(have) ({})
 
-#define STORE_PRIMITIVE_VM_PANIC_FRAME(have)                                      \
+#define STORE_PRIMITIVE_VM_PANIC_FRAME(have)                                   \
   ({                                                                           \
     STORE_FP();                                                                \
     STORE_SP();                                                                \
     STORE_IP();                                                                \
-    PUSH_VM_PANIC_FRAME(have);                                                    \
+    PUSH_VM_PANIC_FRAME(have);                                                 \
   })
 
 #define RETURN_FB() ((gab_value *)(void *)FB()[-1])
@@ -581,7 +583,7 @@ inline uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc,
     struct gab_obj_prototype *p = GAB_VAL_TO_PROTOTYPE(blk->p);                \
                                                                                \
     if (__gab_unlikely(!has_callspace(SP(), SB(), p->nslots - have)))          \
-      VM_PANIC(GAB_OVERFLOW, "");                                                 \
+      VM_PANIC(GAB_OVERFLOW, "");                                              \
                                                                                \
     PUSH_FRAME(blk, have);                                                     \
                                                                                \
@@ -599,7 +601,7 @@ inline uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc,
     struct gab_obj_prototype *p = GAB_VAL_TO_PROTOTYPE(blk->p);                \
                                                                                \
     if (__gab_unlikely(!has_callspace(SP(), SB(), 3 + p->nslots - have)))      \
-      VM_PANIC(GAB_OVERFLOW, "");                                                 \
+      VM_PANIC(GAB_OVERFLOW, "");                                              \
                                                                                \
     PUSH_FRAME(blk, have);                                                     \
                                                                                \
@@ -678,7 +680,7 @@ inline uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc,
                                                                                \
     uint64_t pass = message ? have : have - 1;                                 \
                                                                                \
-    a_gab_value *res = (*native->function)(GAB(), pass, SP() - pass);          \
+    a_gab_value *res = (*native->function)(__gab, pass, SP() - pass);          \
                                                                                \
     if (__gab_unlikely(res))                                                   \
       return res;                                                              \
@@ -777,7 +779,7 @@ a_gab_value *do_vmexecfiber(struct gab_triple gab, gab_value f,
     fiber->header.kind = kGAB_FIBERRUNNING;
 
     assert((*vm->sp) > 0);
-    return handlers[op](gab, ip, ks, vm->fp, vm->sp);
+    return handlers[op](&gab, ip, ks, vm->fp, vm->sp);
   }
   case kGAB_NATIVE: {
     struct gab_vm *vm = &fiber->vm;
@@ -795,7 +797,7 @@ a_gab_value *do_vmexecfiber(struct gab_triple gab, gab_value f,
 
     assert(fiber->header.kind != kGAB_FIBERDONE);
     fiber->header.kind = kGAB_FIBERRUNNING;
-    return OP_SEND_NATIVE_HANDLER(gab, ip, ks, vm->fp, vm->sp);
+    return OP_SEND_NATIVE_HANDLER(&gab, ip, ks, vm->fp, vm->sp);
   }
   case kGAB_BLOCK: {
     struct gab_vm *vm = &fiber->vm;
@@ -809,7 +811,7 @@ a_gab_value *do_vmexecfiber(struct gab_triple gab, gab_value f,
 
     assert(fiber->header.kind != kGAB_FIBERDONE);
     fiber->header.kind = kGAB_FIBERRUNNING;
-    return handlers[op](gab, ip, p->src->constants.data, vm->fp, vm->sp);
+    return handlers[op](&gab, ip, p->src->constants.data, vm->fp, vm->sp);
   }
   default: {
     a_gab_value *results =
@@ -837,33 +839,33 @@ a_gab_value *gab_vmexec(struct gab_triple gab, gab_value f) {
   return do_vmexecfiber(gab, f, res);
 }
 
-#define VM_PANIC_GUARD_KIND(value, kind)                                          \
+#define VM_PANIC_GUARD_KIND(value, kind)                                       \
   if (__gab_unlikely(gab_valkind(value) != kind)) {                            \
-    STORE_PRIMITIVE_VM_PANIC_FRAME(1);                                            \
-    VM_PANIC(GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, value,                          \
-          gab_valtype(GAB(), value), gab_type(GAB(), kind));                   \
+    STORE_PRIMITIVE_VM_PANIC_FRAME(1);                                         \
+    VM_PANIC(GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, value,                       \
+             gab_valtype(GAB(), value), gab_type(GAB(), kind));                \
   }
 
-#define VM_PANIC_GUARD_ISB(value)                                                 \
+#define VM_PANIC_GUARD_ISB(value)                                              \
   if (__gab_unlikely(!__gab_valisb(value))) {                                  \
-    STORE_PRIMITIVE_VM_PANIC_FRAME(have);                                         \
-    VM_PANIC(GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, value,                          \
-          gab_valtype(GAB(), value), gab_type(GAB(), kGAB_MESSAGE));           \
+    STORE_PRIMITIVE_VM_PANIC_FRAME(have);                                      \
+    VM_PANIC(GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, value,                       \
+             gab_valtype(GAB(), value), gab_type(GAB(), kGAB_MESSAGE));        \
   }
 
-#define VM_PANIC_GUARD_ISN(value)                                                 \
+#define VM_PANIC_GUARD_ISN(value)                                              \
   if (__gab_unlikely(!__gab_valisn(value))) {                                  \
-    STORE_PRIMITIVE_VM_PANIC_FRAME(have);                                         \
-    VM_PANIC(GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, value,                          \
-          gab_valtype(GAB(), value), gab_type(GAB(), kGAB_NUMBER));            \
+    STORE_PRIMITIVE_VM_PANIC_FRAME(have);                                      \
+    VM_PANIC(GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, value,                       \
+             gab_valtype(GAB(), value), gab_type(GAB(), kGAB_NUMBER));         \
   }
 
-#define VM_PANIC_GUARD_ISS(value)                                                 \
+#define VM_PANIC_GUARD_ISS(value)                                              \
   if (__gab_unlikely(gab_valkind(value) != kGAB_STRING &&                      \
                      gab_valkind(value) != kGAB_MESSAGE)) {                    \
-    STORE_PRIMITIVE_VM_PANIC_FRAME(have);                                         \
-    VM_PANIC(GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, value,                          \
-          gab_valtype(GAB(), value), gab_type(GAB(), kGAB_STRING));            \
+    STORE_PRIMITIVE_VM_PANIC_FRAME(have);                                      \
+    VM_PANIC(GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, value,                       \
+             gab_valtype(GAB(), value), gab_type(GAB(), kGAB_STRING));         \
   }
 
 #define SEND_GUARD(clause)                                                     \
@@ -1623,7 +1625,7 @@ CASE_CODE(SEND) {
   if (__gab_unlikely(!res.status)) {
     STORE();
     VM_PANIC(GAB_IMPLEMENTATION_MISSING, FMT_MISSINGIMPL, m, r,
-          gab_valtype(GAB(), r));
+             gab_valtype(GAB(), r));
   }
 
   gab_value spec = res.status == kGAB_IMPL_PROPERTY
@@ -1819,7 +1821,7 @@ CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE) {
   if (__gab_unlikely(!res.status)) {
     STORE();
     VM_PANIC(GAB_IMPLEMENTATION_MISSING, FMT_MISSINGIMPL, m, r,
-          gab_valtype(GAB(), r));
+             gab_valtype(GAB(), r));
   }
 
   ks[GAB_SEND_KTYPE] = t;
@@ -1988,7 +1990,7 @@ CASE_CODE(SEND_PRIMITIVE_MAKE_SHAPE) {
 
   if (__gab_unlikely(gab_shplen(shape) != len))
     VM_PANIC(GAB_PANIC, "Expected $ arguments, got $",
-          gab_number(gab_shplen(shape)), gab_number(len));
+             gab_number(gab_shplen(shape)), gab_number(len));
 
   STORE_SP();
   gab_value record = gab_recordfrom(GAB(), shape, 1, len, SP() - len);

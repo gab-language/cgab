@@ -340,7 +340,7 @@ struct gab_obj_fiber;
 
 typedef void (*gab_gcvisit_f)(struct gab_triple, struct gab_obj *obj);
 
-typedef a_gab_value *(*gab_native_f)(struct gab_triple, uint64_t argc,
+typedef a_gab_value *(*gab_native_f)(struct gab_triple*, uint64_t argc,
                                      gab_value *argv);
 
 typedef void (*gab_boxdestroy_f)(uint64_t len, char *data);
