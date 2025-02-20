@@ -319,6 +319,7 @@ int install(int argc, const char **argv, int flags) {
     printf("ERROR: Failed to download release %s", tag);
     return 1;
   }
+  printf("[gab]: Downloaded binary for release: %s.\n", tag);
 
   v_char_spush(&url, s_char_cstr(GAB_RELEASE_DOWNLOAD_URL));
   v_char_spush(&url, s_char_cstr(tag));
@@ -331,6 +332,7 @@ int install(int argc, const char **argv, int flags) {
 
   // Fetch release modules
   res = gab_osproc("curl", "-L", "-#", "-o", location.data, url.data);
+  printf("[gab]: Downloaded modules for release: %s.\n", tag);
 
   v_char_destroy(&location);
   v_char_destroy(&url);
@@ -354,6 +356,13 @@ int install(int argc, const char **argv, int flags) {
     printf("ERROR: Failed to download release %s", tag);
     return 1;
   }
+  printf("[gab]: Extracted modules.\n");
+  printf("Congratulations! Gab @%s successfully installed.\n\n"
+         "However, the binary is likely not available in your PATH yet.\n"
+         "It is not recommended to add '%s' to PATH directly.\n\nInstead:\n "
+         "\tOn systems that support symlinks, link the binary at %s/gab to "
+         "some location in PATH already.\n\t\teg: ln -s %s/gab /usr/local/bin",
+         tag, location_prefix, location_prefix, location_prefix);
 
   return 0;
 }
