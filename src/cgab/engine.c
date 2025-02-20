@@ -358,7 +358,6 @@ int32_t worker_job(void *data) {
 
     gab.eg->jobs[gab.wkid].fiber = fiber;
 
-    gab_fprintf(stdout, "WORKER $: $\n", gab_number(gab.wkid), gab.eg->jobs[gab.wkid].fiber);
     gab_vmexec(gab, fiber);
 
     gab.eg->jobs[gab.wkid].fiber = gab_undefined;

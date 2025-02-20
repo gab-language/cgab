@@ -340,7 +340,7 @@ struct gab_obj_fiber;
 
 typedef void (*gab_gcvisit_f)(struct gab_triple, struct gab_obj *obj);
 
-typedef a_gab_value *(*gab_native_f)(struct gab_triple*, uint64_t argc,
+typedef a_gab_value *(*gab_native_f)(struct gab_triple, uint64_t argc,
                                      gab_value *argv);
 
 typedef void (*gab_boxdestroy_f)(uint64_t len, char *data);
@@ -1974,8 +1974,9 @@ GAB_API_INLINE gab_value gab_thisfiber(struct gab_triple gab);
  *
  * @return The spec
  */
-GAB_API_INLINE gab_value
-gab_thisfibmsgat(struct gab_triple gab, gab_value message, gab_value receiver);
+GAB_API_INLINE gab_value gab_thisfibmsgat(struct gab_triple gab,
+                                          gab_value message,
+                                          gab_value receiver);
 
 GAB_API_INLINE gab_value gab_thisfibmsgrec(struct gab_triple gab,
                                            gab_value message);
@@ -2571,8 +2572,9 @@ GAB_API_INLINE gab_value gab_thisfibmsgrec(struct gab_triple gab,
   return gab_recat(gab_thisfibmsg(gab), message);
 }
 
-GAB_API_INLINE gab_value
-gab_thisfibmsgat(struct gab_triple gab, gab_value message, gab_value receiver) {
+GAB_API_INLINE gab_value gab_thisfibmsgat(struct gab_triple gab,
+                                          gab_value message,
+                                          gab_value receiver) {
   gab_value spec_rec = gab_thisfibmsgrec(gab, message);
 
   if (spec_rec == gab_undefined)

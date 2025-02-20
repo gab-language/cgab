@@ -528,8 +528,6 @@ void processepoch(struct gab_triple gab, int32_t e) {
     goto fin;
   }
 
-  gab_fprintf(stdout, "WORKER $: $\n", gab_number(gab.wkid), wk->fiber);
-
   assert(gab_valkind(wk->fiber) == kGAB_FIBER ||
          gab_valkind(wk->fiber) == kGAB_FIBERRUNNING ||
          gab_valkind(wk->fiber) == kGAB_FIBERDONE);

@@ -457,6 +457,16 @@ GAB_DYNLIB_MAIN_FN {
               gab_snative(gab, "number?", gab_strlib_number),
           },
           {
+              gab_message(gab, "strings\\into"),
+              gab_undefined,
+              gab_snative(gab, "strings\\into", gab_strlib_string_into),
+          },
+          {
+              gab_message(gab, "messages\\into"),
+              t,
+              gab_snative(gab, "messages\\into", gab_strlib_messages_into),
+          },
+          {
               gab_message(gab, "byte\\into"),
               t,
               gab_snative(gab, "byte\\into", gab_strlib_to_byte),

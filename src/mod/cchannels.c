@@ -39,10 +39,6 @@ a_gab_value *gab_chnlib_is_empty(struct gab_triple gab, uint64_t argc,
  GAB_DYNLIB_MAIN_FN {
   gab_value t = gab_type(gab, kGAB_CHANNEL);
 
-  printf("IN DYNLIB FN\n");
-  printf("GAB: worker %i, flags: %i\n", gab.wkid, gab.flags);
-  gab_fprintf(stdout, "TEST: $\n", gab_string(gab, "Hello world"));
-
   gab_def(gab,
           {
               gab_message(gab, "close!"),

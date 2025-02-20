@@ -1,5 +1,16 @@
 name: Release static binaries
 
+#
+# This action builds, tests, and releases new versions of gab.
+#
+# Currently, all windows builds are disabled.
+#
+# This is because there are some c-abi issues with zig cc, and these affect
+# only the windows platform. Until these bugs are fixed in zig cc, Gab will not
+# support windows.
+#
+# (Unless I feel ike refactoring all the code that is using these abi features - passing structs as arguments).
+
 on:
   push:
     branches: [ "main" ]
@@ -16,11 +27,11 @@ jobs:
       matrix:
         target:
           - x86_64-linux-gnu
-          - x86_64-windows-gnu
           - x86_64-macos-none
+          # - x86_64-windows-gnu
           - aarch64-linux-gnu
-          - aarch64-windows-gnu
           - aarch64-macos-none
+          # - aarch64-windows-gnu
         build_type:
           - release
           - debug
@@ -74,18 +85,18 @@ jobs:
           - release
         os: 
           - ubuntu-latest
-          - windows-latest
           - macos-latest
+          # - windows-latest
         include:
           - os: ubuntu-latest
             target: x86_64-linux-gnu
             cmd: ./gab
-          - os: windows-latest
-            target: x86_64-windows-gnu
-            cmd: .\gab
           - os: macos-latest
             target: x86_64-macos-none
             cmd: ./gab
+          # - os: windows-latest
+          #   target: x86_64-windows-gnu
+          #   cmd: .\gab
 
     runs-on: ${{ matrix.os }}
     needs: build_artifacts
@@ -108,12 +119,12 @@ jobs:
         if: ${{ contains(matrix.target, 'mac') || contains(matrix.target, 'linux') }}
         run: chmod +x gab
 
-      - name: Make the binary executable (win)
-        if: ${{ contains(matrix.target, 'windows') }}
-        run: |
-          move gab gab.exe
-          where.exe "gab"
-          Get-Command ".\gab"
+      # - name: Make the binary executable (win)
+      #   if: ${{ contains(matrix.target, 'windows') }}
+      #   run: |
+      #     move gab gab.exe
+      #     where.exe "gab"
+      #     Get-Command ".\gab"
 
       - name: Log for debugging purposes
         run: ls -R .
@@ -154,11 +165,11 @@ jobs:
       matrix:
         target:
           - x86_64-linux-gnu
-          - x86_64-windows-gnu
           - x86_64-macos-none
+          # - x86_64-windows-gnu
           - aarch64-linux-gnu
-          - aarch64-windows-gnu
           - aarch64-macos-none
+          # - aarch64-windows-gnu
         build_type:
           - release
           - debug

@@ -11,7 +11,7 @@
 #include <string.h>
 
 #define OP_HANDLER_ARGS                                                        \
-  struct gab_triple *__gab, uint8_t *__ip, gab_value *__kb, gab_value *__fb,   \
+  struct gab_triple __gab, uint8_t *__ip, gab_value *__kb, gab_value *__fb,    \
       gab_value *__sp
 
 typedef a_gab_value *(*handler)(OP_HANDLER_ARGS);
@@ -39,7 +39,7 @@ static handler handlers[] = {
 #define CASE_CODE(name)                                                        \
   ATTRIBUTES a_gab_value *OP_##name##_HANDLER(OP_HANDLER_ARGS)
 
-#define DISPATCH_ARGS() __gab, IP(), KB(), FB(), SP()
+#define DISPATCH_ARGS() GAB(), IP(), KB(), FB(), SP()
 
 #define DISPATCH(op)                                                           \
   ({                                                                           \
@@ -69,7 +69,7 @@ static handler handlers[] = {
 /*
   Lots of helper macros.
 */
-#define GAB() (*__gab)
+#define GAB() (__gab)
 #define EG() (GAB().eg)
 #define FIBER() (GAB_VAL_TO_FIBER(gab_thisfiber(GAB())))
 #define GC() (GAB().eg->gc)
@@ -680,7 +680,7 @@ inline uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc,
                                                                                \
     uint64_t pass = message ? have : have - 1;                                 \
                                                                                \
-    a_gab_value *res = (*native->function)(__gab, pass, SP() - pass);          \
+    a_gab_value *res = (*native->function)(GAB(), pass, SP() - pass);          \
                                                                                \
     if (__gab_unlikely(res))                                                   \
       return res;                                                              \
@@ -779,7 +779,7 @@ a_gab_value *do_vmexecfiber(struct gab_triple gab, gab_value f,
     fiber->header.kind = kGAB_FIBERRUNNING;
 
     assert((*vm->sp) > 0);
-    return handlers[op](&gab, ip, ks, vm->fp, vm->sp);
+    return handlers[op](gab, ip, ks, vm->fp, vm->sp);
   }
   case kGAB_NATIVE: {
     struct gab_vm *vm = &fiber->vm;
@@ -797,7 +797,7 @@ a_gab_value *do_vmexecfiber(struct gab_triple gab, gab_value f,
 
     assert(fiber->header.kind != kGAB_FIBERDONE);
     fiber->header.kind = kGAB_FIBERRUNNING;
-    return OP_SEND_NATIVE_HANDLER(&gab, ip, ks, vm->fp, vm->sp);
+    return OP_SEND_NATIVE_HANDLER(gab, ip, ks, vm->fp, vm->sp);
   }
   case kGAB_BLOCK: {
     struct gab_vm *vm = &fiber->vm;
@@ -811,7 +811,7 @@ a_gab_value *do_vmexecfiber(struct gab_triple gab, gab_value f,
 
     assert(fiber->header.kind != kGAB_FIBERDONE);
     fiber->header.kind = kGAB_FIBERRUNNING;
-    return handlers[op](&gab, ip, p->src->constants.data, vm->fp, vm->sp);
+    return handlers[op](gab, ip, p->src->constants.data, vm->fp, vm->sp);
   }
   default: {
     a_gab_value *results =
