@@ -149,7 +149,7 @@ jobs:
 
       # Create a release if we didn't find an existing tag
       - name: Create Release
-        if: steps.tag_check.conclusion == 'failure'
+        if: ${{ failure() && steps.tag_check.conclusion == 'failure' }}
         run:  gh release create -R '${{ github.repository }}' '${{ env.version }}' --generate-notes
 
   release_artifacts:
