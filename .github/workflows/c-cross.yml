@@ -115,6 +115,9 @@ jobs:
         with:
           name: gab-${{ matrix.build_type }}-${{ matrix.target }}-modules
 
+      - name: Log for debugging purposes
+        run: ls -R .
+
       - name: Make the binary executable (*nix)
         if: ${{ contains(matrix.target, 'mac') || contains(matrix.target, 'linux') }}
         run: chmod +x gab
@@ -125,9 +128,6 @@ jobs:
       #     move gab gab.exe
       #     where.exe "gab"
       #     Get-Command ".\gab"
-
-      - name: Log for debugging purposes
-        run: ls -R .
 
       - name: Run Smallest Hello World
         run: ${{ matrix.cmd }} exec -e "'hello world!'"

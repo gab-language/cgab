@@ -80,7 +80,7 @@ int run_file(const char *path, int flags, size_t jobs) {
 
     free(result);
   } else {
-    gab_fpanic(gab, "Module not found");
+    gab_fpanic(gab, "Module '$' not found.", gab_string(gab, path));
   }
 
   gab_destroy(gab);
@@ -105,7 +105,7 @@ struct command {
   struct option options[MAX_OPTIONS];
 };
 
-int install(int argc, const char **argv, int flags);
+int get(int argc, const char **argv, int flags);
 int run(int argc, const char **argv, int flags);
 int exec(int argc, const char **argv, int flags);
 int repl(int argc, const char **argv, int flags);
@@ -120,9 +120,9 @@ static struct command commands[] = {
         .handler = help,
     },
     {
-        "install",
-        "Install different versions of gab",
-        .handler = install,
+        "get",
+        "Install Gab and/or packages given by <args>",
+        .handler = get,
     },
     {
         "run",
@@ -130,13 +130,13 @@ static struct command commands[] = {
         .handler = run,
         {
             {
-                "dump",
+                "dast",
                 "Dump compiled ast to stdout",
                 'a',
                 .flag = fGAB_AST_DUMP,
             },
             {
-                "dump",
+                "dbc",
                 "Dump compiled bytecode to stdout",
                 'd',
                 .flag = fGAB_BUILD_DUMP,
@@ -149,28 +149,28 @@ static struct command commands[] = {
             },
             {
                 "sterr",
-                "Instead of pretty-printing errors, use a structured output.",
+                "Instead of pretty-printing errors, use a structured output",
                 's',
                 .flag = fGAB_ERR_STRUCTURED,
             },
             {
                 "check",
-                "Compile the file without running it.",
+                "Compile the file without running it",
                 'c',
                 .flag = fGAB_BUILD_CHECK,
             },
             {
                 "eenv",
-                "Don't use gab's core module - start with a mostly-empty "
-                "environment.",
+                "Don't use gab's core module - start with a mostly empty "
+                "environment",
                 'e',
                 .flag = fGAB_ENV_EMPTY,
             },
             {
                 "jobs",
                 "Specify the number of os threads which should serve as "
-                "workers for running gab fibers. Default is " STR(
-                    cGAB_DEFAULT_NJOBS) ".",
+                "workers for running fibers. Default is " STR(
+                    cGAB_DEFAULT_NJOBS),
                 'j',
                 .flag = fGAB_JOB_RUNNERS,
             },
@@ -182,13 +182,13 @@ static struct command commands[] = {
         .handler = exec,
         {
             {
-                "dump",
+                "dast",
                 "Dump compiled ast to stdout",
                 'a',
                 .flag = fGAB_AST_DUMP,
             },
             {
-                "dump",
+                "dbc",
                 "Dump compiled bytecode to stdout",
                 'd',
                 .flag = fGAB_BUILD_DUMP,
@@ -201,20 +201,20 @@ static struct command commands[] = {
             },
             {
                 "sterr",
-                "Instead of pretty-printing errors, use a structured output.",
+                "Instead of pretty-printing errors, use a structured output",
                 's',
                 .flag = fGAB_ERR_STRUCTURED,
             },
             {
                 "check",
-                "Compile the file without running it.",
+                "Compile the file without running it",
                 'c',
                 .flag = fGAB_BUILD_CHECK,
             },
             {
                 "eenv",
-                "Don't use gab's core module - start with a mostly-empty "
-                "environment.",
+                "Don't use gab's core module - start with a mostly empty "
+                "environment",
                 'e',
                 .flag = fGAB_ENV_EMPTY,
             },
@@ -222,19 +222,19 @@ static struct command commands[] = {
     },
     {
         "repl",
-        "Enter the read-eval-print loop.",
+        "Enter the read-eval-print loop",
         .handler = repl,
         {
             {
-                "dump",
+                "dbc",
                 "Dump compiled bytecode to stdout",
                 'd',
                 .flag = fGAB_BUILD_DUMP,
             },
             {
                 "eenv",
-                "Don't use gab's core module - start with a mostly-empty "
-                "environment.",
+                "Don't use gab's core module - start with a mostly empty "
+                "environment",
                 'e',
                 .flag = fGAB_ENV_EMPTY,
             },
@@ -263,28 +263,27 @@ struct parse_options_result parse_options(int argc, const char **argv,
 
         if (opt.name && !strcmp(argv[i] + 2, opt.name)) {
           flags |= opt.flag;
-          break;
+          goto next;
         }
       }
 
-      printf("UNRECOGNIZED FLAG: %s\n", argv[i]);
+      printf("[gab] CLI Error: unrecognized flag '%s'\n", argv[i]);
       exit(1);
-      continue;
     } else {
       for (int j = 0; j < MAX_OPTIONS; j++) {
         struct option opt = command.options[j];
 
         if (opt.name && argv[i][1] == opt.shorthand) {
           flags |= opt.flag;
-          break;
+          goto next;
         }
       }
 
-      continue;
-
-      printf("UNRECOGNIZED FLAG: %s\n", argv[i]);
+      printf("[gab] CLI Error: unrecognized flag '%s'\n", argv[i]);
       exit(1);
     }
+
+  next:
   }
 
   return (struct parse_options_result){0, flags};
@@ -293,8 +292,31 @@ struct parse_options_result parse_options(int argc, const char **argv,
 #define GAB_RELEASE_DOWNLOAD_URL                                               \
   "https://github.com/gab-language/cgab/releases/download/"
 
-int install(int argc, const char **argv, int flags) {
-  const char *tag = argc ? argv[0] : GAB_VERSION_TAG;
+int get(int argc, const char **argv, int flags) {
+  if (argc < 1)
+    printf("[gab] No tag specified, defaulting to " GAB_VERSION_TAG "\n");
+
+  const char *res = argc ? argv[0] : "@"GAB_VERSION_TAG;
+
+    // Handle appending tag differently
+  const char *location_prefix = gab_osprefix();
+
+  if (location_prefix == nullptr) {
+    printf("[gab] CLI Error: could not determine installation prefix.\n");
+    return 1;
+  }
+
+  printf("[gab]: Resolved installation prefix: %s.\n", location_prefix);
+
+  v_char location = {};
+  v_char_spush(&location, s_char_cstr(location_prefix));
+  v_char_spush(&location, s_char_cstr("/gab"));
+  v_char_push(&location, '\0');
+
+  /**
+   * TODO: Mkdir here
+   */
+  gab_osmkdirp(location.data);
 
   v_char url = {};
 
@@ -303,20 +325,6 @@ int install(int argc, const char **argv, int flags) {
   v_char_spush(&url, s_char_cstr("/gab-release-" GAB_TARGET_TRIPLE));
   v_char_push(&url, '\0');
 
-  const char *location_prefix = gab_osprefix();
-
-  if (location_prefix == nullptr) {
-    printf("[ERROR]: Could not determine install prefix.\n");
-    return 1;
-  }
-
-  printf("[gab]: resolved installation prefix: %s.\n", location_prefix);
-
-  v_char location = {};
-  v_char_spush(&location, s_char_cstr(location_prefix));
-  v_char_spush(&location, s_char_cstr("/gab"));
-  v_char_push(&location, '\0');
-
   // Fetch release binary
   int res = gab_osproc("curl", "-L", "-#", "-o", location.data, url.data);
 
@@ -324,7 +332,7 @@ int install(int argc, const char **argv, int flags) {
   v_char_destroy(&url);
 
   if (res) {
-    printf("ERROR: Failed to download release %s", tag);
+    printf("[gab] CLI Error: failed to download release %s", tag);
     return 1;
   }
   printf("[gab]: Downloaded binary for release: %s.\n", tag);
@@ -346,7 +354,7 @@ int install(int argc, const char **argv, int flags) {
   v_char_destroy(&url);
 
   if (res) {
-    printf("ERROR: Failed to download release %s", tag);
+    printf("[gab] CLI Error: failed to download release %s", tag);
     return 1;
   }
 
@@ -361,11 +369,11 @@ int install(int argc, const char **argv, int flags) {
   res = gab_osproc("tar", "xzf", location.data, "-C", url.data);
 
   if (res) {
-    printf("ERROR: Failed to download release %s", tag);
+    printf("[gab] CLI Error: failed to download release %s", tag);
     return 1;
   }
   printf("[gab]: Extracted modules.\n");
-  printf("Congratulations! Gab @%s successfully installed.\n\n"
+  printf("\nCongratulations! Gab @%s successfully installed.\n\n"
          "However, the binary is likely not available in your PATH yet.\n"
          "It is not recommended to add '%s' to PATH directly.\n\nInstead:\n "
          "\tOn systems that support symlinks, link the binary at %s/gab to "
@@ -377,7 +385,7 @@ int install(int argc, const char **argv, int flags) {
 
 int run(int argc, const char **argv, int flags) {
   if (argc < 1) {
-    printf("ERROR: Not enough arguments\n");
+    printf("[gab] CLI Error: not enough arguments\n");
     return 1;
   }
 
@@ -388,7 +396,7 @@ int run(int argc, const char **argv, int flags) {
     const char *njobs = argv[0];
 
     if (argc < 2) {
-      printf("ERROR: Not enough arguments\n");
+      printf("[gab] CLI Error: not enough arguments\n");
       return 1;
     }
 
@@ -400,7 +408,10 @@ int run(int argc, const char **argv, int flags) {
 }
 
 int exec(int argc, const char **argv, int flags) {
-  assert(argc > 0);
+  if (argc < 1) {
+    printf("[gab] CLI Error: not enough arguments\n");
+    return 1;
+  }
 
   return run_string(argv[0], flags, 8);
 }
@@ -450,8 +461,9 @@ int main(int argc, const char **argv) {
     }
   }
 
-fin: {
+  printf("[gab] CLI Error: unrecognized subcommand '%s'\n", argv[1]);
+
+fin:
   struct command cmd = DEFAULT_COMMAND;
   return cmd.handler(0, argv, 0);
-}
 }

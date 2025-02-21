@@ -47,6 +47,9 @@
  *
  * gab_osprefix()
  * Determine the gab_prefix for the given operating system.
+ *
+ * gab_osmkdirp(path)
+ * Make a directory at path, if it doesn't exist.
  */
 
 #define GAB_DYNLIB_MAIN "gab_lib"
@@ -73,6 +76,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #define gab_fisatty(f) isatty(fileno(f))
@@ -80,6 +84,8 @@
 #define gab_osdynlib void *
 #define gab_oslibopen(path) dlopen(path, RTLD_NOW)
 #define gab_oslibfind(dynlib, name) (void(*)(void))dlsym(dynlib, name)
+#define gab_osmkdirp(path) mkdir(path, 0755)
+
 
 static const char *gab_osprefix() {
   char *home = getenv("HOME");
@@ -158,6 +164,7 @@ static int gab_nosproc(char *cmd, size_t nargs, char *args[]) {
 #define gab_osdynlib HMODULE
 #define gab_oslibopen(path) LoadLibraryA(path)
 #define gab_oslibfind(dynlib, name) ((void(*)(void))GetProcAddress(dynlib, name))
+#define gab_osmkdirp(path) mkdir(path)
 
 static const char *gab_osprefix() {
   PWSTR path = NULL;
