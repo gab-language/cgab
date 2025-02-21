@@ -1,5 +1,7 @@
 #include "colors.h"
 #include "core.h"
+#define GAB_COLORS_IMPL
+#include "colors.h"
 #include "engine.h"
 #include "gab.h"
 #include "lexer.h"
@@ -186,7 +188,7 @@ static const char *chan_strs[] = {
     [kGAB_CHANNELCLOSED] = "closed ",
 };
 
-int gab_fvalinspect(FILE *stream, gab_value self, int depth) {
+int inspectval(FILE *stream, gab_value self, int depth) {
   switch (gab_valkind(self)) {
   case kGAB_PRIMITIVE:
     return fprintf(stream, "<" tGAB_PRIMITIVE " %s>",
@@ -267,6 +269,22 @@ int gab_fvalinspect(FILE *stream, gab_value self, int depth) {
   return 0;
 }
 
+int gab_fvalinspect(FILE *stream, gab_value self, int depth) {
+  int bytes = 0;
+
+  if (gab_fisatty(stream)) {
+    int idx = gab_valkind(self) % GAB_COLORS_LEN;
+    const char *color = ANSI_COLORS[idx];
+    bytes += fprintf(stream, "%s", color);
+    bytes += inspectval(stream, self, 1);
+    bytes += fprintf(stream, GAB_RESET);
+  } else {
+    bytes += inspectval(stream, self, 1);
+  }
+
+  return bytes;
+}
+
 void gab_obj_destroy(struct gab_eg *gab, struct gab_obj *self) {
   switch (self->kind) {
   case kGAB_FIBERDONE: {
@@ -291,9 +309,10 @@ void gab_obj_destroy(struct gab_eg *gab, struct gab_obj *self) {
     mtx_lock(&gab->strings_mtx);
     printf("STRFREE %p\n", self);
     /*
-     * ASYNC ISSUE: Because collections happen asynchronously (and the strings intern table *doesn't hold references)
-     * Strings that are queued for removal *can* be re-used *right* before they are deleted. This requires a better, long-term
-     * solution.
+     * ASYNC ISSUE: Because collections happen asynchronously (and the strings
+     * intern table *doesn't hold references) Strings that are queued for
+     * removal *can* be re-used *right* before they are deleted. This requires a
+     * better, long-term solution.
      */
     d_strings_remove(&gab->strings, (struct gab_obj_string *)self);
     mtx_unlock(&gab->strings_mtx);
@@ -356,7 +375,7 @@ gab_value nstring(struct gab_triple gab, uint64_t hash, uint64_t len,
   self->len = str.len;
   self->hash = hash;
 
-  mbstate_t state = { 0 };
+  mbstate_t state = {0};
   const char *cursor = self->data;
   self->mb_len = mbsrtowcs(NULL, &cursor, 0, &state);
 

@@ -113,6 +113,44 @@ int help(int argc, const char **argv, int flags);
 
 #define DEFAULT_COMMAND commands[0]
 
+const struct option dumpast_option = {
+    "dast",
+    "Dump compiled ast to stdout",
+    'a',
+    .flag = fGAB_AST_DUMP,
+};
+const struct option dumpbytecode_option = {
+    "dbc",
+    "Dump compiled bytecode to stdout",
+    'd',
+    .flag = fGAB_BUILD_DUMP,
+};
+const struct option quiet_option = {
+    "quiet",
+    "Do not print errors to the engine's stderr",
+    'q',
+    .flag = fGAB_ERR_QUIET,
+};
+const struct option structured_err_option = {
+    "sterr",
+    "Instead of pretty-printing errors, use a structured output",
+    's',
+    .flag = fGAB_ERR_STRUCTURED,
+};
+const struct option check_option = {
+    "check",
+    "Compile the file without running it",
+    'c',
+    .flag = fGAB_BUILD_CHECK,
+};
+const struct option empty_env_option = {
+    "eenv",
+    "Don't use gab's core module - start with a mostly empty "
+    "environment",
+    'e',
+    .flag = fGAB_ENV_EMPTY,
+};
+
 static struct command commands[] = {
     {
         "help",
@@ -129,43 +167,12 @@ static struct command commands[] = {
         "Compile and run the module at path <args>",
         .handler = run,
         {
-            {
-                "dast",
-                "Dump compiled ast to stdout",
-                'a',
-                .flag = fGAB_AST_DUMP,
-            },
-            {
-                "dbc",
-                "Dump compiled bytecode to stdout",
-                'd',
-                .flag = fGAB_BUILD_DUMP,
-            },
-            {
-                "quiet",
-                "Do not print errors to the engine's stderr",
-                'q',
-                .flag = fGAB_ERR_QUIET,
-            },
-            {
-                "sterr",
-                "Instead of pretty-printing errors, use a structured output",
-                's',
-                .flag = fGAB_ERR_STRUCTURED,
-            },
-            {
-                "check",
-                "Compile the file without running it",
-                'c',
-                .flag = fGAB_BUILD_CHECK,
-            },
-            {
-                "eenv",
-                "Don't use gab's core module - start with a mostly empty "
-                "environment",
-                'e',
-                .flag = fGAB_ENV_EMPTY,
-            },
+            dumpast_option,
+            dumpbytecode_option,
+            quiet_option,
+            check_option,
+            structured_err_option,
+            empty_env_option,
             {
                 "jobs",
                 "Specify the number of os threads which should serve as "
@@ -181,43 +188,12 @@ static struct command commands[] = {
         "Compile and run the string <args>",
         .handler = exec,
         {
-            {
-                "dast",
-                "Dump compiled ast to stdout",
-                'a',
-                .flag = fGAB_AST_DUMP,
-            },
-            {
-                "dbc",
-                "Dump compiled bytecode to stdout",
-                'd',
-                .flag = fGAB_BUILD_DUMP,
-            },
-            {
-                "quiet",
-                "Do not print errors to the engine's stderr",
-                'q',
-                .flag = fGAB_ERR_QUIET,
-            },
-            {
-                "sterr",
-                "Instead of pretty-printing errors, use a structured output",
-                's',
-                .flag = fGAB_ERR_STRUCTURED,
-            },
-            {
-                "check",
-                "Compile the file without running it",
-                'c',
-                .flag = fGAB_BUILD_CHECK,
-            },
-            {
-                "eenv",
-                "Don't use gab's core module - start with a mostly empty "
-                "environment",
-                'e',
-                .flag = fGAB_ENV_EMPTY,
-            },
+            dumpast_option,
+            dumpbytecode_option,
+            quiet_option,
+            check_option,
+            structured_err_option,
+            empty_env_option,
         },
     },
     {
@@ -225,19 +201,9 @@ static struct command commands[] = {
         "Enter the read-eval-print loop",
         .handler = repl,
         {
-            {
-                "dbc",
-                "Dump compiled bytecode to stdout",
-                'd',
-                .flag = fGAB_BUILD_DUMP,
-            },
-            {
-                "eenv",
-                "Don't use gab's core module - start with a mostly empty "
-                "environment",
-                'e',
-                .flag = fGAB_ENV_EMPTY,
-            },
+            dumpast_option,
+            dumpbytecode_option,
+            empty_env_option,
         },
     },
 };

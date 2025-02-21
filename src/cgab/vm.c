@@ -398,6 +398,7 @@ a_gab_value *vvm_error(struct gab_triple gab, enum gab_status s,
               vm_frame_build_err(gab, frame_block(f), ip, false, s, fmt));
 
   gab_value results[] = {
+      gab_message(gab, "err"),
       gab_string(gab, gab_status_names[s]),
       gab_fb(gab),
   };

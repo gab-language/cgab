@@ -217,7 +217,7 @@ enum gab_flags {
 // VERSION
 #define GAB_VERSION_MAJOR "0"
 #define GAB_VERSION_MINOR "0"
-#define GAB_VERSION_PATCH "1"
+#define GAB_VERSION_PATCH "2"
 #define GAB_VERSION_TAG GAB_VERSION_MAJOR "." GAB_VERSION_MINOR "." GAB_VERSION_PATCH
 
 // Message constants

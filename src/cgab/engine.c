@@ -6,7 +6,6 @@
 #define GAB_TOKEN_NAMES_IMPL
 #include "engine.h"
 
-#define GAB_COLORS_IMPL
 #include "colors.h"
 
 #include "core.h"
@@ -656,7 +655,7 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
         gab_fvalinspect(stdout, arg, -1);
       } else {
         gab_fvalinspect(stdout, arg, -1);
-        printf(", ");
+        printf(" ");
       }
     }
 
@@ -864,15 +863,7 @@ int gab_nfprintf(FILE *stream, const char *fmt, uint64_t argc,
 
       gab_value arg = argv[i++];
 
-      if (gab_fisatty(stream)) {
-        int idx = gab_valkind(arg) % GAB_COLORS_LEN;
-        const char *color = ANSI_COLORS[idx];
-        bytes += fprintf(stream, "%s", color);
-        bytes += gab_fvalinspect(stream, arg, 1);
-        bytes += fprintf(stream, GAB_RESET);
-      } else {
-        bytes += gab_fvalinspect(stream, arg, 1);
-      }
+      bytes += gab_fvalinspect(stream, arg, 1);
 
       break;
     }
@@ -897,15 +888,7 @@ int gab_vfprintf(FILE *stream, const char *fmt, va_list varargs) {
     case '$': {
       gab_value arg = va_arg(varargs, gab_value);
 
-      if (gab_fisatty(stream)) {
-        int idx = gab_valkind(arg) % GAB_COLORS_LEN;
-        const char *color = ANSI_COLORS[idx];
-        bytes += fprintf(stream, "%s", color);
-        bytes += gab_fvalinspect(stream, arg, 1);
-        bytes += fprintf(stream, GAB_RESET);
-      } else {
-        bytes += gab_fvalinspect(stream, arg, 1);
-      }
+      bytes += gab_fvalinspect(stream, arg, 1);
       break;
     }
     default:
@@ -1066,21 +1049,22 @@ a_gab_value *gab_use_dynlib(struct gab_triple gab, const char *path) {
     return gab_fpanic(gab, "Failed to load module '$': $",
                       gab_string(gab, path), gab_string(gab, dlerror()));
 #else
-  {
-    int error = GetLastError();
-    char buffer[128];
-    if (FormatMessageA(
-            FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_FROM_SYSTEM, NULL,
-            error, 0, buffer, sizeof(buffer) / sizeof(char), NULL))
-      return gab_fpanic(gab, "Failed to load module '$': $",
-                        gab_string(gab, path), gab_string(gab, buffer));
+    {
+      int error = GetLastError();
+      char buffer[128];
+      if (FormatMessageA(
+              FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_FROM_SYSTEM, NULL,
+              error, 0, buffer, sizeof(buffer) / sizeof(char), NULL))
+        return gab_fpanic(gab, "Failed to load module '$': $",
+                          gab_string(gab, path), gab_string(gab, buffer));
 
-    return gab_fpanic(gab, "Failed to load module '$'", gab_string(gab, path));
-  }
+      return gab_fpanic(gab, "Failed to load module '$'",
+                        gab_string(gab, path));
+    }
 #endif
   }
 
-  module_f mod = (module_f) gab_oslibfind(lib, GAB_DYNLIB_MAIN);
+  module_f mod = (module_f)gab_oslibfind(lib, GAB_DYNLIB_MAIN);
 
   if (mod == nullptr)
 #ifdef GAB_PLATFORM_UNIX

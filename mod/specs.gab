@@ -24,7 +24,7 @@ defspec!: .def! (
 
     spec\name:.def!(
       opts.spec
-      self.strings\into)
+      self.to_s)
 
     spec:.def!(
       self
@@ -1035,7 +1035,7 @@ end
   doc: (mod) => do
     xf = td:.map ((v k) => (
           v
-          k .strings\into
+          k .to_s
             .split '\\'
             .sigils\into,
           k))
