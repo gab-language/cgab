@@ -139,6 +139,8 @@ jobs:
     needs: run_tests
     continue-on-error: true
 
+    permissions: write-all
+
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v4
