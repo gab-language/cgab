@@ -144,6 +144,7 @@ jobs:
 
       - name: Check for existing tag
         id: tag_check
+        continue-on-error: true
         run: git ls-remote --tags | grep '${{ env.version }}' 
 
       # Create a release if we didn't find an existing tag
