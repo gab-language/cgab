@@ -8,7 +8,7 @@
 #define MAIN_MODULE "gab\\main"
 
 #ifdef GAB_PLATFORM_UNIX
-#define GAB_SYMLINK_RECOMMENDATION "ln -s %s/gab /usr/local/bin"
+#define GAB_SYMLINK_RECOMMENDATION "ln -sf %s/gab /usr/local/bin"
 #else
 #define GAB_SYMLINK_RECOMMENDATION                                             \
   "New-Item -ItemType SymbolicLink -Path %s\gab -Target "                      \
@@ -101,6 +101,7 @@ struct option {
 struct command {
   const char *name;
   const char *desc;
+  const char *long_desc;
   int (*handler)(int, const char **, int);
   struct option options[MAX_OPTIONS];
 };
@@ -154,17 +155,44 @@ const struct option empty_env_option = {
 static struct command commands[] = {
     {
         "help",
-        "Print this help message",
+        "Print this message, or learn more about the subcommand given by "
+        "<args>",
+        "With no arguments, prints a general help message summarizing all "
+        "available subcommands and their flags.\n"
+        "With a subcommand given by <arg>, print more specific information "
+        "related to that subcommand.\n\n\tEG: gab help get",
         .handler = help,
     },
     {
         "get",
         "Install Gab and/or packages given by <args>",
+        "With no arguments, installs Gab's builtin modules for the release "
+        "corresponding to this binary's version.\n"
+        "Accepts arguments in the shape <package>@<tag>, where:"
+        "\n\t- <package> corresponds to a valid gab package"
+        "\n\t- <tag> corresponds to a valid, local gab version"
+        "\n\nNote that the tag does not correspond to a version *of the "
+        "package*,"
+        "it refers to the local destination gab version.",
         .handler = get,
     },
     {
         "run",
         "Compile and run the module at path <args>",
+        "Expects one argument, the name of the module to run. "
+        "The module is invoked as if by '<arg>' .use.\n"
+        "The search path for use: is as follows:"
+        "\n\t- ./<arg>.gab"
+        "\n\t- ./mod/<arg>.gab"
+        "\n\t- ./<arg>/mod.gab"
+        "\n\t- ./<arg>.[so | dll]"
+        "\n\t- ./mod/<arg>.[so | dll]"
+        "\n\t- <install_dir>/<arg>.gab"
+        "\n\t- <install_dir>/mod/<arg>.gab"
+        "\n\t- <install_dir>/<arg>/mod.gab"
+        "\n\t- <install_dir>/<arg>.[so | dll]"
+        "\n\t- <install_dir>/mod/<arg>.[so | dll]"
+        "\nNote that relative locations are prioritized over installed ones.",
         .handler = run,
         {
             dumpast_option,
@@ -186,6 +214,7 @@ static struct command commands[] = {
     {
         "exec",
         "Compile and run the string <args>",
+        "Compile the string <arg> as Gab code and execute it immediately.",
         .handler = exec,
         {
             dumpast_option,
@@ -199,6 +228,9 @@ static struct command commands[] = {
     {
         "repl",
         "Enter the read-eval-print loop",
+        "A read-eval-print-loop is a convenient tool for expiremtnation.\n"
+        "Currently, Gab's repl is quite feature-poor. It is a priority to "
+        "improve developer experience in this area.",
         .handler = repl,
         {
             dumpast_option,
@@ -348,6 +380,16 @@ int get(int argc, const char **argv, int flags) {
     // Fetch release binary
     int res = gab_osproc("curl", "-L", "-#", "-o", location.data, url.data);
 
+#ifdef GAB_PLATFORM_UNIX
+    res = gab_osproc("chmod", "+x", location.data);
+
+    if (res) {
+      printf("[gab] CLI Error: failed to change permissions of binary %s",
+             location.data);
+      return 1;
+    }
+#endif
+
     v_char_destroy(&location);
     v_char_destroy(&url);
 
@@ -449,20 +491,56 @@ int repl(int argc, const char **argv, int flags) {
   return 0;
 }
 
+void cmd_summary(int i) {
+  struct command cmd = commands[i];
+  printf("\ngab %4s [opts] <args>\t%s\n", cmd.name, cmd.desc);
+
+  for (int j = 0; j < MAX_OPTIONS; j++) {
+    struct option opt = cmd.options[j];
+
+    if (!opt.name)
+      break;
+
+    printf("\t--%-5s\t-%c\t%s\n", opt.name, opt.shorthand, opt.desc);
+  }
+}
+
+void cmd_details(int i) {
+  struct command cmd = commands[i];
+  printf("USAGE:\n\tgab %4s [opts] <args>\n\n%s", cmd.name, cmd.long_desc);
+
+  if (cmd.options[0].name == nullptr)
+    return;
+
+  printf("\n\nFLAGS:\n");
+  for (int j = 0; j < MAX_OPTIONS; j++) {
+    struct option opt = cmd.options[j];
+
+    if (!opt.name)
+      break;
+
+    printf("\t--%-5s\t-%c\t%s\n", opt.name, opt.shorthand, opt.desc);
+  }
+}
+
 int help(int argc, const char **argv, int flags) {
+  if (argc < 1) {
+    // Print command summaries
+    for (int i = 0; i < N_COMMANDS; i++)
+      cmd_summary(i);
+  }
+
+  const char *subcommand = argv[0];
+
   for (int i = 0; i < N_COMMANDS; i++) {
     struct command cmd = commands[i];
-    printf("\ngab %4s [opts] <args>\t%s\n", cmd.name, cmd.desc);
-
-    for (int j = 0; j < MAX_OPTIONS; j++) {
-      struct option opt = cmd.options[j];
-
-      if (!opt.name)
-        break;
-
-      printf("\t--%-5s\t-%c\t%s\n", opt.name, opt.shorthand, opt.desc);
+    if (!strcmp(subcommand, cmd.name)) {
+      cmd_details(i);
+      return 0;
     }
-  };
+  }
+
+  printf("[gab] CLI Error: unrecognized subcommand '%s'\n", subcommand);
   return 0;
 }
 
