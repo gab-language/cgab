@@ -184,7 +184,6 @@ jobs:
         uses: pyTooling/download-artifact@v4
         with:
           name: 'gab-${{ matrix.build_type }}-${{ matrix.target }}-modules'
-          path: 'mod'
 
       - name: Create Module Archive
         run: tar -cvzf 'gab-${{ matrix.build_type }}-${{ matrix.target }}-modules' mod/*
