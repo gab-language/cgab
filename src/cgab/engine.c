@@ -1194,7 +1194,7 @@ resource resources[] = {
 };
 
 a_char *match_resource(resource *res, const char *name, uint64_t len) {
-  const char *roots[] = {".", gab_osprefix()};
+  const char *roots[] = {".", gab_osprefix(GAB_VERSION_TAG)};
 
   for (int i = 0; i < LEN_CARRAY(roots); i++) {
     if (roots[i] == nullptr)

@@ -292,95 +292,157 @@ struct parse_options_result parse_options(int argc, const char **argv,
 #define GAB_RELEASE_DOWNLOAD_URL                                               \
   "https://github.com/gab-language/cgab/releases/download/"
 
+const char *split_pkg(char *pkg) {
+  char *cursor = pkg;
+
+  while (*cursor != '@') {
+    if (*cursor == '\0')
+      return nullptr;
+
+    cursor++;
+  }
+
+  *cursor = '\0';
+
+  return ++cursor;
+}
+
 int get(int argc, const char **argv, int flags) {
   if (argc < 1)
-    printf("[gab] No tag specified, defaulting to " GAB_VERSION_TAG "\n");
+    printf("[gab] No package or tag found. Defaulting to '@'\n");
 
-  const char *res = argc ? argv[0] : "@"GAB_VERSION_TAG;
+  const char *pkg = argc ? argv[0] : "@";
 
-    // Handle appending tag differently
-  const char *location_prefix = gab_osprefix();
+  const size_t len = strlen(pkg);
+  char buf[len + 4];
+  strncpy(buf, pkg, len);
+  buf[len] = '\0';
 
-  if (location_prefix == nullptr) {
-    printf("[gab] CLI Error: could not determine installation prefix.\n");
+  const char *tag = split_pkg(buf);
+
+  if (!tag) {
+    printf("[gab] CLI Error: Could not resolve package and tag for '%s'\n",
+           buf);
     return 1;
   }
 
-  printf("[gab]: Resolved installation prefix: %s.\n", location_prefix);
+  if (!strlen(tag)) {
+    printf("[gab] No tag specified. Defaulting to '" GAB_VERSION_TAG "'\n");
+    tag = GAB_VERSION_TAG;
+  }
+
+  if (!strlen(buf)) {
+    printf("[gab] No package specified. Defaulting to 'Gab'\n");
+    strncpy(buf, "Gab", 4);
+  }
+
+  printf("[gab] Resolved tag '%s'\n", tag);
+  printf("[gab] Resolved package '%s'\n", buf);
+
+  const char *gab_prefix = gab_osprefix("");
+
+  if (gab_prefix == nullptr) {
+    printf("[gab] CLI Error: could not determine installation prefix\n");
+    return 1;
+  }
+
+  if (!gab_osmkdirp(gab_prefix)) {
+    printf("[gab] CLI Error: Failed to create directory at %s\n", gab_prefix);
+    return 1;
+  };
+
+  const char *location_prefix = gab_osprefix(tag);
+
+  if (location_prefix == nullptr) {
+    printf("[gab] CLI Error: could not determine installation prefix\n");
+    return 1;
+  }
+
+  printf("[gab] Resolved installation prefix: %s\n", location_prefix);
+
+  if (!gab_osmkdirp(location_prefix)) {
+    printf("[gab] CLI Error: Failed to create directory at %s\n",
+           location_prefix);
+    return 1;
+  };
 
   v_char location = {};
   v_char_spush(&location, s_char_cstr(location_prefix));
   v_char_spush(&location, s_char_cstr("/gab"));
   v_char_push(&location, '\0');
 
-  /**
-   * TODO: Mkdir here
-   */
-  gab_osmkdirp(location.data);
+  if (!strcmp(buf, "Gab")) {
+    v_char url = {};
 
-  v_char url = {};
+    v_char_spush(&url, s_char_cstr(GAB_RELEASE_DOWNLOAD_URL));
+    v_char_spush(&url, s_char_cstr(tag));
+    v_char_spush(&url, s_char_cstr("/gab-release-" GAB_TARGET_TRIPLE));
+    v_char_push(&url, '\0');
 
-  v_char_spush(&url, s_char_cstr(GAB_RELEASE_DOWNLOAD_URL));
-  v_char_spush(&url, s_char_cstr(tag));
-  v_char_spush(&url, s_char_cstr("/gab-release-" GAB_TARGET_TRIPLE));
-  v_char_push(&url, '\0');
+    // Fetch release binary
+    int res = gab_osproc("curl", "-L", "-#", "-o", location.data, url.data);
 
-  // Fetch release binary
-  int res = gab_osproc("curl", "-L", "-#", "-o", location.data, url.data);
+    v_char_destroy(&location);
+    v_char_destroy(&url);
 
-  v_char_destroy(&location);
-  v_char_destroy(&url);
+    if (res) {
+      printf("[gab] CLI Error: failed to download release %s", tag);
+      return 1;
+    }
 
-  if (res) {
-    printf("[gab] CLI Error: failed to download release %s", tag);
-    return 1;
+    printf("[gab] Downloaded binary for release: %s.\n", tag);
+
+    v_char_spush(&url, s_char_cstr(GAB_RELEASE_DOWNLOAD_URL));
+    v_char_spush(&url, s_char_cstr(tag));
+    v_char_spush(&url,
+                 s_char_cstr("/gab-release-" GAB_TARGET_TRIPLE "-modules"));
+    v_char_push(&url, '\0');
+
+    v_char_spush(&location, s_char_cstr(location_prefix));
+    v_char_spush(&location, s_char_cstr("/modules"));
+    v_char_push(&location, '\0');
+
+    // Fetch release modules
+    res = gab_osproc("curl", "-L", "-#", "-o", location.data, url.data);
+    printf("[gab] Downloaded modules for release: %s.\n", tag);
+
+    v_char_destroy(&location);
+    v_char_destroy(&url);
+
+    if (res) {
+      printf("[gab] CLI Error: failed to download release %s", tag);
+      return 1;
+    }
+
+    v_char_spush(&location, s_char_cstr(location_prefix));
+    v_char_spush(&location, s_char_cstr("/modules"));
+    v_char_push(&location, '\0');
+
+    v_char_spush(&url, s_char_cstr(location_prefix));
+    v_char_push(&url, '/');
+    v_char_push(&url, '\0');
+
+    res = gab_osproc("tar", "xzf", location.data, "-C", url.data);
+
+    if (res) {
+      printf("[gab] CLI Error: failed to download release %s", tag);
+      return 1;
+    }
+
+    printf("[gab] Extracted modules.\n");
+    printf(
+        "\nCongratulations! %s@%s successfully installed.\n\n"
+        "However, the binary is likely not available in your PATH yet.\n"
+        "It is not recommended to add '%s' to PATH directly.\n\nInstead:\n "
+        "\tOn systems that support symlinks, link the binary at %s/gab to "
+        "some location in PATH already.\n\t\teg: " GAB_SYMLINK_RECOMMENDATION,
+        buf, tag, location_prefix, location_prefix, location_prefix);
+
+    return 0;
   }
-  printf("[gab]: Downloaded binary for release: %s.\n", tag);
 
-  v_char_spush(&url, s_char_cstr(GAB_RELEASE_DOWNLOAD_URL));
-  v_char_spush(&url, s_char_cstr(tag));
-  v_char_spush(&url, s_char_cstr("/gab-release-" GAB_TARGET_TRIPLE "-modules"));
-  v_char_push(&url, '\0');
-
-  v_char_spush(&location, s_char_cstr(location_prefix));
-  v_char_spush(&location, s_char_cstr("/modules"));
-  v_char_push(&location, '\0');
-
-  // Fetch release modules
-  res = gab_osproc("curl", "-L", "-#", "-o", location.data, url.data);
-  printf("[gab]: Downloaded modules for release: %s.\n", tag);
-
-  v_char_destroy(&location);
-  v_char_destroy(&url);
-
-  if (res) {
-    printf("[gab] CLI Error: failed to download release %s", tag);
-    return 1;
-  }
-
-  v_char_spush(&location, s_char_cstr(location_prefix));
-  v_char_spush(&location, s_char_cstr("/modules"));
-  v_char_push(&location, '\0');
-
-  v_char_spush(&url, s_char_cstr(location_prefix));
-  v_char_push(&url, '/');
-  v_char_push(&url, '\0');
-
-  res = gab_osproc("tar", "xzf", location.data, "-C", url.data);
-
-  if (res) {
-    printf("[gab] CLI Error: failed to download release %s", tag);
-    return 1;
-  }
-  printf("[gab]: Extracted modules.\n");
-  printf("\nCongratulations! Gab @%s successfully installed.\n\n"
-         "However, the binary is likely not available in your PATH yet.\n"
-         "It is not recommended to add '%s' to PATH directly.\n\nInstead:\n "
-         "\tOn systems that support symlinks, link the binary at %s/gab to "
-         "some location in PATH already.\n\t\teg: " GAB_SYMLINK_RECOMMENDATION,
-         tag, location_prefix, location_prefix, location_prefix);
-
-  return 0;
+  printf("[gab] CLI Error: Installing packages not yet supported\n");
+  return 1;
 }
 
 int run(int argc, const char **argv, int flags) {

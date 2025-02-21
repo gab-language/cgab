@@ -45,8 +45,9 @@
  * gab_osproc(cmd, ...args)
  * Spawn a child process with the given command and arguments.
  *
- * gab_osprefix()
- * Determine the gab_prefix for the given operating system.
+ * gab_osprefix(version)
+ * Determine the gab_prefix for the given operating system, with the given gab
+ * version.
  *
  * gab_osmkdirp(path)
  * Make a directory at path, if it doesn't exist.
@@ -75,19 +76,30 @@
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/wait.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #define gab_fisatty(f) isatty(fileno(f))
 
 #define gab_osdynlib void *
 #define gab_oslibopen(path) dlopen(path, RTLD_NOW)
-#define gab_oslibfind(dynlib, name) (void(*)(void))dlsym(dynlib, name)
-#define gab_osmkdirp(path) mkdir(path, 0755)
+#define gab_oslibfind(dynlib, name) (void (*)(void)) dlsym(dynlib, name)
+static const bool gab_osmkdirp(const char *path) {
+  int res = mkdir(path, 0755);
 
+  if (res == 0)
+    return true; // Directory created
 
-static const char *gab_osprefix() {
+  if (errno == EEXIST)
+    return true; // Directory already existed
+  
+  printf("ERR: %s\n", strerror(errno));
+  // Some other error occurred
+  return false;
+}
+
+static const char *gab_osprefix(const char *v) {
   char *home = getenv("HOME");
 
   if (!home)
@@ -96,7 +108,8 @@ static const char *gab_osprefix() {
   v_char str = {0};
 
   v_char_spush(&str, s_char_cstr(home));
-  v_char_spush(&str, s_char_cstr("/gab/" GAB_VERSION_TAG));
+  v_char_spush(&str, s_char_cstr("/gab/"));
+  v_char_spush(&str, s_char_cstr(v));
   v_char_push(&str, '\0');
 
   return str.data;
@@ -156,17 +169,18 @@ static int gab_nosproc(char *cmd, size_t nargs, char *args[]) {
 #include <shlobj.h>
 #include <stdio.h>
 #include <tchar.h>
-#include <windows.h>
 #include <wchar.h>
+#include <windows.h>
 
 #define gab_fisatty(f) _isatty(_fileno(f))
 
 #define gab_osdynlib HMODULE
 #define gab_oslibopen(path) LoadLibraryA(path)
-#define gab_oslibfind(dynlib, name) ((void(*)(void))GetProcAddress(dynlib, name))
+#define gab_oslibfind(dynlib, name)                                            \
+  ((void (*)(void))GetProcAddress(dynlib, name))
 #define gab_osmkdirp(path) mkdir(path)
 
-static const char *gab_osprefix() {
+static const char *gab_osprefix(const char *v) {
   PWSTR path = NULL;
 
   HRESULT status = SHGetKnownFolderPath(&FOLDERID_LocalAppData, 0, NULL, &path);
@@ -186,7 +200,8 @@ static const char *gab_osprefix() {
   v_char str = {0};
 
   v_char_spush(&str, s_char_cstr(buffer));
-  v_char_spush(&str, s_char_cstr("/gab/" GAB_VERSION_TAG));
+  v_char_spush(&str, s_char_cstr("/gab/"));
+  v_char_spush(&str, s_char_cstr(v));
   v_char_push(&str, '\0');
 
   return str.data;
