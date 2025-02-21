@@ -1883,12 +1883,14 @@ union gab_value_pair gab_compile(struct gab_triple gab, gab_value ast,
 
   size_t begin = end - len;
 
-  char data[nupvalues +
-            1]; // It is undefined behavior for a VLA to have length 0.
+  // It is undefined behavior for a VLA to have length 0.
+  char data[nupvalues + 1];
   build_upvdata(env, nupvalues, data);
 
   size_t bco = d_uint64_t_read(&bc.src->node_begin_toks, ast);
   v_uint64_t_set(&bc.src->bytecode_toks, begin, bco);
+
+  gab_value e = peek_env(env, 0);
 
   gab_value proto = gab_prototype(gab, src, begin, len,
                                   (struct gab_prototype_argt){
@@ -1896,6 +1898,7 @@ union gab_value_pair gab_compile(struct gab_triple gab, gab_value ast,
                                       .nlocals = nlocals,
                                       .narguments = nargs,
                                       .nslots = (nlocals + 3),
+                                      .shape = gab_recshp(e),
                                       /*.data = upvdata,*/
                                       .data = data,
                                   });

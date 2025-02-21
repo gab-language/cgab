@@ -1651,8 +1651,7 @@ GAB_API gab_value gab_record(struct gab_triple gab, uint64_t stride,
                              uint64_t len, gab_value *keys, gab_value *vals);
 
 GAB_API gab_value gab_recordfrom(struct gab_triple gab, gab_value shape,
-                                 uint64_t stride, uint64_t len,
-                                 gab_value *vals);
+                                 uint64_t stride, gab_value *vals);
 
 GAB_API_INLINE gab_value gab_erecord(struct gab_triple gab) {
   return gab_record(gab, 0, 0, nullptr, nullptr);
@@ -1915,7 +1914,12 @@ struct gab_obj_fiber {
   /**
    * Result of execution
    */
-  a_gab_value *res;
+  a_gab_value *res_values;
+
+  /**
+   * The environment as execution finished
+   */
+  gab_value res_env;
 
   /**
    * Length of data array member
@@ -1954,6 +1958,8 @@ GAB_API gab_value gab_fiber(struct gab_triple gab, struct gab_fiber_argt args);
  * @param fiber The fiber
  */
 GAB_API a_gab_value *gab_fibawait(struct gab_triple gab, gab_value fiber);
+
+GAB_API gab_value gab_fibawaite(struct gab_triple gab, gab_value fiber);
 
 GAB_API_INLINE bool gab_fibisrunning(gab_value fiber) {
   return gab_valkind(fiber) == kGAB_FIBERRUNNING;
@@ -2205,6 +2211,11 @@ struct gab_obj_prototype {
   uint64_t offset, len;
 
   /**
+   * The shape of the environment of the block
+   */
+  gab_value s;
+
+  /**
    * Flags providing additional metadata about the prototype.
    */
   char data[];
@@ -2219,6 +2230,7 @@ struct gab_obj_prototype {
  */
 struct gab_prototype_argt {
   char narguments, nslots, nlocals, nupvalues, *flags, *indexes, *data;
+  gab_value shape;
 };
 
 /**

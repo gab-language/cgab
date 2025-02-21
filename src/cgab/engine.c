@@ -607,6 +607,8 @@ void gab_destroy(struct gab_triple gab) {
 
 void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
   uint64_t iterations = 0;
+  gab_value env = gab_undefined;
+  gab_value fiber = gab_undefined;
 
   args.welcome_message = args.welcome_message ? args.welcome_message : "";
   args.prompt_prefix = args.prompt_prefix ? args.prompt_prefix : "";
@@ -621,7 +623,6 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
 
     if ((int8_t)src->data[0] == EOF) {
       a_char_destroy(src);
-
       return;
     }
 
@@ -637,12 +638,41 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
 
     iterations++;
 
-    a_gab_value *result =
-        gab_exec(gab, (struct gab_exec_argt){
-                          .name = unique_name,
-                          .source = (char *)src->data,
-                          .flags = args.flags | fGAB_RUN_INCLUDEDEFAULTARGS,
-                      });
+    if (env == gab_undefined) {
+      fiber =
+          gab_aexec(gab, (struct gab_exec_argt){
+                             .name = unique_name,
+                             .source = (char *)src->data,
+                             .flags = args.flags | fGAB_RUN_INCLUDEDEFAULTARGS,
+                         });
+    } else {
+      size_t len = gab_reclen(env) - 1;
+      const char *keys[len];
+      gab_value keyvals[len];
+      gab_value vals[len];
+
+      for (size_t i = 0; i < len; i++) {
+        size_t index = i + 1;
+        keyvals[i] = gab_valintos(gab, gab_ukrecat(env, index));
+        vals[i] = gab_uvrecat(env, index);
+        keys[i] = gab_strdata(keyvals + i);
+      }
+
+      fiber = gab_aexec(gab, (struct gab_exec_argt){
+                                 .name = unique_name,
+                                 .source = (char *)src->data,
+                                 .flags = args.flags,
+                                 .len = len,
+                                 .sargv = keys,
+                                 .argv = vals,
+                             });
+    }
+
+    if (fiber == gab_undefined)
+      continue;
+
+    a_gab_value *result = gab_fibawait(gab, fiber);
+    env = gab_fibawaite(gab, fiber);
 
     if (result == nullptr)
       continue;

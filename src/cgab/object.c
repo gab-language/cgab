@@ -93,7 +93,7 @@ int shape_dump_keys(FILE *stream, gab_value shape, int depth) {
   if (len == 0)
     return 0;
 
-  if (len > 8 && depth >= 0)
+  if (len > 16 && depth >= 0)
     return fprintf(stream, "... ");
 
   int bytes = 0;
@@ -115,7 +115,7 @@ int rec_dump_values(FILE *stream, gab_value rec, int depth) {
   if (len == 0)
     return 0;
 
-  if (len > 8 && depth >= 0)
+  if (len > 16 && depth >= 0)
     return fprintf(stream, " ... ");
 
   int32_t bytes = 0;
@@ -138,7 +138,7 @@ int rec_dump_properties(FILE *stream, gab_value rec, int depth) {
     if (len == 0)
       return 0;
 
-    if (len > 8 && depth >= 0)
+    if (len > 16 && depth >= 0)
       return fprintf(stream, " ... ");
 
     int32_t bytes = 0;
@@ -161,7 +161,7 @@ int rec_dump_properties(FILE *stream, gab_value rec, int depth) {
     if (len == 0)
       return fprintf(stream, "~ ");
 
-    if (len > 8)
+    if (len > 16)
       return fprintf(stream, "... ");
 
     int32_t bytes = 0;
@@ -289,8 +289,8 @@ void gab_obj_destroy(struct gab_eg *gab, struct gab_obj *self) {
   switch (self->kind) {
   case kGAB_FIBERDONE: {
     struct gab_obj_fiber *fib = (struct gab_obj_fiber *)self;
-    assert(fib->res);
-    a_gab_value_destroy(fib->res);
+    assert(fib->res_values);
+    a_gab_value_destroy(fib->res_values);
     break;
   };
   case kGAB_SHAPE:
@@ -483,6 +483,7 @@ gab_value gab_prototype(struct gab_triple gab, struct gab_src *src,
   self->nlocals = args.nlocals;
   self->nupvalues = args.nupvalues;
   self->narguments = args.narguments;
+  self->s = args.shape;
 
   if (args.nupvalues > 0) {
     if (args.data) {
@@ -1034,8 +1035,9 @@ gab_value gab_shptorec(struct gab_triple gab, gab_value shp) {
 }
 
 gab_value gab_recordfrom(struct gab_triple gab, gab_value shape,
-                         uint64_t stride, uint64_t len, gab_value *vals) {
+                         uint64_t stride, gab_value *vals) {
   gab_gclock(gab);
+  uint64_t len = gab_shplen(shape);
 
   uint64_t shift = getshift(len);
 
@@ -1069,7 +1071,7 @@ gab_value gab_record(struct gab_triple gab, uint64_t stride, uint64_t len,
                      gab_value *keys, gab_value *vals) {
   gab_gclock(gab);
   gab_value shp = gab_shape(gab, stride, len, keys);
-  gab_value rec = gab_recordfrom(gab, shp, stride, len, vals);
+  gab_value rec = gab_recordfrom(gab, shp, stride, vals);
   gab_gcunlock(gab);
   return rec;
 }
@@ -1301,7 +1303,19 @@ a_gab_value *gab_fibawait(struct gab_triple gab, gab_value f) {
   while (fiber->header.kind != kGAB_FIBERDONE)
     gab_yield(gab);
 
-  return fiber->res;
+  return fiber->res_values;
+}
+
+gab_value gab_fibawaite(struct gab_triple gab, gab_value f) {
+  assert(gab_valkind(f) == kGAB_FIBER || gab_valkind(f) == kGAB_FIBERRUNNING ||
+         gab_valkind(f) == kGAB_FIBERDONE);
+
+  struct gab_obj_fiber *fiber = GAB_VAL_TO_FIBER(f);
+
+  while (fiber->header.kind != kGAB_FIBERDONE)
+    gab_yield(gab);
+
+  return fiber->res_env;
 }
 
 gab_value gab_channel(struct gab_triple gab) {

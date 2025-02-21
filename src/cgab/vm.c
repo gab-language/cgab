@@ -410,8 +410,12 @@ a_gab_value *vvm_error(struct gab_triple gab, enum gab_status s,
 
   gab_niref(gab, 1, res->len, res->data);
 
+  gab_value p = frame_block(vm->fp)->p;
+  gab_value shape = GAB_VAL_TO_PROTOTYPE(p)->s;
+
   assert(GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERRUNNING);
-  GAB_VAL_TO_FIBER(fiber)->res = res;
+  GAB_VAL_TO_FIBER(fiber)->res_values = res;
+  GAB_VAL_TO_FIBER(fiber)->res_env = gab_recordfrom(gab, shape, 1, vm->fp);
   GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERDONE;
 
   return res;
@@ -735,8 +739,12 @@ a_gab_value *ok(OP_HANDLER_ARGS) {
 
   VM()->sp = VM()->sb;
 
+  gab_value p = frame_block(VM()->fp)->p;
+  gab_value shape = GAB_VAL_TO_PROTOTYPE(p)->s;
+
   assert(FIBER()->header.kind = kGAB_FIBERRUNNING);
-  FIBER()->res = results;
+  FIBER()->res_values = results;
+  FIBER()->res_env = gab_recordfrom(GAB(), shape, 1, VM()->fp);
   FIBER()->header.kind = kGAB_FIBERDONE;
 
   return results;
@@ -818,7 +826,7 @@ a_gab_value *do_vmexecfiber(struct gab_triple gab, gab_value f,
     a_gab_value *results =
         a_gab_value_create((gab_value[]){gab_ok, res.as.spec}, 2);
 
-    fiber->res = results;
+    fiber->res_values = results;
 
     assert(fiber->header.kind != kGAB_FIBERDONE);
     fiber->header.kind = kGAB_FIBERDONE;
@@ -1994,7 +2002,7 @@ CASE_CODE(SEND_PRIMITIVE_MAKE_SHAPE) {
              gab_number(gab_shplen(shape)), gab_number(len));
 
   STORE_SP();
-  gab_value record = gab_recordfrom(GAB(), shape, 1, len, SP() - len);
+  gab_value record = gab_recordfrom(GAB(), shape, 1, SP() - len);
 
   DROP_N(have);
   PUSH(record);
