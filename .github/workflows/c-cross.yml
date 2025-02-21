@@ -187,7 +187,7 @@ jobs:
         run: tar -cvzf 'gab-${{ matrix.build_type }}-${{ matrix.target }}-modules' mod/*
       
       - name: Rename binary
-        run: mv gab 'gab-${{ matrix.build_type }}-${{ matrix.target }}'
+        run: mv build-${{ matrix.target }}/gab 'gab-${{ matrix.build_type }}-${{ matrix.target }}'
 
       - name: Attach binary to release
         run: gh release upload -R '${{ github.repository }}' '${{ env.version }}' 'gab-${{ matrix.build_type }}-${{ matrix.target }}' || exit 0
