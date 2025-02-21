@@ -7,6 +7,14 @@
 
 #define MAIN_MODULE "gab\\main"
 
+#ifdef GAB_PLATFORM_UNIX
+#define GAB_SYMLINK_RECOMMENDATION "ln -s %s/gab /usr/local/bin"
+#else
+#define GAB_SYMLINK_RECOMMENDATION                                             \
+  "New-Item -ItemType SymbolicLink -Path %s\gab -Target "                      \
+  "\"Some\Directory\In\Path\""
+#endif
+
 void run_repl(int flags) {
   struct gab_triple gab = gab_create((struct gab_create_argt){
       .flags = flags,
@@ -361,7 +369,7 @@ int install(int argc, const char **argv, int flags) {
          "However, the binary is likely not available in your PATH yet.\n"
          "It is not recommended to add '%s' to PATH directly.\n\nInstead:\n "
          "\tOn systems that support symlinks, link the binary at %s/gab to "
-         "some location in PATH already.\n\t\teg: ln -s %s/gab /usr/local/bin",
+         "some location in PATH already.\n\t\teg: " GAB_SYMLINK_RECOMMENDATION,
          tag, location_prefix, location_prefix, location_prefix);
 
   return 0;
