@@ -7,12 +7,16 @@ Gab is a dynamic scripting language. It's goals are:
 Gab is heavily inspired by [Clojure](https://clojure.org), [Self](https://selflanguage.org/), [Lua](https://www.lua.org/), and [Erlang](https://www.erlang.org/).
 ```gab
 spawn_task = (i) => do
-    .gab.fiber () => do
-        'Hello from {i}' :print
+    Fibers.make () => do
+        Strings
+            .make('Hello from ', i)
+            .println
     end
 end
 
-.gab.range :(0 200000) :each spawn_task
+range: 
+    .make(0 20000)
+    .each spawn_task
 ```
 # TOC
 - Language Tour
@@ -24,7 +28,7 @@ end
 Programs are data. LISPs (such as the aforementioned Clojure) take this literally - code is a *data structure* that can be manipulated by *other code*.
 Smalltalk and Self are message-oriented. Code is composed of values and messages. Values receive messages, and behavior emerges. Gab takes inspiration from these two ideas. Here is some example code:
 ```gab
-    'Hello world!' :print
+    'Hello world!' .println
 ```
 This code resembles Smalltalk somewhat, and can be transcribed in English as:
 ```
@@ -32,7 +36,7 @@ This code resembles Smalltalk somewhat, and can be transcribed in English as:
 ```
 Here is an alternative, equally valid syntax:
 ```gab
-    \print :('Hello world!')
+    println:.('Hello world!')
 ```
 This syntax might look more familiar to programmers in the c-family of languages (Besides the curious '\\'). Said programmers might transcribe this block as:
 ```
@@ -47,10 +51,10 @@ To make an analogy to traditional classes and OOP, think of this as a generic va
 Polymorphism works as you'd expect. \+ behaves differently depending on the receiver:
 ```gab
     1 + 1                       # => 2
-    \+ :(1, 1)                   # => 2
+    :+.(1, 1)                   # => 2
 
     'Hello ' + 'world!'         # => 'Hello world!'
-    \+ :('Hello ', 'world!')     # => 'Hello world!'
+    :+.('Hello ', 'world!')     # => 'Hello world!'
 ```
 To peel back another layer, lets define Gab's syntax a little more clearly:
 #### Numbers
@@ -75,84 +79,84 @@ Depending on the context that the block is called in, `self` will have different
         a + b
     end
 
-    add :(1 2) # => 3
+    add.(1 2) # => 3
 ```
 #### Records
 Records are collections of key-value pairs. They are ordered, and structurally typed.
 ```gab
-    a_record = { \work 'value' }
+    a_record = { work: 'value' }
 
     a_record                    # => { work = 'value', more_complex_work = <gab.block ...> }
 
-    a_record :work              # => 'value'
+    a_record.work               # => 'value'
 
     a_tuple = [1 2 3]           # => A record as above, but the keys are ascending integers (starting from 0)
 
-    a_tuple                     # => { 0 = 1, 1 = 2, 2 = 3 }
+    a_tuple                     # => [1 2 3]
 ```
 Records, like all values, are __immutable__. This means that setting values in records returns a *new record*.
 ```gab
-    a_record = { \work 'value' }
+    a_record = { work: 'value' }
 
-    a_record = a_record :work 'another value'   # => When an argument is provided, this message serves as a 'set' instead of a 'get'.
+    a_record = a_record .work 'another value'   # => When an argument is provided, this message serves as a 'set' instead of a 'get'.
 
-    a_record :print                             # => { work = 'another value' }
+    a_record .println                           # => { work = 'another value' }
 ```
 Normally this would be incredibly expensive, copying entire datastructures just to make a single mutation.
 Gab's records are implemented using Bit-Partitioned Persistent Vectors, which use structural sharing to reduce memory impact and reduce the cost of copying.
-#### Sigils
-Sigils are similar to strings (and interchangeable in some ways). However, they respond to messages differently.
+#### Messages as values
+Messages are similar to strings (and interchangeable in some ways). However, they respond to messages differently.
 ```gab
-    .hello                  # => .hello (as a sigil)
+    hello:                  # => hello: (as a message)
 
     'hello'                 # => hello (as a string)
     
-    .hello == 'hello'       # => false
+    hello: == 'hello'       # => false
 
-    # \? is the message for getting the type of a value
-    .hello ?                # => .hello
+    # ?: is the message for getting the type of a value
+    hello: ?                # => hello:
 
-    'hello' ?               # => gab.string
+    'hello' ?               # => gab\string
 ```
-Because sigil's have a different type, you can define how an *individual sigil* responds to a message. Here is an example:
+Because message's have a different type, you can define how an *individual message* responds to a message. Here is an example:
 ```gab
-# Define the message 'then' for the .true and .false sigil.
-\then :defcase! {
-    .true do callback
+# Define the message 'then' for the .true and .false message.
+then: .defcase! {
+    true: do callback
         # In the true path, we call the callback
-        callback()
+        callback.()
     end
-    .fase do
+    false: do
         # In the false path, we return false
         self
     end
 }
 ```
-#### Messages
+#### Messages as behavior
 Messages are the *only* mechanism for defining behavior or control flow in gab.
 ```gab
-    \print                  # => \print
+    print:                  # => print:
 
-    1 :print                # => prints 1
+    1 .print                # => prints 1
 
-    \print :(1 2 3)        # => prints 1, 2, 3
+    print:.(1 2 3)          # => prints 1, 2, 3
 ```
 The core library provides some messages for defining messages. This might feel a little lispy:
 ```gab
-\say_hello :def!('gab.string', 'gab.sigil', () => 'Hello, ' + self:strings.into :print)
+say_hello: .def!('gab\string', 'gab\message', () => 'Hello, ' + self.strings\into .println)
 
-'Joe' :say_hello    # => Hello, Joe!
+'Joe' .say_hello    # => Hello, Joe!
 
-.Rich :say_hello    # => Hello, Rich!
+Rich: .say_hello    # => Hello, Rich!
 
-\meet :defcase! {
-    .Joe  () => 'Nice to meet you Joe!' :print
-    .Rich () => 'Its a pleasure, Rich!' :print 
+meet: .defcase! {
+    Joe:  () => 'Nice to meet you Joe!' .println
+    Rich: () => 'Its a pleasure, Rich!' .println
 }
 
-.Joe:meet         # => Nice to meet you Joe!
+Joe:.meet          # => Nice to meet you Joe!
 
-.Rich:meet         # => Its a pleasure, Rich!
+Rich:.meet         # => Its a pleasure, Rich!
 ```
 ### Behavior
 Behavior in Gab is dictated *exclusively* by polymorphic, infix messages. These infix messages always have one left-hand value and up to one right-hand value.
@@ -162,21 +166,21 @@ However, the tuple syntax (eg: `(3, 4)`) allows multiple values to be wrapped in
     1 + 1
 
     # Send \do_work to val with an argument of (2, 3, 4)
-    val :do_work(2 3 4)
+    val .do_work(2 3 4)
 
-    (ok result) = val :might_fail 'something'
+    (ok result) = val .might_fail 'something'
 ```
 ### Concurrency
 New programming languages that don't consider concurrency are boring! Everyones walking around with 8+ cores on them at all times, might as well use em!
-Gab's runtime uses something similar to goroutines or processes. A `gab.fiber` is a lightweight thread of execution, which are quick to create/destroy.
-For communication between fibers, Gab provides the `gab.channel`. Currently, these are unbuffered channels. This means that both `put` and `take` operations
+Gab's runtime uses something similar to goroutines or processes. A `gab\fiber` is a lightweight thread of execution, which are quick to create/destroy.
+For communication between fibers, Gab provides the `gab\channel`. Currently, these are unbuffered channels. This means that both `put` and `take` operations
 are always blocking.
 - When putting to a channel, the putting fiber must block until a receiving fiber is available on the other end.
 - The same applies when taking from a channel.
 
 Unbuffered channels are especially unique because _they never own a value_. They are cheaper to manage with garbage collection as a result!
 Gab's scheduler/runtime is actually implemented using an unbuffered _channel of fibers_.
-When a user creates a fiber (like with `gab.fiber do: ... end`), the runtime does something like this:
+When a user creates a fiber (like with `gab\fiber () => do ... end`), the runtime does something like this:
 ```js
     const fiber = new Fiber(block_to_run) // Create a new fiber, which is going to run the block
     global_work_channel.blockingPut(fiber)       // Blocking put the new fiber into the work channel. This will block until another thread is available to take it.
@@ -191,27 +195,27 @@ And the worker threads look something like this:
 This implementation has some problems, but it works well enough as an initial prototype.
 ```gab
 # Define a message for doing some work. This builds a list in a silly way.
-\do_acc :defcase! {
-  .true (acc) => acc
-  .false (acc n) => [n acc:acc(n - 1)**]
+do_acc: .defcase! {
+    true: (acc) => acc
+    false: (acc n) => [n acc.acc(n - 1)**]
 }
 
-\acc :def!(
-    'gab.record'
+acc: .def!(
+    'gab\\Record'
 # Note the choice to use the send syntax ':==' as opposed to the operator syntax '=='.
 # The send syntax has _higher precedence_ than operators. Here is the expression annotated with parentheses
-#   ((n :== 0) :do_acc(self n)) vs (n == (0 :do_acc(self n)))
-    n => n :== 0 :do_acc(self n))
+   ((n :== 0) .do_acc(self n)) vs (n == (0 .do_acc(self n)))
+    n => n :== 0 .do_acc(self n))
 
 # Define a message for launching blocks in a fiber.
-# This just calls the .gab.fiber constructer with
+# This just calls the gab\fiber constructer with
 #   a single argument - the block
-\go :def!(
+go: .def!(
     'gab.block'
-    () => .gab.fiber :(self))
+    () => Fiber.make self)
 
 # Define some input and output channels
-(in out) = (.gab.channel:() .gab.channel:())
+(in out) = (Channels.make, Channels.make)
 
 # Here is our block that will do the work.
 # Send \acc to the empty list [] with an
@@ -220,34 +224,34 @@ This implementation has some problems, but it works well enough as an initial pr
 # on the out channel.
 work = () => do
     n = in >!
-    res = [] :acc n :len
+    res = [] .acc n .len
     out <! res
 end
 
 # Dispatch some routines to work
-work :go
-work :go
-work :go
+work .go
+work .go
+work .go
 
 # Dispatch a routine to add work on the in channel
 fib = () => do
   in <! 400
   in <! 500
   in <! 600
-end :go
+end .go
 
-fib:print                       # => <gab.fiber 0x...>
+fib.println                       # => <gab\fiber 0x...>
 
 # Commas are treated as newlines, which serve _some_ syntactic purpose.
 # In this case, they end the expression so that `out >!` doesn't take the argument on the rhs.
-(out >!, out >!, out >!) :print # => 400, 500, 600
+(out >!, out >!, out >!) .print # => 400, 500, 600
 ```
 A neat feature built on top of the concurrency model is *concurrent* garbage collection. There is a secret extra thread dedicated to garbage collection, which when triggered
 briefly interrupts each running thread to track its live objects. After the brief interruption, each running thread is returned to its work and the collecting thread finishes the collection.
 Because the threads all share a single collector, and all gab values are immutable, this means that gab can implement message sends *without any serialization or copying*.
 Other models, such as in both Go and Erlang, copy/serialize messages into/out of channels and mailboxes. Gab's model doesn't have this restriction - we can pass values between fibers freely.
 Gab uses CSP as its model for communicating between fibers. This is the `go` or `clojure.core.async` model, using channels and operations like `put`, `take`, and `alt/select`.
-Gab has an initial implementation of this, and actually uses a `gab.channel` of `gab.fibers` at the runtime level to queue fibers for running.
+Gab has an initial implementation of this, and actually uses a `gab\channel` of `gab\fibers` at the runtime level to queue fibers for running.
 #### TODO:
 - [ ] Instead of malloc/free, write a custom per-job allocator. This can function like a bump allocator, and can enable further optimizations:
     - allocate-as-dead. Objects that *survive* their first collection are *moved* out of the bump allocator, and into long term storage.

@@ -1,13 +1,11 @@
-# Message literal
-message:
-+:
+spawn_task = (i) => do
+    Fibers.make () => do
+        Strings
+            .make('Hello from ', i)
+            .println
+    end
+end
 
-#message send
-1 .message 2
-1 + 2 
-
-test: .def! () => self + 2
-
-{ test: 2 }
-
-[1 2 3].filter even:
+range: 
+    .make(0 20000)
+    .each spawn_task

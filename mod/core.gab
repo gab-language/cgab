@@ -223,14 +223,14 @@ range\t .def\seq!
 
 range\into: .defcase! {
   nil: to => { from: 0, to: to }
-  'gab\number' from => { from: from, to: self }
+  'gab\\number' from => { from: from, to: self }
 }
 
 make: .def! (range: (from to) => do
   (to from) .range\into
 end)
 
-numbers\t = 'gab\number'
+numbers\t = 'gab\\number'
 
 is_n?: .def! false:
 is_n?: .def! (numbers\t, true:)
