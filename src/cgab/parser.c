@@ -8,21 +8,20 @@
 #define FMT_EXPECTED_EXPRESSION                                                \
   "Expected a value - one of:\n\n"                                             \
   "  " GAB_YELLOW "-1.23" GAB_MAGENTA "\t\t\t# A number \n" GAB_RESET          \
-  "  " GAB_GREEN ".true" GAB_MAGENTA "\t\t\t# A sigil \n" GAB_RESET            \
   "  " GAB_GREEN "'hello, Joe!'" GAB_MAGENTA "\t\t# A string \n" GAB_RESET     \
-  "  " GAB_RED "\\greet" GAB_MAGENTA "\t\t# A message\n" GAB_RESET             \
-  "  " GAB_BLUE "do x; x + 1 end" GAB_MAGENTA "\t# A block \n" GAB_RESET       \
-  "  " GAB_CYAN "{ key = value }" GAB_MAGENTA "\t# A record\n" GAB_RESET "  "  \
-  "(" GAB_YELLOW "-1.23" GAB_RESET ", " GAB_GREEN ".true" GAB_RESET            \
+  "  " GAB_RED "greet:" GAB_MAGENTA "\t\t# A message\n" GAB_RESET              \
+  "  " GAB_BLUE "x => x + 1 end" GAB_MAGENTA "\t# A block \n" GAB_RESET        \
+  "  " GAB_CYAN "{ key: value }" GAB_MAGENTA "\t# A record\n" GAB_RESET "  "   \
+  "(" GAB_YELLOW "-1.23" GAB_RESET ", " GAB_GREEN "true:" GAB_RESET            \
   ")" GAB_MAGENTA "\t# A tuple\n" GAB_RESET "  "                               \
-  "a_variable" GAB_MAGENTA "\t\t# Or a variable!\n" GAB_RESET
+  "a_variable" GAB_MAGENTA "\t\t# Or a variable!" GAB_RESET
 
 #define FMT_CLOSING_RBRACE                                                     \
   "Expected a closing $ to define a rest assignment target."
 
 #define FMT_EXTRA_REST_TARGET                                                  \
   "$ is already a rest-target.\n"                                              \
-  "\nBlocks and assignments can only declare one target as a rest-target.\n"
+  "\nBlocks and assignments can only declare one target as a rest-target."
 
 #define FMT_UNEXPECTEDTOKEN "Expected $ instead."
 

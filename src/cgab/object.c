@@ -96,7 +96,7 @@ int shape_dump_keys(FILE *stream, gab_value shape, int depth) {
   if (len > 16 && depth >= 0)
     return fprintf(stream, "... ");
 
-  int bytes = 0;
+  int32_t bytes = fprintf(stream, " ");
 
   for (uint64_t i = 0; i < len; i++) {
     bytes += gab_fvalinspect(stream, shp->keys[i], depth - 1);
@@ -105,7 +105,7 @@ int shape_dump_keys(FILE *stream, gab_value shape, int depth) {
       bytes += fprintf(stream, " ");
   }
 
-  return bytes;
+  return bytes + fprintf(stream, " ");
 }
 
 int rec_dump_values(FILE *stream, gab_value rec, int depth) {
@@ -118,7 +118,7 @@ int rec_dump_values(FILE *stream, gab_value rec, int depth) {
   if (len > 16 && depth >= 0)
     return fprintf(stream, " ... ");
 
-  int32_t bytes = 0;
+  int32_t bytes = fprintf(stream, " ");
 
   for (uint64_t i = 0; i < len; i++) {
     bytes += gab_fvalinspect(stream, gab_uvrecat(rec, i), depth - 1);
@@ -127,7 +127,7 @@ int rec_dump_values(FILE *stream, gab_value rec, int depth) {
       bytes += fprintf(stream, ", ");
   }
 
-  return bytes;
+  return bytes + fprintf(stream, " ");
 }
 
 int rec_dump_properties(FILE *stream, gab_value rec, int depth) {
@@ -141,7 +141,7 @@ int rec_dump_properties(FILE *stream, gab_value rec, int depth) {
     if (len > 16 && depth >= 0)
       return fprintf(stream, " ... ");
 
-    int32_t bytes = 0;
+    int32_t bytes = fprintf(stream, " ");
 
     for (uint64_t i = 0; i < len; i++) {
       bytes += gab_fvalinspect(stream, gab_ukrecat(rec, i), depth - 1);
@@ -152,7 +152,7 @@ int rec_dump_properties(FILE *stream, gab_value rec, int depth) {
         bytes += fprintf(stream, ", ");
     }
 
-    return bytes;
+    return bytes + fprintf(stream, " ");
   }
   case kGAB_RECORDNODE: {
     struct gab_obj_recnode *m = GAB_VAL_TO_RECNODE(rec);
@@ -164,7 +164,7 @@ int rec_dump_properties(FILE *stream, gab_value rec, int depth) {
     if (len > 16)
       return fprintf(stream, "... ");
 
-    int32_t bytes = 0;
+    int32_t bytes = fprintf(stream, " ");
 
     for (uint64_t i = 0; i < len; i++) {
       bytes += gab_fvalinspect(stream, m->data[i], depth - 1);
@@ -173,8 +173,7 @@ int rec_dump_properties(FILE *stream, gab_value rec, int depth) {
         bytes += fprintf(stream, ", ");
     }
 
-    return bytes;
-    break;
+    return bytes + fprintf(stream, " ");
   }
   default:
     break;
@@ -227,40 +226,56 @@ int inspectval(FILE *stream, gab_value self, int depth) {
   case kGAB_FIBERRUNNING:
   case kGAB_FIBERDONE:
     return fprintf(stream, "<" tGAB_FIBER " %p>", GAB_VAL_TO_FIBER(self));
-  case kGAB_RECORD:
+  case kGAB_RECORD: {
+    int idx = gab_valkind(self) % GAB_COLORS_LEN;
+    const char *color = ANSI_COLORS[idx];
+
     if (gab_valkind(gab_recshp(self)) == kGAB_SHAPELIST)
       return fprintf(stream, "[") + rec_dump_values(stream, self, depth) +
-             fprintf(stream, "]");
+             fprintf(stream, "%s]" GAB_RESET, color);
     else
       return fprintf(stream, "{") + rec_dump_properties(stream, self, depth) +
-             fprintf(stream, "}");
+             fprintf(stream, "%s}" GAB_RESET, color);
+  }
   case kGAB_RECORDNODE:
     return rec_dump_properties(stream, self, depth);
   case kGAB_BOX: {
+    int idx = gab_valkind(self) % GAB_COLORS_LEN;
+    const char *color = ANSI_COLORS[idx];
+
     struct gab_obj_box *con = GAB_VAL_TO_BOX(self);
     return fprintf(stream, "<" tGAB_BOX " ") +
            gab_fvalinspect(stream, con->type, depth) +
-           fprintf(stream, " %p>", con->data);
+           fprintf(stream, "%s %p>" GAB_RESET, color, con->data);
   }
   case kGAB_BLOCK: {
+    int idx = gab_valkind(self) % GAB_COLORS_LEN;
+    const char *color = ANSI_COLORS[idx];
+
     struct gab_obj_block *blk = GAB_VAL_TO_BLOCK(self);
     struct gab_obj_prototype *p = GAB_VAL_TO_PROTOTYPE(blk->p);
     uint64_t line = gab_srcline(p->src, p->offset);
     return fprintf(stream, "<" tGAB_BLOCK " ") +
            gab_fvalinspect(stream, gab_srcname(p->src), depth) +
-           fprintf(stream, ":%" PRIu64 ">", line);
+           fprintf(stream, "%s:%" PRIu64 ">" GAB_RESET, color, line);
   }
   case kGAB_NATIVE: {
+    int idx = gab_valkind(self) % GAB_COLORS_LEN;
+    const char *color = ANSI_COLORS[idx];
+
     struct gab_obj_native *n = GAB_VAL_TO_NATIVE(self);
     return fprintf(stream, "<" tGAB_NATIVE " ") +
-           gab_fvalinspect(stream, n->name, depth) + fprintf(stream, ">");
+           gab_fvalinspect(stream, n->name, depth) + fprintf(stream, "%s>"GAB_RESET, color);
   }
   case kGAB_PROTOTYPE: {
+    int idx = gab_valkind(self) % GAB_COLORS_LEN;
+    const char *color = ANSI_COLORS[idx];
+
     struct gab_obj_prototype *p = GAB_VAL_TO_PROTOTYPE(self);
     uint64_t line = gab_srcline(p->src, p->offset);
     return fprintf(stream, "<" tGAB_PROTOTYPE " ") +
            gab_fvalinspect(stream, gab_srcname(p->src), depth) +
-           fprintf(stream, ":%" PRIu64 ">", line);
+           fprintf(stream, "%s:%" PRIu64 ">"GAB_RESET, color, line);
   }
   default:
     break;
