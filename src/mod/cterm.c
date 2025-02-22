@@ -39,7 +39,6 @@ a_gab_value *gab_termlib_make(struct gab_triple gab, uint64_t argc,
                                     .type = gab_string(gab, tGAB_TERMINAL),
                                     .destructor = gab_termshutdown,
                                 });
-  gab_fprintf(stdout, "CREATED: $\n", term);
 
   gab_vmpush(gab_thisvm(gab), term);
   return nullptr;

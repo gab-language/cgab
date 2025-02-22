@@ -562,15 +562,17 @@ void gab_destroy(struct gab_triple gab) {
   gab.eg->messages = gab_undefined;
   gab.eg->shapes = gab_undefined;
 
+  /**
+   * Two consececutive collections are needed here because
+   * of the delayed nature of the RC algorithm.
+   *
+   * Decrements are process an epoch *after* they are queued.
+   *
+   * Hence, two collections will ensure that all the drefs we *just*
+   * enqueued are actually processed by the collector.
+   */
   gab_collect(gab);
-
-  while (gab.eg->gc->schedule >= 0)
-    ;
-
   gab_collect(gab);
-
-  while (gab.eg->gc->schedule >= 0)
-    ;
 
   assert(gab.eg->njobs == 0);
   gab.eg->njobs = -1;

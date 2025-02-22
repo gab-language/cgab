@@ -1064,11 +1064,18 @@ GAB_API void gab_ndref(struct gab_triple gab, uint64_t stride, uint64_t len,
 #endif
 
 /**
- * @brief Run the garbage collector.
+ * @brief Trigger a garbage collection.
+ * The collecting thread will begin a collection. Note that this is asynchronous - to
+ * synchronously trigger and wait for the completion of a collection, @see gab_collect
  *
- * @param gab The engine.
- * @param gc The garbage collector.
- * @param vm The vm.
+ * @param gab The triple.
+ */
+GAB_API void gab_acollect(struct gab_triple gab);
+
+/**
+ * @brief Synchronously run the garbage collector.
+ *
+ * @param gab The triple.
  */
 GAB_API void gab_collect(struct gab_triple gab);
 

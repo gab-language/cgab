@@ -632,7 +632,7 @@ bool gab_gctrigger(struct gab_triple gab) {
     printf("TRIGGERED: %i\n", gab.eg->gc->schedule);
 #endif
 
-    gab_collect(gab);
+    gab_acollect(gab);
     break;
   }
 
@@ -683,9 +683,17 @@ void gab_gcdocollect(struct gab_triple gab) {
   gab.eg->gc->schedule = -1;
 }
 
-void gab_collect(struct gab_triple gab) {
+void gab_acollect(struct gab_triple gab) {
   if (gab.eg->gc->schedule >= 0)
     return;
 
   schedule(gab, 1);
+}
+
+void gab_collect(struct gab_triple gab) {
+  gab_acollect(gab);
+
+  // Wait for the schedule to return to -1
+  while (gab.eg->gc->schedule >= 0)
+    ;
 }
