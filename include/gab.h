@@ -1290,9 +1290,13 @@ GAB_API_INLINE uint64_t gab_sstrendswith(gab_value str, const char *pat,
   return !memcmp(cstr + cstrlen - offset - len, pat, len);
 }
 
+/**
+ * FIXME: Support unicode correctly here. Slice with negative offsets correctly here.
+ */
 GAB_API_INLINE gab_value gab_strslice(struct gab_triple gab, gab_value str,
-                                      uint64_t offset, uint64_t len) {
+                                      int64_t offset, uint64_t len) {
   assert(gab_valkind(str) == kGAB_STRING);
+  assert(offset > 0);
 
   const char *cstr = gab_strdata(&str);
   uint64_t cstrlen = gab_strlen(str);

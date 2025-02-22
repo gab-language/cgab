@@ -1,12 +1,12 @@
 'transducers'.use
 
-test?: .def! ('gab\\message' () => self.strings\into.ends_with? '\\test')
+test?: .def! ("gab\message" () => self.strings\into.ends_with? '\\test')
 
 implementations = Messages.specializations
 
 xf = td:.filter((_ m) => m .test?)
   |> td:.map((impls m) => do
-      (path[] _) = m.strings\into.split '\\'
+      (path[] _) = m.strings\into.split "\"
 
       (path { path: path, impls: impls })
   end)
@@ -24,7 +24,7 @@ suites\all = tests\all.reduce(
 )
 
 test\compare: .def! (
-  'gab\\block' 'gab\\message'
+  "gab\block" "gab\message"
   (lhs rhs) => self.(lhs, rhs)
 )
 
@@ -50,13 +50,13 @@ test\result\display: .defcase! {
   end
   test\result\fail\t  _ => do
     (suite behavior) = self.test\path**
-    " ❌$ should $\n\t$ $ $\n" .printf (suite, behavior, self.test\meta**)
+    ' ❌$ should $\n\t$ $ $\n' .printf (suite, behavior, self.test\meta**)
   end,
 }
 
 gab\fiber:.make () => do
   suites\all .each (c s) => do
-    "✔ $\n" .printf (s)
+    '✔ $\n' .printf (s)
     c .each test\result\display:
   end
 end

@@ -748,7 +748,7 @@ gab_value parse_exp_send_special(struct gab_triple gab, struct parser *parser,
 
   gab_value msg = prev_id(gab, parser);
 
-  gab_value rhs = parse_optional_expression_prec(gab, parser, kEXP);
+  gab_value rhs = parse_expression(gab, parser, kEXP);
 
   if (rhs == gab_undefined)
     return gab_undefined;

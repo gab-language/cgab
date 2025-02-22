@@ -563,21 +563,21 @@ void gab_destroy(struct gab_triple gab) {
   gab.eg->shapes = gab_undefined;
 
   gab_collect(gab);
+
   while (gab.eg->gc->schedule >= 0)
     ;
 
+  gab_collect(gab);
+
+  while (gab.eg->gc->schedule >= 0)
+    ;
+
+  assert(gab.eg->njobs == 0);
   gab.eg->njobs = -1;
 
   thrd_join(gab.eg->jobs[0].td, nullptr);
   gab_gcdestroy(gab);
   free(gab.eg->gc);
-
-  /*for (uint64_t i = 0; i < gab.eg->modules.cap; i++) {*/
-  /*  if (d_gab_modules_iexists(&gab.eg->modules, i)) {*/
-  /*    a_gab_value *module = d_gab_modules_ival(&gab.eg->modules, i);*/
-  /*    free(module);*/
-  /*  }*/
-  /*}*/
 
   for (uint64_t i = 0; i < gab.eg->sources.cap; i++) {
     if (d_gab_src_iexists(&gab.eg->sources, i)) {

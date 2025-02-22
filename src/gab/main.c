@@ -528,6 +528,8 @@ int help(int argc, const char **argv, int flags) {
     // Print command summaries
     for (int i = 0; i < N_COMMANDS; i++)
       cmd_summary(i);
+
+    return 0;
   }
 
   const char *subcommand = argv[0];
@@ -541,7 +543,7 @@ int help(int argc, const char **argv, int flags) {
   }
 
   printf("[gab] CLI Error: unrecognized subcommand '%s'\n", subcommand);
-  return 0;
+  return 1;
 }
 
 int main(int argc, const char **argv) {

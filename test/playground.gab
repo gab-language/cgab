@@ -1,11 +1,11 @@
-spawn_task = (i) => do
-    Fibers.make () => do
-        Strings
-            .make('Hello from ', i)
-            .println
-    end
-end
+'data.json'.use
+Term = 'cterm'.use
 
-range: 
-    .make(0 20000)
-    .each spawn_task
+t = Term.make
+
+e = t.event\poll
+
+t.print(0, 0, e.json\encode)
+t.render!
+
+e = t.event\poll

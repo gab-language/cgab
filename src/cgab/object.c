@@ -328,7 +328,6 @@ void gab_obj_destroy(struct gab_eg *gab, struct gab_obj *self) {
   }
   case kGAB_STRING:
     mtx_lock(&gab->strings_mtx);
-    printf("STRFREE %p\n", self);
     /*
      * ASYNC ISSUE: Because collections happen asynchronously (and the strings
      * intern table *doesn't hold references) Strings that are queued for
@@ -1083,9 +1082,7 @@ gab_value gab_recordfrom(struct gab_triple gab, gab_value shape,
     }
   }
 
-  gab_gcunlock(gab);
-
-  return res;
+  return gab_gcunlock(gab), res;
 }
 
 gab_value gab_record(struct gab_triple gab, uint64_t stride, uint64_t len,

@@ -160,21 +160,9 @@ a_gab_value *gab_reclib_is_list(struct gab_triple gab, uint64_t argc,
     return gab_pktypemismatch(gab, rec, kGAB_RECORD);
 
   gab_value shp = gab_recshp(rec);
-  uint64_t len = gab_shplen(shp);
 
-  if (len == 0) {
-    gab_vmpush(gab_thisvm(gab), gab_false);
-    return nullptr;
-  }
+  gab_vmpush(gab_thisvm(gab), gab_bool(gab_shpislist(shp)));
 
-  for (uint64_t i = 0; i < len; i++) {
-    if (gab_valkind(gab_ushpat(shp, i)) != kGAB_NUMBER) {
-      gab_vmpush(gab_thisvm(gab), gab_false);
-      return nullptr;
-    }
-  }
-
-  gab_vmpush(gab_thisvm(gab), gab_true);
   return nullptr;
 }
 

@@ -284,6 +284,7 @@ enum gab_flags {
 #define tGAB_CHANNEL_NAME "Channels"
 
 #define tGAB_IOSTREAM "io\\stream"
+#define tGAB_TERMINAL "terminal"
 
 #define T char
 #include "slice.h"

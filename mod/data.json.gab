@@ -1,34 +1,23 @@
-'cjson' :use
-iter :: 'iter' :use
+'cjson' .use
+xf = 'transducers' .use
 
-array_xf :: iter:map do _, v
-    v:json.encode
-  end .
-  |> iter:interpose ','
+array_xf = xf.map json\encode:
+        |> xf.interpose ","
 
-object_xf :: iter:map do k, v
-    '{k:json.encode}:{v:json.encode}'
-  end .
-  |> iter:interpose ','
+object_xf = xf.map((v k) => Strings.make(k.json\encode, ":", v.json\encode))
+         |> xf.interpose ","
 
-\do_encode_record :defcase! {
-  .true: do array
-    contents :: array :join array_xf
-    '[{contents}]'
-  end,
-  .false: do object
-    contents :: object :join object_xf
-    '\{{contents}}'
-  end
+do_encode_record: .defcase! {
+  true: array => Strings.make("[", array.join array_xf, "]")
+  false: object => Strings.make("{", object.join object_xf, "}")
 }
 
-\json.encode :defcase! {
-  .nil: 'nil',
-  .true: 'true',
-  .false: 'false',
-  'gab.string': do; '"{self}"'; end,
-  'gab.number': do; '{self}'; end,
-  'gab.record': do
-    self:list?:do_encode_record self 
-  end,
+json\encode: .defcase! {
+  nil:          'nil'
+  true:         'true'
+  false:        'false'
+  "gab\string"  () => Strings.make('"'  self '"')
+  "gab\message" () => Strings.make('"' self '"')
+  "gab\number"  () => self.strings\into
+  "gab\record"  () => self.list?.do_encode_record self
 }

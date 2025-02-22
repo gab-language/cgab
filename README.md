@@ -260,8 +260,6 @@ Gab has an initial implementation of this, and actually uses a `gab\channel` of 
         but will need to adjust how locking works (which right now, delays drefing objects until "unlock" is called)
     - Interestingly, it is known at object-creation time whether it is movable or not. Maybe this can be used to choose a specific allocation strategy.
 - [ ] Implement buffered channels. (come up with workaround)
-    - Because channels are mutable and require locking, their ownership is a bit funky. To simplify, just *increment* all values that go into a channel, and decrement all that come out.
-    - This means that when channels are destroyed that still have references to objects, we need to dref them.
     - Channels actually *can't* be buffered because then they'd be mutable. There must always be a putter blocking on the channel until there is a taker.
 - [X] Fix memory leak of fibers
     - Currently we intenionally leak fiber objects, this was just a temporary hack
@@ -276,8 +274,8 @@ Gab has an initial implementation of this, and actually uses a `gab\channel` of 
     - Scale idle threads back down after some timeout
     - Be smarter about creating these - check
 - [ ] Because of self-modifying bytecode and inline caches. gab copies each compiled module for each OS thread.
-    - Update this to happen lazily, when a worker actually needs a given module.
-    - However - this does introduce a *runtime* cost which is currently paid at *compile time*.
+    - For blocks of some small-enough heuristic, it might be beneficial to give them a copy of their prototypes bytecode.
+    - This would allow each instance of the block to specialize according to the data types it sees as an individual
 - [X] Change records to use a datastructure similar to clojure's persistent vectors. 
     - Shapes mean we can still cache lookup indices.
 - [X] Allocate records in their final state ahead of time, instead of creating n - 1 intermediate records.
@@ -298,7 +296,6 @@ Gab has an initial implementation of this, and actually uses a `gab\channel` of 
     - History
 - [ ] JIT Compilation (need I say more)
     - Copy-and-patch JIT compiler? Refactoring VM.c via macros to write into stencils
-- [ ] String interpolation should use a `strings.into` message to convert values before concatenating
 - [ ] Compose channels with `|`, as opposed to `alt`.
 - [ ] Capture sig interrupt to gracefully print stacktraces of running fibers
 - [ ] Of course, lots of library work can be done.

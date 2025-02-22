@@ -7,3 +7,6 @@
 [submodule "vendor/zip"]
 	path = vendor/zip
 	url = https://github.com/nih-at/libzip.git
+[submodule "vendor/termbox"]
+	path = vendor/termbox
+	url = https://github.com/termbox/termbox2.git
