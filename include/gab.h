@@ -2529,7 +2529,7 @@ gab_impl(struct gab_triple gab, gab_value message, gab_value receiver) {
       };
   }
 
-  /* Check for the kind of the receiver. ie 'gab.record' */
+  /* Check for the kind of the receiver. ie 'gab\record' */
   type = gab_type(gab, gab_valkind(receiver));
   spec = gab_thisfibmsgat(gab, message, type);
   if (spec != gab_undefined)

@@ -215,9 +215,14 @@ int inspectval(FILE *stream, gab_value self, int depth) {
   case kGAB_MESSAGE:
     return fprintf(stream, "%s:", gab_strdata(&self));
   case kGAB_SHAPE:
-  case kGAB_SHAPELIST:
+  case kGAB_SHAPELIST: {
+    int idx = gab_valkind(self) % GAB_COLORS_LEN;
+    const char *color = ANSI_COLORS[idx];
+
     return fprintf(stream, "<" tGAB_SHAPE " ") +
-           shape_dump_keys(stream, self, depth) + fprintf(stream, ">");
+           shape_dump_keys(stream, self, depth) +
+           fprintf(stream, "%s>" GAB_RESET, color);
+  }
   case kGAB_CHANNEL:
   case kGAB_CHANNELCLOSED:
     return fprintf(stream, "<" tGAB_CHANNEL " %s>",
@@ -265,7 +270,8 @@ int inspectval(FILE *stream, gab_value self, int depth) {
 
     struct gab_obj_native *n = GAB_VAL_TO_NATIVE(self);
     return fprintf(stream, "<" tGAB_NATIVE " ") +
-           gab_fvalinspect(stream, n->name, depth) + fprintf(stream, "%s>"GAB_RESET, color);
+           gab_fvalinspect(stream, n->name, depth) +
+           fprintf(stream, "%s>" GAB_RESET, color);
   }
   case kGAB_PROTOTYPE: {
     int idx = gab_valkind(self) % GAB_COLORS_LEN;
@@ -275,7 +281,7 @@ int inspectval(FILE *stream, gab_value self, int depth) {
     uint64_t line = gab_srcline(p->src, p->offset);
     return fprintf(stream, "<" tGAB_PROTOTYPE " ") +
            gab_fvalinspect(stream, gab_srcname(p->src), depth) +
-           fprintf(stream, "%s:%" PRIu64 ">"GAB_RESET, color, line);
+           fprintf(stream, "%s:%" PRIu64 ">" GAB_RESET, color, line);
   }
   default:
     break;

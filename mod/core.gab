@@ -46,8 +46,8 @@ falsey_values .defmodule! {
 }
 
 cond\check: .defcase! {
-  'gab\block'   (args[]) => self.(args**)
-  'gab\message' (args[]) => self.(args**)
+  "gab\block"   (args[]) => self.(args**)
+  "gab\message" (args[]) => self.(args**)
   else: ok:
 }
 
@@ -165,7 +165,7 @@ def\seq!: .def! do
   }
 end
 
-channels\t = 'gab\channel'
+channels\t = "gab\channel"
 
 # Channel's implementation of the seq protocol.
 # It isn't totally true to the requirements - 
@@ -185,7 +185,7 @@ channels\t = 'gab\channel'
 channels\t .def\seq!
 
 # Implement the reducer protocol for blocks and messages
-['gab\block' 'gab\message'] .defmodule! {
+["gab\block" "gab\message"] .defmodule! {
   reduce\step: (acc, xs[]) => do
     (next: self self.(acc xs**))
   end

@@ -186,7 +186,7 @@ gab_token string(gab_lx *self) {
   } while (peek(self) != stop);
 
   advance(self);
-  return TOKEN_STRING;
+  return start == '"' ? TOKEN_DOUBLESTRING : TOKEN_SINGLESTRING;
 }
 
 gab_token check_special_operator(gab_lx *self) {

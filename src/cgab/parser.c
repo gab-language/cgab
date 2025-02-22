@@ -249,8 +249,7 @@ static a_char *parse_raw_str(struct parser *parser, s_char raw_str) {
         buffer[buf_end++] = '\\';
         break;
       default:
-        buffer[buf_end++] = c;
-        continue;
+        return nullptr;
       }
 
       i++;
@@ -279,6 +278,17 @@ static gab_value trimback_prev_id(struct gab_triple gab,
   s_char s = prev_src(parser);
 
   s.len--;
+
+  // These can cause collections during compilation.
+  return gab_nstring(gab, s.len, s.data);
+}
+
+static gab_value trim_prev_id(struct gab_triple gab,
+                                  struct parser *parser) {
+  s_char s = prev_src(parser);
+
+  s.data++;
+  s.len -= 2;
 
   // These can cause collections during compilation.
   return gab_nstring(gab, s.len, s.data);
@@ -599,23 +609,25 @@ gab_value parse_exp_sym(struct gab_triple gab, struct parser *parser,
   return node_value(gab, gab_strtosym(id));
 }
 
-gab_value parse_exp_str(struct gab_triple gab, struct parser *parser,
-                        gab_value lhs) {
+gab_value parse_exp_dstr(struct gab_triple gab, struct parser *parser,
+                         gab_value lhs) {
+  return node_value(gab, trim_prev_id(gab, parser));
+}
+
+gab_value parse_exp_sstr(struct gab_triple gab, struct parser *parser,
+                         gab_value lhs) {
   a_char *parsed = parse_raw_str(parser, prev_src(parser));
 
   if (parsed == nullptr)
-    return parser_error(
-               gab, parser, GAB_MALFORMED_STRING,
-               "Single quoted strings can contain interpolations.\n"
-               "\n   " GAB_GREEN "'answer is: { " GAB_YELLOW "42" GAB_GREEN
-               " }'\n" GAB_RESET
-               "\nBoth single and double quoted strings can contain escape "
-               "sequences.\n"
-               "\n   " GAB_GREEN "'a newline -> " GAB_MAGENTA "\\n" GAB_GREEN
-               ", or a forward slash -> " GAB_MAGENTA "\\\\" GAB_GREEN
-               "'" GAB_RESET "\n   " GAB_GREEN
-               "\"arbitrary unicode: " GAB_MAGENTA "\\u[" GAB_YELLOW
-               "2502" GAB_MAGENTA "]" GAB_GREEN "\"" GAB_RESET),
+    return parser_error(gab, parser, GAB_MALFORMED_STRING,
+                        "\nSingle quoted strings can contain escape "
+                        "sequences.\n"
+                        "\n   " GAB_GREEN "'a newline -> " GAB_MAGENTA
+                        "\\n" GAB_GREEN ", or a forward slash -> " GAB_MAGENTA
+                        "\\\\" GAB_GREEN "'" GAB_RESET "\n   " GAB_GREEN
+                        "'a unicode codepoint by number: " GAB_MAGENTA
+                        "\\u[" GAB_YELLOW "2502" GAB_MAGENTA "]" GAB_GREEN
+                        "'" GAB_RESET),
            gab_undefined;
 
   gab_value str = gab_nstring(gab, parsed->len, parsed->data);
@@ -765,7 +777,8 @@ const struct parse_rule parse_rules[] = {
     {nullptr, parse_exp_send_special, kSPECIAL_SEND}, // SPECIAL
     {parse_exp_sym, nullptr, kNONE},                  // SYMBOL
     {parse_exp_msg, nullptr, kNONE},                  // MESSAGE
-    {parse_exp_str, nullptr, kNONE},                  // STRING
+    {parse_exp_sstr, nullptr, kNONE},                 // STRING
+    {parse_exp_dstr, nullptr, kNONE},                 // STRING
     {parse_exp_num, nullptr, kNONE},                  // NUMBER
     {nullptr, nullptr, kNONE},                        // NEWLINE
     {nullptr, nullptr, kNONE},                        // EOF
