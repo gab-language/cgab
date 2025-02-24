@@ -85,6 +85,10 @@ take_while:.deftransducer!(
   f => (r acc xs) => f.(xs**).td\stop_conditionally(r acc xs)
 )
 
+take_until:.deftransducer!(
+  f => (r acc xs) => f.(xs**).!.td\stop_conditionally(r acc xs)
+)
+
 drop:.deftransducer!(
   n => (r acc xs nth) => (nth >= n).td\conditionally(r acc xs nth + 1)
   0)

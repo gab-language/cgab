@@ -27,6 +27,11 @@ GAB_DYNLIB_MAIN_FN {
 
   gab_def(gab,
           {
+              gab_message(gab, "t"),
+              gab_strtomsg(t),
+              t,
+          },
+          {
               gab_message(gab, "await!"),
               t,
               gab_snative(gab, "await!", gab_fiblib_await),

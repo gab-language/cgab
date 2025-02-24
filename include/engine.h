@@ -49,6 +49,8 @@ void gab_gcepochnext(struct gab_triple gab);
 
 void gab_gcdocollect(struct gab_triple gab);
 
+void gab_gcassertdone(struct gab_triple gab);
+
 typedef void (*gab_gc_visitor)(struct gab_triple gab, struct gab_obj *obj);
 
 enum variable_flag {

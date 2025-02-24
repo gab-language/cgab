@@ -568,11 +568,16 @@ void gab_destroy(struct gab_triple gab) {
    *
    * Decrements are process an epoch *after* they are queued.
    *
-   * Hence, two collections will ensure that all the drefs we *just*
-   * enqueued are actually processed by the collector.
+   * There are three epochs tracked, so we need three collections
+   * to ensure that all rc events are processed.
    */
   gab_collect(gab);
+
   gab_collect(gab);
+
+  gab_collect(gab);
+
+  gab_gcassertdone(gab);
 
   assert(gab.eg->njobs == 0);
   gab.eg->njobs = -1;
@@ -713,7 +718,9 @@ gab_value gab_aexec(struct gab_triple gab, struct gab_exec_argt args) {
   const char *sargv[default_arglen + args.len];
   gab_value vargv[default_arglen + args.len];
 
-  if (args.flags & fGAB_RUN_INCLUDEDEFAULTARGS) {
+  gab.flags |= args.flags;
+
+  if (gab.flags & fGAB_RUN_INCLUDEDEFAULTARGS) {
 
     // Copy given args in.
     if (args.len && args.sargv && args.argv) {
@@ -736,18 +743,15 @@ gab_value gab_aexec(struct gab_triple gab, struct gab_exec_argt args) {
   gab_value main = gab_build(gab, (struct gab_build_argt){
                                       .name = args.name,
                                       .source = args.source,
-                                      .flags = args.flags,
                                       .len = args.len,
                                       .argv = args.sargv,
                                   });
 
-  if (main == gab_undefined || args.flags & fGAB_BUILD_CHECK) {
-    return gab_undefined;
-  }
+  if (main == gab_undefined || gab.flags & fGAB_BUILD_CHECK)
+    return main;
 
   return gab_arun(gab, (struct gab_run_argt){
                            .main = main,
-                           .flags = args.flags,
                            .len = args.len,
                            .argv = args.argv,
                        });
@@ -1031,16 +1035,12 @@ void dump_structured_err(struct gab_triple gab, FILE *stream, va_list varargs,
 void gab_vfpanic(struct gab_triple gab, FILE *stream, va_list varargs,
                  struct gab_err_argt args) {
   if (gab.flags & fGAB_ERR_QUIET)
-    goto fin;
+    return;
 
   if (gab.flags & fGAB_ERR_STRUCTURED)
     dump_structured_err(gab, stream, varargs, args);
   else
     dump_pretty_err(gab, stream, varargs, args);
-
-fin:
-  if (gab.flags & fGAB_ERR_EXIT)
-    exit(1);
 }
 
 /*int gab_val_printf_handler(FILE *stream, const struct printf_info *info,*/
@@ -1290,7 +1290,7 @@ a_gab_value *gab_run(struct gab_triple gab, struct gab_run_argt args) {
 }
 
 gab_value gab_arun(struct gab_triple gab, struct gab_run_argt args) {
-  gab.flags = args.flags;
+  gab.flags |= args.flags;
 
   if (gab.flags & fGAB_BUILD_CHECK)
     return gab_undefined;
@@ -1303,6 +1303,7 @@ gab_value gab_arun(struct gab_triple gab, struct gab_run_argt args) {
                                 });
 
   gab_iref(gab, fb);
+  gab_egkeep(gab.eg, fb); // Not the best solution
 
 #if cGAB_LOG_EG
   fprintf(stdout, "[WORKER %i] chnput ", gab.wkid);
@@ -1315,13 +1316,11 @@ gab_value gab_arun(struct gab_triple gab, struct gab_run_argt args) {
 
   gab_chnput(gab, gab.eg->work_channel, fb);
 
-  gab_dref(gab, fb);
-
   return fb;
 }
 
 a_gab_value *gab_send(struct gab_triple gab, struct gab_send_argt args) {
-  gab.flags = args.flags;
+  gab.flags |= args.flags;
 
   gab_value fb = gab_fiber(gab, (struct gab_fiber_argt){
                                     .message = args.message,

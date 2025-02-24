@@ -115,9 +115,11 @@ a_gab_value *gab_termlib_setcell(struct gab_triple gab, uint64_t argc,
   if (gab_valkind(cp) != kGAB_STRING)
     return gab_pktypemismatch(gab, cp, kGAB_STRING);
 
-  const char *bytes = gab_strdata(&cp);
+  uint32_t uni;
 
-  tb_set_cell(x, y, bytes[0], 0, 0);
+  tb_utf8_char_to_unicode(&uni, gab_strdata(&cp));
+
+  tb_set_cell(gab_valton(x), gab_valton(y), uni, 0, 0);
 
   return nullptr;
 }
@@ -144,7 +146,15 @@ gab_value ch_to_value(struct gab_triple gab, uint32_t ch) {
 }
 
 gab_value key_to_value(struct gab_triple gab, uint16_t key) {
-  return gab_number(key);
+  switch (key) {
+  case TB_KEY_BACKSPACE:
+  case TB_KEY_BACKSPACE2:
+    return gab_message(gab, "backspace");
+  case TB_KEY_ENTER:
+    return gab_message(gab, "enter");
+  default:
+    return gab_number(key);
+  }
 }
 
 gab_value mod_to_value(struct gab_triple gab, uint8_t mod) {
@@ -158,7 +168,7 @@ gab_value mod_to_value(struct gab_triple gab, uint8_t mod) {
   case TB_MOD_MOTION:
     return gab_message(gab, "motion");
   default:
-    return gab_nil;
+    return gab_message(gab, "key");
   }
 }
 
@@ -214,6 +224,7 @@ a_gab_value *gab_termlib_print(struct gab_triple gab, uint64_t argc,
                                gab_value argv[static argc]) {
   gab_value x = gab_arg(1);
   gab_value y = gab_arg(2);
+  gab_value str = gab_arg(3);
 
   if (gab_valkind(x) != kGAB_NUMBER)
     return gab_pktypemismatch(gab, x, kGAB_NUMBER);
@@ -221,14 +232,14 @@ a_gab_value *gab_termlib_print(struct gab_triple gab, uint64_t argc,
   if (gab_valkind(y) != kGAB_NUMBER)
     return gab_pktypemismatch(gab, y, kGAB_NUMBER);
 
-  gab_value str = gab_arg(3);
-
   if (gab_valkind(str) != kGAB_STRING)
     return gab_pktypemismatch(gab, str, kGAB_STRING);
 
   const char *bytes = gab_strdata(&str);
 
-  tb_print(x, y, 0, 0, bytes);
+  int res = tb_print(gab_valton(x), gab_valton(y), 0, 0, bytes);
+
+  gab_vmpush(gab_thisvm(gab), res == TB_ERR_OUT_OF_BOUNDS ? gab_err : gab_ok);
 
   return nullptr;
 };
@@ -243,6 +254,11 @@ GAB_DYNLIB_MAIN_FN {
                       gab_message(gab, "key"), gab_message(gab, "mod"));
 
   gab_def(gab,
+          {
+              gab_message(gab, "t"),
+              gab_strtomsg(t),
+              t,
+          },
           {
               gab_message(gab, "make"),
               t_m,

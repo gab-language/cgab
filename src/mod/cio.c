@@ -67,7 +67,8 @@ a_gab_value *gab_iolib_until(struct gab_triple gab, uint64_t argc,
       break;
   }
 
-  gab_vmpush(gab_thisvm(gab), gab_ok, gab_nstring(gab, buffer.len, buffer.data));
+  gab_vmpush(gab_thisvm(gab), gab_ok,
+             gab_nstring(gab, buffer.len, buffer.data));
 
   return nullptr;
 }
@@ -160,6 +161,11 @@ GAB_DYNLIB_MAIN_FN {
   gab_value t = gab_string(gab, tGAB_IOSTREAM);
 
   gab_def(gab,
+          {
+              gab_message(gab, "t"),
+              gab_strtomsg(t),
+              t,
+          },
           {
               gab_message(gab, "open"),
               gab_message(gab, "io"),

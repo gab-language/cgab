@@ -24,7 +24,7 @@ defspec!: .def! (
 
     spec\name:.def!(
       opts.spec
-      self.to_s)
+      self.strings\into)
 
     spec:.def!(
       self
@@ -279,8 +279,8 @@ re\empty?:.def!(re\alt\t () => do
   res.empty?.!
 end)
 
-stringify_forms =
-  (forms, sep) => Strings.make(
+stringify_forms = (forms, sep)
+  => Strings.make(
     "("
     forms.map re\debug: .join (td:.interpose sep)
     ")")
@@ -1035,9 +1035,9 @@ end
   doc: (mod) => do
     xf = td:.map ((v k) => (
           v
-          k .to_s
+          k .strings\into
             .split '\\'
-            .sigils\into,
+            .messages\into,
           k))
       |> td:.filter ((_ k) => k == mod)
       |> td:.map ((v m k) => do

@@ -382,11 +382,8 @@ a_gab_value *vvm_error(struct gab_triple gab, enum gab_status s,
   gab_value *f = vm->fp;
   uint8_t *ip = vm->ip;
 
-  struct gab_triple dont_exit = gab;
-  dont_exit.flags &= ~fGAB_ERR_EXIT;
-
   while (frame_parent(f) > vm->sb) {
-    gab_vfpanic(dont_exit, gab.eg->serr, va,
+    gab_vfpanic(gab, gab.eg->serr, va,
                 vm_frame_build_err(gab, frame_block(f), ip,
                                    frame_parent(f) > vm->sb, GAB_NONE, ""));
 
@@ -742,9 +739,12 @@ a_gab_value *ok(OP_HANDLER_ARGS) {
   gab_value p = frame_block(VM()->fp)->p;
   gab_value shape = GAB_VAL_TO_PROTOTYPE(p)->s;
 
+  gab_value env = gab_recordfrom(GAB(), shape, 1, VM()->fp);
+  gab_egkeep(EG(), gab_iref(GAB(), env));
+
   assert(FIBER()->header.kind = kGAB_FIBERRUNNING);
   FIBER()->res_values = results;
-  FIBER()->res_env = gab_recordfrom(GAB(), shape, 1, VM()->fp);
+  FIBER()->res_env = env;
   FIBER()->header.kind = kGAB_FIBERDONE;
 
   return results;

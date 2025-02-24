@@ -33,6 +33,16 @@ static inline uint64_t buflen(struct gab_triple gab, uint8_t b, uint8_t wkid,
   return gab.eg->gc->buffers[wkid][b][epoch].len;
 }
 
+void gab_gcassertdone(struct gab_triple gab) {
+  for (int i = 0; i < gab.eg->len; i++) {
+    for (int j = 0; j < kGAB_NBUF; j++) {
+      for (int k = 0; k < GAB_GCNEPOCHS; k++) {
+        assert(buflen(gab, j, i, k) == 0);
+      }
+    }
+  }
+}
+
 static inline void bufpush(struct gab_triple gab, uint8_t b, uint8_t wkid,
                            uint8_t epoch, struct gab_obj *o) {
   assert(epoch < GAB_GCNEPOCHS);
@@ -489,8 +499,8 @@ void processincrements(struct gab_triple gab, int32_t epoch) {
     // For the stack and increment buffers, increment the object
     for_buf_do(kGAB_BUF_STK, wkid, epoch, inc_obj_ref, gab);
     for_buf_do(kGAB_BUF_INC, wkid, epoch, inc_obj_ref, gab);
-    // Reset the length of the inf buffer for this worker
-    bufclear(gab, kGAB_BUF_STK, wkid, epoch);
+    // Reset the length of the inc buffer for this worker
+    // Leave the stack buffer to be cleared in next epoch by decrement.
     bufclear(gab, kGAB_BUF_INC, wkid, epoch);
   }
 #if cGAB_LOG_GC
@@ -504,7 +514,7 @@ void processdecrements(struct gab_triple gab, int32_t epoch) {
 #endif
 
   for (uint8_t wkid = 0; wkid < gab.eg->len; wkid++) {
-    // For the stack and increment buffers, increment the object
+    // For the stack and increment buffers, decrement the object
     for_buf_do(kGAB_BUF_STK, wkid, epoch, dec_obj_ref, gab);
     for_buf_do(kGAB_BUF_DEC, wkid, epoch, dec_obj_ref, gab);
     // Reset the length of the dec buffer for this worker
@@ -681,6 +691,7 @@ void gab_gcdocollect(struct gab_triple gab) {
     queue_decrement(gab, gab_valtoo(gab.eg->shapes));
 
   gab.eg->gc->schedule = -1;
+
 }
 
 void gab_acollect(struct gab_triple gab) {

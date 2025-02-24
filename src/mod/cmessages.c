@@ -12,7 +12,7 @@ a_gab_value *gab_msglib_message(struct gab_triple gab, uint64_t argc,
 }
 
 a_gab_value *gab_msglib_to_string(struct gab_triple gab, uint64_t argc,
-                                gab_value argv[static argc]) {
+                                  gab_value argv[static argc]) {
   gab_value msg = gab_arg(0);
 
   gab_vmpush(gab_thisvm(gab), gab_msgtostr(msg));
@@ -203,6 +203,16 @@ GAB_DYNLIB_MAIN_FN {
   gab_value t = gab_type(gab, kGAB_MESSAGE);
 
   gab_def(gab,
+          {
+              gab_message(gab, "t"),
+              gab_strtomsg(gab_type(gab, kGAB_BLOCK)),
+              gab_type(gab, kGAB_BLOCK),
+          },
+          {
+              gab_message(gab, "t"),
+              gab_strtomsg(t),
+              t,
+          },
           {
               gab_message(gab, "specializations"),
               mod,

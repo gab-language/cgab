@@ -1,7 +1,7 @@
 s = 'specs'.use
 
 string?: .def! false:
-string?: .def! ('gab\string' true:)
+string?: .def! (Strings.t, true:)
 
 http\status: .defspec! {
   help: "The http status code"

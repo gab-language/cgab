@@ -117,6 +117,11 @@ GAB_DYNLIB_MAIN_FN {
 
   gab_def(gab,
           {
+              gab_message(gab, "t"),
+              gab_strtomsg(t),
+              t,
+          },
+          {
               gab_message(gab, "floor"),
               t,
               gab_snative(gab, "floor", gab_numlib_floor),

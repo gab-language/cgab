@@ -310,6 +310,11 @@ GAB_DYNLIB_MAIN_FN {
 
   gab_def(gab,
           {
+              gab_message(gab, "t"),
+              gab_strtomsg(t),
+              t,
+          },
+          {
               gab_message(gab, "slice"),
               t,
               gab_snative(gab, "slice", gab_reclib_slice),

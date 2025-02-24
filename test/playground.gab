@@ -1,11 +1,3 @@
-'data.json'.use
-Term = 'cterm'.use
-
-t = Term.make
-
-e = t.event\poll
-
-t.print(0, 0, e.json\encode)
-t.render!
-
-e = t.event\poll
+Strings.make(
+  "Hello"
+  "World")

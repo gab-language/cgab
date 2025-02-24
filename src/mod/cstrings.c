@@ -73,7 +73,8 @@ a_gab_value *gab_strlib_split(struct gab_triple gab, uint64_t argc,
       // Memcmp to test for full sep match
       if (!memcmp(cstr + offset, csep, csep_len)) {
         // Full match found - push a string
-        gab_vmpush(gab_thisvm(gab), gab_nstring(gab, offset - begin, cstr + begin));
+        gab_vmpush(gab_thisvm(gab),
+                   gab_nstring(gab, offset - begin, cstr + begin));
         begin = offset + csep_len;
         offset = begin;
         continue;
@@ -201,7 +202,8 @@ a_gab_value *gab_strlib_begins(struct gab_triple gab, uint64_t argc,
     const char *pat = gab_strdata(&vpat);
     const char *str = gab_strdata(&vstr);
 
-    gab_vmpush(gab_thisvm(gab), gab_bool(begins(str, pat, gab_valton(argv[2]))));
+    gab_vmpush(gab_thisvm(gab),
+               gab_bool(begins(str, pat, gab_valton(argv[2]))));
     return nullptr;
   }
   }
@@ -421,6 +423,11 @@ GAB_DYNLIB_MAIN_FN {
   gab_value t = gab_type(gab, kGAB_STRING);
 
   gab_def(gab,
+          {
+              gab_message(gab, "t"),
+              gab_strtomsg(t),
+              t,
+          },
           {
               gab_message(gab, "numbers\\into"),
               t,
