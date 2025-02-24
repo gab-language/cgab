@@ -444,6 +444,8 @@ GAB_API int gab_fmodinspect(FILE *stream, struct gab_obj_prototype *proto);
  */
 GAB_API int gab_fvalinspect(FILE *stream, gab_value value, int depth);
 
+GAB_API int gab_svalinspect(char **dest, size_t *n, gab_value value, int depth);
+
 /**
  * @brief Format the given string to the given stream.
  *
@@ -459,6 +461,25 @@ GAB_API int gab_fvalinspect(FILE *stream, gab_value value, int depth);
  * @return the number of bytes written to the stream.
  */
 GAB_API int gab_fprintf(FILE *stream, const char *fmt, ...);
+
+/**
+ * @brief Format the given string to the given string builder.
+ *
+ * This format function does *not* respect the %-style formatters like printf.
+ * The only supported formatter is $, which will use the next gab_value in the
+ * var args.
+ *
+ * eg:
+ * `gab_sprintf(stdout, "foo $", gab_string(gab, "bar"));`c
+ *
+ * @param stream The stream to print to
+ * @param fmt The format string
+ * @return the number of bytes written to the stream.
+ */
+GAB_API int gab_sprintf(char *dst, size_t n, const char *fmt, ...);
+GAB_API int gab_vsprintf(char *dst, size_t n, const char *fmt, va_list varargs);
+GAB_API int gab_nsprintf(char *dst, size_t n, const char *fmt, uint64_t argc,
+                         gab_value argv[argc]);
 
 /**
  * @brief Format the given string to the given stream.
@@ -1065,8 +1086,9 @@ GAB_API void gab_ndref(struct gab_triple gab, uint64_t stride, uint64_t len,
 
 /**
  * @brief Trigger a garbage collection.
- * The collecting thread will begin a collection. Note that this is asynchronous - to
- * synchronously trigger and wait for the completion of a collection, @see gab_collect
+ * The collecting thread will begin a collection. Note that this is asynchronous
+ * - to synchronously trigger and wait for the completion of a collection, @see
+ * gab_collect
  *
  * @param gab The triple.
  */
@@ -1298,7 +1320,8 @@ GAB_API_INLINE uint64_t gab_sstrendswith(gab_value str, const char *pat,
 }
 
 /**
- * FIXME: Support unicode correctly here. Slice with negative offsets correctly here.
+ * FIXME: Support unicode correctly here. Slice with negative offsets correctly
+ * here.
  */
 GAB_API_INLINE gab_value gab_strslice(struct gab_triple gab, gab_value str,
                                       int64_t offset, uint64_t len) {

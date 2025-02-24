@@ -874,6 +874,17 @@ uint64_t gab_negkeep(struct gab_eg *gab, uint64_t len,
   return len;
 }
 
+int gab_sprintf(char *dest, size_t n, const char *fmt, ...) {
+  va_list va;
+  va_start(va, fmt);
+
+  int res = gab_vsprintf(dest, n, fmt, va);
+
+  va_end(va);
+
+  return res;
+}
+
 int gab_fprintf(FILE *stream, const char *fmt, ...) {
   va_list va;
   va_start(va, fmt);
@@ -883,6 +894,48 @@ int gab_fprintf(FILE *stream, const char *fmt, ...) {
   va_end(va);
 
   return res;
+}
+
+int gab_nsprintf(char *dest, size_t n, const char *fmt, uint64_t argc,
+                 gab_value argv[argc]) {
+  const char *c = fmt;
+  char *cursor = dest;
+  size_t remaining = n;
+  int bytes = 0;
+  uint64_t i = 0;
+
+  while (*c != '\0') {
+    if (remaining == 1)
+      return *cursor = '\0', bytes;
+
+    switch (*c) {
+    case '$': {
+      if (i >= argc)
+        return -1;
+
+      gab_value arg = argv[i++];
+
+      int res = gab_svalinspect(&cursor, &remaining, arg, 1);
+
+      if (res < 0)
+        return res;
+
+      bytes += res;
+
+      break;
+    }
+    default:
+      *cursor++ = *c;
+      bytes += 1;
+      remaining -= 1;
+    }
+    c++;
+  }
+
+  if (i != argc)
+    return -1;
+
+  return *cursor = '\0', bytes;
 }
 
 int gab_nfprintf(FILE *stream, const char *fmt, uint64_t argc,
@@ -911,6 +964,40 @@ int gab_nfprintf(FILE *stream, const char *fmt, uint64_t argc,
 
   if (i != argc)
     return -1;
+
+  return bytes;
+}
+
+int gab_vsprintf(char *dest, size_t n, const char *fmt, va_list varargs) {
+  const char *c = fmt;
+  int bytes = 0;
+  char *cursor = dest;
+  size_t remaining = n;
+
+  while (*c != '\0') {
+    switch (*c) {
+    case '$': {
+      gab_value arg = va_arg(varargs, gab_value);
+
+      int res = gab_svalinspect(&cursor, &remaining, arg, 1);
+
+      if (res < 0)
+        return res;
+
+      bytes += res;
+
+      break;
+    }
+    default:
+      if (remaining == 0)
+        return -1;
+
+      *cursor++ = *c;
+      bytes += 1;
+      remaining -= 1;
+    }
+    c++;
+  }
 
   return bytes;
 }

@@ -16,6 +16,23 @@
       gab, sizeof(struct obj_type) + sizeof(flex_type) * (flex_count),         \
       (kind)))
 
+int snprintf_through(char** dst, size_t *n, char* fmt, ...) {
+  va_list va;
+  va_start(va, fmt);
+
+
+  int res = vsnprintf(*dst, *n, fmt, va);
+  va_end(va);
+
+  if (res > *n)
+    return *n;
+
+  *dst += res;
+  *n -= res;
+
+  return res;
+}
+
 struct gab_obj *gab_obj_create(struct gab_triple gab, uint64_t sz,
                                enum gab_kind k) {
   struct gab_obj *self = gab_egalloc(gab, nullptr, sz);
@@ -86,7 +103,28 @@ uint64_t gab_obj_size(struct gab_obj *obj) {
   return 0;
 }
 
-int shape_dump_keys(FILE *stream, gab_value shape, int depth) {
+int sshape_dumpkeys(char **dest, size_t *n, gab_value shape, int depth) {
+  struct gab_obj_shape *shp = GAB_VAL_TO_SHAPE(shape);
+  uint64_t len = shp->len;
+
+  if (len == 0)
+    return 0;
+
+  if (len > 16 && depth >= 0)
+    return snprintf_through(dest, n, "... ");
+
+  int32_t bytes = snprintf_through(dest, n, " ");
+
+  for (uint64_t i = 0; i < len; i++) {
+    bytes += gab_svalinspect(dest, n, shp->keys[i], depth - 1);
+
+    if (i + 1 < len)
+      bytes += snprintf_through(dest, n, " ");
+  }
+
+  return bytes + snprintf_through(dest, n, " ");
+}
+int fshape_dumpkeys(FILE *stream, gab_value shape, int depth) {
   struct gab_obj_shape *shp = GAB_VAL_TO_SHAPE(shape);
   uint64_t len = shp->len;
 
@@ -108,7 +146,29 @@ int shape_dump_keys(FILE *stream, gab_value shape, int depth) {
   return bytes + fprintf(stream, " ");
 }
 
-int rec_dump_values(FILE *stream, gab_value rec, int depth) {
+int srec_dumpvalues(char **dest, size_t *n, gab_value rec, int depth) {
+  assert(gab_valkind(rec) == kGAB_RECORD);
+  uint64_t len = gab_reclen(rec);
+
+  if (len == 0)
+    return 0;
+
+  if (len > 16 && depth >= 0)
+    return snprintf_through(dest, n, " ... ");
+
+  int32_t bytes = snprintf_through(dest, n, " ");
+
+  for (uint64_t i = 0; i < len; i++) {
+    bytes += gab_svalinspect(dest, n, gab_uvrecat(rec, i), depth - 1);
+
+    if (i + 1 < len)
+      bytes += snprintf_through(dest, n, ", ");
+  }
+
+  return bytes + snprintf_through(dest, n, " ");
+}
+
+int frec_dumpvalues(FILE *stream, gab_value rec, int depth) {
   assert(gab_valkind(rec) == kGAB_RECORD);
   uint64_t len = gab_reclen(rec);
 
@@ -130,7 +190,58 @@ int rec_dump_values(FILE *stream, gab_value rec, int depth) {
   return bytes + fprintf(stream, " ");
 }
 
-int rec_dump_properties(FILE *stream, gab_value rec, int depth) {
+int srec_dumpproperties(char **dest, size_t *n, gab_value rec, int depth) {
+  switch (gab_valkind(rec)) {
+  case kGAB_RECORD: {
+    uint64_t len = gab_reclen(rec);
+
+    if (len == 0)
+      return 0;
+
+    if (len > 16 && depth >= 0)
+      return snprintf_through(dest, n, " ... ");
+
+    int32_t bytes = snprintf_through(dest, n, " ");
+
+    for (uint64_t i = 0; i < len; i++) {
+      bytes += gab_svalinspect(dest, n, gab_ukrecat(rec, i), depth - 1);
+      bytes += snprintf_through(dest, n, " ");
+      bytes += gab_svalinspect(dest, n, gab_uvrecat(rec, i), depth - 1);
+
+      if (i + 1 < len)
+        bytes += snprintf_through(dest, n, ", ");
+    }
+
+    return bytes + snprintf_through(dest, n, " ");
+  }
+  case kGAB_RECORDNODE: {
+    struct gab_obj_recnode *m = GAB_VAL_TO_RECNODE(rec);
+    uint64_t len = m->len;
+
+    if (len == 0)
+      return snprintf_through(dest, n, "~ ");
+
+    if (len > 16)
+      return snprintf_through(dest, n, "... ");
+
+    int32_t bytes = snprintf_through(dest, n, " ");
+
+    for (uint64_t i = 0; i < len; i++) {
+      bytes += gab_svalinspect(dest, n, m->data[i], depth - 1);
+
+      if (i + 1 < len)
+        bytes += snprintf_through(dest, n, ", ");
+    }
+
+    return bytes + snprintf_through(dest, n, " ");
+  }
+  default:
+    break;
+  }
+  assert(false && "NOT A REC");
+  return 0;
+}
+int frec_dumpproperties(FILE *stream, gab_value rec, int depth) {
   switch (gab_valkind(rec)) {
   case kGAB_RECORD: {
     uint64_t len = gab_reclen(rec);
@@ -187,7 +298,105 @@ static const char *chan_strs[] = {
     [kGAB_CHANNELCLOSED] = "closed ",
 };
 
-int inspectval(FILE *stream, gab_value self, int depth) {
+int sinspectval(char **dest, size_t *n, gab_value self, int depth) {
+  switch (gab_valkind(self)) {
+  case kGAB_PRIMITIVE: {
+    return snprintf_through(dest, n, "<" tGAB_PRIMITIVE " %s>",
+                    gab_opcode_names[gab_valtop(self)]);
+  }
+  case kGAB_UNDEFINED:
+    return snprintf_through(dest, n, "undefined");
+  case kGAB_NUMBER:
+    return snprintf_through(dest, n, "%lg", gab_valton(self));
+  case kGAB_SYMBOL:
+  case kGAB_STRING:
+    return snprintf_through(dest, n, "%s", gab_strdata(&self));
+  case kGAB_BINARY: {
+    const char *s = gab_strdata(&self);
+    int bytes = 0;
+    int res = snprintf_through(dest, n, "<" tGAB_BINARY " 0x");
+
+    bytes += res;
+    dest += res;
+    n -= res;
+
+    uint64_t len = gab_strlen(self);
+
+    while (len--) {
+      res = snprintf_through(dest, n, "%02x", (unsigned char)*s++);
+
+      bytes += res;
+      dest += res;
+      n -= res;
+    }
+
+    res = snprintf_through(dest, n, ">");
+
+    bytes += res;
+    dest += res;
+    n -= res;
+
+    return bytes;
+  }
+  case kGAB_MESSAGE:
+    return snprintf_through(dest, n, "%s:", gab_strdata(&self));
+  case kGAB_SHAPE:
+  case kGAB_SHAPELIST:
+    return snprintf_through(dest, n, "<" tGAB_SHAPE " ") +
+           sshape_dumpkeys(dest, n, self, depth) + snprintf_through(dest, n, ">");
+  case kGAB_CHANNEL:
+  case kGAB_CHANNELCLOSED:
+    return snprintf_through(dest, n, "<" tGAB_CHANNEL " %s>",
+                    chan_strs[gab_valkind(self)]);
+  case kGAB_FIBER:
+  case kGAB_FIBERRUNNING:
+  case kGAB_FIBERDONE:
+    return snprintf_through(dest, n, "<" tGAB_FIBER " %p>", GAB_VAL_TO_FIBER(self));
+  case kGAB_RECORD: {
+    if (gab_valkind(gab_recshp(self)) == kGAB_SHAPELIST)
+      return snprintf_through(dest, n, "[") + srec_dumpvalues(dest, n, self, depth) +
+             snprintf_through(dest, n, "]");
+    else
+      return snprintf_through(dest, n, "{") +
+             srec_dumpproperties(dest, n, self, depth) + snprintf_through(dest, n, "}");
+  }
+  case kGAB_RECORDNODE:
+    return srec_dumpproperties(dest, n, self, depth);
+  case kGAB_BOX: {
+    struct gab_obj_box *con = GAB_VAL_TO_BOX(self);
+    return snprintf_through(dest, n, "<" tGAB_BOX " ") +
+           gab_svalinspect(dest, n, con->type, depth) +
+           snprintf_through(dest, n, "%p>", con->data);
+  }
+  case kGAB_BLOCK: {
+    struct gab_obj_block *blk = GAB_VAL_TO_BLOCK(self);
+    struct gab_obj_prototype *p = GAB_VAL_TO_PROTOTYPE(blk->p);
+    uint64_t line = gab_srcline(p->src, p->offset);
+    return snprintf_through(dest, n, "<" tGAB_BLOCK " ") +
+           gab_svalinspect(dest, n, gab_srcname(p->src), depth) +
+           snprintf_through(dest, n, ":%" PRIu64 ">", line);
+  }
+  case kGAB_NATIVE: {
+    struct gab_obj_native *native = GAB_VAL_TO_NATIVE(self);
+    return snprintf_through(dest, n, "<" tGAB_NATIVE " ") +
+           gab_svalinspect(dest, n, native->name, depth) +
+           snprintf_through(dest, n, ">");
+  }
+  case kGAB_PROTOTYPE: {
+    struct gab_obj_prototype *p = GAB_VAL_TO_PROTOTYPE(self);
+    uint64_t line = gab_srcline(p->src, p->offset);
+    return snprintf_through(dest, n, "<" tGAB_PROTOTYPE " ") +
+           gab_svalinspect(dest, n, gab_srcname(p->src), depth) +
+           snprintf_through(dest, n, ":%" PRIu64 ">", line);
+  }
+  default:
+    break;
+  }
+  assert(false && "NOT AN OBJECT");
+  return 0;
+}
+
+int finspectval(FILE *stream, gab_value self, int depth) {
   switch (gab_valkind(self)) {
   case kGAB_PRIMITIVE:
     return fprintf(stream, "<" tGAB_PRIMITIVE " %s>",
@@ -220,7 +429,7 @@ int inspectval(FILE *stream, gab_value self, int depth) {
     const char *color = ANSI_COLORS[idx];
 
     return fprintf(stream, "<" tGAB_SHAPE " ") +
-           shape_dump_keys(stream, self, depth) +
+           fshape_dumpkeys(stream, self, depth) +
            fprintf(stream, "%s>" GAB_RESET, color);
   }
   case kGAB_CHANNEL:
@@ -236,14 +445,14 @@ int inspectval(FILE *stream, gab_value self, int depth) {
     const char *color = ANSI_COLORS[idx];
 
     if (gab_valkind(gab_recshp(self)) == kGAB_SHAPELIST)
-      return fprintf(stream, "[") + rec_dump_values(stream, self, depth) +
+      return fprintf(stream, "[") + frec_dumpvalues(stream, self, depth) +
              fprintf(stream, "%s]" GAB_RESET, color);
     else
-      return fprintf(stream, "{") + rec_dump_properties(stream, self, depth) +
+      return fprintf(stream, "{") + frec_dumpproperties(stream, self, depth) +
              fprintf(stream, "%s}" GAB_RESET, color);
   }
   case kGAB_RECORDNODE:
-    return rec_dump_properties(stream, self, depth);
+    return frec_dumpproperties(stream, self, depth);
   case kGAB_BOX: {
     int idx = gab_valkind(self) % GAB_COLORS_LEN;
     const char *color = ANSI_COLORS[idx];
@@ -290,6 +499,10 @@ int inspectval(FILE *stream, gab_value self, int depth) {
   return 0;
 }
 
+int gab_svalinspect(char **dest, size_t *n, gab_value value, int depth) {
+  return sinspectval(dest, n, value, depth);
+}
+
 int gab_fvalinspect(FILE *stream, gab_value self, int depth) {
   int bytes = 0;
 
@@ -297,10 +510,10 @@ int gab_fvalinspect(FILE *stream, gab_value self, int depth) {
     int idx = gab_valkind(self) % GAB_COLORS_LEN;
     const char *color = ANSI_COLORS[idx];
     bytes += fprintf(stream, "%s", color);
-    bytes += inspectval(stream, self, 1);
+    bytes += finspectval(stream, self, 1);
     bytes += fprintf(stream, GAB_RESET);
   } else {
-    bytes += inspectval(stream, self, 1);
+    bytes += finspectval(stream, self, 1);
   }
 
   return bytes;

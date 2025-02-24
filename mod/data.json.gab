@@ -12,12 +12,12 @@ do_encode_record: .defcase! {
   false: object => Strings.make("{", object.join object_xf, "}")
 }
 
+json\encode: .def! () => Strings.make('"' self '"')
 json\encode: .defcase! {
   nil:          'nil'
   true:         'true'
   false:        'false'
-  "gab\string"  () => Strings.make('"'  self '"')
-  "gab\message" () => Strings.make('"' self '"')
   "gab\number"  () => self.strings\into
   "gab\record"  () => self.list?.do_encode_record self
 }
+

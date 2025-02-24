@@ -17,6 +17,24 @@ a_gab_value *gab_fmtlib_printf(struct gab_triple gab, uint64_t argc,
   return nullptr;
 }
 
+a_gab_value *gab_fmtlib_sprintf(struct gab_triple gab, uint64_t argc,
+                                gab_value argv[argc]) {
+  gab_value fmtstr = gab_arg(0);
+
+  const char *fmt = gab_strdata(&fmtstr);
+  char buf[1000];
+  int len = gab_nsprintf(buf, sizeof(buf), fmt, argc - 1, argv + 1);
+
+  if (len < 0)
+    return gab_fpanic(
+        gab, "Wrong number of format arguments to sprintf (expected $)",
+        gab_number(argc - 1));
+
+  gab_vmpush(gab_thisvm(gab), gab_string(gab, buf));
+
+  return nullptr;
+}
+
 a_gab_value *gab_fmtlib_println(struct gab_triple gab, uint64_t argc,
                                 gab_value argv[argc]) {
 
@@ -42,6 +60,11 @@ GAB_DYNLIB_MAIN_FN {
               gab_message(gab, "println"),
               gab_undefined,
               gab_snative(gab, "println", gab_fmtlib_println),
+          },
+          {
+              gab_message(gab, "sprintf"),
+              gab_type(gab, kGAB_STRING),
+              gab_snative(gab, "sprintf", gab_fmtlib_sprintf),
           });
 
   return a_gab_value_one(gab_ok);

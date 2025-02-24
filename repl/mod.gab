@@ -6,7 +6,7 @@ Terminal = 'os.terminal'.use
 
 (term, events) = (Terminal.make, Channels.make)
 
-(servin, servout) = (Channels.make, Channels.make)
+(server) = Channels.make
 
 event\quit?:.def!(
   Records.t,
@@ -22,27 +22,47 @@ Fibers.make () => do
 
 # Close all channels at this point.
   events.close!
-  servin.close!
-  servout.close!
+  server.close!
 end
 
 EvalCmd = Shapes.make(eval: source:)
 
 cmd\handle:.defcase! {
-  EvalCmd () => do
-    (res[]) = self.source.gab\eval
-    servout <! res
+  EvalCmd (state) => do
+    (status, res[], env) = self.source.gab\eval(state.env)
+
+    server <! {
+      status: status,
+      res: res,
+      env: env,
+    }
+
+    state.env env
   end
 }
 
-# Fiber for "server" half of repl
-Fibers.make () => servin.each cmd\handle:
-
-REPL = Shapes.make(input: history:)
+REPLServer = Shapes.make(env:)
 
 make:.def!(
-  REPL:,
-  () => REPL.make("" []))
+  REPLServer:
+  () => REPLServer.make(nil:))
+
+run:.def!(
+  REPLServer:
+  ()
+    => Fibers.make ()
+      => server.reduce(
+        REPLServer:.make,
+        (state, cmd)
+          => cmd.cmd\handle state))
+
+REPLServer:.run
+
+REPLClient = Shapes.make(input: history:)
+
+make:.def!(
+  REPLClient:,
+  () => REPLClient.make("" []))
 
 event\ctrl\key\handle:.def! (state) => state
 
@@ -52,17 +72,16 @@ event\ctrl\key\handle:.defcase! {
     state.input input
   end
   enter: (state, event) => do
-    servin <! EvalCmd.make(nil: state.input)
+    server <! EvalCmd.make(nil: state.input)
 
-    (ok, res) = servout >!
+    (ok, res) = server >!
 
     history_elem = { source: state.input, result: res }
 
-    state = ok
+    ok
       .and state.history(state.history.push history_elem)
       .or state
-
-    state.input ""
+      .input ""
   end
 }
 
@@ -136,7 +155,7 @@ end
 
 events
   .reduce(
-    REPL:.make, # Initial state
+    REPLClient:.make, # Initial state
     (state event) => do
       term.clear!
 
@@ -148,12 +167,16 @@ events
       (w h) = (term.width, term.height)
 
       state.history.each (h, i) => do
-        term.print(0, 3 + (i * 2), h.source)
-        term.print(0, 4 + (i * 2), h.result.json\encode)
+        source_line = "$: $".sprintf(i, h.source)
+        term.print(0, 3 + (i * 2), source_line)
+
+        result_line = "=> $ $".sprintf(h.result.status, h.result.res.map strings\into: .join)
+        term.print(0, 4 + (i * 2), result_line)
       end
 
       printbox.(0 h - 3 w - 2 2)
-      term.print(1, h - 2, state.input)
+      input_line = " > $".sprintf(state.input)
+      term.print(1, h - 2, input_line)
 
       term.render!
 
