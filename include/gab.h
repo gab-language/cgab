@@ -1928,7 +1928,7 @@ struct gab_obj_fiber {
   a_gab_value *res_values;
 
   /**
-   * The environment as execution finished
+   * The environment after execution finished
    */
   gab_value res_env;
 

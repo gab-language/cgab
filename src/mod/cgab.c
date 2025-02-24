@@ -7,6 +7,9 @@ a_gab_value *gab_gablib_eval(struct gab_triple gab, uint64_t argc,
 
   const char *src = gab_strdata(&source);
 
+  // These flags aren't passed to the fiber
+  // That eventually runs this code.
+  // That is the issue we encounter here.
   a_gab_value *res =
       gab_exec(gab, (struct gab_exec_argt){
                         .source = src,
