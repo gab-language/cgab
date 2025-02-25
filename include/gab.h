@@ -324,7 +324,7 @@ struct gab_src;
 
 struct gab_triple {
   struct gab_eg *eg;
-  int32_t flags;
+  uint32_t flags;
   int32_t wkid;
 };
 
@@ -1085,6 +1085,13 @@ GAB_API void gab_ndref(struct gab_triple gab, uint64_t stride, uint64_t len,
 #endif
 
 /**
+ * @brief Synchronously run the garbage collector.
+ *
+ * @param gab The triple.
+ */
+GAB_API void gab_sigterm(struct gab_triple gab);
+
+/**
  * @brief Trigger a garbage collection.
  * The collecting thread will begin a collection. Note that this is asynchronous
  * - to synchronously trigger and wait for the completion of a collection, @see
@@ -1092,14 +1099,14 @@ GAB_API void gab_ndref(struct gab_triple gab, uint64_t stride, uint64_t len,
  *
  * @param gab The triple.
  */
-GAB_API void gab_acollect(struct gab_triple gab);
+GAB_API void gab_asigcoll(struct gab_triple gab);
 
 /**
  * @brief Synchronously run the garbage collector.
  *
  * @param gab The triple.
  */
-GAB_API void gab_collect(struct gab_triple gab);
+GAB_API void gab_sigcoll(struct gab_triple gab);
 
 /**
  * @brief Lock the garbage collector to prevent collection until gab_gcunlock is
@@ -1929,6 +1936,8 @@ GAB_API gab_value gab_recdel(struct gab_triple gab, gab_value record,
 struct gab_obj_fiber {
   struct gab_obj header;
 
+  uint32_t flags;
+
   /**
    * Structure used to actually execute bytecode
    */
@@ -1969,6 +1978,7 @@ struct gab_obj_fiber {
 #define GAB_VAL_TO_FIBER(value) ((struct gab_obj_fiber *)gab_valtoo(value))
 
 struct gab_fiber_argt {
+  uint32_t flags;
   uint64_t argc;
 
   gab_value receiver, message, *argv;
@@ -2401,9 +2411,16 @@ struct gab_eg {
   gab_value types[kGAB_NKINDS];
 
   _Atomic int8_t njobs;
+  struct gab_sig {
+    _Atomic int8_t schedule;
+    enum gab_signal {
+      sGAB_IGN,
+      sGAB_COLL,
+      sGAB_TERM,
+    } signal;
+  } sig;
 
   struct gab_gc {
-    _Atomic int8_t schedule;
     d_gab_obj overflow_rc;
     v_gab_obj dead;
 
@@ -2511,7 +2528,7 @@ GAB_API_INLINE struct gab_vm *gab_thisvm(struct gab_triple gab) {
   return &GAB_VAL_TO_FIBER(fiber)->vm;
 }
 
-GAB_API void gab_yield(struct gab_triple gab);
+GAB_API enum gab_signal gab_yield(struct gab_triple gab);
 
 /**
  * @brief Check if a value's runtime id matches a given value.
@@ -2727,5 +2744,65 @@ GAB_API_INLINE gab_value gab_valintos(struct gab_triple gab, gab_value value) {
     return gab_undefined;
   }
 }
+
+GAB_API_INLINE bool gab_is_signaling(struct gab_triple gab) {
+  return gab.eg->sig.schedule >= 0;
+}
+
+GAB_API_INLINE void gab_propagate(struct gab_triple gab) {
+  int wkid = gab.wkid + 1;
+#if cGAB_LOG_EG
+  printf("[WORKER %i] TRY PROPAGATE %i\n", gab.wkid, wkid);
+#endif
+
+  // Wrap around the number of jobs. Since
+  // The 0th job is the GC job, we will wrap around
+  // and begin the gc last.
+  if (wkid >= gab.eg->len) {
+#if cGAB_LOG_EG
+    printf("[WORKER %i] WRAP PROPAGATE %i\n", gab.wkid, 0);
+#endif
+
+    gab.eg->sig.schedule = 0;
+    return;
+  }
+
+  // If the worker we're scheduling for isn't alive, skip it
+  if (!gab.eg->jobs[wkid].alive) {
+
+    if (gab.eg->sig.signal == sGAB_COLL)
+      gab.eg->jobs[wkid].epoch++;
+
+#if cGAB_LOG_EG
+    printf("[WORKER %i] SKIP PROPAGATE %i\n", gab.wkid, wkid);
+#endif
+
+    assert(!gab.eg->jobs[wkid].alive);
+    gab.wkid = wkid;
+    gab_propagate(gab);
+    return;
+  }
+
+  if (gab.eg->sig.schedule < (int8_t)wkid) {
+    gab.eg->sig.schedule = wkid;
+#if cGAB_LOG_EG
+    printf("[WORKER %i] DO PROPAGATE %i\n", gab.wkid, wkid);
+#endif
+  }
+};
+
+GAB_API_INLINE bool gab_signal(struct gab_triple gab, enum gab_signal s) {
+  if (gab.eg->sig.schedule >= 0)
+    return false;
+
+#if cGAB_LOG_EG
+  printf("[WORKER %i] SIGNALLING %i\n", gab.wkid, s);
+#endif
+
+  gab.eg->sig.signal = s;
+  gab.wkid = 0;
+  gab_propagate(gab);
+  return true;
+};
 
 #endif

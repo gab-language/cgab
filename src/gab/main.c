@@ -15,8 +15,15 @@
   "\"Some\Directory\In\Path\""
 #endif
 
+struct gab_triple gab;
+
+void propagate_term(int) {
+  gab_sigterm(gab);
+  gab_destroy(gab);
+}
+
 void run_repl(int flags) {
-  struct gab_triple gab = gab_create((struct gab_create_argt){
+  gab = gab_create((struct gab_create_argt){
       .flags = flags,
   });
 
@@ -31,7 +38,7 @@ void run_repl(int flags) {
 }
 
 int run_string(const char *string, int flags, size_t jobs) {
-  struct gab_triple gab = gab_create((struct gab_create_argt){
+  gab = gab_create((struct gab_create_argt){
       .flags = flags,
       .jobs = jobs,
   });
@@ -62,7 +69,7 @@ int run_string(const char *string, int flags, size_t jobs) {
 }
 
 int run_file(const char *path, int flags, size_t jobs) {
-  struct gab_triple gab = gab_create((struct gab_create_argt){
+  gab = gab_create((struct gab_create_argt){
       .flags = flags,
       .jobs = jobs,
   });
@@ -557,6 +564,8 @@ int main(int argc, const char **argv) {
 
   if (argc < 2)
     goto fin;
+
+  signal(SIGINT, propagate_term);
 
   for (int i = 0; i < N_COMMANDS; i++) {
     struct command cmd = commands[i];

@@ -287,8 +287,8 @@ a_gab_value *gab_strlib_at(struct gab_triple gab, uint64_t argc,
   return nullptr;
 }
 
-#define MIN(a, b) (a < b ? a : b)
-#define MAX(a, b) (a > b ? a : b)
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define CLAMP(a, b) (MAX(0, MIN(a, b)))
 
 a_gab_value *gab_strlib_slice(struct gab_triple gab, uint64_t argc,
@@ -296,40 +296,54 @@ a_gab_value *gab_strlib_slice(struct gab_triple gab, uint64_t argc,
   const char *str = gab_strdata(argv + 0);
 
   uint64_t len = gab_strlen(argv[0]);
+  if (len == 0) {
+    gab_vmpush(gab_thisvm(gab), gab_string(gab, ""));
+    return nullptr;
+  }
+
   uint64_t start = 0, end = len;
 
   switch (argc) {
   case 2: {
-    if (gab_valkind(argv[1]) != kGAB_NUMBER) {
-      return gab_fpanic(gab, "&:slice expects a number as the second argument");
-    }
+    if (gab_valkind(gab_arg(1)) != kGAB_NUMBER)
+      return gab_pktypemismatch(gab, gab_arg(1), kGAB_NUMBER);
 
-    double a = gab_valton(argv[1]);
-    end = MIN(a, len);
+    int64_t a = gab_valton(gab_arg(1));
+    if (a < 0)
+      a += len;
+
+    end = CLAMP(a, len);
+    assert(end >= 0 && end < len);
     break;
   }
 
-  case 3:
-    if (gab_valkind(argv[1]) == kGAB_NUMBER) {
-      start = MIN(gab_valton(argv[1]), len);
-    } else if (argv[1] == gab_nil) {
-      return gab_fpanic(gab, "&:slice expects a number as the second argument");
-    }
+  default: {
+    if (gab_valkind(gab_arg(1)) != kGAB_NUMBER)
+      return gab_pktypemismatch(gab, gab_arg(1), kGAB_NUMBER);
 
-    if (gab_valkind(argv[2]) == kGAB_NUMBER) {
-      end = MIN(gab_valton(argv[2]), len);
-    } else if (argv[2] == gab_nil) {
-      return gab_fpanic(gab, "&:slice expects a number as the third argument");
+    int64_t a = gab_valton(gab_arg(1));
+    if (a < 0)
+      a += len;
+
+    start = CLAMP(a, len - 1);
+    assert(start >= 0 && start < len);
+
+    if (gab_valkind(gab_arg(2)) == kGAB_NUMBER) {
+      int64_t b = gab_valton(gab_arg(2));
+      if (b < 0)
+        b += len;
+
+      end = CLAMP(b, len - 1);
+      assert(end >= 0 && end < len);
     }
     break;
-
-  default:
-    return gab_fpanic(gab, "&:slice expects 2 or 3 arguments");
+  }
   }
 
-  if (start > end) {
-    return gab_fpanic(gab, "&:slice expects the start to be before the end");
-  }
+  if (start > end)
+    return gab_fpanic(
+        gab, "slice: expects the start to be before the end, got [$, $]", start,
+        end);
 
   uint64_t size = end - start;
 

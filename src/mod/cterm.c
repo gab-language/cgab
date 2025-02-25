@@ -152,6 +152,14 @@ gab_value key_to_value(struct gab_triple gab, uint16_t key) {
     return gab_message(gab, "backspace");
   case TB_KEY_ENTER:
     return gab_message(gab, "enter");
+  case TB_KEY_ARROW_UP:
+    return gab_message(gab, "arrow\\up");
+  case TB_KEY_ARROW_DOWN:
+    return gab_message(gab, "arrow\\down");
+  case TB_KEY_ARROW_LEFT:
+    return gab_message(gab, "arrow\\left");
+  case TB_KEY_ARROW_RIGHT:
+    return gab_message(gab, "arrow\\right");
   default:
     return gab_number(key);
   }

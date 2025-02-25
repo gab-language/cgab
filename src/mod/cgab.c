@@ -1,7 +1,7 @@
 #include "core.h"
 #include "gab.h"
 
-a_gab_value *gab_gablib_eval(struct gab_triple gab, uint64_t argc,
+a_gab_value *gab_gablib_aeval(struct gab_triple gab, uint64_t argc,
                              gab_value argv[static argc]) {
   gab_value source = gab_arg(0);
   gab_value env = gab_arg(1);
@@ -46,17 +46,12 @@ a_gab_value *gab_gablib_eval(struct gab_triple gab, uint64_t argc,
                          });
   }
 
-  if (fib == gab_undefined)
-    return a_gab_value_one(gab_err);
+  if (fib == gab_undefined) {
+    gab_vmpush(gab_thisvm(gab), gab_err);
+    return nullptr;
+  }
 
-  a_gab_value *res = gab_fibawait(gab, fib);
-  gab_value new_env = gab_fibawaite(gab, fib);
-
-  if (res == nullptr)
-    return a_gab_value_one(gab_err);
-
-  gab_nvmpush(gab_thisvm(gab), res->len, res->data);
-  gab_vmpush(gab_thisvm(gab), new_env);
+  gab_vmpush(gab_thisvm(gab), gab_ok, fib);
 
   return nullptr;
 }
@@ -67,7 +62,7 @@ GAB_DYNLIB_MAIN_FN {
   gab_def(gab, {
                    gab_message(gab, "gab\\eval"),
                    gab_type(gab, kGAB_STRING),
-                   gab_snative(gab, "gab\\eval", gab_gablib_eval),
+                   gab_snative(gab, "gab\\eval", gab_gablib_aeval),
                });
 
   gab_value results[] = {gab_ok, mod};

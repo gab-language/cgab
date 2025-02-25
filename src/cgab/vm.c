@@ -43,9 +43,14 @@ static handler handlers[] = {
 
 #define DISPATCH(op)                                                           \
   ({                                                                           \
-    if (GC()->schedule == GAB().wkid) {                                        \
+    if (EG()->sig.schedule == GAB().wkid) {                                    \
       STORE_SP();                                                              \
-      gab_gcepochnext(GAB());                                                  \
+      switch (gab_yield(GAB())) {                                                \
+      case sGAB_TERM:                                                          \
+        return nullptr;                                                        \
+      default:                                                                 \
+        break;                                                                 \
+      }                                                                        \
     }                                                                          \
                                                                                \
     uint8_t o = (op);                                                          \
@@ -779,7 +784,6 @@ a_gab_value *do_vmexecfiber(struct gab_triple gab, gab_value f,
         0,
     };
 
-    // BLOCK IS NULL, SO THIS FAKE FRAME HAS NOTHING TO RETURN TO
     assert(op == OP_SEND_PRIMITIVE_CALL_BLOCK);
     if (op == OP_SEND_PRIMITIVE_CALL_BLOCK)
       op = OP_TAILSEND_PRIMITIVE_CALL_BLOCK;
@@ -842,6 +846,8 @@ a_gab_value *gab_vmexec(struct gab_triple gab, gab_value f) {
 
   gab_value receiver = fiber->data[1];
   gab_value message = fiber->data[0];
+
+  gab.flags |= fiber->flags;
 
   struct gab_impl_rest res = gab_impl(gab, message, receiver);
 

@@ -1,6 +1,7 @@
 #include "platform.h"
 #include <errno.h>
 #include <stdint.h>
+#include <threads.h>
 
 #define GAB_STATUS_NAMES_IMPL
 #define GAB_TOKEN_NAMES_IMPL
@@ -296,12 +297,29 @@ struct native {
 
 static const struct timespec t = {.tv_nsec = GAB_YIELD_SLEEPTIME_NS};
 
-void gab_yield(struct gab_triple gab) {
-  if (gab.wkid && gab.eg->gc->schedule == gab.wkid)
-    gab_gcepochnext(gab);
+enum gab_signal gab_yield(struct gab_triple gab) {
+  if (gab.eg->sig.schedule == gab.wkid) {
+
+    switch (gab.eg->sig.signal) {
+    case sGAB_TERM:
+#if cGAB_LOG_EG
+    printf("[WORKER %i] RECV SIGTERM %i\n", gab.wkid, gab.eg->sig.signal);
+#endif
+      return gab.eg->sig.signal;
+    case sGAB_COLL:
+#if cGAB_LOG_EG
+    printf("[WORKER %i] RECV SIGCOLL %i\n", gab.wkid, gab.eg->sig.signal);
+#endif
+      gab_gcepochnext(gab);
+      return sGAB_COLL;
+    default:
+      break;
+    }
+  }
 
   thrd_sleep(&t, nullptr);
   thrd_yield();
+  return sGAB_IGN;
 }
 
 int32_t gc_job(void *data) {
@@ -312,10 +330,15 @@ int32_t gc_job(void *data) {
   gab.eg->jobs[gab.wkid].fiber = gab_undefined;
 
   while (gab.eg->njobs >= 0) {
-    if (gab.eg->gc->schedule == gab.wkid)
+    switch (gab_yield(gab)) {
+    case sGAB_COLL:
       gab_gcdocollect(gab);
-
-    gab_yield(gab);
+      gab.eg->sig.signal = sGAB_IGN;
+      gab.eg->sig.schedule = -1;
+      break;
+    default:
+      break;
+    }
   }
 
   free(g);
@@ -337,16 +360,16 @@ int32_t worker_job(void *data) {
          !gab_chnisempty(gab.eg->work_channel)) {
 
 #if cGAB_LOG_EG
-    fprintf(stdout, "[WORKER %i] TAKING WITH TIMEOUT %lus\n", gab.wkid,
-            cGAB_WORKER_IDLEWAIT_MS / 1000);
+    fprintf(stdout, "[WORKER %i] TAKING WITH TIMEOUT %lums\n", gab.wkid,
+            cGAB_WORKER_IDLEWAIT_MS);
 #endif
 
     gab_value fiber =
         gab_tchntake(gab, gab.eg->work_channel, cGAB_WORKER_IDLEWAIT_MS);
 
 #if cGAB_LOG_EG
-    fprintf(stdout, "[WORKER %i] chntake yielded: ", gab.wkid);
-    gab_fprintf(stdout, "$\n", fiber);
+    fprintf(stdout, "[WORKER %i] chntake succeeded: %d\n", gab.wkid,
+            fiber != gab_undefined);
 #endif
 
     // we get undefined if:
@@ -407,14 +430,7 @@ bool gab_jbcreate(struct gab_triple gab, struct gab_jb *job, int(fn)(void *)) {
   memcpy(gabcpy, &gab, sizeof(struct gab_triple));
   gabcpy->wkid = job - gab.eg->jobs;
 
-  int res = thrd_create(&job->td, fn, gabcpy);
-
-  if (res != thrd_success) {
-    printf("UHOH\n");
-    exit(1);
-  }
-
-  return true;
+  return thrd_create(&job->td, fn, gabcpy) == thrd_success;
 }
 
 bool gab_wkspawn(struct gab_triple gab) {
@@ -440,6 +456,7 @@ struct gab_triple gab_create(struct gab_create_argt args) {
   eg->sin = args.sin;
   eg->sout = args.sout;
   eg->serr = args.serr;
+  eg->sig.schedule = -1;
 
   // The only non-zero initialization that jobs need is epoch = 1
   for (uint64_t i = 0; i < eg->len; i++)
@@ -562,6 +579,8 @@ void gab_destroy(struct gab_triple gab) {
   gab.eg->messages = gab_undefined;
   gab.eg->shapes = gab_undefined;
 
+  assert(gab.eg->njobs == 0);
+
   /**
    * Two consececutive collections are needed here because
    * of the delayed nature of the RC algorithm.
@@ -571,11 +590,11 @@ void gab_destroy(struct gab_triple gab) {
    * There are three epochs tracked, so we need three collections
    * to ensure that all rc events are processed.
    */
-  gab_collect(gab);
+  gab_sigcoll(gab);
 
-  gab_collect(gab);
+  gab_sigcoll(gab);
 
-  gab_collect(gab);
+  gab_sigcoll(gab);
 
   gab_gcassertdone(gab);
 
@@ -721,7 +740,6 @@ gab_value gab_aexec(struct gab_triple gab, struct gab_exec_argt args) {
   gab.flags |= args.flags;
 
   if (gab.flags & fGAB_RUN_INCLUDEDEFAULTARGS) {
-
     // Copy given args in.
     if (args.len && args.sargv && args.argv) {
       memcpy(sargv, args.sargv, args.len * sizeof(const char *));
@@ -1385,6 +1403,7 @@ gab_value gab_arun(struct gab_triple gab, struct gab_run_argt args) {
   gab_value fb = gab_fiber(gab, (struct gab_fiber_argt){
                                     .message = gab_message(gab, mGAB_CALL),
                                     .receiver = args.main,
+                                    .flags = gab.flags,
                                     .argv = args.argv,
                                     .argc = args.len,
                                 });
@@ -1431,3 +1450,21 @@ a_gab_value *gab_send(struct gab_triple gab, struct gab_send_argt args) {
 
   return res;
 };
+
+GAB_API void gab_sigterm(struct gab_triple gab) {
+  gab_signal(gab, sGAB_TERM);
+  while (gab_is_signaling(gab))
+    ;
+}
+
+void gab_asigcoll(struct gab_triple gab) {
+  bool succeeded = gab_signal(gab, sGAB_COLL);
+  assert(succeeded);
+}
+
+void gab_sigcoll(struct gab_triple gab) {
+  gab_asigcoll(gab);
+
+  while (gab_is_signaling(gab))
+    ;
+}

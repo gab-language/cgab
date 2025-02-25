@@ -4,9 +4,9 @@ Ranges = 'ranges'.use
 xf = 'transducers'.use
 Terminal = 'os.terminal'.use
 
-(term, events) = (Terminal.make, Channels.make)
+term = Terminal.make
 
-(server) = Channels.make
+(events, server) = (Channels.make, Channels.make)
 
 event\quit?:.def!(
   Records.t,
@@ -15,7 +15,7 @@ event\quit?:.def!(
 # Fiber for polling terminal events and pushing them
 # into a channel for handling. Transducer terminates
 # the stream on the quit event.
-Fibers.make () => do
+Main = Fibers.make () => do
   term.pipe(
     events
     xf.take_until event\quit?:)
@@ -25,19 +25,59 @@ Fibers.make () => do
   server.close!
 end
 
-EvalCmd = Shapes.make(eval: source:)
+HistoryElement = Shapes.make(source: result:)
+
+strings\into:.defcase! {
+  Shapes.make(status: fiber:) () => do
+   "=> $ $".sprintf(self.status, self.fiber)
+  end
+  Shapes.make(status: res: env:) () => do
+    "=> $ $".sprintf(self.status, self.res.map strings\into: .join(xf.interpose " "))
+  end
+}
+
+EvalCmd = Shapes.make(eval:)
+EnvCmd = Shapes.make(env:)
+
+tick\history_element\result:.defcase! {
+  Shapes.make(status: fiber:) (he) => do
+    result = he.result
+    fib = result.fiber
+
+    fib
+      .then done?:
+      .then(() => do
+        (status, res[], env) = fib.await!
+
+        status
+          .ok?
+          .then(() => server <! EnvCmd.make(env))
+
+        he.result {
+          status: status
+          res: res
+          env: env
+        }
+      end)
+      .or he
+  end
+  Shapes.make(status: res: env:) (he) => he
+}
+
+tick\history_element:.def!(
+  HistoryElement
+  () => self.result.tick\history_element\result self)
 
 cmd\handle:.defcase! {
   EvalCmd (state) => do
-    (status, res[], env) = self.source.gab\eval(state.env)
+    (ok, fib) = self.eval.gab\eval(state.env)
 
-    server <! {
-      status: status,
-      res: res,
-      env: env,
-    }
+    server <! { status: ok, fiber: fib }
 
-    state.env env
+    state
+  end
+  EnvCmd (state) => do
+    state.env(self.env)
   end
 }
 
@@ -56,13 +96,13 @@ run:.def!(
         (state, cmd)
           => cmd.cmd\handle state))
 
-REPLServer:.run
+Server = REPLServer:.run
 
-REPLClient = Shapes.make(input: history:)
+REPLClient = Shapes.make(input: history_index: history:)
 
 make:.def!(
   REPLClient:,
-  () => REPLClient.make("" []))
+  () => REPLClient.make("" 0 []))
 
 event\ctrl\key\handle:.def! (state) => state
 
@@ -72,29 +112,55 @@ event\ctrl\key\handle:.defcase! {
     state.input input
   end
   enter: (state, event) => do
-    server <! EvalCmd.make(nil: state.input)
+    server <! EvalCmd.make(state.input)
 
     (ok, res) = server >!
 
-    history_elem = { source: state.input, result: res }
+    history_elem = HistoryElement.make(state.input, res)
 
-    ok
+    state = ok
       .and state.history(state.history.push history_elem)
       .or state
       .input ""
+
+    state.history_index(state.history.len)
   end
 }
 
+event\key\key\handle:.defcase! {
+  arrow\down: (state, event) => do
+    state = state.history_index(state.history_index ++)
+    (ok, hist) = state.history.at(state.history_index)
+
+    ok
+      .then(() => state.input(hist.source))
+      .else(() => state.input "")
+  end
+  arrow\up: (state, event) => do
+    state = state.history_index(state.history_index --)
+    (ok, hist) = state.history.at(state.history_index)
+
+    ok
+      .then(() => state.input(hist.source))
+      .else(() => state.input "")
+  end
+}
+
+event\key\key\handle:.def! (state event) =>  do
+  input = state.input + event.ch
+  state.input input
+end
+
 event\key\handle:.defcase! {
   ctrl: (state, event) => event.key.event\ctrl\key\handle(state event),
-  key: (state, event) => do
-    input = state.input + event.ch
-    state.input input
-  end
+  key: (state, event) => event.key.event\key\key\handle(state event)
 }
 
 event\handle:.defcase! {
   key: (state, event) => event.mod.event\key\handle(state event)
+  tick: (state) => do
+    state.history(state.history.map tick\history_element:)
+  end
 }
 
 box_chars = {
@@ -153,16 +219,26 @@ printbox = (x y w h) => do
     dist: h - 2)
 end
 
-events
+tick = () => do
+  events <! { type: tick: }
+
+  Fibers.sleep!(250000000)
+
+  events.closed?.else self
+end
+
+Ticker = Fibers.make(tick)
+
+Client = Fibers.make() 
+  => events
   .reduce(
     REPLClient:.make, # Initial state
     (state event) => do
       term.clear!
 
-      state = event.type.event\handle(state, event)
+      term.print(0, 0, "$".sprintf event)
 
-      term.print(0, 0, event.json\encode)
-      term.print(0, 1, state.json\encode)
+      state = event.type.event\handle(state, event)
 
       (w h) = (term.width, term.height)
 
@@ -170,7 +246,7 @@ events
         source_line = "$: $".sprintf(i, h.source)
         term.print(0, 3 + (i * 2), source_line)
 
-        result_line = "=> $ $".sprintf(h.result.status, h.result.res.map strings\into: .join)
+        result_line = h.result.strings\into
         term.print(0, 4 + (i * 2), result_line)
       end
 
@@ -182,3 +258,7 @@ events
 
       state
     end)
+
+[Main Server Client Ticker]
+  .map await!:
+  .map unwrap!:

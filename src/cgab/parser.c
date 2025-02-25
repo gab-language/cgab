@@ -1931,7 +1931,7 @@ union gab_value_pair gab_compile(struct gab_triple gab, gab_value ast,
 }
 
 gab_value gab_build(struct gab_triple gab, struct gab_build_argt args) {
-  gab.flags = args.flags;
+  gab.flags |= args.flags;
 
   args.name = args.name ? args.name : "__main__";
 
