@@ -43,11 +43,17 @@ static handler handlers[] = {
 
 #define DISPATCH(op)                                                           \
   ({                                                                           \
-    if (EG()->sig.schedule == GAB().wkid) {                                    \
+    if (gab_sigwaiting(GAB())) {                                               \
       STORE_SP();                                                              \
-      switch (gab_yield(GAB())) {                                                \
+      switch (gab_yield(GAB())) {                                              \
+      case sGAB_COLL:                                                          \
+        gab_gcepochnext(GAB());                                                \
+        gab_sigpropagate(GAB());                                               \
+        break;                                                                 \
       case sGAB_TERM:                                                          \
-        return nullptr;                                                        \
+        STORE();                                                               \
+        return vm_terminate(GAB(), GAB_TERM, "$ on $", gab_thisfiber(GAB()),   \
+                            gab_number(GAB().wkid));                           \
       default:                                                                 \
         break;                                                                 \
       }                                                                        \
@@ -380,6 +386,31 @@ struct gab_err_argt vm_frame_build_err(struct gab_triple gab,
   };
 }
 
+a_gab_value *vvm_terminate(struct gab_triple gab, enum gab_status s,
+                           const char *fmt, va_list va) {
+  gab_value fiber = gab_thisfiber(gab);
+
+  struct gab_vm *vm = gab_thisvm(gab);
+  gab_value *f = vm->fp;
+  uint8_t *ip = vm->ip;
+
+  while (frame_parent(f) > vm->sb) {
+    gab_vfpanic(gab, gab.eg->serr, va,
+                vm_frame_build_err(gab, frame_block(f), ip,
+                                   frame_parent(f) > vm->sb, GAB_NONE, ""));
+
+    ip = frame_ip(f);
+    f = frame_parent(f);
+  }
+
+  gab_vfpanic(gab, gab.eg->serr, va,
+              vm_frame_build_err(gab, frame_block(f), ip, false, s, fmt));
+
+  assert(GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERRUNNING);
+  GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERDONE;
+  return nullptr;
+}
+
 a_gab_value *vvm_error(struct gab_triple gab, enum gab_status s,
                        const char *fmt, va_list va) {
   gab_value fiber = gab_thisfiber(gab);
@@ -423,6 +454,18 @@ a_gab_value *vvm_error(struct gab_triple gab, enum gab_status s,
   return res;
 }
 
+a_gab_value *vm_terminate(struct gab_triple gab, enum gab_status s,
+                          const char *fmt, ...) {
+  va_list va;
+  va_start(va, fmt);
+
+  a_gab_value *res = vvm_terminate(gab, s, fmt, va);
+
+  va_end(va);
+
+  return res;
+}
+
 a_gab_value *vm_error(struct gab_triple gab, enum gab_status s, const char *fmt,
                       ...) {
   va_list va;
@@ -451,7 +494,7 @@ a_gab_value *gab_fpanic(struct gab_triple gab, const char *fmt, ...) {
   va_start(va, fmt);
 
   if (!gab_thisvm(gab)) {
-    gab_vfpanic(gab, stderr, va,
+    gab_vfpanic(gab, gab.eg->serr, va,
                 (struct gab_err_argt){
                     .status = GAB_PANIC,
                     .note_fmt = fmt,
@@ -728,7 +771,7 @@ static inline gab_value block(struct gab_triple gab, gab_value p,
   return blk;
 }
 
-a_gab_value *ok(OP_HANDLER_ARGS) {
+a_gab_value *vm_ok(OP_HANDLER_ARGS) {
   uint64_t have = *VM()->sp;
   gab_value *from = VM()->sp - have;
 
@@ -1418,7 +1461,7 @@ CASE_CODE(RETURN) {
   gab_value *to = FB() - 3;
 
   if (__gab_unlikely(RETURN_FB() == nullptr))
-    return STORE(), SET_VAR(have), ok(DISPATCH_ARGS());
+    return STORE(), SET_VAR(have), vm_ok(DISPATCH_ARGS());
 
   assert(RETURN_IP() != nullptr);
 

@@ -26,21 +26,53 @@
  * ...);
  */
 
-void gab_termshutdown(size_t, char *) {
+FILE *ogin = nullptr, *ogout = nullptr, *ogerr = nullptr;
+
+gab_value singleton = gab_undefined;
+
+void gab_termshutdown(struct gab_triple gab, size_t, char *) {
   tb_clear();
   tb_shutdown();
+
+  gab.eg->sin = ogin;
+  gab.eg->sout = ogout;
+  gab.eg->serr = ogerr;
 }
 
 a_gab_value *gab_termlib_make(struct gab_triple gab, uint64_t argc,
                               gab_value argv[static argc]) {
   tb_init();
 
-  gab_value term = gab_box(gab, (struct gab_box_argt){
+  if (singleton != gab_undefined) {
+    gab_vmpush(gab_thisvm(gab), singleton);
+    return nullptr;
+  }
+
+   singleton = gab_box(gab, (struct gab_box_argt){
                                     .type = gab_string(gab, tGAB_TERMINAL),
                                     .destructor = gab_termshutdown,
                                 });
 
-  gab_vmpush(gab_thisvm(gab), term);
+  ogin = gab.eg->sin;
+  ogout = gab.eg->sout;
+  ogerr = gab.eg->serr;
+
+  gab.eg->sin = tmpfile();
+  gab.eg->sout = tmpfile();
+  gab.eg->serr = tmpfile();
+
+  gab_vmpush(gab_thisvm(gab), singleton);
+  return nullptr;
+}
+
+a_gab_value *gab_termlib_shutdown(struct gab_triple gab, uint64_t argc,
+                              gab_value argv[static argc]) {
+  tb_clear();
+  tb_shutdown();
+
+  gab.eg->sin = ogin;
+  gab.eg->sout = ogout;
+  gab.eg->serr = ogerr;
   return nullptr;
 }
 
@@ -160,6 +192,8 @@ gab_value key_to_value(struct gab_triple gab, uint16_t key) {
     return gab_message(gab, "arrow\\left");
   case TB_KEY_ARROW_RIGHT:
     return gab_message(gab, "arrow\\right");
+  case TB_KEY_CTRL_C:
+    gab_sigterm(gab);
   default:
     return gab_number(key);
   }
@@ -209,7 +243,19 @@ a_gab_value *gab_termlib_pollevent(struct gab_triple gab, uint64_t argc,
   assert(shape != gab_undefined);
 
   struct tb_event ev = {};
-  tb_poll_event(&ev);
+  /*tb_poll_event(&ev);*/
+
+  while (tb_peek_event(&ev, cGAB_CHANNEL_STEP_MS) == TB_ERR_NO_EVENT)
+    switch (gab_yield(gab)) {
+    case sGAB_COLL:
+      gab_gcepochnext(gab);
+      gab_sigpropagate(gab);
+      break;
+    case sGAB_TERM:
+      return nullptr;
+    default:
+      break;
+    };
 
   gab_value vals[] = {
       gab_number(ev.x),
@@ -293,7 +339,12 @@ GAB_DYNLIB_MAIN_FN {
               gab_snative(gab, "render!", gab_termlib_present),
           },
           {
-              gab_message(gab, "print"),
+              gab_message(gab, "shutdown!"),
+              t,
+              gab_snative(gab, "shutdown!", gab_termlib_shutdown),
+          },
+          {
+              gab_message(gab, "print!"),
               t,
               gab_snative(gab, "print!", gab_termlib_print),
           },

@@ -21,8 +21,10 @@ a_gab_value *gab_fiblib_await(struct gab_triple gab, uint64_t argc,
   a_gab_value *res = gab_fibawait(gab, fib);
   gab_value env = gab_fibawaite(gab, fib);
 
-  gab_nvmpush(gab_thisvm(gab), res->len, res->data);
-  gab_vmpush(gab_thisvm(gab), env);
+  if (res != nullptr) {
+    gab_nvmpush(gab_thisvm(gab), res->len, res->data);
+    gab_vmpush(gab_thisvm(gab), env);
+  }
 
   return nullptr;
 }

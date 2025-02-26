@@ -104,8 +104,21 @@ void queue_decrement(struct gab_triple gab, struct gab_obj *obj) {
   gab_gctrigger(gab);
 
   while (buflen(gab, kGAB_BUF_DEC, gab.wkid, e) >= cGAB_GC_MOD_BUFF_MAX) {
-    /*gab_yield(gab);*/
-    thrd_yield();
+    switch (gab_yield(gab)) {
+    case sGAB_COLL:
+      gab_gcepochnext(gab);
+      gab_sigpropagate(gab);
+      break;
+    case sGAB_TERM:
+      // In the case where a decrement is missed to this value
+      // because we must handle the terminate signal:
+      // Simply store this value in the engine's scratch buffer.
+      // It will be decremented as the engine is cleaned up.
+      gab_egkeep(gab.eg, __gab_obj(obj));
+      return;
+    default:
+      break;
+    }
 
     e = epochget(gab);
   }
@@ -124,8 +137,23 @@ void queue_increment(struct gab_triple gab, struct gab_obj *obj) {
   gab_gctrigger(gab);
 
   while (buflen(gab, kGAB_BUF_INC, gab.wkid, e) >= cGAB_GC_MOD_BUFF_MAX) {
-    /*gab_yield(gab);*/
-    thrd_yield();
+    switch (gab_yield(gab)) {
+    case sGAB_COLL:
+      gab_gcepochnext(gab);
+      gab_sigpropagate(gab);
+      break;
+    case sGAB_TERM:
+      // In the case where an increment is missed to this value
+      // because we must handle the terminate signal:
+      // Immediately perform an increment. This is safe as it can't result
+      // in destroying the object.
+      // Give the object to the scratch buffer for resolving later.
+      do_increment(gab.eg->gc, obj);
+      gab_egkeep(gab.eg, __gab_obj(obj));
+      return;
+    default:
+      break;
+    }
 
     e = epochget(gab);
   }
@@ -148,7 +176,8 @@ void queue_destroy(struct gab_triple gab, struct gab_obj *obj) {
   assert(obj->references == 0);
 
 #if cGAB_LOG_GC
-  printf("QDEAD\t%i\t%i\t%p\t%d\n", epochget(gab), gab.wkid, obj, obj->references);
+  printf("QDEAD\t%i\t%i\t%p\t%d\n", epochget(gab), gab.wkid, obj,
+         obj->references);
 #endif
 }
 
@@ -176,6 +205,14 @@ static inline void for_buf_do(uint8_t b, uint8_t wkid, uint8_t epoch,
   }
 
   // Sanity check that buffer hasn't been modified while operating over buffer
+#if cGAB_LOG_GC
+
+#endif
+  if (len != buflen(gab, b, wkid, epoch)) {
+    printf("INVALID BUFMOD: %d, %i, %i, %lu vs %li\n", b, wkid, epoch, len,
+           buflen(gab, b, wkid, epoch));
+    exit(1);
+  }
   assert(len == buflen(gab, b, wkid, epoch));
 }
 
@@ -289,7 +326,7 @@ static inline void destroy(struct gab_triple gab, struct gab_obj *obj) {
   GAB_OBJ_FREED(obj);
 #else
   assert(obj->references == 0);
-  gab_obj_destroy(gab.eg, obj);
+  gab_objdestroy(gab, obj);
   gab_egalloc(gab, obj, 0);
 #endif
 }
@@ -587,12 +624,10 @@ void gab_gcepochnext(struct gab_triple gab) {
 #endif
   if (gab.wkid > 0)
     processepoch(gab, epochget(gab));
-
-  gab_propagate(gab);
 }
 
 bool gab_gctrigger(struct gab_triple gab) {
-  if (gab.eg->sig.schedule >= 0)
+  if (gab_is_signaling(gab))
     return false;
 
   uint64_t e = epochget(gab);
@@ -653,6 +688,4 @@ void gab_gcdocollect(struct gab_triple gab) {
 
   if (gab_valiso(gab.eg->shapes))
     queue_decrement(gab, gab_valtoo(gab.eg->shapes));
-
-  gab.eg->sig.schedule = -1;
 }

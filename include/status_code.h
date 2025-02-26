@@ -1,6 +1,7 @@
 // Compile-time errors
 STATUS(OK, "ok")
 STATUS(NONE, "")
+STATUS(TERM, "Fiber terminated")
 STATUS(PANIC, "A fatal error occurred")
 STATUS(MALFORMED_TOKEN, "Unrecognized token")
 STATUS(MALFORMED_STRING, "Malformed string")

@@ -87,7 +87,7 @@
 #endif
 
 #ifndef cGAB_LOG_EG
-#define cGAB_LOG_EG 1
+#define cGAB_LOG_EG 0
 #endif
 
 // Log what is happening during execution.

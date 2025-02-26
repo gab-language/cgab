@@ -325,16 +325,16 @@ a_gab_value *gab_strlib_slice(struct gab_triple gab, uint64_t argc,
     if (a < 0)
       a += len;
 
-    start = CLAMP(a, len - 1);
-    assert(start >= 0 && start < len);
+    start = CLAMP(a, len);
+    assert(start >= 0 && start <= len);
 
     if (gab_valkind(gab_arg(2)) == kGAB_NUMBER) {
       int64_t b = gab_valton(gab_arg(2));
       if (b < 0)
         b += len;
 
-      end = CLAMP(b, len - 1);
-      assert(end >= 0 && end < len);
+      end = CLAMP(b, len);
+      assert(end >= 0 && end <= len);
     }
     break;
   }

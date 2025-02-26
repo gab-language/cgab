@@ -343,7 +343,7 @@ typedef void (*gab_gcvisit_f)(struct gab_triple, struct gab_obj *obj);
 typedef a_gab_value *(*gab_native_f)(struct gab_triple, uint64_t argc,
                                      gab_value *argv);
 
-typedef void (*gab_boxdestroy_f)(uint64_t len, char *data);
+typedef void (*gab_boxdestroy_f)(struct gab_triple gab, uint64_t len, char *data);
 
 typedef void (*gab_boxcopy_f)(uint64_t len, char *data);
 
@@ -382,7 +382,7 @@ struct gab_obj {
  * @param eg The engine responsible for the object.
  * @param obj The object.
  */
-GAB_API void gab_obj_destroy(struct gab_eg *eg, struct gab_obj *obj);
+GAB_API void gab_objdestroy(struct gab_triple gab, struct gab_obj *obj);
 
 /**
  * @brief Return the size of the object's allocation, in bytes.
@@ -1082,10 +1082,20 @@ GAB_API void gab_niref(struct gab_triple gab, uint64_t stride, uint64_t len,
 GAB_API void gab_ndref(struct gab_triple gab, uint64_t stride, uint64_t len,
                        gab_value *values);
 
+/*
+ *
+ */
+#if cGAB_LOG_GC
+#define gab_gcepochnext(gab) (__gab_gcepochnext(gab, __FUNCTION__, __LINE__))
+void __gab_gcepochnext(struct gab_triple gab, const char *func, int line);
+#else
+void gab_gcepochnext(struct gab_triple gab);
+#endif
+
 #endif
 
 /**
- * @brief Synchronously run the garbage collector.
+ * @brief Signal the engine to terminate.
  *
  * @param gab The triple.
  */
@@ -2405,6 +2415,7 @@ enum {
  */
 struct gab_eg {
   uint64_t hash_seed;
+  uint64_t bytes_allocated;
 
   v_gab_value scratch;
 
@@ -2528,7 +2539,7 @@ GAB_API_INLINE struct gab_vm *gab_thisvm(struct gab_triple gab) {
   return &GAB_VAL_TO_FIBER(fiber)->vm;
 }
 
-GAB_API enum gab_signal gab_yield(struct gab_triple gab);
+[[nodiscard]] GAB_API enum gab_signal gab_yield(struct gab_triple gab);
 
 /**
  * @brief Check if a value's runtime id matches a given value.
@@ -2664,95 +2675,37 @@ GAB_API_INLINE bool gab_valintob(gab_value value) {
  * @return The string representation of the value.
  */
 GAB_API_INLINE gab_value gab_valintos(struct gab_triple gab, gab_value value) {
-  char buffer[128];
+  size_t len = 128;
+  for (;; len *= 2) {
+    char buffer[len];
 
-  switch (gab_valkind(value)) {
-  case kGAB_STRING:
-    return value;
-  case kGAB_MESSAGE:
-    return gab_msgtostr(value);
-  case kGAB_SYMBOL:
-    return gab_symtostr(value);
-  case kGAB_BINARY:
-    return gab_bintostr(value);
-  case kGAB_PRIMITIVE:
-    return gab_string(gab, gab_opcode_names[gab_valtop(value)]);
-  case kGAB_NUMBER: {
-    snprintf(buffer, 128, "%lg", gab_valton(value));
-    return gab_string(gab, buffer);
-  }
-  case kGAB_UNDEFINED: {
-    snprintf(buffer, 128, "undefined");
-    return gab_string(gab, buffer);
-  }
-  case kGAB_FIBER:
-  case kGAB_FIBERRUNNING:
-  case kGAB_FIBERDONE: {
-    struct gab_obj_fiber *m = GAB_VAL_TO_FIBER(value);
-    snprintf(buffer, 128, "<" tGAB_FIBER " %p>", m);
-    return gab_string(gab, buffer);
-  }
-  case kGAB_CHANNEL:
-  case kGAB_CHANNELCLOSED: {
-    struct gab_obj_channel *m = GAB_VAL_TO_CHANNEL(value);
-    snprintf(buffer, 128, "<" tGAB_CHANNEL " %p>", m);
-    return gab_string(gab, buffer);
-  }
-  case kGAB_SHAPE:
-  case kGAB_SHAPELIST: {
-    struct gab_obj_shape *m = GAB_VAL_TO_SHAPE(value);
-    snprintf(buffer, 128, "<" tGAB_SHAPE " %p>", m);
-    return gab_string(gab, buffer);
-  }
-  case kGAB_RECORD: {
-    struct gab_obj_rec *m = GAB_VAL_TO_REC(value);
-    snprintf(buffer, 128, "<" tGAB_RECORD " %p>", m);
-    return gab_string(gab, buffer);
-  }
-  case kGAB_BLOCK: {
-    struct gab_obj_block *o = GAB_VAL_TO_BLOCK(value);
-    struct gab_obj_prototype *p = GAB_VAL_TO_PROTOTYPE(o->p);
-    gab_value str = gab_srcname(p->src);
-    snprintf(buffer, 128, "<" tGAB_BLOCK " %s:%" PRIu64 ">", gab_strdata(&str),
-             gab_srcline(p->src, p->offset));
-    return gab_string(gab, buffer);
-  }
-  case kGAB_PROTOTYPE: {
-    struct gab_obj_prototype *o = GAB_VAL_TO_PROTOTYPE(value);
-    gab_value str = gab_srcname(o->src);
-    snprintf(buffer, 128, "<" tGAB_PROTOTYPE " %s:%" PRIu64 ">",
-             gab_strdata(&str), gab_srcline(o->src, o->offset));
+    char *cursor = buffer;
+    size_t remaining = len;
 
-    return gab_string(gab, buffer);
-  }
-  case kGAB_NATIVE: {
-    struct gab_obj_native *o = GAB_VAL_TO_NATIVE(value);
-    gab_value str = o->name;
-    snprintf(buffer, 128, "<" tGAB_NATIVE " %s>", gab_strdata(&str));
-
-    return gab_string(gab, buffer);
-  }
-  case kGAB_BOX: {
-    struct gab_obj_box *o = GAB_VAL_TO_BOX(value);
-    gab_value str = o->type;
-    snprintf(buffer, 128, "<%s %p>", gab_strdata(&str), o);
-
-    return gab_string(gab, buffer);
-  }
-  default:
-    assert(false && "Unhandled type in gab_valtos");
-    return gab_undefined;
+    if (gab_svalinspect(&cursor, &remaining, value, -1) >= 0)
+      return gab_string(gab, buffer);
   }
 }
 
+/**
+ * @brief Returns true if the engine is currently processing/propagating a
+ * signal.
+ */
 GAB_API_INLINE bool gab_is_signaling(struct gab_triple gab) {
   return gab.eg->sig.schedule >= 0;
 }
 
-GAB_API_INLINE void gab_propagate(struct gab_triple gab) {
-  int wkid = gab.wkid + 1;
+/**
+ * @brief Returns true if there is a signal waiting for the worker
+ * given in by gab_triple.
+ */
+GAB_API_INLINE bool gab_sigwaiting(struct gab_triple gab) {
+  return gab.eg->sig.schedule == gab.wkid;
+}
+
+GAB_API_INLINE void gab_signext(struct gab_triple gab, int wkid) {
 #if cGAB_LOG_EG
-  printf("[WORKER %i] TRY PROPAGATE %i\n", gab.wkid, wkid);
+  printf("[WORKER %i] TRY NEXT %i\n", gab.wkid, wkid);
 #endif
 
   // Wrap around the number of jobs. Since
@@ -2760,7 +2713,7 @@ GAB_API_INLINE void gab_propagate(struct gab_triple gab) {
   // and begin the gc last.
   if (wkid >= gab.eg->len) {
 #if cGAB_LOG_EG
-    printf("[WORKER %i] WRAP PROPAGATE %i\n", gab.wkid, 0);
+    printf("[WORKER %i] WRAP NEXT %i\n", gab.wkid, 0);
 #endif
 
     gab.eg->sig.schedule = 0;
@@ -2774,24 +2727,63 @@ GAB_API_INLINE void gab_propagate(struct gab_triple gab) {
       gab.eg->jobs[wkid].epoch++;
 
 #if cGAB_LOG_EG
-    printf("[WORKER %i] SKIP PROPAGATE %i\n", gab.wkid, wkid);
+    printf("[WORKER %i] SKIP NEXT %i\n", gab.wkid, wkid);
 #endif
 
     assert(!gab.eg->jobs[wkid].alive);
-    gab.wkid = wkid;
-    gab_propagate(gab);
+    gab_signext(gab, wkid + 1);
     return;
   }
 
   if (gab.eg->sig.schedule < (int8_t)wkid) {
-    gab.eg->sig.schedule = wkid;
 #if cGAB_LOG_EG
-    printf("[WORKER %i] DO PROPAGATE %i\n", gab.wkid, wkid);
+    printf("[WORKER %i] DO NEXT %i\n", gab.wkid, wkid);
 #endif
+    gab.eg->sig.schedule = wkid;
   }
-};
+}
 
-GAB_API_INLINE bool gab_signal(struct gab_triple gab, enum gab_signal s) {
+/**
+ * @brief Propagate the current signal to the next worker. Skips dead workers.
+ * Wraps around to worker 0 last. (It is improper to signal worker 0 first)
+ */
+GAB_API_INLINE void gab_sigpropagate(struct gab_triple gab) {
+  if (gab.wkid <= 0)
+    return;
+
+  int wkid = gab.wkid + 1;
+  gab_signext(gab, wkid);
+};
+/**
+ * @brief Clear the current signal as resolved.
+ */
+GAB_API_INLINE void gab_sigclear(struct gab_triple gab) {
+  assert(gab_is_signaling(gab));
+  gab.eg->sig.signal = sGAB_IGN;
+  gab.eg->sig.schedule = -1;
+}
+
+/**
+ * @brief Send signal s to worker wkid. An example usage of this system is to
+ * propagate garbage collections, via sGAB_COLL
+ */
+GAB_API_INLINE bool gab_signal(struct gab_triple gab, enum gab_signal s,
+                               int wkid) {
+  if (wkid == 0)
+    return false;
+
+  while (gab_is_signaling(gab))
+    switch (gab_yield(gab)) {
+    case sGAB_COLL:
+      gab_gcepochnext(gab);
+      gab_sigpropagate(gab);
+      break;
+    case sGAB_TERM:
+      return false;
+    default:
+      break;
+    };
+
   if (gab.eg->sig.schedule >= 0)
     return false;
 
@@ -2800,8 +2792,7 @@ GAB_API_INLINE bool gab_signal(struct gab_triple gab, enum gab_signal s) {
 #endif
 
   gab.eg->sig.signal = s;
-  gab.wkid = 0;
-  gab_propagate(gab);
+  gab_signext(gab, wkid);
   return true;
 };
 

@@ -522,12 +522,12 @@ int gab_fvalinspect(FILE *stream, gab_value self, int depth) {
   return bytes;
 }
 
-void gab_obj_destroy(struct gab_eg *gab, struct gab_obj *self) {
+void gab_objdestroy(struct gab_triple gab, struct gab_obj *self) {
   switch (self->kind) {
   case kGAB_FIBERDONE: {
     struct gab_obj_fiber *fib = (struct gab_obj_fiber *)self;
-    assert(fib->res_values);
-    a_gab_value_destroy(fib->res_values);
+    if (fib->res_values != nullptr)
+      a_gab_value_destroy(fib->res_values);
     break;
   };
   case kGAB_SHAPE:
@@ -539,19 +539,19 @@ void gab_obj_destroy(struct gab_eg *gab, struct gab_obj *self) {
   case kGAB_BOX: {
     struct gab_obj_box *box = (struct gab_obj_box *)self;
     if (box->do_destroy)
-      box->do_destroy(box->len, box->data);
+      box->do_destroy(gab, box->len, box->data);
     break;
   }
   case kGAB_STRING:
-    mtx_lock(&gab->strings_mtx);
+    mtx_lock(&gab.eg->strings_mtx);
     /*
      * ASYNC ISSUE: Because collections happen asynchronously (and the strings
      * intern table *doesn't hold references) Strings that are queued for
      * removal *can* be re-used *right* before they are deleted. This requires a
      * better, long-term solution.
      */
-    d_strings_remove(&gab->strings, (struct gab_obj_string *)self);
-    mtx_unlock(&gab->strings_mtx);
+    d_strings_remove(&gab.eg->strings, (struct gab_obj_string *)self);
+    mtx_unlock(&gab.eg->strings_mtx);
     break;
   default:
     break;
@@ -1530,13 +1530,17 @@ gab_value gab_fiber(struct gab_triple gab, struct gab_fiber_argt args) {
 }
 
 a_gab_value *gab_fibawait(struct gab_triple gab, gab_value f) {
-  assert(gab_valkind(f) == kGAB_FIBER || gab_valkind(f) == kGAB_FIBERRUNNING ||
-         gab_valkind(f) == kGAB_FIBERDONE);
+  assert(gab_valkind(f) >= kGAB_FIBER &&
+         gab_valkind(f) <= kGAB_FIBERRUNNING);
 
   struct gab_obj_fiber *fiber = GAB_VAL_TO_FIBER(f);
 
   while (fiber->header.kind != kGAB_FIBERDONE)
     switch (gab_yield(gab)) {
+    case sGAB_COLL:
+      gab_gcepochnext(gab);
+      gab_sigpropagate(gab);
+      break;
     case sGAB_TERM:
       return nullptr;
     default:
@@ -1547,13 +1551,17 @@ a_gab_value *gab_fibawait(struct gab_triple gab, gab_value f) {
 }
 
 gab_value gab_fibawaite(struct gab_triple gab, gab_value f) {
-  assert(gab_valkind(f) == kGAB_FIBER || gab_valkind(f) == kGAB_FIBERRUNNING ||
-         gab_valkind(f) == kGAB_FIBERDONE);
+  assert(gab_valkind(f) >= kGAB_FIBER &&
+         gab_valkind(f) <= kGAB_FIBERRUNNING);
 
   struct gab_obj_fiber *fiber = GAB_VAL_TO_FIBER(f);
 
   while (fiber->header.kind != kGAB_FIBERDONE)
     switch (gab_yield(gab)) {
+    case sGAB_COLL:
+      gab_gcepochnext(gab);
+      gab_sigpropagate(gab);
+      break;
     case sGAB_TERM:
       return gab_undefined;
     default:
@@ -1621,6 +1629,10 @@ bool channel_block_while_full(struct gab_triple gab,
                               uint64_t timeout_ns, uint64_t *timer_ns) {
   while (gab_chnisfull(c)) {
     switch (gab_yield(gab)) {
+    case sGAB_COLL:
+      gab_gcepochnext(gab);
+      gab_sigpropagate(gab);
+      break;
     case sGAB_TERM:
       return false;
     default:
@@ -1644,6 +1656,10 @@ bool channel_block_while_empty(struct gab_triple gab,
                                uint64_t timeout_ns, uint64_t *timer_ns) {
   while (gab_chnisempty(c)) {
     switch (gab_yield(gab)) {
+    case sGAB_COLL:
+      gab_gcepochnext(gab);
+      gab_sigpropagate(gab);
+      break;
     case sGAB_TERM:
       return false;
     default:

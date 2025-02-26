@@ -298,27 +298,17 @@ struct native {
 static const struct timespec t = {.tv_nsec = GAB_YIELD_SLEEPTIME_NS};
 
 enum gab_signal gab_yield(struct gab_triple gab) {
-  if (gab.eg->sig.schedule == gab.wkid) {
-
-    switch (gab.eg->sig.signal) {
-    case sGAB_TERM:
+  if (gab_sigwaiting(gab)) {
 #if cGAB_LOG_EG
-    printf("[WORKER %i] RECV SIGTERM %i\n", gab.wkid, gab.eg->sig.signal);
+    printf("[WORKER %i] RECV SIG: %i\n", gab.wkid, gab.eg->sig.signal);
 #endif
-      return gab.eg->sig.signal;
-    case sGAB_COLL:
-#if cGAB_LOG_EG
-    printf("[WORKER %i] RECV SIGCOLL %i\n", gab.wkid, gab.eg->sig.signal);
-#endif
-      gab_gcepochnext(gab);
-      return sGAB_COLL;
-    default:
-      break;
-    }
+    return gab.eg->sig.signal;
   }
 
+  // Previously, this would perform a thrd_yield() as well as a sleep.
+  // This was causing *a lot* of context switching and was not a good idea.
+  // As far as I know
   thrd_sleep(&t, nullptr);
-  thrd_yield();
   return sGAB_IGN;
 }
 
@@ -331,10 +321,12 @@ int32_t gc_job(void *data) {
 
   while (gab.eg->njobs >= 0) {
     switch (gab_yield(gab)) {
+    case sGAB_TERM:
+      gab_sigclear(gab);
+      break;
     case sGAB_COLL:
       gab_gcdocollect(gab);
-      gab.eg->sig.signal = sGAB_IGN;
-      gab.eg->sig.schedule = -1;
+      gab_sigclear(gab);
       break;
     default:
       break;
@@ -358,6 +350,12 @@ int32_t worker_job(void *data) {
 
   while (!gab_chnisclosed(gab.eg->work_channel) ||
          !gab_chnisempty(gab.eg->work_channel)) {
+    switch (gab_yield(gab)) {
+    case sGAB_TERM:
+      goto fin;
+    default:
+      break;
+    }
 
 #if cGAB_LOG_EG
     fprintf(stdout, "[WORKER %i] TAKING WITH TIMEOUT %lums\n", gab.wkid,
@@ -376,7 +374,7 @@ int32_t worker_job(void *data) {
     //  - the channel is closed
     //  - we timed out
     if (fiber == gab_undefined)
-      break;
+      goto fin;
 
     gab.eg->jobs[gab.wkid].fiber = fiber;
 
@@ -385,12 +383,23 @@ int32_t worker_job(void *data) {
     gab.eg->jobs[gab.wkid].fiber = gab_undefined;
   }
 
+fin:
+
 #if cGAB_LOG_EG
   fprintf(stdout, "[WORKER %i] CLOSING\n", gab.wkid);
 #endif
 
   gab.eg->jobs[gab.wkid].alive = false;
   gab.eg->jobs[gab.wkid].fiber = gab_undefined;
+
+  switch (gab_yield(gab)) {
+  case sGAB_TERM:
+    gab_sigpropagate(gab);
+    goto fin;
+  default:
+    break;
+  }
+
   gab.eg->njobs--;
 
   assert(gab.eg->jobs[gab.wkid].locked == 0);
@@ -598,6 +607,7 @@ void gab_destroy(struct gab_triple gab) {
 
   gab_gcassertdone(gab);
 
+  assert(gab.eg->bytes_allocated == 0);
   assert(gab.eg->njobs == 0);
   gab.eg->njobs = -1;
 
@@ -622,6 +632,8 @@ void gab_destroy(struct gab_triple gab) {
   d_gab_src_destroy(&gab.eg->sources);
 
   v_gab_value_destroy(&gab.eg->scratch);
+
+  printf("BYTES_ALLOCATED AFTER DESTROY: %lu\n", gab.eg->bytes_allocated);
 
   mtx_destroy(&gab.eg->shapes_mtx);
   mtx_destroy(&gab.eg->strings_mtx);
@@ -1452,13 +1464,12 @@ a_gab_value *gab_send(struct gab_triple gab, struct gab_send_argt args) {
 };
 
 GAB_API void gab_sigterm(struct gab_triple gab) {
-  gab_signal(gab, sGAB_TERM);
-  while (gab_is_signaling(gab))
-    ;
+  bool succeeded = gab_signal(gab, sGAB_TERM, 1);
+  assert(succeeded);
 }
 
 void gab_asigcoll(struct gab_triple gab) {
-  bool succeeded = gab_signal(gab, sGAB_COLL);
+  bool succeeded = gab_signal(gab, sGAB_COLL, 1);
   assert(succeeded);
 }
 

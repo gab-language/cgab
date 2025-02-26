@@ -222,7 +222,7 @@ end
 tick = () => do
   events <! { type: tick: }
 
-  Fibers.sleep!(250000000)
+  Fibers.sleep!(150000000)
 
   events.closed?.else self
 end
@@ -236,7 +236,7 @@ Client = Fibers.make()
     (state event) => do
       term.clear!
 
-      term.print(0, 0, "$".sprintf event)
+      term.print!(0, 0, "$".sprintf event)
 
       state = event.type.event\handle(state, event)
 
@@ -244,15 +244,15 @@ Client = Fibers.make()
 
       state.history.each (h, i) => do
         source_line = "$: $".sprintf(i, h.source)
-        term.print(0, 3 + (i * 2), source_line)
+        term.print!(0, 3 + (i * 2), source_line)
 
         result_line = h.result.strings\into
-        term.print(0, 4 + (i * 2), result_line)
+        term.print!(0, 4 + (i * 2), result_line)
       end
 
       printbox.(0 h - 3 w - 2 2)
       input_line = " > $".sprintf(state.input)
-      term.print(1, h - 2, input_line)
+      term.print!(1, h - 2, input_line)
 
       term.render!
 

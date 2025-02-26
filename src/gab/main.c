@@ -17,10 +17,7 @@
 
 struct gab_triple gab;
 
-void propagate_term(int) {
-  gab_sigterm(gab);
-  gab_destroy(gab);
-}
+void propagate_term(int) { gab_sigterm(gab); }
 
 void run_repl(int flags) {
   gab = gab_create((struct gab_create_argt){
@@ -46,11 +43,12 @@ int run_string(const char *string, int flags, size_t jobs) {
   // This is a weird case where we actually want to include the null terminator
   s_char src = s_char_create(string, strlen(string) + 1);
 
-  a_gab_value *result = gab_exec(gab, (struct gab_exec_argt){
-                                          .name = MAIN_MODULE,
-                                          .source = (char *)src.data,
-                                          .flags = flags,
-                                      });
+  a_gab_value *result =
+      gab_exec(gab, (struct gab_exec_argt){
+                        .name = MAIN_MODULE,
+                        .source = (char *)src.data,
+                        .flags = flags | fGAB_RUN_INCLUDEDEFAULTARGS,
+                    });
 
   int exit_code = 1;
 

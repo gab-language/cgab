@@ -37,16 +37,6 @@ void gab_gcdestroy(struct gab_triple gab);
  */
 bool gab_gctrigger(struct gab_triple gab);
 
-/*
- * Begin the next epoch for the given pid
- */
-#if cGAB_LOG_GC
-#define gab_gcepochnext(gab) (__gab_gcepochnext(gab, __FUNCTION__, __LINE__))
-void __gab_gcepochnext(struct gab_triple gab, const char *func, int line);
-#else
-void gab_gcepochnext(struct gab_triple gab);
-#endif
-
 void gab_gcdocollect(struct gab_triple gab);
 
 void gab_gcassertdone(struct gab_triple gab);
@@ -66,11 +56,13 @@ static inline void *gab_egalloc(struct gab_triple gab, struct gab_obj *obj,
     assert(obj);
 
     free(obj);
+    gab.eg->bytes_allocated -= size;
 
     return nullptr;
   }
 
   assert(!obj);
+  gab.eg->bytes_allocated += size;
 
   // Use 'calloc' to zero-initialize all the memory.
   return calloc(1, size);

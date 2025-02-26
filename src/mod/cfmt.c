@@ -9,7 +9,7 @@ a_gab_value *gab_fmtlib_printf(struct gab_triple gab, uint64_t argc,
 
   const char *fmt = gab_strdata(&fmtstr);
 
-  if (gab_nfprintf(stdout, fmt, argc - 1, argv + 1) < 0)
+  if (gab_nfprintf(gab.eg->sout, fmt, argc - 1, argv + 1) < 0)
     return gab_fpanic(gab,
                       "Wrong number of format arguments to printf (expected $)",
                       gab_number(argc - 1));
@@ -40,11 +40,11 @@ a_gab_value *gab_fmtlib_println(struct gab_triple gab, uint64_t argc,
 
   for (uint64_t i = 0; i < argc; i++) {
     gab_value v = gab_arg(i);
-    gab_fvalinspect(stdout, v, -1);
+    gab_fvalinspect(gab.eg->sout, v, -1);
     if (i + 1 < argc)
-      fputc(' ', stdout);
+      fputc(' ', gab.eg->sout);
   }
-  fputc('\n', stdout);
+  fputc('\n', gab.eg->sout);
 
   return nullptr;
 }

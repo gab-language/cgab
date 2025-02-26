@@ -1,7 +1,7 @@
 #include "core.h"
 #include "gab.h"
 
-void file_cb(uint64_t len, char data[static len]) { fclose(*(FILE **)data); }
+void file_cb(struct gab_triple, uint64_t len, char data[static len]) { fclose(*(FILE **)data); }
 
 gab_value iostream(struct gab_triple gab, FILE *stream, bool owning) {
   return gab_box(gab, (struct gab_box_argt){
