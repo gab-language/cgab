@@ -15,7 +15,7 @@ export cflags
 
 # Create a small script which will export the variables we need, and then 
 case "$buildtype" in
-  debug)          cflags="-g -O0" ;;
+  debug)          cflags="-g -O0 -fsanitize=address,undefined -lasan -L/lib" ;;
   debugoptimized) cflags="-g -O2" ;;
   release)        cflags="-O3 -DNDEBUG"    ;;
 esac

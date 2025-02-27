@@ -309,6 +309,7 @@ enum gab_signal gab_yield(struct gab_triple gab) {
   // This was causing *a lot* of context switching and was not a good idea.
   // As far as I know
   thrd_sleep(&t, nullptr);
+  /*thrd_yield();*/
   return sGAB_IGN;
 }
 
@@ -568,6 +569,18 @@ struct gab_triple gab_create(struct gab_create_argt args) {
   return gab_gcunlock(gab), gab;
 }
 
+void dec_child_shapes(struct gab_triple gab, gab_value shp) {
+  assert(gab_valkind(shp) == kGAB_SHAPE || gab_valkind(shp) == kGAB_SHAPELIST);
+  struct gab_obj_shape* shape = GAB_VAL_TO_SHAPE(shp);
+
+  uint64_t len = shape->transitions.len / 2;
+
+  for (size_t i = 0; i < len; i++)
+    dec_child_shapes(gab, v_gab_value_val_at(&shape->transitions, i * 2 + 1));
+
+  gab_dref(gab, shp);
+}
+
 void gab_destroy(struct gab_triple gab) {
   // Wait until there is no work to be done
   while (!gab_chnisempty(gab.eg->work_channel))
@@ -584,6 +597,8 @@ void gab_destroy(struct gab_triple gab) {
   for (uint64_t i = 0; i < gab.eg->strings.cap; i++)
     if (d_strings_iexists(&gab.eg->strings, i))
       gab_dref(gab, __gab_obj(d_strings_ikey(&gab.eg->strings, i)));
+
+  dec_child_shapes(gab, gab.eg->shapes);
 
   gab.eg->messages = gab_undefined;
   gab.eg->shapes = gab_undefined;
@@ -607,7 +622,7 @@ void gab_destroy(struct gab_triple gab) {
 
   gab_gcassertdone(gab);
 
-  assert(gab.eg->bytes_allocated == 0);
+  /*assert(gab.eg->bytes_allocated == 0);*/
   assert(gab.eg->njobs == 0);
   gab.eg->njobs = -1;
 
@@ -632,8 +647,6 @@ void gab_destroy(struct gab_triple gab) {
   d_gab_src_destroy(&gab.eg->sources);
 
   v_gab_value_destroy(&gab.eg->scratch);
-
-  printf("BYTES_ALLOCATED AFTER DESTROY: %lu\n", gab.eg->bytes_allocated);
 
   mtx_destroy(&gab.eg->shapes_mtx);
   mtx_destroy(&gab.eg->strings_mtx);

@@ -526,8 +526,10 @@ void gab_objdestroy(struct gab_triple gab, struct gab_obj *self) {
   switch (self->kind) {
   case kGAB_FIBERDONE: {
     struct gab_obj_fiber *fib = (struct gab_obj_fiber *)self;
+
     if (fib->res_values != nullptr)
-      a_gab_value_destroy(fib->res_values);
+      /*a_gab_value_destroy(fib->res_values);*/
+
     break;
   };
   case kGAB_SHAPE:
@@ -617,9 +619,8 @@ gab_value nstring(struct gab_triple gab, uint64_t hash, uint64_t len,
 
   /* The strings table should hold a reference to this string */
   d_strings_insert(&gab.eg->strings, self, 0);
-  gab_iref(gab, __gab_obj(self));
 
-  return __gab_obj(self);
+  return gab_iref(gab, __gab_obj(self));
 }
 
 gab_value gab_nstring(struct gab_triple gab, uint64_t len, const char *data) {
@@ -1168,14 +1169,14 @@ gab_value gab_nlstpush(struct gab_triple gab, gab_value list, uint64_t len,
   uint64_t start = gab_reclen(list);
 
   gab_gclock(gab);
+
   for (uint64_t i = 0; i < len; i++) {
     gab_value key = gab_number(start + i);
     gab_value val = values[i];
     list = gab_recput(gab, list, key, val);
   }
-  gab_gcunlock(gab);
 
-  return list;
+  return gab_gcunlock(gab), list;
 }
 
 gab_value gab_lstpop(struct gab_triple gab, gab_value list, gab_value *popped) {
@@ -1261,18 +1262,17 @@ gab_value gab_shptorec(struct gab_triple gab, gab_value shp) {
   if (len) {
     recfillchildren(gab, res, shift, len, rootlen);
 
-    for (uint64_t i = 0; i < len; i++) {
+    for (uint64_t i = 0; i < len; i++)
       massoc(gab, res, gab_nil, i);
-    }
   }
 
-  gab_gcunlock(gab);
-  return res;
+  return gab_gcunlock(gab), res;
 }
 
 gab_value gab_recordfrom(struct gab_triple gab, gab_value shape,
                          uint64_t stride, gab_value *vals) {
   gab_gclock(gab);
+
   uint64_t len = gab_shplen(shape);
 
   uint64_t shift = getshift(len);
@@ -1293,9 +1293,8 @@ gab_value gab_recordfrom(struct gab_triple gab, gab_value shape,
 
     assert(len == gab_shplen(self->shape));
 
-    for (uint64_t i = 0; i < len; i++) {
+    for (uint64_t i = 0; i < len; i++)
       massoc(gab, res, vals[i * stride], i);
-    }
   }
 
   return gab_gcunlock(gab), res;
@@ -1353,14 +1352,11 @@ gab_value gab_nlstcat(struct gab_triple gab, uint64_t len,
 
     assert(total_len == gab_shplen(self->shape));
 
-    for (uint64_t i = 0; i < total_len; i++) {
+    for (uint64_t i = 0; i < total_len; i++)
       massoc(gab, res, nth_amongst(i, total_len, records), i);
-    }
   }
 
-  gab_gcunlock(gab);
-
-  return res;
+  return gab_gcunlock(gab), res;
 }
 
 gab_value gab_list(struct gab_triple gab, uint64_t size, gab_value *values) {
@@ -1375,8 +1371,7 @@ gab_value gab_list(struct gab_triple gab, uint64_t size, gab_value *values) {
   }
 
   gab_value v = gab_record(gab, 1, size, keys, values);
-  gab_gcunlock(gab);
-  return v;
+  return gab_gcunlock(gab), v;
 }
 
 gab_value gab_shape(struct gab_triple gab, uint64_t stride, uint64_t len,
@@ -1414,7 +1409,7 @@ gab_value __gab_shape(struct gab_triple gab, uint64_t len) {
 
   v_gab_value_create(&self->transitions, 16);
 
-  return __gab_obj(self);
+  return gab_iref(gab, __gab_obj(self));
 }
 
 /*
@@ -1442,10 +1437,8 @@ gab_value gab_shpwithout(struct gab_triple gab, gab_value shape,
       shp = gab_shpwith(gab, shp, thiskey);
   }
 
-  gab_gcunlock(gab);
-
   assert(len - 1 == gab_shplen(shp));
-  return shp;
+  return gab_gcunlock(gab), shp;
 }
 
 gab_value gab_shpwith(struct gab_triple gab, gab_value shp, gab_value key) {
@@ -1475,11 +1468,6 @@ gab_value gab_shpwith(struct gab_triple gab, gab_value shp, gab_value key) {
   // Set the keys on the new shape
   memcpy(self->keys, s->keys, sizeof(gab_value) * s->len);
   self->keys[s->len] = key;
-
-  if (!GAB_OBJ_IS_NEW((struct gab_obj *)s)) {
-    gab_iref(gab, new_shape);
-    gab_iref(gab, key);
-  }
 
   // Push transition into parent shape
   v_gab_value_push(&s->transitions, key);
@@ -1530,8 +1518,7 @@ gab_value gab_fiber(struct gab_triple gab, struct gab_fiber_argt args) {
 }
 
 a_gab_value *gab_fibawait(struct gab_triple gab, gab_value f) {
-  assert(gab_valkind(f) >= kGAB_FIBER &&
-         gab_valkind(f) <= kGAB_FIBERRUNNING);
+  assert(gab_valkind(f) >= kGAB_FIBER && gab_valkind(f) <= kGAB_FIBERRUNNING);
 
   struct gab_obj_fiber *fiber = GAB_VAL_TO_FIBER(f);
 
@@ -1551,8 +1538,7 @@ a_gab_value *gab_fibawait(struct gab_triple gab, gab_value f) {
 }
 
 gab_value gab_fibawaite(struct gab_triple gab, gab_value f) {
-  assert(gab_valkind(f) >= kGAB_FIBER &&
-         gab_valkind(f) <= kGAB_FIBERRUNNING);
+  assert(gab_valkind(f) >= kGAB_FIBER && gab_valkind(f) <= kGAB_FIBERRUNNING);
 
   struct gab_obj_fiber *fiber = GAB_VAL_TO_FIBER(f);
 

@@ -343,7 +343,8 @@ typedef void (*gab_gcvisit_f)(struct gab_triple, struct gab_obj *obj);
 typedef a_gab_value *(*gab_native_f)(struct gab_triple, uint64_t argc,
                                      gab_value *argv);
 
-typedef void (*gab_boxdestroy_f)(struct gab_triple gab, uint64_t len, char *data);
+typedef void (*gab_boxdestroy_f)(struct gab_triple gab, uint64_t len,
+                                 char *data);
 
 typedef void (*gab_boxcopy_f)(uint64_t len, char *data);
 
@@ -1082,6 +1083,8 @@ GAB_API void gab_niref(struct gab_triple gab, uint64_t stride, uint64_t len,
 GAB_API void gab_ndref(struct gab_triple gab, uint64_t stride, uint64_t len,
                        gab_value *values);
 
+#endif
+
 /*
  *
  */
@@ -1090,8 +1093,6 @@ GAB_API void gab_ndref(struct gab_triple gab, uint64_t stride, uint64_t len,
 void __gab_gcepochnext(struct gab_triple gab, const char *func, int line);
 #else
 void gab_gcepochnext(struct gab_triple gab);
-#endif
-
 #endif
 
 /**
@@ -2415,7 +2416,6 @@ enum {
  */
 struct gab_eg {
   uint64_t hash_seed;
-  uint64_t bytes_allocated;
 
   v_gab_value scratch;
 

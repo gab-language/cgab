@@ -846,9 +846,7 @@ gab_value gab_parse(struct gab_triple gab, struct gab_build_argt args) {
 
   gab_value ast = parse(gab, &parser, args.len, vargs);
 
-  gab_gcunlock(gab);
-
-  return ast;
+  return gab_gcunlock(gab), ast;
 }
 
 /*

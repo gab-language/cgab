@@ -56,13 +56,11 @@ static inline void *gab_egalloc(struct gab_triple gab, struct gab_obj *obj,
     assert(obj);
 
     free(obj);
-    gab.eg->bytes_allocated -= size;
 
     return nullptr;
   }
 
   assert(!obj);
-  gab.eg->bytes_allocated += size;
 
   // Use 'calloc' to zero-initialize all the memory.
   return calloc(1, size);

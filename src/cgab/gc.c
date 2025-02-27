@@ -271,11 +271,11 @@ static inline void for_child_do(struct gab_obj *obj, gab_gc_visitor fnc,
         fnc(gab, gab_valtoo(v));
     }
 
-    for (uint64_t i = 0; i < s->transitions.len; i++) {
-      gab_value v = v_gab_value_val_at(&s->transitions, i);
-      if (gab_valiso(v))
-        fnc(gab, gab_valtoo(v));
-    }
+    /*for (uint64_t i = 0; i < s->transitions.len; i++) {*/
+    /*  gab_value v = v_gab_value_val_at(&s->transitions, i);*/
+    /*  if (gab_valiso(v))*/
+    /*    fnc(gab, gab_valtoo(v));*/
+    /*}*/
 
     break;
   }
@@ -322,8 +322,9 @@ static inline void destroy(struct gab_triple gab, struct gab_obj *obj) {
     printf("FREE\t%i\t%p\t%i\t%s:%d\n", epochget(gab), obj, obj->references,
            func, line);
   }
-  gab_obj_destroy(gab.eg, obj);
-  GAB_OBJ_FREED(obj);
+  gab_objdestroy(gab, obj);
+  /*GAB_OBJ_FREED(obj);*/
+  gab_egalloc(gab, obj, 0);
 #else
   assert(obj->references == 0);
   gab_objdestroy(gab, obj);
@@ -517,10 +518,10 @@ void gab_gcunlock(struct gab_triple gab) {
   wk->locked -= 1;
 
   if (!wk->locked) {
-    gab_ndref(gab, 1, wk->lock_keep.len, wk->lock_keep.data);
-
     for (uint64_t i = 0; i < wk->lock_keep.len; i++)
       GAB_OBJ_NOT_BUFFERED(gab_valtoo(v_gab_value_val_at(&wk->lock_keep, i)));
+
+    gab_ndref(gab, 1, wk->lock_keep.len, wk->lock_keep.data);
 
     wk->lock_keep.len = 0;
   }
@@ -638,7 +639,7 @@ bool gab_gctrigger(struct gab_triple gab) {
       continue;
 
 #if cGAB_LOG_GC
-    printf("TRIGGERED: %i\n", gab.eg->gc->schedule);
+    printf("TRIGGERED: %i\n", gab.eg->sig.schedule);
 #endif
 
     gab_asigcoll(gab);
@@ -658,6 +659,14 @@ void gab_gcdocollect(struct gab_triple gab) {
 
   processepoch(gab, epoch);
 
+  /**
+   * Get this once. As collection is asynchronous,
+   * the engine messages records is liable to change
+   * as we're collecting. Just save the snapshot
+   * of it now.
+   */
+  gab_value messages = gab.eg->messages;
+
 #if cGAB_LOG_GC
   printf("CEPOCH %i (last: %i, raw: %i)\n", epoch, last,
          gab.eg->jobs[gab.wkid].epoch);
@@ -665,11 +674,8 @@ void gab_gcdocollect(struct gab_triple gab) {
   assert_workers_have_epoch(gab, expected_e);
 #endif
 
-  if (gab_valiso(gab.eg->messages))
-    inc_obj_ref(gab, gab_valtoo(gab.eg->messages));
-
-  if (gab_valiso(gab.eg->shapes))
-    inc_obj_ref(gab, gab_valtoo(gab.eg->shapes));
+  if (gab_valiso(messages))
+    inc_obj_ref(gab, gab_valtoo(messages));
 
   processincrements(gab, epoch);
 
@@ -683,9 +689,6 @@ void gab_gcdocollect(struct gab_triple gab) {
   assert_workers_have_epoch(gab, expected_e);
 #endif
 
-  if (gab_valiso(gab.eg->messages))
-    queue_decrement(gab, gab_valtoo(gab.eg->messages));
-
-  if (gab_valiso(gab.eg->shapes))
-    queue_decrement(gab, gab_valtoo(gab.eg->shapes));
+  if (gab_valiso(messages))
+    queue_decrement(gab, gab_valtoo(messages));
 }
