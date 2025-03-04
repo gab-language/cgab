@@ -66,7 +66,7 @@ static inline void *gab_egalloc(struct gab_triple gab, struct gab_obj *obj,
   return calloc(1, size);
 }
 
-struct gab_obj_string *gab_egstrfind(struct gab_eg *gab, uint64_t hash,
+struct gab_ostring *gab_egstrfind(struct gab_eg *gab, uint64_t hash,
                                      uint64_t len, const char *data);
 
 struct gab_err_argt {
@@ -74,6 +74,11 @@ struct gab_err_argt {
   const char *note_fmt;
   struct gab_src *src;
   gab_value message;
+
+  /**
+   * Optional out-parameter for captured error details.
+   */
+  struct gab_errdetails* err_out;
   uint64_t tok;
 };
 

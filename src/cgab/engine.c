@@ -1,8 +1,3 @@
-#include "platform.h"
-#include <errno.h>
-#include <stdint.h>
-#include <threads.h>
-
 #define GAB_STATUS_NAMES_IMPL
 #define GAB_TOKEN_NAMES_IMPL
 #include "engine.h"
@@ -571,7 +566,7 @@ struct gab_triple gab_create(struct gab_create_argt args) {
 
 void dec_child_shapes(struct gab_triple gab, gab_value shp) {
   assert(gab_valkind(shp) == kGAB_SHAPE || gab_valkind(shp) == kGAB_SHAPELIST);
-  struct gab_obj_shape* shape = GAB_VAL_TO_SHAPE(shp);
+  struct gab_obj_shape *shape = GAB_VAL_TO_SHAPE(shp);
 
   uint64_t len = shape->transitions.len / 2;
 
@@ -598,7 +593,8 @@ void gab_destroy(struct gab_triple gab) {
     if (d_strings_iexists(&gab.eg->strings, i))
       gab_dref(gab, __gab_obj(d_strings_ikey(&gab.eg->strings, i)));
 
-  dec_child_shapes(gab, gab.eg->shapes);
+  if (gab_valkind(gab.eg->shapes) == kGAB_SHAPELIST)
+    dec_child_shapes(gab, gab.eg->shapes);
 
   gab.eg->messages = gab_undefined;
   gab.eg->shapes = gab_undefined;
@@ -606,7 +602,7 @@ void gab_destroy(struct gab_triple gab) {
   assert(gab.eg->njobs == 0);
 
   /**
-   * Two consececutive collections are needed here because
+   * Three consececutive collections are needed here because
    * of the delayed nature of the RC algorithm.
    *
    * Decrements are process an epoch *after* they are queued.
@@ -845,7 +841,7 @@ int gab_ndef(struct gab_triple gab, uint64_t len,
   if (parent == gab_undefined) {
     gab.eg->messages = m;
   } else {
-    struct gab_obj_fiber *p = GAB_VAL_TO_FIBER(parent);
+    struct gab_ofiber *p = GAB_VAL_TO_FIBER(parent);
     p->messages = m;
   }
 
@@ -854,7 +850,7 @@ int gab_ndef(struct gab_triple gab, uint64_t len,
   return gab_gcunlock(gab), true;
 }
 
-struct gab_obj_string *gab_egstrfind(struct gab_eg *self, uint64_t hash,
+struct gab_ostring *gab_egstrfind(struct gab_eg *self, uint64_t hash,
                                      uint64_t len, const char *data) {
   if (self->strings.len == 0)
     return nullptr;
@@ -863,7 +859,7 @@ struct gab_obj_string *gab_egstrfind(struct gab_eg *self, uint64_t hash,
 
   for (;;) {
     d_status status = d_strings_istatus(&self->strings, index);
-    struct gab_obj_string *key = d_strings_ikey(&self->strings, index);
+    struct gab_ostring *key = d_strings_ikey(&self->strings, index);
 
     switch (status) {
     case D_TOMBSTONE:
@@ -1128,35 +1124,15 @@ void dump_pretty_err(struct gab_triple gab, FILE *stream, va_list varargs,
 
 void dump_structured_err(struct gab_triple gab, FILE *stream, va_list varargs,
                          struct gab_err_argt args) {
-  const char *tok_name =
-      args.src
-          ? gab_token_names[v_gab_token_val_at(&args.src->tokens, args.tok)]
-          : "C";
-
-  const char *src_name = args.src ? gab_strdata(&args.src->name) : "C";
-
-  const char *msg_name = gab_strdata(&args.message);
-
-  const char *status_name = gab_status_names[args.status];
-
-  fprintf(stream, "%s:%s:%s:%s", status_name, src_name, tok_name, msg_name);
+  fprintf(stream, "%s:%s:%s:%s", args.err_out->status_name,
+          args.err_out->src_name, args.err_out->tok_name,
+          args.err_out->msg_name);
 
   if (args.src) {
-    uint64_t line = v_uint64_t_val_at(&args.src->token_lines, args.tok);
-
-    s_char line_src = v_s_char_val_at(&args.src->lines, line - 1);
-    s_char tok_src = v_s_char_val_at(&args.src->token_srcs, args.tok);
-    uint64_t line_relative_start = tok_src.data - line_src.data;
-    uint64_t line_relative_end = tok_src.data + tok_src.len - line_src.data;
-
-    uint64_t src_relative_start = tok_src.data - args.src->source->data;
-    uint64_t src_relative_end =
-        tok_src.data + tok_src.len - args.src->source->data;
-
     fprintf(stream,
             ":%" PRIu64 ":%" PRIu64 ":%" PRIu64 ":%" PRIu64 ":%" PRIu64 "",
-            line, line_relative_start, line_relative_end, src_relative_start,
-            src_relative_end);
+            args.err_out->row, args.err_out->col_begin, args.err_out->col_end,
+            args.err_out->byte_begin, args.err_out->byte_end);
   }
 
   fputc('\n', stream);
@@ -1164,6 +1140,36 @@ void dump_structured_err(struct gab_triple gab, FILE *stream, va_list varargs,
 
 void gab_vfpanic(struct gab_triple gab, FILE *stream, va_list varargs,
                  struct gab_err_argt args) {
+  struct gab_errdetails err = {0};
+  args.err_out = args.err_out ? args.err_out : &err;
+
+  args.err_out->tok_name =
+      args.src
+          ? gab_token_names[v_gab_token_val_at(&args.src->tokens, args.tok)]
+          : "C";
+
+  if (args.src) {
+    args.err_out->row = v_uint64_t_val_at(&args.src->token_lines, args.tok);
+
+    s_char line_src = v_s_char_val_at(&args.src->lines, args.err_out->row - 1);
+    s_char tok_src = v_s_char_val_at(&args.src->token_srcs, args.tok);
+
+    assert(tok_src.data >= line_src.data);
+
+    args.err_out->col_begin = tok_src.data - line_src.data;
+    args.err_out->col_end = tok_src.data + tok_src.len - line_src.data;
+
+    args.err_out->byte_begin = tok_src.data - args.src->source->data;
+    args.err_out->byte_end =
+        tok_src.data + tok_src.len - args.src->source->data;
+  }
+
+  args.err_out->src_name = args.src ? gab_strdata(&args.src->name) : "C";
+
+  args.err_out->msg_name = gab_strdata(&args.message);
+
+  args.err_out->status_name = gab_status_names[args.status];
+
   if (gab.flags & fGAB_ERR_QUIET)
     return;
 
@@ -1248,6 +1254,9 @@ a_gab_value *gab_use_dynlib(struct gab_triple gab, const char *path) {
 
   a_gab_value *res = mod(gab);
 
+  // At this point, mod should have reported any errors.
+  gab.flags |= fGAB_ERR_QUIET;
+
   if (res == nullptr)
     return gab_fpanic(gab, "Failed to load module.");
 
@@ -1283,6 +1292,9 @@ a_gab_value *gab_use_source(struct gab_triple gab, const char *path) {
 
   a_char_destroy(src);
 
+  // At this point, the fiber should have reported its own errors;
+  gab.flags |= fGAB_ERR_QUIET;
+
   if (res == nullptr)
     return gab_fpanic(gab, "Failed to load module.");
 
@@ -1291,13 +1303,13 @@ a_gab_value *gab_use_source(struct gab_triple gab, const char *path) {
                       "Failed to load module: module returned $, expected $",
                       res->data[0], gab_ok);
 
-  struct gab_obj_fiber *f = GAB_VAL_TO_FIBER(fiber);
+  struct gab_ofiber *f = GAB_VAL_TO_FIBER(fiber);
   gab_value fbparent = gab_thisfiber(gab);
 
   if (fbparent == gab_undefined) {
     gab.eg->messages = f->messages;
   } else {
-    struct gab_obj_fiber *parent = GAB_VAL_TO_FIBER(fbparent);
+    struct gab_ofiber *parent = GAB_VAL_TO_FIBER(fbparent);
     parent->messages = f->messages;
   }
 

@@ -4,15 +4,15 @@ xf = 'transducers' .use
 array_xf = xf.map json\encode:
         |> xf.interpose ","
 
-object_xf = xf.map((v k) => Strings.make(k.json\encode, ":", v.json\encode))
+object_xf = xf.map((v k) => k.json\encode + ":" + v.json\encode)
          |> xf.interpose ","
 
 do_encode_record: .defcase! {
-  true: array => Strings.make("[", array.join array_xf, "]")
-  false: object => Strings.make("{", object.join object_xf, "}")
+  true: array => "[" + array.join array_xf + "]"
+  false: object => "{" + object.join object_xf + "}"
 }
 
-json\encode: .def! () => Strings.make('"' self '"')
+json\encode: .def! () => '"' + self.strings\into + '"'
 json\encode: .defcase! {
   nil:          'nil'
   true:         'true'
@@ -20,4 +20,3 @@ json\encode: .defcase! {
   "gab\number"  () => self.strings\into
   "gab\record"  () => self.list?.do_encode_record self
 }
-

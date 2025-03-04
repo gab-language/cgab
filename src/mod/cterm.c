@@ -1,3 +1,9 @@
+#if GAB_PLATFORM_UNIX
+/*
+ * Termbox2 doesn't currently support windows - however there is an out-of-date PR that
+ * covers it.
+ */
+
 #define TB_IMPL
 #include "../vendor/termbox/termbox2.h"
 
@@ -48,10 +54,10 @@ a_gab_value *gab_termlib_make(struct gab_triple gab, uint64_t argc,
     return nullptr;
   }
 
-   singleton = gab_box(gab, (struct gab_box_argt){
-                                    .type = gab_string(gab, tGAB_TERMINAL),
-                                    .destructor = gab_termshutdown,
-                                });
+  singleton = gab_box(gab, (struct gab_box_argt){
+                               .type = gab_string(gab, tGAB_TERMINAL),
+                               .destructor = gab_termshutdown,
+                           });
 
   ogin = gab.eg->sin;
   ogout = gab.eg->sout;
@@ -66,7 +72,7 @@ a_gab_value *gab_termlib_make(struct gab_triple gab, uint64_t argc,
 }
 
 a_gab_value *gab_termlib_shutdown(struct gab_triple gab, uint64_t argc,
-                              gab_value argv[static argc]) {
+                                  gab_value argv[static argc]) {
   tb_clear();
   tb_shutdown();
 
@@ -378,3 +384,4 @@ GAB_DYNLIB_MAIN_FN {
 
   return a_gab_value_create(results, sizeof(results) / sizeof(gab_value));
 }
+#endif

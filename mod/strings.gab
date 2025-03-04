@@ -1,3 +1,5 @@
+makexf = td:.map strings\into:
+
 make:.def!(
-  gab\string:
-  (values[]) => values.transduce('' +: td:.map strings\into:))
+  Strings
+  (values[]) => values.join(makexf))

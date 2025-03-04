@@ -226,7 +226,7 @@ static inline void for_child_do(struct gab_obj *obj, gab_gc_visitor fnc,
     break;
 
   case kGAB_FIBER: {
-    struct gab_obj_fiber *fib = (struct gab_obj_fiber *)obj;
+    struct gab_ofiber *fib = (struct gab_ofiber *)obj;
 
     for (uint64_t i = 0; i < fib->len; i++) {
       gab_value o = fib->data[i];
@@ -239,7 +239,7 @@ static inline void for_child_do(struct gab_obj *obj, gab_gc_visitor fnc,
   }
 
   case kGAB_BOX: {
-    struct gab_obj_box *box = (struct gab_obj_box *)obj;
+    struct gab_obox *box = (struct gab_obox *)obj;
 
     if (gab_valiso(box->type))
       fnc(gab, gab_valtoo(box->type));
@@ -251,7 +251,7 @@ static inline void for_child_do(struct gab_obj *obj, gab_gc_visitor fnc,
   }
 
   case (kGAB_BLOCK): {
-    struct gab_obj_block *b = (struct gab_obj_block *)obj;
+    struct gab_oblock *b = (struct gab_oblock *)obj;
 
     for (int i = 0; i < b->nupvalues; i++) {
       if (gab_valiso(b->upvalues[i]))
@@ -578,7 +578,7 @@ void processepoch(struct gab_triple gab, int32_t e) {
   assert(gab_valkind(wk->fiber) == kGAB_FIBER ||
          gab_valkind(wk->fiber) == kGAB_FIBERRUNNING ||
          gab_valkind(wk->fiber) == kGAB_FIBERDONE);
-  struct gab_obj_fiber *fb = GAB_VAL_TO_FIBER(wk->fiber);
+  struct gab_ofiber *fb = GAB_VAL_TO_FIBER(wk->fiber);
 
   struct gab_vm *vm = &fb->vm;
 

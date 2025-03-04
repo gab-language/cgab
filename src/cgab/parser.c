@@ -80,6 +80,7 @@
  */
 
 struct parser {
+  struct gab_errdetails *err_out;
   struct gab_src *src;
   size_t offset;
 };
@@ -89,6 +90,7 @@ struct bc {
   v_uint64_t bc_toks;
   v_gab_value *ks;
 
+  struct gab_errdetails *err_out;
   struct gab_src *src;
 
   uint8_t prev_op, pprev_op;
@@ -283,8 +285,7 @@ static gab_value trimback_prev_id(struct gab_triple gab,
   return gab_nstring(gab, s.len, s.data);
 }
 
-static gab_value trim_prev_id(struct gab_triple gab,
-                                  struct parser *parser) {
+static gab_value trim_prev_id(struct gab_triple gab, struct parser *parser) {
   s_char s = prev_src(parser);
 
   s.data++;
@@ -311,6 +312,7 @@ static int vparser_error(struct gab_triple gab, struct parser *parser,
                   .status = e,
                   .tok = parser->offset - 1,
                   .note_fmt = fmt,
+                  .err_out = parser->err_out,
               });
 
   va_end(args);
@@ -328,7 +330,7 @@ static int parser_error(struct gab_triple gab, struct parser *parser,
 
 static int eat_token(struct gab_triple gab, struct parser *parser) {
   if (match_token(parser, TOKEN_EOF))
-    return parser_error(gab, parser, GAB_UNEXPECTED_EOF, "");
+    return parser->offset++, 0;
 
   parser->offset++;
 
@@ -434,6 +436,7 @@ gab_value node_tuple_lastnode(gab_value node) {
   assert(gab_valkind(node) == kGAB_RECORD);
   assert(gab_valkind(gab_recshp(node)) == kGAB_SHAPELIST);
   size_t len = gab_reclen(node);
+  assert(len > 0);
   return gab_uvrecat(node, len - 1);
 }
 
@@ -441,10 +444,10 @@ size_t node_valuelen(struct gab_triple gab, gab_value node) {
   // If this value node is a block, get the
   // last tuple in the block and return that
   // tuple's len
-  if (gab_valkind(node) == kGAB_RECORD) {
+  if (gab_valkind(node) == kGAB_RECORD)
     if (gab_valkind(gab_recshp(node)) == kGAB_SHAPELIST)
-      return node_len(gab, node_tuple_lastnode(node));
-  }
+      if (gab_reclen(node) > 0)
+        return node_len(gab, node_tuple_lastnode(node));
 
   // Otherwise, values are 1 long
   return 1;
@@ -694,6 +697,9 @@ gab_value parse_exp_blk(struct gab_triple gab, struct parser *parser,
                         gab_value lhs) {
   gab_value res = parse_expressions_body(gab, parser);
 
+  if (res == gab_undefined)
+    return gab_undefined;
+
   if (!expect_token(gab, parser, TOKEN_END))
     return gab_undefined;
 
@@ -831,7 +837,7 @@ gab_value gab_parse(struct gab_triple gab, struct gab_build_argt args) {
   struct gab_src *src =
       gab_src(gab, name, (char *)args.source, strlen(args.source) + 1);
 
-  struct parser parser = {.src = src};
+  struct parser parser = {.src = src, .err_out = args.err_out};
 
   gab_value *vargs = nullptr;
 
@@ -881,6 +887,7 @@ static int vbc_error(struct gab_triple gab, struct bc *bc, gab_value node,
                   .status = e,
                   .tok = tok,
                   .note_fmt = fmt,
+                  .err_out = bc->err_out,
               });
 
   va_end(args);
@@ -1636,8 +1643,13 @@ gab_value compile_block(struct gab_triple gab, struct bc *bc, gab_value node,
   gab_value bindings = gab_lstcat(gab, lst, LHS);
   node_stealinfo(bc->src, LHS, bindings);
 
-  union gab_value_pair pair =
-      gab_compile(gab, RHS, env, bindings, bc->src->name);
+  union gab_value_pair pair = gab_compile(gab, (struct gab_compile_argt){
+                                                   .ast = RHS,
+                                                   .env = env,
+                                                   .bindings = bindings,
+                                                   .mod = bc->src->name,
+                                                   .err_out = bc->err_out,
+                                               });
 
   if (pair.prototype == gab_undefined)
     return gab_undefined;
@@ -1834,47 +1846,47 @@ void build_upvdata(gab_value env, uint8_t len, char *data) {
  *     - local variables captured by child scopes
  *     - update parent scopes whose variables it captures
  */
-union gab_value_pair gab_compile(struct gab_triple gab, gab_value ast,
-                                 gab_value env, gab_value bindings,
-                                 gab_value mod) {
-  assert(gab_valkind(ast) == kGAB_RECORD);
-  assert(gab_valkind(env) == kGAB_RECORD);
+union gab_value_pair gab_compile(struct gab_triple gab,
+                                 struct gab_compile_argt args) {
+  assert(gab_valkind(args.ast) == kGAB_RECORD);
+  assert(gab_valkind(args.env) == kGAB_RECORD);
 
-  struct gab_src *src = d_gab_src_read(&gab.eg->sources, mod);
+  struct gab_src *src = d_gab_src_read(&gab.eg->sources, args.mod);
 
   if (src == nullptr)
     return (union gab_value_pair){{gab_undefined, gab_undefined}};
 
-  struct bc bc = {.ks = &src->constants, .src = src};
+  struct bc bc = {.ks = &src->constants, .src = src, .err_out = args.err_out};
 
-  env = unpack_binding_into_env(gab, &bc, bindings, env, gab_undefined);
+  args.env =
+      unpack_binding_into_env(gab, &bc, args.bindings, args.env, gab_undefined);
 
-  if (env == gab_undefined)
+  if (args.env == gab_undefined)
     return (union gab_value_pair){{gab_undefined, gab_undefined}};
 
-  size_t nenvs = gab_reclen(env);
+  size_t nenvs = gab_reclen(args.env);
   assert(nenvs > 0);
 
-  size_t nargs = gab_reclen(gab_uvrecat(env, nenvs - 1));
+  size_t nargs = gab_reclen(gab_uvrecat(args.env, nenvs - 1));
   assert(nargs < GAB_ARG_MAX);
 
-  if (!push_trim_node(gab, &bc, nargs, gab_undefined, bindings))
+  if (!push_trim_node(gab, &bc, nargs, gab_undefined, args.bindings))
     return (union gab_value_pair){{gab_undefined, gab_undefined}};
 
   assert(bc.bc.len == bc.bc_toks.len);
-  env = compile_tuple(gab, &bc, ast, env);
+  args.env = compile_tuple(gab, &bc, args.ast, args.env);
   assert(bc.bc.len == bc.bc_toks.len);
 
-  if (env == gab_undefined)
+  if (args.env == gab_undefined)
     return bc_destroy(&bc),
            (union gab_value_pair){{gab_undefined, gab_undefined}};
 
-  assert(gab_reclen(env) == nenvs);
+  assert(gab_reclen(args.env) == nenvs);
 
-  gab_value local_env = gab_uvrecat(env, nenvs - 1);
+  gab_value local_env = gab_uvrecat(args.env, nenvs - 1);
   assert(bc.bc.len == bc.bc_toks.len);
 
-  push_ret(gab, &bc, ast, ast);
+  push_ret(gab, &bc, args.ast, args.ast);
 
   size_t nlocals = locals_in_env(local_env);
   assert(nlocals < GAB_LOCAL_MAX);
@@ -1895,12 +1907,12 @@ union gab_value_pair gab_compile(struct gab_triple gab, gab_value ast,
 
   // It is undefined behavior for a VLA to have length 0.
   char data[nupvalues + 1];
-  build_upvdata(env, nupvalues, data);
+  build_upvdata(args.env, nupvalues, data);
 
-  size_t bco = d_uint64_t_read(&bc.src->node_begin_toks, ast);
+  size_t bco = d_uint64_t_read(&bc.src->node_begin_toks, args.ast);
   v_uint64_t_set(&bc.src->bytecode_toks, begin, bco);
 
-  gab_value e = peek_env(env, 0);
+  gab_value e = peek_env(args.env, 0);
 
   gab_value proto = gab_prototype(gab, src, begin, len,
                                   (struct gab_prototype_argt){
@@ -1914,7 +1926,7 @@ union gab_value_pair gab_compile(struct gab_triple gab, gab_value ast,
                                   });
 
   if (gab.flags & fGAB_BUILD_DUMP)
-    gab_fmodinspect(gab.eg->sout, GAB_VAL_TO_PROTOTYPE(proto));
+    gab_fmodinspect(gab.eg->sout, proto);
 
   // call srcappend to append bytecode to src module
   // actually track bc_tok offset
@@ -1923,7 +1935,7 @@ union gab_value_pair gab_compile(struct gab_triple gab, gab_value ast,
   //  - :ok, :err, :nil, :none, 1, 2
 
   return (union gab_value_pair){
-      .environment = env,
+      .environment = args.env,
       .prototype = proto,
   };
 }
@@ -1964,7 +1976,13 @@ gab_value gab_build(struct gab_triple gab, struct gab_build_argt args) {
   gab_value env =
       gab_listof(gab, gab_recordof(gab, gab_symbol(gab, "self"), gab_nil));
 
-  union gab_value_pair res = gab_compile(gab, ast, env, bindings, mod);
+  union gab_value_pair res = gab_compile(gab, (struct gab_compile_argt){
+                                                  .ast = ast,
+                                                  .env = env,
+                                                  .mod = mod,
+                                                  .bindings = bindings,
+                                                  .err_out = args.err_out,
+                                              });
 
   if (res.prototype == gab_undefined)
     return gab_gcunlock(gab), gab_undefined;

@@ -30,95 +30,95 @@
 #endif
 
 /**
- *===============================*
- |                               |
- |     Value Representation      |
- |                               |
- *===============================*
-
- Gab values are nan-boxed.
-
- An IEEE 754 double-precision float is a 64-bit value with bits laid out like:
-
- 1 Sign bit
- |   11 Exponent bits
- |   |          52 Mantissa
- |   |          |
- [S][Exponent---][Mantissa------------------------------------------]
-
- The details of how these are used to represent numbers aren't really
- relevant here as long we don't interfere with them. The important bit is NaN.
-
- An IEEE double can represent a few magical values like NaN ("not a number"),
- Infinity, and -Infinity. A NaN is any value where all exponent bits are set:
-
-     NaN bits
-     |
- [-][11111111111][----------------------------------------------------]
-
- The bits set above are the only relevant ones. The rest of the bits are unused.
-
- NaN values come in two flavors: "signalling" and "quiet". The former are
- intended to halt execution, while the latter just flow through arithmetic
- operations silently. We want the latter.
-
- Quiet NaNs are indicated by setting the highest mantissa bit:
-
-                  Highest mantissa bit
-                  |
- [-][....NaN....][1---------------------------------------------------]
-
- This leaves the rest of the following bits to play with.
-
- Pointers to objects with data on the heap set the highest bit.
-
- We are left with 51 bits of mantissa to store an address.
- Even 64-bit machines only actually use 48 bits for addresses.
-
-  Pointer bit set       Pointer data
-  |                     |
- [1][....NaN....1][---------------------------------------------------]
-
- Immediate values *don't* have the pointer bit set.
- They also store a tag in the 3 bits just below the NaN.
-
-      kGAB_SYMBOL, kGAB_STRING, kGAB_MESSAGE, kGAB_MESSAGE, kGAB_UNDEFINED
-                   |
- [0][....NaN....1][---][------------------------------------------------]
-
- 'Primitives' are message specializtions which are implemented as an opcode in
- the vm. This covers things like '+' on numbers and strings, etc.
-
- The opcode is stored in the lowest byte
-
-                   kGAB_PRIMITIVE                               Opcode
-                   |                                            |
- [0][....NaN....1][---]----------------------------------------[--------]
-
- Gab also employs a short string optimization. Lots of strings in a gab program
- are incredibly small, and incredibly common. values like '.some', '.none',
- '.ok', and even messages like '+' store a small string.
-
- We need to store the string's length, a null-terminator (for c-compatibility),
- and the string's data.
-
- Instead of storing the length of the string, we store the amount of bytes *not*
- used. Since there are a total of 5 bytes availble for storing string data, the
- remaining length is computed as 5 - strlen(str).
-
- We do this for a special case - when the string has length 5, the remaining
- length is 0. In this case, the byte which stores the remaining length *also*
- serves as the null-terminator for the string.
-
- This layout sneakily gives us an extra byte of storage in our small strings.
-
-            kGAB_STRING Remaining Length                             <- Data
-                   |    |                                               |
- [0][....NaN....1][---][--------][----------------------------------------]
-                       [...0....][...e.......p.......a........h......s....]
-                       [...3....][-------------------------...k......o....]
-
-*/
+ * %-------------------------------%
+ * |     Value Representation      |
+ * %-------------------------------%
+ *
+ * Gab values are nan-boxed.
+ *
+ * An IEEE 754 double-precision float is a 64-bit value with bits laid out like:
+ *
+ * 1 Sign bit
+ * |   11 Exponent bits
+ * |   |          52 Mantissa
+ * |   |          |
+ * [S][Exponent---][Mantissa------------------------------------------]
+ *
+ * The details of how these are used to represent numbers aren't really
+ * relevant here as long we don't interfere with them. The important bit is NaN.
+ *
+ * An IEEE double can represent a few magical values like NaN ("not a number"),
+ * Infinity, and -Infinity. A NaN is any value where all exponent bits are set:
+ *
+ *     NaN bits
+ *     |
+ * [-][11111111111][----------------------------------------------------]
+ *
+ * The bits set above are the only relevant ones. The rest of the bits are
+ * unused.
+ *
+ * NaN values come in two flavors: "signalling" and "quiet". The former are
+ * intended to halt execution, while the latter just flow through arithmetic
+ * operations silently. We want the latter.
+ *
+ * Quiet NaNs are indicated by setting the highest mantissa bit:
+ *
+ *                  Highest mantissa bit
+ *                  |
+ * [-][....NaN....][1---------------------------------------------------]
+ *
+ * This leaves the rest of the following bits to play with.
+ *
+ * Pointers to objects with data on the heap set the highest bit.
+ *
+ * We are left with 51 bits of mantissa to store an address.
+ * Even 64-bit machines only actually use 48 bits for addresses.
+ *
+ *  Pointer bit set       Pointer data
+ *  |                     |
+ * [1][....NaN....1][---------------------------------------------------]
+ *
+ * Immediate values *don't* have the pointer bit set.
+ * They also store a tag in the 3 bits just below the NaN.
+ *
+ *      kGAB_SYMBOL, kGAB_STRING, kGAB_MESSAGE, kGAB_MESSAGE, kGAB_UNDEFINED
+ *                   |
+ * [0][....NaN....1][---][------------------------------------------------]
+ *
+ * 'Primitives' are message specializtions which are implemented as an opcode in
+ * the vm. This covers things like '+' on numbers and strings, etc.
+ *
+ * The opcode is stored in the lowest byte
+ *
+ *                   kGAB_PRIMITIVE                               Opcode
+ *                   |                                            |
+ * [0][....NaN....1][---]----------------------------------------[--------]
+ *
+ * Gab also employs a short string optimization. Lots of strings in a gab
+ * program are incredibly small, and incredibly common. values like '.some',
+ * '.none',
+ * '.ok', and even messages like '+' store a small string.
+ *
+ * We need to store the string's length, a null-terminator (for
+ * c-compatibility), and the string's data.
+ *
+ * Instead of storing the length of the string, we store the amount of bytes
+ * *not* used. Since there are a total of 5 bytes availble for storing string
+ * data, the remaining length is computed as 5 - strlen(str).
+ *
+ * We do this for a special case - when the string has length 5, the remaining
+ * length is 0. In this case, the byte which stores the remaining length *also*
+ * serves as the null-terminator for the string.
+ *
+ * This layout sneakily gives us an extra byte of storage in our small strings.
+ *
+ *            kGAB_STRING Remaining Length                             <- Data
+ *                   |    |                                               |
+ * [0][....NaN....1][---][--------][----------------------------------------]
+ *                       [   0    ][   e       p       a       h       s    ]
+ *                       [   2    ][----------------   0       k       o    ]
+ *
+ */
 
 typedef uint64_t gab_value;
 
@@ -290,20 +290,20 @@ GAB_API_INLINE gab_value __gab_dtoval(double value) {
  */
 #define fGAB_OBJ_BUFFERED (1 << 6)
 #define fGAB_OBJ_NEW (1 << 7)
-#define fGAB_OBJ_FREED (1 << 8) // Used for debug purposes
 
 #define GAB_OBJ_IS_BUFFERED(obj) ((obj)->flags & fGAB_OBJ_BUFFERED)
 #define GAB_OBJ_IS_NEW(obj) ((obj)->flags & fGAB_OBJ_NEW)
-#define GAB_OBJ_IS_FREED(obj) ((obj)->flags & fGAB_OBJ_FREED)
 
 #define GAB_OBJ_BUFFERED(obj) ((obj)->flags |= fGAB_OBJ_BUFFERED)
 #define GAB_OBJ_NEW(obj) ((obj)->flags |= fGAB_OBJ_NEW)
-#define GAB_OBJ_FREED(obj) ((obj)->flags |= fGAB_OBJ_FREED)
-
-#define __KEEP_FLAGS (fGAB_OBJ_BUFFERED | fGAB_OBJ_NEW | fGAB_OBJ_FREED)
 
 #define GAB_OBJ_NOT_BUFFERED(obj) ((obj)->flags &= ~fGAB_OBJ_BUFFERED)
 #define GAB_OBJ_NOT_NEW(obj) ((obj)->flags &= ~fGAB_OBJ_NEW)
+
+// DEBUG purposes only
+#define fGAB_OBJ_FREED (1 << 8)
+#define GAB_OBJ_IS_FREED(obj) ((obj)->flags & fGAB_OBJ_FREED)
+#define GAB_OBJ_FREED(obj) ((obj)->flags |= fGAB_OBJ_FREED)
 
 typedef enum gab_opcode {
 #define OP_CODE(name) OP_##name,
@@ -330,14 +330,6 @@ struct gab_triple {
 
 struct gab_obj;
 
-struct gab_obj_string;
-struct gab_obj_prototype;
-struct gab_obj_native;
-struct gab_obj_block;
-struct gab_obj_message;
-struct gab_obj_box;
-struct gab_obj_fiber;
-
 typedef void (*gab_gcvisit_f)(struct gab_triple, struct gab_obj *obj);
 
 typedef a_gab_value *(*gab_native_f)(struct gab_triple, uint64_t argc,
@@ -350,6 +342,8 @@ typedef void (*gab_boxcopy_f)(uint64_t len, char *data);
 
 typedef void (*gab_boxvisit_f)(struct gab_triple gab, gab_gcvisit_f visitor,
                                uint64_t len, char *data);
+
+typedef gab_value (*gab_atomswap_f)(struct gab_triple gab, gab_value current);
 
 /**
  * @class gab_obj
@@ -430,10 +424,10 @@ GAB_API void gab_destroy(struct gab_triple gab);
  * @param proto The prototype to inspect
  * @return non-zero if an error occured.
  */
-GAB_API int gab_fmodinspect(FILE *stream, struct gab_obj_prototype *proto);
+GAB_API int gab_fmodinspect(FILE *stream, gab_value prototype);
 
 /**
- * @brief Print a gab_value to the given stream. Will prent nested values as
+ * @brief Print a gab_value to the given stream. Will print nested values as
  * deep as depth.
  *
  * If depth is negative, will print recursively without limit.
@@ -445,6 +439,29 @@ GAB_API int gab_fmodinspect(FILE *stream, struct gab_obj_prototype *proto);
  */
 GAB_API int gab_fvalinspect(FILE *stream, gab_value value, int depth);
 
+/**
+ * @brief Print a gab_value into a buffer. including nested values as deep as
+ * depth.
+ *
+ * The (char*) pointed to by dest will be used to traverse the buffer and write
+ * no more than (*n) bytes to the buffer.
+ *
+ * Both *dest* and *n* will be mutated such that dest will point to the first
+ * byte *after* the last written byte, and n will contain the amount of bytes
+ * *remaining* after writing has completed.
+ *
+ * With this behavior, it is easy to make consecutive calls gab_svalinspect,
+ * writing into the same buffer.
+ *
+ * Returns the number of bytes written, or -1 if the buffer was too small.
+ *
+ * If depth is negative, will print recursively without limit.
+ *
+ * @param stream The stream to print to
+ * @param value The value to inspect
+ * @param depth The depth to recurse to
+ * @return the number of bytes written to the stream.
+ */
 GAB_API int gab_svalinspect(char **dest, size_t *n, gab_value value, int depth);
 
 /**
@@ -462,25 +479,6 @@ GAB_API int gab_svalinspect(char **dest, size_t *n, gab_value value, int depth);
  * @return the number of bytes written to the stream.
  */
 GAB_API int gab_fprintf(FILE *stream, const char *fmt, ...);
-
-/**
- * @brief Format the given string to the given string builder.
- *
- * This format function does *not* respect the %-style formatters like printf.
- * The only supported formatter is $, which will use the next gab_value in the
- * var args.
- *
- * eg:
- * `gab_sprintf(stdout, "foo $", gab_string(gab, "bar"));`c
- *
- * @param stream The stream to print to
- * @param fmt The format string
- * @return the number of bytes written to the stream.
- */
-GAB_API int gab_sprintf(char *dst, size_t n, const char *fmt, ...);
-GAB_API int gab_vsprintf(char *dst, size_t n, const char *fmt, va_list varargs);
-GAB_API int gab_nsprintf(char *dst, size_t n, const char *fmt, uint64_t argc,
-                         gab_value argv[argc]);
 
 /**
  * @brief Format the given string to the given stream.
@@ -504,6 +502,51 @@ GAB_API int gab_vfprintf(FILE *stream, const char *fmt, va_list varargs);
  * @return the number of bytes written to the stream.
  */
 GAB_API int gab_nfprintf(FILE *stream, const char *fmt, uint64_t argc,
+                         gab_value argv[argc]);
+
+/**
+ * @brief Format the given string into the given buffer.
+ *
+ * This format function does *not* respect the %-style formatters like printf.
+ * The only supported formatter is $, which will use the next gab_value in the
+ * var args.
+ *
+ * Unlike libc's sprintf, will return -1 if the buffer was too small.
+ *
+ * eg:
+ * `gab_sprintf(stdout, "foo $", gab_string(gab, "bar"));`c
+ *
+ * @param dst The destination buffer
+ * @param n   The maximum number of bytes to write
+ * @param fmt The format string
+ * @return the number of bytes written to the buffer, or -1.
+ */
+GAB_API int gab_sprintf(char *dst, size_t n, const char *fmt, ...);
+
+/**
+ * @brief Format the given string into the given buffer, with varargs. @see
+ * gab_sprintf
+ *
+ * @param dst The destination buffer
+ * @param n   The maximum number of bytes to write
+ * @param fmt The format string
+ * @param varargs The format arguments
+ * @return the number of bytes written to the buffer, or -1.
+ */
+GAB_API int gab_vsprintf(char *dst, size_t n, const char *fmt, va_list varargs);
+
+/**
+ * @brief Format the given string into the given buffer, with n arguments. @see
+ * gab_sprintf
+ *
+ * @param dst The destination buffer
+ * @param n   The maximum number of bytes to write
+ * @param fmt The format string
+ * @param argc The number of format arguments
+ * @param argv The format arguments
+ * @return the number of bytes written to the buffer, or -1.
+ */
+GAB_API int gab_nsprintf(char *dst, size_t n, const char *fmt, uint64_t argc,
                          gab_value argv[argc]);
 
 /**
@@ -540,10 +583,28 @@ GAB_API uint64_t gab_negkeep(struct gab_eg *eg, uint64_t len, gab_value *argv);
  * @see gab_egimpl
  */
 enum gab_impl_resk {
+  /*
+   * No implementation was found for this value and message.
+   */
   kGAB_IMPL_NONE = 0,
+  /*
+   * The *type* of the receiver implements the message.
+   * EG: The actual gab\shape of the record implements this message, not just
+   * 'gab\record'
+   */
   kGAB_IMPL_TYPE,
+  /*
+   * The *kind* of the receiver implements the message.
+   * EG: gab\record as opposed to the record's actual gab\shape.
+   */
   kGAB_IMPL_KIND,
+  /*
+   * There is a general/default implementation to fall back on.
+   */
   kGAB_IMPL_GENERAL,
+  /*
+   * The receiver is a record with a matching property.
+   */
   kGAB_IMPL_PROPERTY,
 };
 
@@ -564,10 +625,9 @@ struct gab_impl_rest {
   gab_value type;
 
   /**
-   * @brief The offset within the message of the implementation.
-   *
-   * For properties (see sGAB_IMPL_PROPERTY), this will return the offset within
-   * the record.
+   * @brief The specification found by the call to gab_impl. However , if status
+   * is kGAB_IMPL_PROPERTY, will contain the *offset* into the record for the
+   * corresponding property. @see gab_urecat
    */
   union {
     gab_value spec;
@@ -576,7 +636,7 @@ struct gab_impl_rest {
 
   /**
    * @brief The status of this implementation resolution.
-   * @see gab_egimpl_resk
+   * @see gab_impl_resk
    */
   enum gab_impl_resk status;
 };
@@ -608,7 +668,7 @@ gab_impl(struct gab_triple gab, gab_value message, gab_value receiver);
   })
 
 /**
- * @brief Push multiple values onto the vm's internal stack.
+ * @brief Push multiple values onto the given vm's internal stack.
  * @see gab_vmpush.
  *
  * @param vm The vm that will receive the values.
@@ -618,7 +678,7 @@ gab_impl(struct gab_triple gab, gab_value message, gab_value receiver);
 GAB_API uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t len, gab_value *argv);
 
 /**
- * @brief Inspect the vm at depth N in the callstack.
+ * @brief Inspect the frame in the vm at depth N in the callstack.
  *
  * @param stream The stream to print to.
  * @param vm The vm.
@@ -627,8 +687,8 @@ GAB_API uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t len, gab_value *argv);
 GAB_API void gab_fvminspect(FILE *stream, struct gab_vm *vm, int depth);
 
 /**
- * @brief Inspect the vm's callstack at the given depth, returning a value with
- * the relevant data.
+ * @brief Inspect the vm's callstack at the given depth, returning a gab_value
+ * with relevant data.
  *
  * @param gab The triple to inspect.
  * @param depth The depth of the callframe. '0' would be the topmost callframe.
@@ -638,7 +698,7 @@ GAB_API gab_value gab_vmframe(struct gab_triple gab, uint64_t depth);
 
 /*
  * @brief Attempt to load the module named 'name', with the default semantics of
- * \use
+ * use:
  *
  * @param gab The triple
  * @param name The name of the module
@@ -656,6 +716,15 @@ GAB_API a_gab_value *gab_suse(struct gab_triple gab, const char *name);
 GAB_API a_gab_value *gab_use(struct gab_triple gab, gab_value name);
 
 /**
+ * @brief Check if an engine has a module by name.
+ *
+ * @param eg The engine.
+ * @param name The name of the import.
+ * @returns The module if it exists, nullptr otherwise.
+ */
+GAB_API a_gab_value *gab_segmodat(struct gab_eg *eg, const char *name);
+
+/**
  * @brief Put a module into the engine's import table.
  *
  * @param eg The engine.
@@ -668,14 +737,10 @@ GAB_API a_gab_value *gab_use(struct gab_triple gab, gab_value name);
 GAB_API a_gab_value *gab_segmodput(struct gab_eg *eg, const char *name,
                                    a_gab_value *module);
 
-/**
- * @brief Check if an engine has a module by name.
- *
- * @param eg The engine.
- * @param name The name of the import.
- * @returns The module if it exists, nullptr otherwise.
- */
-GAB_API a_gab_value *gab_segmodat(struct gab_eg *eg, const char *name);
+struct gab_errdetails {
+  const char *status_name, *src_name, *tok_name, *msg_name;
+  size_t row, col_begin, col_end, byte_begin, byte_end;
+};
 
 /**
  * @class gab_cmpl_argt
@@ -693,10 +758,6 @@ struct gab_build_argt {
    */
   const char *source;
   /**
-   * Optional flags for compilation.
-   */
-  int flags;
-  /**
    * The number of arguments expected by the main block.
    */
   uint64_t len;
@@ -704,6 +765,14 @@ struct gab_build_argt {
    * The names of the arguments expected by the main block.
    */
   const char **argv;
+  /**
+   * Optional flags for compilation.
+   */
+  int flags;
+  /**
+   * Optional out-parameter for captured error details.
+   */
+  struct gab_errdetails *err_out;
 };
 
 /**
@@ -717,13 +786,13 @@ struct gab_build_argt {
  * @param args The arguments.
  * @returns A gab_value containing the compiled block, which can be called.
  */
-GAB_API gab_value gab_build(struct gab_triple gab, struct gab_build_argt args);
-
 GAB_API gab_value gab_parse(struct gab_triple gab, struct gab_build_argt args);
 
 /**
  * @brief Compile an AST into a block.
  */
+GAB_API gab_value gab_build(struct gab_triple gab, struct gab_build_argt args);
+
 union gab_value_pair {
   gab_value data[2];
 
@@ -731,11 +800,20 @@ union gab_value_pair {
     gab_value prototype;
     gab_value environment;
   };
+
+  struct {
+    gab_value status;
+    gab_value result;
+  };
 };
 
-GAB_API union gab_value_pair gab_compile(struct gab_triple gab, gab_value ast,
-                                         gab_value env, gab_value bindings,
-                                         gab_value mod);
+struct gab_compile_argt {
+  struct gab_errdetails *err_out;
+  gab_value ast, env, bindings, mod;
+};
+
+GAB_API union gab_value_pair gab_compile(struct gab_triple gab,
+                                         struct gab_compile_argt args);
 
 /**
  * @class gab_run_argt
@@ -1192,7 +1270,7 @@ GAB_API_INLINE bool gab_valhast(gab_value value) {
 /**
  * @brief An immutable sequence of bytes.
  */
-struct gab_obj_string {
+struct gab_ostring {
   struct gab_obj header;
 
   /**
@@ -1218,8 +1296,8 @@ struct gab_obj_string {
   char data[];
 };
 
-/* Cast a value to a (gab_obj_string*) */
-#define GAB_VAL_TO_STRING(value) ((struct gab_obj_string *)gab_valtoo(value))
+/* Cast a value to a (gab_ostring*) */
+#define GAB_VAL_TO_STRING(value) ((struct gab_ostring *)gab_valtoo(value))
 
 /**
  * @brief Create a gab_value from a bounded array of chars.
@@ -1281,13 +1359,24 @@ GAB_API_INLINE const char *gab_strdata(gab_value *str) {
  */
 GAB_API_INLINE uint64_t gab_strlen(gab_value str) {
   assert(gab_valkind(str) == kGAB_STRING || gab_valkind(str) == kGAB_SYMBOL ||
-         gab_valkind(str) == kGAB_MESSAGE);
+         gab_valkind(str) == kGAB_MESSAGE || gab_valkind(str) == kGAB_BINARY);
 
   if (gab_valiso(str))
     return GAB_VAL_TO_STRING(str)->len;
 
   return 5 - ((str >> 40) & 0xFF);
 };
+
+GAB_API_INLINE int gab_binat(gab_value str, size_t idx) {
+  assert(gab_valkind(str) == kGAB_BINARY);
+
+  size_t len = gab_strlen(str);
+
+  if (idx >= len)
+    return -1;
+
+  return gab_strdata(&str)[idx];
+}
 
 /**
  * @brief Get the number multi-byte codepoints in a string. This is
@@ -1467,7 +1556,7 @@ GAB_API_INLINE gab_value gab_nbinary(struct gab_triple gab, size_t len,
 /**
  * @brief A wrapper for a native c function.
  */
-struct gab_obj_native {
+struct gab_onative {
   struct gab_obj header;
 
   /**
@@ -1481,13 +1570,13 @@ struct gab_obj_native {
   gab_value name;
 };
 
-/* Cast a value to a (gab_obj_native*) */
-#define GAB_VAL_TO_NATIVE(value) ((struct gab_obj_native *)gab_valtoo(value))
+/* Cast a value to a (gab_onative*) */
+#define GAB_VAL_TO_NATIVE(value) ((struct gab_onative *)gab_valtoo(value))
 
 /**
  * @brief A block - aka a prototype and it's captures.
  */
-struct gab_obj_block {
+struct gab_oblock {
   struct gab_obj header;
 
   /**
@@ -1506,8 +1595,8 @@ struct gab_obj_block {
   gab_value upvalues[];
 };
 
-/* Cast a value to a (gab_obj_block*) */
-#define GAB_VAL_TO_BLOCK(value) ((struct gab_obj_block *)gab_valtoo(value))
+/* Cast a value to a (gab_oblock*) */
+#define GAB_VAL_TO_BLOCK(value) ((struct gab_oblock *)gab_valtoo(value))
 
 /**
  * @brief Create a new block object, setting all captures to gab_nil.
@@ -1944,7 +2033,7 @@ GAB_API gab_value gab_recdel(struct gab_triple gab, gab_value record,
 /*
  * @brief A lightweight green-thread / coroutine / fiber.
  */
-struct gab_obj_fiber {
+struct gab_ofiber {
   struct gab_obj header;
 
   uint32_t flags;
@@ -1986,7 +2075,7 @@ struct gab_obj_fiber {
   gab_value data[];
 };
 
-#define GAB_VAL_TO_FIBER(value) ((struct gab_obj_fiber *)gab_valtoo(value))
+#define GAB_VAL_TO_FIBER(value) ((struct gab_ofiber *)gab_valtoo(value))
 
 struct gab_fiber_argt {
   uint32_t flags;
@@ -2041,11 +2130,28 @@ GAB_API_INLINE gab_value gab_thisfibmsgat(struct gab_triple gab,
 
 GAB_API_INLINE gab_value gab_thisfibmsgrec(struct gab_triple gab,
                                            gab_value message);
+/**
+ * @brief A primitive for sending data between fibers.
+ */
+struct gab_oatom {
+  struct gab_obj header;
+
+  /**
+   * The value currently held. *Must* be mutated via atomic functions.
+   */
+  _Atomic gab_value data;
+};
+
+GAB_API gab_value gab_atom(struct gab_triple gab);
+
+GAB_API gab_value gab_atmpeek(struct gab_triple gab, gab_value atom);
+
+GAB_API gab_value gab_atmswap(struct gab_triple gab, gab_atomswap_f f);
 
 /**
  * @brief A primitive for sending data between fibers.
  */
-struct gab_obj_channel {
+struct gab_ochannel {
   struct gab_obj header;
 
   /**
@@ -2127,8 +2233,8 @@ GAB_API bool gab_chnisfull(gab_value channel);
  */
 GAB_API bool gab_chnisempty(gab_value channel);
 
-/* Cast a value to a (gab_obj_channel*) */
-#define GAB_VAL_TO_CHANNEL(value) ((struct gab_obj_channel *)gab_valtoo(value))
+/* Cast a value to a (gab_ochannel*) */
+#define GAB_VAL_TO_CHANNEL(value) ((struct gab_ochannel *)gab_valtoo(value))
 
 /**
  * @brief A container object, which holds arbitrary data.
@@ -2137,7 +2243,7 @@ GAB_API bool gab_chnisempty(gab_value channel);
  *  - one to do cleanup when the object is destroyed
  *  - one to visit children values when doing garbage collection.
  */
-struct gab_obj_box {
+struct gab_obox {
   struct gab_obj header;
 
   /**
@@ -2171,7 +2277,7 @@ struct gab_obj_box {
   char data[];
 };
 
-#define GAB_VAL_TO_BOX(value) ((struct gab_obj_box *)gab_valtoo(value))
+#define GAB_VAL_TO_BOX(value) ((struct gab_obox *)gab_valtoo(value))
 
 /**
  * The arguments for creating a box.
@@ -2247,7 +2353,7 @@ GAB_API_INLINE gab_value gab_boxtype(gab_value value) {
  * @brief The prototype of a block. Encapsulates everything known about a block
  * at compile time.
  */
-struct gab_obj_prototype {
+struct gab_oprototype {
   struct gab_obj header;
 
   /**
@@ -2277,8 +2383,7 @@ struct gab_obj_prototype {
 };
 
 /* Cast a value to a (gab_obj_bprototype*) */
-#define GAB_VAL_TO_PROTOTYPE(value)                                            \
-  ((struct gab_obj_prototype *)gab_valtoo(value))
+#define GAB_VAL_TO_PROTOTYPE(value) ((struct gab_oprototype *)gab_valtoo(value))
 
 /**
  * @brief Arguments for creating a prototype.
@@ -2368,7 +2473,7 @@ GAB_API_INLINE gab_value gab_valtype(struct gab_triple gab, gab_value value) {
 }
 
 #define NAME strings
-#define K struct gab_obj_string *
+#define K struct gab_ostring *
 #define HASH(a) (a->hash)
 #define EQUAL(a, b) (a == b)
 #define LOAD cGAB_DICT_MAX_LOAD
@@ -2637,7 +2742,7 @@ GAB_API_INLINE gab_value gab_thisfibmsg(struct gab_triple gab) {
   if (fiber == gab_undefined)
     return gab.eg->messages;
 
-  struct gab_obj_fiber *f = GAB_VAL_TO_FIBER(fiber);
+  struct gab_ofiber *f = GAB_VAL_TO_FIBER(fiber);
   return f->messages;
 }
 
@@ -2675,15 +2780,34 @@ GAB_API_INLINE bool gab_valintob(gab_value value) {
  * @return The string representation of the value.
  */
 GAB_API_INLINE gab_value gab_valintos(struct gab_triple gab, gab_value value) {
-  size_t len = 128;
-  for (;; len *= 2) {
-    char buffer[len];
+  switch (gab_valkind(value)) {
+  case kGAB_BINARY:
+    return gab_bintostr(value);
+  case kGAB_MESSAGE:
+    return gab_msgtostr(value);
+  case kGAB_STRING:
+    return value;
+  default:
+    // Generally, I think this is a bad idea.
+    // It can ( and will ) blow the stack up for sufficiently large
+    // values. Also if some logic is wrong.
+    for (size_t len = 128;; len *= 2) {
+      char buffer[len];
 
-    char *cursor = buffer;
-    size_t remaining = len;
+      char *cursor = buffer;
+      size_t remaining = len;
 
-    if (gab_svalinspect(&cursor, &remaining, value, -1) >= 0)
+      int result = gab_svalinspect(&cursor, &remaining, value, -1);
+
+      assert(result >= 0);
+      if (result < 0)
+        return gab_undefined;
+
+      if (remaining == 0)
+        continue;
+
       return gab_string(gab, buffer);
+    }
   }
 }
 

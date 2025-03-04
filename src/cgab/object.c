@@ -23,8 +23,11 @@ int snprintf_through(char **dst, size_t *n, char *fmt, ...) {
   int res = vsnprintf(*dst, *n, fmt, va);
   va_end(va);
 
-  if (res > *n)
-    return *n;
+  if (res > *n) {
+    *dst += *n;
+    *n = 0;
+    return 0;
+  }
 
   *dst += res;
   *n -= res;
@@ -61,10 +64,10 @@ struct gab_obj *gab_obj_create(struct gab_triple gab, uint64_t sz,
 uint64_t gab_obj_size(struct gab_obj *obj) {
   switch (obj->kind) {
   case kGAB_CHANNEL:
-    return sizeof(struct gab_obj_channel);
+    return sizeof(struct gab_ochannel);
   case kGAB_BOX: {
-    struct gab_obj_box *o = (struct gab_obj_box *)obj;
-    return sizeof(struct gab_obj_box) + o->len * sizeof(char);
+    struct gab_obox *o = (struct gab_obox *)obj;
+    return sizeof(struct gab_obox) + o->len * sizeof(char);
   }
   case kGAB_RECORDNODE: {
     struct gab_obj_recnode *o = (struct gab_obj_recnode *)obj;
@@ -75,12 +78,12 @@ uint64_t gab_obj_size(struct gab_obj *obj) {
     return sizeof(struct gab_obj_rec) + o->len * sizeof(gab_value);
   }
   case kGAB_BLOCK: {
-    struct gab_obj_block *o = (struct gab_obj_block *)obj;
-    return sizeof(struct gab_obj_block) + o->nupvalues * sizeof(gab_value);
+    struct gab_oblock *o = (struct gab_oblock *)obj;
+    return sizeof(struct gab_oblock) + o->nupvalues * sizeof(gab_value);
   }
   case kGAB_PROTOTYPE: {
-    struct gab_obj_prototype *o = (struct gab_obj_prototype *)obj;
-    return sizeof(struct gab_obj_prototype) + o->nupvalues * sizeof(char);
+    struct gab_oprototype *o = (struct gab_oprototype *)obj;
+    return sizeof(struct gab_oprototype) + o->nupvalues * sizeof(char);
   }
   case kGAB_SHAPE:
   case kGAB_SHAPELIST: {
@@ -88,13 +91,13 @@ uint64_t gab_obj_size(struct gab_obj *obj) {
     return sizeof(struct gab_obj_shape) + o->len * sizeof(gab_value);
   }
   case kGAB_STRING: {
-    struct gab_obj_string *o = (struct gab_obj_string *)obj;
-    return sizeof(struct gab_obj_string) + (o->len + 1) * sizeof(char);
+    struct gab_ostring *o = (struct gab_ostring *)obj;
+    return sizeof(struct gab_ostring) + (o->len + 1) * sizeof(char);
   }
   case kGAB_FIBER:
-    return sizeof(struct gab_obj_fiber);
+    return sizeof(struct gab_ofiber);
   case kGAB_NATIVE:
-    return sizeof(struct gab_obj_native);
+    return sizeof(struct gab_onative);
   default:
     break;
   }
@@ -366,27 +369,27 @@ int sinspectval(char **dest, size_t *n, gab_value self, int depth) {
   case kGAB_RECORDNODE:
     return srec_dumpproperties(dest, n, self, depth);
   case kGAB_BOX: {
-    struct gab_obj_box *con = GAB_VAL_TO_BOX(self);
+    struct gab_obox *con = GAB_VAL_TO_BOX(self);
     return snprintf_through(dest, n, "<" tGAB_BOX " ") +
            gab_svalinspect(dest, n, con->type, depth) +
            snprintf_through(dest, n, "%p>", con->data);
   }
   case kGAB_BLOCK: {
-    struct gab_obj_block *blk = GAB_VAL_TO_BLOCK(self);
-    struct gab_obj_prototype *p = GAB_VAL_TO_PROTOTYPE(blk->p);
+    struct gab_oblock *blk = GAB_VAL_TO_BLOCK(self);
+    struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(blk->p);
     uint64_t line = gab_srcline(p->src, p->offset);
     return snprintf_through(dest, n, "<" tGAB_BLOCK " ") +
            gab_svalinspect(dest, n, gab_srcname(p->src), depth) +
            snprintf_through(dest, n, ":%" PRIu64 ">", line);
   }
   case kGAB_NATIVE: {
-    struct gab_obj_native *native = GAB_VAL_TO_NATIVE(self);
+    struct gab_onative *native = GAB_VAL_TO_NATIVE(self);
     return snprintf_through(dest, n, "<" tGAB_NATIVE " ") +
            gab_svalinspect(dest, n, native->name, depth) +
            snprintf_through(dest, n, ">");
   }
   case kGAB_PROTOTYPE: {
-    struct gab_obj_prototype *p = GAB_VAL_TO_PROTOTYPE(self);
+    struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(self);
     uint64_t line = gab_srcline(p->src, p->offset);
     return snprintf_through(dest, n, "<" tGAB_PROTOTYPE " ") +
            gab_svalinspect(dest, n, gab_srcname(p->src), depth) +
@@ -460,7 +463,7 @@ int finspectval(FILE *stream, gab_value self, int depth) {
     int idx = gab_valkind(self) % GAB_COLORS_LEN;
     const char *color = ANSI_COLORS[idx];
 
-    struct gab_obj_box *con = GAB_VAL_TO_BOX(self);
+    struct gab_obox *con = GAB_VAL_TO_BOX(self);
     return fprintf(stream, "<" tGAB_BOX " ") +
            gab_fvalinspect(stream, con->type, depth) +
            fprintf(stream, "%s %p>" GAB_RESET, color, con->data);
@@ -469,8 +472,8 @@ int finspectval(FILE *stream, gab_value self, int depth) {
     int idx = gab_valkind(self) % GAB_COLORS_LEN;
     const char *color = ANSI_COLORS[idx];
 
-    struct gab_obj_block *blk = GAB_VAL_TO_BLOCK(self);
-    struct gab_obj_prototype *p = GAB_VAL_TO_PROTOTYPE(blk->p);
+    struct gab_oblock *blk = GAB_VAL_TO_BLOCK(self);
+    struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(blk->p);
     uint64_t line = gab_srcline(p->src, p->offset);
     return fprintf(stream, "<" tGAB_BLOCK " ") +
            gab_fvalinspect(stream, gab_srcname(p->src), depth) +
@@ -480,7 +483,7 @@ int finspectval(FILE *stream, gab_value self, int depth) {
     int idx = gab_valkind(self) % GAB_COLORS_LEN;
     const char *color = ANSI_COLORS[idx];
 
-    struct gab_obj_native *n = GAB_VAL_TO_NATIVE(self);
+    struct gab_onative *n = GAB_VAL_TO_NATIVE(self);
     return fprintf(stream, "<" tGAB_NATIVE " ") +
            gab_fvalinspect(stream, n->name, depth) +
            fprintf(stream, "%s>" GAB_RESET, color);
@@ -489,7 +492,7 @@ int finspectval(FILE *stream, gab_value self, int depth) {
     int idx = gab_valkind(self) % GAB_COLORS_LEN;
     const char *color = ANSI_COLORS[idx];
 
-    struct gab_obj_prototype *p = GAB_VAL_TO_PROTOTYPE(self);
+    struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(self);
     uint64_t line = gab_srcline(p->src, p->offset);
     return fprintf(stream, "<" tGAB_PROTOTYPE " ") +
            gab_fvalinspect(stream, gab_srcname(p->src), depth) +
@@ -509,7 +512,7 @@ int gab_svalinspect(char **dest, size_t *n, gab_value value, int depth) {
 int gab_fvalinspect(FILE *stream, gab_value self, int depth) {
   int bytes = 0;
 
-  if (gab_fisatty(stream)) {
+  if (gab_osfisatty(stream)) {
     int idx = gab_valkind(self) % GAB_COLORS_LEN;
     const char *color = ANSI_COLORS[idx];
     bytes += fprintf(stream, "%s", color);
@@ -524,11 +527,12 @@ int gab_fvalinspect(FILE *stream, gab_value self, int depth) {
 
 void gab_objdestroy(struct gab_triple gab, struct gab_obj *self) {
   switch (self->kind) {
+  case kGAB_FIBER:
   case kGAB_FIBERDONE: {
-    struct gab_obj_fiber *fib = (struct gab_obj_fiber *)self;
+    struct gab_ofiber *fib = (struct gab_ofiber *)self;
 
-    if (fib->res_values != nullptr)
-      /*a_gab_value_destroy(fib->res_values);*/
+    /*if (fib->res_values != nullptr)*/
+    /*  a_gab_value_destroy(fib->res_values);*/
 
     break;
   };
@@ -539,7 +543,7 @@ void gab_objdestroy(struct gab_triple gab, struct gab_obj *self) {
     break;
   }
   case kGAB_BOX: {
-    struct gab_obj_box *box = (struct gab_obj_box *)self;
+    struct gab_obox *box = (struct gab_obox *)self;
     if (box->do_destroy)
       box->do_destroy(gab, box->len, box->data);
     break;
@@ -551,8 +555,11 @@ void gab_objdestroy(struct gab_triple gab, struct gab_obj *self) {
      * intern table *doesn't hold references) Strings that are queued for
      * removal *can* be re-used *right* before they are deleted. This requires a
      * better, long-term solution.
+     *
+     * TO RESOLVE THIS ISSUE: Strings are incremented as they are created.
+     * This means strings are never deallocated (not an ideal solution)
      */
-    d_strings_remove(&gab.eg->strings, (struct gab_obj_string *)self);
+    d_strings_remove(&gab.eg->strings, (struct gab_ostring *)self);
     mtx_unlock(&gab.eg->strings_mtx);
     break;
   default:
@@ -606,8 +613,8 @@ gab_value nstring(struct gab_triple gab, uint64_t hash, uint64_t len,
                   const char *data) {
   s_char str = s_char_create(data, len);
 
-  struct gab_obj_string *self =
-      GAB_CREATE_FLEX_OBJ(gab_obj_string, char, str.len + 1, kGAB_STRING);
+  struct gab_ostring *self =
+      GAB_CREATE_FLEX_OBJ(gab_ostring, char, str.len + 1, kGAB_STRING);
 
   memcpy(self->data, str.data, str.len);
   self->len = str.len;
@@ -619,7 +626,6 @@ gab_value nstring(struct gab_triple gab, uint64_t hash, uint64_t len,
 
   /* The strings table should hold a reference to this string */
   d_strings_insert(&gab.eg->strings, self, 0);
-
   return gab_iref(gab, __gab_obj(self));
 }
 
@@ -637,7 +643,7 @@ gab_value gab_nstring(struct gab_triple gab, uint64_t len, const char *data) {
   uint64_t hash = hash_bytes(len, (unsigned char *)data);
 #endif
 
-  struct gab_obj_string *interned = gab_egstrfind(gab.eg, hash, len, data);
+  struct gab_ostring *interned = gab_egstrfind(gab.eg, hash, len, data);
 
   if (interned)
     return mtx_unlock(&gab.eg->strings_mtx), __gab_obj(interned);
@@ -691,8 +697,7 @@ gab_value gab_strcat(struct gab_triple gab, gab_value _a, gab_value _b) {
   */
   mtx_lock(&gab.eg->strings_mtx);
 
-  struct gab_obj_string *interned =
-      gab_egstrfind(gab.eg, hash, len, buff->data);
+  struct gab_ostring *interned = gab_egstrfind(gab.eg, hash, len, buff->data);
 
   if (interned)
     return a_char_destroy(buff), mtx_unlock(&gab.eg->strings_mtx),
@@ -701,6 +706,7 @@ gab_value gab_strcat(struct gab_triple gab, gab_value _a, gab_value _b) {
   gab_value result = nstring(gab, hash, len, buff->data);
 
   assert(gab_valkind(result) == kGAB_STRING);
+  assert(gab_strlen(result) == len);
 
   return a_char_destroy(buff), mtx_unlock(&gab.eg->strings_mtx), result;
 };
@@ -709,8 +715,8 @@ gab_value gab_prototype(struct gab_triple gab, struct gab_src *src,
                         uint64_t offset, uint64_t len,
                         struct gab_prototype_argt args) {
 
-  struct gab_obj_prototype *self = GAB_CREATE_FLEX_OBJ(
-      gab_obj_prototype, uint8_t, args.nupvalues, kGAB_PROTOTYPE);
+  struct gab_oprototype *self = GAB_CREATE_FLEX_OBJ(
+      gab_oprototype, uint8_t, args.nupvalues, kGAB_PROTOTYPE);
 
   self->src = src;
   self->offset = offset;
@@ -741,7 +747,7 @@ gab_value gab_prototype(struct gab_triple gab, struct gab_src *src,
 gab_value gab_native(struct gab_triple gab, gab_value name, gab_native_f f) {
   assert(gab_valkind(name) == kGAB_STRING || gab_valkind(name) == kGAB_MESSAGE);
 
-  struct gab_obj_native *self = GAB_CREATE_OBJ(gab_obj_native, kGAB_NATIVE);
+  struct gab_onative *self = GAB_CREATE_OBJ(gab_onative, kGAB_NATIVE);
 
   self->name = name;
   self->function = f;
@@ -755,10 +761,10 @@ gab_value gab_snative(struct gab_triple gab, const char *name, gab_native_f f) {
 
 gab_value gab_block(struct gab_triple gab, gab_value prototype) {
   assert(gab_valkind(prototype) == kGAB_PROTOTYPE);
-  struct gab_obj_prototype *p = GAB_VAL_TO_PROTOTYPE(prototype);
+  struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(prototype);
 
-  struct gab_obj_block *self =
-      GAB_CREATE_FLEX_OBJ(gab_obj_block, gab_value, p->nupvalues, kGAB_BLOCK);
+  struct gab_oblock *self =
+      GAB_CREATE_FLEX_OBJ(gab_oblock, gab_value, p->nupvalues, kGAB_BLOCK);
 
   self->p = prototype;
   self->nupvalues = p->nupvalues;
@@ -771,8 +777,8 @@ gab_value gab_block(struct gab_triple gab, gab_value prototype) {
 }
 
 gab_value gab_box(struct gab_triple gab, struct gab_box_argt args) {
-  struct gab_obj_box *self =
-      GAB_CREATE_FLEX_OBJ(gab_obj_box, unsigned char, args.size, kGAB_BOX);
+  struct gab_obox *self =
+      GAB_CREATE_FLEX_OBJ(gab_obox, unsigned char, args.size, kGAB_BOX);
 
   self->do_destroy = args.destructor;
   self->do_visit = args.visitor;
@@ -1482,8 +1488,8 @@ gab_value gab_shpwithout(struct gab_triple gab, gab_value shp, gab_value key);
 gab_value gab_fiber(struct gab_triple gab, struct gab_fiber_argt args) {
   assert(gab_valkind(args.message) == kGAB_MESSAGE);
 
-  struct gab_obj_fiber *self =
-      GAB_CREATE_FLEX_OBJ(gab_obj_fiber, gab_value, args.argc + 2, kGAB_FIBER);
+  struct gab_ofiber *self =
+      GAB_CREATE_FLEX_OBJ(gab_ofiber, gab_value, args.argc + 2, kGAB_FIBER);
 
   self->messages = gab_thisfibmsg(gab);
   self->len = args.argc + 2;
@@ -1520,7 +1526,7 @@ gab_value gab_fiber(struct gab_triple gab, struct gab_fiber_argt args) {
 a_gab_value *gab_fibawait(struct gab_triple gab, gab_value f) {
   assert(gab_valkind(f) >= kGAB_FIBER && gab_valkind(f) <= kGAB_FIBERRUNNING);
 
-  struct gab_obj_fiber *fiber = GAB_VAL_TO_FIBER(f);
+  struct gab_ofiber *fiber = GAB_VAL_TO_FIBER(f);
 
   while (fiber->header.kind != kGAB_FIBERDONE)
     switch (gab_yield(gab)) {
@@ -1540,7 +1546,7 @@ a_gab_value *gab_fibawait(struct gab_triple gab, gab_value f) {
 gab_value gab_fibawaite(struct gab_triple gab, gab_value f) {
   assert(gab_valkind(f) >= kGAB_FIBER && gab_valkind(f) <= kGAB_FIBERRUNNING);
 
-  struct gab_obj_fiber *fiber = GAB_VAL_TO_FIBER(f);
+  struct gab_ofiber *fiber = GAB_VAL_TO_FIBER(f);
 
   while (fiber->header.kind != kGAB_FIBERDONE)
     switch (gab_yield(gab)) {
@@ -1558,7 +1564,7 @@ gab_value gab_fibawaite(struct gab_triple gab, gab_value f) {
 }
 
 gab_value gab_channel(struct gab_triple gab) {
-  struct gab_obj_channel *self = GAB_CREATE_OBJ(gab_obj_channel, kGAB_CHANNEL);
+  struct gab_ochannel *self = GAB_CREATE_OBJ(gab_ochannel, kGAB_CHANNEL);
 
   self->data = gab_undefined;
 
@@ -1569,7 +1575,7 @@ void gab_chnclose(gab_value c) {
   assert(gab_valkind(c) >= kGAB_CHANNEL &&
          gab_valkind(c) <= kGAB_CHANNELCLOSED);
 
-  struct gab_obj_channel *channel = GAB_VAL_TO_CHANNEL(c);
+  struct gab_ochannel *channel = GAB_VAL_TO_CHANNEL(c);
 
   channel->header.kind = kGAB_CHANNELCLOSED;
 }
@@ -1578,7 +1584,7 @@ bool gab_chnisclosed(gab_value c) {
   assert(gab_valkind(c) >= kGAB_CHANNEL &&
          gab_valkind(c) <= kGAB_CHANNELCLOSED);
 
-  struct gab_obj_channel *channel = GAB_VAL_TO_CHANNEL(c);
+  struct gab_ochannel *channel = GAB_VAL_TO_CHANNEL(c);
 
   return channel->header.kind == kGAB_CHANNELCLOSED;
 };
@@ -1587,7 +1593,7 @@ bool gab_chnisempty(gab_value c) {
   assert(gab_valkind(c) >= kGAB_CHANNEL &&
          gab_valkind(c) <= kGAB_CHANNELCLOSED);
 
-  struct gab_obj_channel *channel = GAB_VAL_TO_CHANNEL(c);
+  struct gab_ochannel *channel = GAB_VAL_TO_CHANNEL(c);
 
   return channel->data == gab_undefined;
 };
@@ -1596,22 +1602,22 @@ bool gab_chnisfull(gab_value c) {
   assert(gab_valkind(c) >= kGAB_CHANNEL &&
          gab_valkind(c) <= kGAB_CHANNELCLOSED);
 
-  struct gab_obj_channel *channel = GAB_VAL_TO_CHANNEL(c);
+  struct gab_ochannel *channel = GAB_VAL_TO_CHANNEL(c);
 
   return channel->data != gab_undefined;
 };
 
-bool channel_put(struct gab_obj_channel *channel, gab_value value) {
+bool channel_put(struct gab_ochannel *channel, gab_value value) {
   static gab_value undef = gab_undefined;
   return atomic_compare_exchange_weak(&channel->data, &undef, value);
 }
 
-gab_value channel_take(struct gab_obj_channel *channel) {
+gab_value channel_take(struct gab_ochannel *channel) {
   return atomic_exchange(&channel->data, gab_undefined);
 }
 
 bool channel_block_while_full(struct gab_triple gab,
-                              struct gab_obj_channel *channel, gab_value c,
+                              struct gab_ochannel *channel, gab_value c,
                               uint64_t timeout_ns, uint64_t *timer_ns) {
   while (gab_chnisfull(c)) {
     switch (gab_yield(gab)) {
@@ -1638,7 +1644,7 @@ bool channel_block_while_full(struct gab_triple gab,
 }
 
 bool channel_block_while_empty(struct gab_triple gab,
-                               struct gab_obj_channel *channel, gab_value c,
+                               struct gab_ochannel *channel, gab_value c,
                                uint64_t timeout_ns, uint64_t *timer_ns) {
   while (gab_chnisempty(c)) {
     switch (gab_yield(gab)) {
@@ -1665,7 +1671,7 @@ bool channel_block_while_empty(struct gab_triple gab,
 }
 
 gab_value channel_blocking_put(struct gab_triple gab,
-                               struct gab_obj_channel *channel, gab_value c,
+                               struct gab_ochannel *channel, gab_value c,
                                gab_value v, size_t nms) {
   gab_value res = gab_undefined;
 
@@ -1689,7 +1695,7 @@ gab_value channel_blocking_put(struct gab_triple gab,
 }
 
 gab_value channel_blocking_take(struct gab_triple gab,
-                                struct gab_obj_channel *channel, gab_value c,
+                                struct gab_ochannel *channel, gab_value c,
                                 size_t nms) {
   gab_value res = gab_undefined;
 
@@ -1710,7 +1716,7 @@ bool gab_chnput(struct gab_triple gab, gab_value c, gab_value value) {
   assert(gab_valkind(c) >= kGAB_CHANNEL &&
          gab_valkind(c) <= kGAB_CHANNELCLOSED);
 
-  struct gab_obj_channel *channel = GAB_VAL_TO_CHANNEL(c);
+  struct gab_ochannel *channel = GAB_VAL_TO_CHANNEL(c);
 
   switch (channel->header.kind) {
   case kGAB_CHANNEL: {
@@ -1735,7 +1741,7 @@ gab_value gab_tchntake(struct gab_triple gab, gab_value c, uint64_t nms) {
   assert(gab_valkind(c) >= kGAB_CHANNEL &&
          gab_valkind(c) <= kGAB_CHANNELCLOSED);
 
-  struct gab_obj_channel *channel = GAB_VAL_TO_CHANNEL(c);
+  struct gab_ochannel *channel = GAB_VAL_TO_CHANNEL(c);
 
   switch (channel->header.kind) {
   case kGAB_CHANNEL:
@@ -1753,11 +1759,10 @@ gab_value gab_tchntake(struct gab_triple gab, gab_value c, uint64_t nms) {
   return gab_undefined;
 }
 
-static uint64_t dumpInstruction(FILE *stream, struct gab_obj_prototype *self,
+static uint64_t dumpInstruction(FILE *stream, struct gab_oprototype *self,
                                 uint64_t offset);
 
-static uint64_t dumpSimpleInstruction(FILE *stream,
-                                      struct gab_obj_prototype *self,
+static uint64_t dumpSimpleInstruction(FILE *stream, struct gab_oprototype *self,
                                       uint64_t offset) {
   const char *name =
       gab_opcode_names[v_uint8_t_val_at(&self->src->bytecode, offset)];
@@ -1765,8 +1770,7 @@ static uint64_t dumpSimpleInstruction(FILE *stream,
   return offset + 1;
 }
 
-static uint64_t dumpSendInstruction(FILE *stream,
-                                    struct gab_obj_prototype *self,
+static uint64_t dumpSendInstruction(FILE *stream, struct gab_oprototype *self,
                                     uint64_t offset) {
   const char *name =
       gab_opcode_names[v_uint8_t_val_at(&self->src->bytecode, offset)];
@@ -1791,8 +1795,7 @@ static uint64_t dumpSendInstruction(FILE *stream,
   return offset + 4;
 }
 
-static uint64_t dumpByteInstruction(FILE *stream,
-                                    struct gab_obj_prototype *self,
+static uint64_t dumpByteInstruction(FILE *stream, struct gab_oprototype *self,
                                     uint64_t offset) {
   uint8_t operand = v_uint8_t_val_at(&self->src->bytecode, offset + 1);
   const char *name =
@@ -1801,8 +1804,7 @@ static uint64_t dumpByteInstruction(FILE *stream,
   return offset + 2;
 }
 
-static uint64_t dumpTrimInstruction(FILE *stream,
-                                    struct gab_obj_prototype *self,
+static uint64_t dumpTrimInstruction(FILE *stream, struct gab_oprototype *self,
                                     uint64_t offset) {
   uint8_t wantbyte = v_uint8_t_val_at(&self->src->bytecode, offset + 1);
   const char *name =
@@ -1811,8 +1813,7 @@ static uint64_t dumpTrimInstruction(FILE *stream,
   return offset + 2;
 }
 
-static uint64_t dumpReturnInstruction(FILE *stream,
-                                      struct gab_obj_prototype *self,
+static uint64_t dumpReturnInstruction(FILE *stream, struct gab_oprototype *self,
                                       uint64_t offset) {
   uint8_t havebyte = v_uint8_t_val_at(&self->src->bytecode, offset + 1);
   uint8_t have = havebyte >> 2;
@@ -1821,8 +1822,7 @@ static uint64_t dumpReturnInstruction(FILE *stream,
   return offset + 2;
 }
 
-static uint64_t dumpPackInstruction(FILE *stream,
-                                    struct gab_obj_prototype *self,
+static uint64_t dumpPackInstruction(FILE *stream, struct gab_oprototype *self,
                                     uint64_t offset) {
   uint8_t havebyte = v_uint8_t_val_at(&self->src->bytecode, offset + 1);
   uint8_t operandA = v_uint8_t_val_at(&self->src->bytecode, offset + 2);
@@ -1836,7 +1836,7 @@ static uint64_t dumpPackInstruction(FILE *stream,
 }
 
 static uint64_t dumpConstantInstruction(FILE *stream,
-                                        struct gab_obj_prototype *self,
+                                        struct gab_oprototype *self,
                                         uint64_t offset) {
   uint16_t constant =
       ((uint16_t)v_uint8_t_val_at(&self->src->bytecode, offset + 1)) << 8 |
@@ -1851,7 +1851,7 @@ static uint64_t dumpConstantInstruction(FILE *stream,
 }
 
 static uint64_t dumpNConstantInstruction(FILE *stream,
-                                         struct gab_obj_prototype *self,
+                                         struct gab_oprototype *self,
                                          uint64_t offset) {
   const char *name =
       gab_opcode_names[v_uint8_t_val_at(&self->src->bytecode, offset)];
@@ -1876,7 +1876,7 @@ static uint64_t dumpNConstantInstruction(FILE *stream,
   return offset + 2 + (2 * n);
 }
 
-static uint64_t dumpInstruction(FILE *stream, struct gab_obj_prototype *self,
+static uint64_t dumpInstruction(FILE *stream, struct gab_oprototype *self,
                                 uint64_t offset) {
   uint8_t op = v_uint8_t_val_at(&self->src->bytecode, offset);
   switch (op) {
@@ -1962,7 +1962,7 @@ static uint64_t dumpInstruction(FILE *stream, struct gab_obj_prototype *self,
 
     gab_value pval = v_gab_value_val_at(&self->src->constants, proto_constant);
 
-    struct gab_obj_prototype *p = GAB_VAL_TO_PROTOTYPE(pval);
+    struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(pval);
 
     printf("%-25s" GAB_CYAN "%-20s\n" GAB_RESET, "OP_BLOCK",
            gab_strdata(&p->src->name));
@@ -2014,7 +2014,20 @@ static uint64_t dumpInstruction(FILE *stream, struct gab_obj_prototype *self,
   }
 }
 
-int gab_fmodinspect(FILE *stream, struct gab_obj_prototype *proto) {
+int gab_fmodinspect(FILE *stream, gab_value module) {
+  struct gab_oprototype *proto = nullptr;
+
+  switch (gab_valkind(module)) {
+  case kGAB_BLOCK:
+    proto = GAB_VAL_TO_PROTOTYPE(GAB_VAL_TO_BLOCK(module)->p);
+    break;
+  case kGAB_PROTOTYPE:
+    proto = GAB_VAL_TO_PROTOTYPE(module);
+    break;
+  default:
+    return -1;
+  }
+
   uint64_t offset = proto->offset;
 
   uint64_t end = proto->offset + proto->len;

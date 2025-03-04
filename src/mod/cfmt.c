@@ -22,6 +22,7 @@ a_gab_value *gab_fmtlib_sprintf(struct gab_triple gab, uint64_t argc,
   gab_value fmtstr = gab_arg(0);
 
   const char *fmt = gab_strdata(&fmtstr);
+
   char buf[1000];
   int len = gab_nsprintf(buf, sizeof(buf), fmt, argc - 1, argv + 1);
 

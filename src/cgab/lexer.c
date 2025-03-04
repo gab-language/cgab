@@ -213,6 +213,12 @@ gab_token symbol(gab_lx *self) {
   while (can_continue_symbol(peek(self)))
     advance(self);
 
+  if (can_end_symbol(peek(self)))
+    advance(self);
+
+  if (peek(self) == ':')
+    return advance(self), TOKEN_MESSAGE;
+
   for (int i = 0; i < sizeof(keywords) / sizeof(keyword); i++) {
     keyword k = keywords[i];
     s_char lit = s_char_create(k.literal, strlen(k.literal));
@@ -220,12 +226,6 @@ gab_token symbol(gab_lx *self) {
       return k.token;
     }
   }
-
-  if (can_end_symbol(peek(self)))
-    advance(self);
-
-  if (peek(self) == ':')
-    return advance(self), TOKEN_MESSAGE;
 
   return TOKEN_SYMBOL;
 }
@@ -352,7 +352,9 @@ gab_token gab_lexnext(gab_lx *self) {
   start_token(self);
 
   if (peek(self) == '\0' || peek(self) == EOF) {
+    advance(self);
     finish_row(self);
+    self->row--; // There is no next row
     tok = TOKEN_EOF;
     goto fin;
   }

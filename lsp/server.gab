@@ -1,116 +1,137 @@
-'data.json' :use
+'data.json' .use
 
-log = 'gab.lsp/logs':use
+log = 'lsp/logs'.use
 
-'gab.lsp/messages':use
+io = 'os.io'.use
 
-diag.job.t = .shape:make(\server \uri \text)
-lsp.server.t = .shape:make(\server.in \server.out \server.data)
+diag\job\t = Shapes.make(server: uri: text:)
+lsp\server\t = Shapes.make(server\in: server\out: server\data:)
 
-\make:def!(
-  .lsp.server
-  (in out) => lsp.server.t:make(
-    in :or stdin
-    out :or stdout
+make:.def!(
+  lsp\server:
+  (in out) => lsp\server\t.make(
+    in .or (io.stdin)
+    out .or (io.stdout)
     {}))
 
-\_read_header :defcase! {
-  .ok (lsp m) => do
+t:.def!(lsp\server: lsp\server\t)
+
+logfile = io.open("/tmp/lsprpclog.txt" "w").unwrap!
+
+_read_header:.defcase! {
+  ok: (lsp m) => do
     next_header = lsp
-      :server.in
-      :until '\n'
-      :unwrap!
-      :trim '\n'
+      .server\in
+      .until('\n'.binaries\into)
+      .unwrap!
+      .trim '\n'
 
-    (blank? name value) = (next_header:blank?, next_header:split ':')
+    (blank? name value) = (next_header.blank?, next_header.split ':')
     
-    m = blank? :and m :or(m:put(name, value))
+    m = blank? .and m .or(m.put(name, value))
 
-    .option(blank?:!, lsp, m):_read_header
+    logfile.write(next_header + '\n')
+
+    option:.(blank?.!, lsp, m)._read_header
   end
-  .none (lsp m) => do
-    m
-  end
+  none: (lsp m) => m
 }
 
-[lsp.server.t] :defmodule! {
-  \_read_headers () => do
-    .ok :_read_header(self, {})
+[lsp\server\t].defmodule! {
+  _read_headers: () => do
+    ok:._read_header(self, [])
   end
-  \_read_request () => do
-    headers = self:_read_headers
+  _read_request: () => do
+    headers = self._read_headers
+
+    log.(headers: headers)
 
     len = headers
-      :at "Content-Length"
-      :unwrap!
-      :trim
-      :numbers.into
+      .at "Content-Length"
+      .unwrap!
+      .trim
+      .numbers\into
 
     body = self
-      :server.in
-      :scan len
-      :unwrap!
+      .server\in
+      .scan len
+      .unwrap!
+
+    logfile.write(body)
 
     msg = body
-      :json.decode
-      :unwrap!
+      .json\decode
+      .unwrap!
 
     msg
   end,
   # Implement the lazy-sequence protocol
-  \seq.init () => do
-    msg = self:_read_request
-    (.ok, .nil, msg)
+  seq\init: () => do
+    msg = self._read_request
+    (ok: nil: msg)
   end
-  \seq.next () => do
-    msg = self:_read_request
-    (.ok, .nil, msg)
+  seq\next: () => do
+    msg = self._read_request
+    (ok: nil: msg)
   end
   # Helpers for sending data to client
-  \respond! (id result) => do
-    msg = { "id" id "result" result } :json.encode
+  respond!: (id result) => do
+    result.println
+    msg = { "id" id "result" result } .json\encode
 
-    content.length = msg:len
+    msg.println
 
-    res = 'Content-Length: {content.length}\r\n\r\n{msg}'
+    content\length = msg.len
 
-    log:("Response" id result ?)
+    res = Strings.make(
+      'Content-Length:'content\length
+      '\r\n\r\n'msg)
 
-    self :server.out :write res
+    log.("Response" id result ?)
+
+    res.println
+
+    self.server\out.write res
   end
-  \notify!(method params) => do 
-    msg = { "method" method "params" params } :json.encode
+  notify!: (method params) => do 
+    log.("Notification" method params ?)
 
-    content.length = msg:len
+    msg = { "method" method "params" params } .json\encode
 
-    notif = 'Content-Length: {content.length}\r\n\r\n{msg}'
+    log.("Notification" msg)
 
-    log:("Notification" method params ?)
+    content\length = msg.len
 
-    self :server.out :write notif
+    notif = Strings.make(
+      'Content-Length:'content\length
+      '\r\n\r\n'msg)
+
+    self.server\out.write notif
   end
   # Run the server
-  \run! () => do
-    log: "Server started!"
+  run!: () => do
+    log. "Server started!"
 
-    self:reduce(self (lsp req) => do
-      msg = req :lsp.messages.into
+    self.reduce(self (lsp req) => do
+      msg = req .lsp\messages\into
 
-      log:("Received Msg", msg:id, req:at "method")
+      log.("Received Msg", msg)
 
-      (ok new_lsp) = msg :lsp.dispatch lsp
+      (ok new_lsp) = msg .lsp\dispatch lsp
 
-      ok :else () => do
-        log:("No handler found.")
+      ok .else () => do
+        log.("No handler found.")
       end
 
-      (new_lsp ? == lsp.server.t) :else () => do
-        log:error("Invalid new_lsp", ok, new_lsp)
+      (new_lsp ? == lsp\server\t) .else () => do
+        log.error("Invalid new_lsp", ok, new_lsp)
       end
 
-      (ok, new_lsp) :unwrap:or lsp
+      ok .then () => log.("Successfully processed msg")
+
+      (ok, new_lsp) .unwrap.or lsp
     end)
   end,
 }
 
-(.lsp.server lsp.server.t)
+lsp\server:

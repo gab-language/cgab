@@ -95,7 +95,7 @@ put_by: .def! (
 [] .defmodule! {
   ok?: false:
   unwrap: nil:
-  unwrap!: msg => ('failed to unwrap' + self + ": " + msg).panic
+  unwrap!: msg => ('failed to unwrap $: $'.sprintf(self, msg)).panic
 }
 
 doreduce: .defcase! {

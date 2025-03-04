@@ -3,6 +3,83 @@
 
 #include "gab.h"
 
+bool unescape_into(char *buf, const char *str, size_t len) {
+  size_t buflen = 0;
+
+  for (size_t i = 0; i < len; i++) {
+    int8_t c = str[i];
+
+    if (c == '\\') {
+      switch (str[++i]) {
+      case 'b':
+        buf[buflen++] = '\b';
+        break;
+      case 'f':
+        buf[buflen++] = '\f';
+        break;
+      case 'r':
+        buf[buflen++] = '\r';
+        break;
+      case 'n':
+        buf[buflen++] = '\n';
+        break;
+      case 't':
+        buf[buflen++] = '\t';
+        break;
+      case '"':
+        buf[buflen++] = '"';
+        break;
+      case '\\':
+        buf[buflen++] = '\\';
+        break;
+      case '/':
+        buf[buflen++] = '/';
+        break;
+        /**
+         * TODO: Handle unicode escaping as described in JSON spec json.org.
+         */
+      /*case 'u':*/
+      /*  i += 2;*/
+      /**/
+      /*  if (str[i] != '[') {*/
+      /*    return nullptr;*/
+      /*  }*/
+      /**/
+      /*  i++;*/
+      /**/
+      /*  uint8_t cpl = 0;*/
+      /*  char codepoint[8] = {0};*/
+      /**/
+      /*  while (str[i] != ']') {*/
+      /**/
+      /*    if (cpl == 7)*/
+      /*      return nullptr;*/
+      /**/
+      /*    codepoint[cpl++] = str[i++];*/
+      /*  }*/
+      /**/
+      /*  i++;*/
+      /**/
+      /*  long cp = strtol(codepoint, nullptr, 16);*/
+      /**/
+      /*  int result = encode_codepoint(buf + buf_end, cp);*/
+      /**/
+      /*  buf_end += result;*/
+      /**/
+      /*  break;*/
+      default:
+        // Unrecognized escape sequence
+        return false;
+      }
+    } else {
+      buf[buflen++] = c;
+    }
+  }
+
+  buf[buflen++] = '\0';
+  return true;
+}
+
 gab_value *push_value(struct gab_triple gab, const char *json, gab_value *sp,
                       jsmntok_t *tokens, uint64_t *t) {
   jsmntok_t tok = tokens[*t];
@@ -40,10 +117,16 @@ gab_value *push_value(struct gab_triple gab, const char *json, gab_value *sp,
     }
     break;
   }
-  case JSMN_STRING:
-    *sp++ = gab_nstring(gab, tok.end - tok.start, json + tok.start);
+  case JSMN_STRING: {
+    char buf[tok.end - tok.start + 1];
+
+    if (!unescape_into(buf, json + tok.start, tok.end - tok.start))
+      assert(false && "unreachable");
+
+    *sp++ = gab_string(gab, buf);
     *t = *t + 1;
     break;
+  }
   case JSMN_OBJECT: {
     gab_value *save = sp;
 
@@ -104,7 +187,8 @@ a_gab_value *gab_jsonlib_decode(struct gab_triple gab, uint64_t argc,
       gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, "Internal Error"));
       break;
     case JSMN_ERROR_INVAL:
-      gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, "Invalid character"));
+      gab_vmpush(gab_thisvm(gab), gab_err,
+                 gab_string(gab, "Invalid character"));
       break;
     }
     return nullptr;

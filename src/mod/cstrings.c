@@ -448,9 +448,9 @@ GAB_DYNLIB_MAIN_FN {
               gab_snative(gab, "numbers\\into", gab_strlib_numbers_into),
           },
           {
-              gab_message(gab, "blank"),
+              gab_message(gab, "blank?"),
               t,
-              gab_snative(gab, "blank", gab_strlib_blank),
+              gab_snative(gab, "blank?", gab_strlib_blank),
           },
           {
               gab_message(gab, "split"),
@@ -486,6 +486,11 @@ GAB_DYNLIB_MAIN_FN {
               gab_message(gab, "messages\\into"),
               t,
               gab_snative(gab, "messages\\into", gab_strlib_messages_into),
+          },
+          {
+              gab_message(gab, "binaries\\into"),
+              t,
+              gab_snative(gab, "binaries\\into", gab_strlib_binary_into),
           },
           {
               gab_message(gab, "byte\\into"),

@@ -1,46 +1,41 @@
-io :: 'os.io' :use
+io = 'os.io' .use
 
-logfile :: io('/tmp/gablsp.log', 'w') :unwrap!
+logfile = io
+  .open('/tmp/gablsp.log', 'w')
+  .unwrap!
 
-log.t :: .log
+log\t = log:
 
-log_channel :: .gab.channel()
+log_channel = Channels.make
 
-log.row.t :: { \level, \msg }
+log\row\t = Shapes.make(level: msg:)
 
-(\, .log.row) :def! do level, data
-  {
-    \level: level,
-    \msg: data,
-  }
-end
+Fibers.make () => do
+  log_channel .each row => do
+    logfile .write (row.level.strings\into) .unwrap!
 
-.gab.fiber do
-  log_channel :each do row
-    logfile :write (row:level:strings.into) :unwrap!
-
-    row:msg :each do _, m
-      logfile :write ','
-      logfile :write (m:strings.into) :unwrap!
+    row.msg.each m => do
+      logfile.write ','
+      logfile.write (m.strings\into) .unwrap!
     end
 
-    logfile :write '\n'
+    logfile .write '\n'
   end
 end
 
-[log.t] :defmodule! {
-  \: do data[]
-    self:info data
+[log\t] .defmodule! {
+  : (data[]) => do
+    self.info data
   end,
-  \info: do data[]
-    log_channel <! .log.row(.info, data)
+  info: (data[]) => do
+    log_channel <! log\row\t.make(info:, data)
   end,
-  \warn: do data[]
-    log_channel <! .log.row(.warn, data)
+  warn: (data[]) => do
+    log_channel <! log\row\t.make(warn:, data)
   end,
-  \error: do data[]
-    log_channel <! .log.row(.err, data)
+  error: (data[]) => do
+    log_channel <! log\row\t.make(err:, data)
   end,
 }
 
-log.t
+log\t

@@ -12,7 +12,7 @@
 #else
 #define GAB_SYMLINK_RECOMMENDATION                                             \
   "New-Item -ItemType SymbolicLink -Path %s\gab -Target "                      \
-  "\"Some\Directory\In\Path\""
+  "\"Some\\Directory\\In\\Path\""
 #endif
 
 struct gab_triple gab;
@@ -77,19 +77,15 @@ int run_file(const char *path, int flags, size_t jobs) {
   int exit_code = 1;
 
   if (result) {
-
     if (result->len) {
       if (result->data[0] == gab_ok)
         exit_code = 0;
     }
 
     free(result);
-  } else {
-    gab_fpanic(gab, "Module '$' not found.", gab_string(gab, path));
   }
 
   gab_destroy(gab);
-
   return exit_code;
 }
 
@@ -563,7 +559,7 @@ int main(int argc, const char **argv) {
   if (argc < 2)
     goto fin;
 
-  signal(SIGINT, propagate_term);
+  gab_ossignal(SIGINT, propagate_term);
 
   for (int i = 0; i < N_COMMANDS; i++) {
     struct command cmd = commands[i];

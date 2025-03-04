@@ -1,6 +1,5 @@
-'data.json'.use
 'cgab'.use
-Ranges = 'ranges'.use
+'ranges'.use
 xf = 'transducers'.use
 Terminal = 'os.terminal'.use
 
@@ -219,15 +218,13 @@ printbox = (x y w h) => do
     dist: h - 2)
 end
 
-tick = () => do
+Ticker = Fibers.make () => do
   events <! { type: tick: }
 
-  Fibers.sleep!(150000000)
+  Fibers.sleep!(100000000)
 
   events.closed?.else self
 end
-
-Ticker = Fibers.make(tick)
 
 Client = Fibers.make() 
   => events
@@ -236,7 +233,7 @@ Client = Fibers.make()
     (state event) => do
       term.clear!
 
-      term.print!(0, 0, "$".sprintf event)
+      #term.print!(0, 0, "$".sprintf event)
 
       state = event.type.event\handle(state, event)
 

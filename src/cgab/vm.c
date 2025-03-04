@@ -86,7 +86,7 @@ static handler handlers[] = {
 #define GC() (GAB().eg->gc)
 #define VM() (gab_thisvm(GAB()))
 #define SET_BLOCK(b) (FB()[-3] = (uintptr_t)(b));
-#define BLOCK() ((struct gab_obj_block *)(uintptr_t)FB()[-3])
+#define BLOCK() ((struct gab_oblock *)(uintptr_t)FB()[-3])
 #define BLOCK_PROTO() (GAB_VAL_TO_PROTOTYPE(BLOCK()->p))
 #define IP() (__ip)
 #define SP() (__sp)
@@ -311,34 +311,34 @@ static handler handlers[] = {
 #define SEND_CACHE_DIST 4
 
 static inline uint8_t *proto_srcbegin(struct gab_triple gab,
-                                      struct gab_obj_prototype *p) {
+                                      struct gab_oprototype *p) {
   assert(gab.wkid != 0);
   return p->src->thread_bytecode[gab.wkid - 1].bytecode;
 }
 
 static inline uint8_t *proto_ip(struct gab_triple gab,
-                                struct gab_obj_prototype *p) {
+                                struct gab_oprototype *p) {
   return proto_srcbegin(gab, p) + p->offset;
 }
 
 static inline gab_value *proto_ks(struct gab_triple gab,
-                                  struct gab_obj_prototype *p) {
+                                  struct gab_oprototype *p) {
   assert(gab.wkid != 0);
   return p->src->thread_bytecode[gab.wkid - 1].constants;
 }
 
 static inline gab_value *frame_parent(gab_value *f) { return (void *)f[-1]; }
 
-static inline struct gab_obj_block *frame_block(gab_value *f) {
+static inline struct gab_oblock *frame_block(gab_value *f) {
   return (void *)f[-3];
 }
 
 static inline uint8_t *frame_ip(gab_value *f) { return (void *)f[-2]; }
 
 static inline uint64_t compute_token_from_ip(struct gab_triple gab,
-                                             struct gab_obj_block *b,
+                                             struct gab_oblock *b,
                                              uint8_t *ip) {
-  struct gab_obj_prototype *p = GAB_VAL_TO_PROTOTYPE(b->p);
+  struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(b->p);
 
   uint64_t offset = ip - proto_srcbegin(gab, p) - 1;
 
@@ -347,9 +347,9 @@ static inline uint64_t compute_token_from_ip(struct gab_triple gab,
   return token;
 }
 
-static inline gab_value compute_message_from_ip(struct gab_obj_block *b,
+static inline gab_value compute_message_from_ip(struct gab_oblock *b,
                                                 uint8_t *ip) {
-  struct gab_obj_prototype *p = GAB_VAL_TO_PROTOTYPE(b->p);
+  struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(b->p);
 
   uint16_t k = ((uint16_t)ip[-3] << 8) | ip[-2];
 
@@ -359,14 +359,14 @@ static inline gab_value compute_message_from_ip(struct gab_obj_block *b,
 }
 
 struct gab_err_argt vm_frame_build_err(struct gab_triple gab,
-                                       struct gab_obj_block *b, uint8_t *ip,
+                                       struct gab_oblock *b, uint8_t *ip,
                                        bool has_parent, enum gab_status s,
                                        const char *fmt) {
 
   gab_value message = has_parent ? compute_message_from_ip(b, ip) : gab_nil;
 
   if (b) {
-    struct gab_obj_prototype *p = GAB_VAL_TO_PROTOTYPE(b->p);
+    struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(b->p);
 
     uint64_t tok = compute_token_from_ip(gab, b, ip);
 
@@ -436,8 +436,6 @@ a_gab_value *vvm_error(struct gab_triple gab, enum gab_status s,
       gab_fb(gab),
   };
 
-  gab_niref(gab, 1, 2, results);
-
   a_gab_value *res =
       a_gab_value_create(results, sizeof(results) / sizeof(gab_value));
 
@@ -445,10 +443,12 @@ a_gab_value *vvm_error(struct gab_triple gab, enum gab_status s,
 
   gab_value p = frame_block(vm->fp)->p;
   gab_value shape = GAB_VAL_TO_PROTOTYPE(p)->s;
+  gab_value env = gab_recordfrom(gab, shape, 1, vm->fp);
+  gab_egkeep(gab.eg, gab_iref(gab, env));
 
   assert(GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERRUNNING);
   GAB_VAL_TO_FIBER(fiber)->res_values = res;
-  GAB_VAL_TO_FIBER(fiber)->res_env = gab_recordfrom(gab, shape, 1, vm->fp);
+  GAB_VAL_TO_FIBER(fiber)->res_env = env;
   GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERDONE;
 
   return res;
@@ -498,6 +498,7 @@ a_gab_value *gab_fpanic(struct gab_triple gab, const char *fmt, ...) {
                 (struct gab_err_argt){
                     .status = GAB_PANIC,
                     .note_fmt = fmt,
+                    .message = gab_nil,
                 });
 
     va_end(va);
@@ -556,7 +557,7 @@ void gab_fvminspect(FILE *stream, struct gab_vm *vm, int depth) {
 
   // struct gab_vm_frame *f = vm->fp - value;
   //
-  // struct gab_obj_prototype *p = GAB_VAL_TO_PROTOTYPE(f->b->p);
+  // struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(f->b->p);
   //
   // fprintf(stream,
   //         GAB_GREEN " %03lu" GAB_RESET " closure:" GAB_CYAN "%-20s" GAB_RESET
@@ -630,7 +631,7 @@ inline uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc,
 
 #define CALL_BLOCK(blk, have)                                                  \
   ({                                                                           \
-    struct gab_obj_prototype *p = GAB_VAL_TO_PROTOTYPE(blk->p);                \
+    struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(blk->p);                \
                                                                                \
     if (__gab_unlikely(!has_callspace(SP(), SB(), p->nslots - have)))          \
       VM_PANIC(GAB_OVERFLOW, "");                                              \
@@ -648,7 +649,7 @@ inline uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc,
 
 #define LOCALCALL_BLOCK(blk, have)                                             \
   ({                                                                           \
-    struct gab_obj_prototype *p = GAB_VAL_TO_PROTOTYPE(blk->p);                \
+    struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(blk->p);                \
                                                                                \
     if (__gab_unlikely(!has_callspace(SP(), SB(), 3 + p->nslots - have)))      \
       VM_PANIC(GAB_OVERFLOW, "");                                              \
@@ -671,7 +672,7 @@ inline uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc,
     memmove(to, from, have * sizeof(gab_value));                               \
     SP() = to + have;                                                          \
                                                                                \
-    struct gab_obj_prototype *p = GAB_VAL_TO_PROTOTYPE(blk->p);                \
+    struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(blk->p);                \
                                                                                \
     IP() = proto_ip(GAB(), p);                                                 \
     KB() = proto_ks(GAB(), p);                                                 \
@@ -755,8 +756,8 @@ static inline gab_value block(struct gab_triple gab, gab_value p,
                               gab_value *locals, gab_value *upvs) {
   gab_value blk = gab_block(gab, p);
 
-  struct gab_obj_block *b = GAB_VAL_TO_BLOCK(blk);
-  struct gab_obj_prototype *proto = GAB_VAL_TO_PROTOTYPE(p);
+  struct gab_oblock *b = GAB_VAL_TO_BLOCK(blk);
+  struct gab_oprototype *proto = GAB_VAL_TO_PROTOTYPE(p);
 
   for (int i = 0; i < proto->nupvalues; i++) {
     uint8_t is_local = proto->data[i] & fLOCAL_LOCAL;
@@ -801,7 +802,7 @@ a_gab_value *vm_ok(OP_HANDLER_ARGS) {
 a_gab_value *do_vmexecfiber(struct gab_triple gab, gab_value f,
                             struct gab_impl_rest res) {
   assert(gab_valkind(f) == kGAB_FIBER);
-  struct gab_obj_fiber *fiber = GAB_VAL_TO_FIBER(f);
+  struct gab_ofiber *fiber = GAB_VAL_TO_FIBER(f);
 
   assert(*fiber->vm.sp > 0);
 
@@ -858,8 +859,8 @@ a_gab_value *do_vmexecfiber(struct gab_triple gab, gab_value f,
   case kGAB_BLOCK: {
     struct gab_vm *vm = &fiber->vm;
 
-    struct gab_obj_block *b = GAB_VAL_TO_BLOCK(res.as.spec);
-    struct gab_obj_prototype *p = GAB_VAL_TO_PROTOTYPE(b->p);
+    struct gab_oblock *b = GAB_VAL_TO_BLOCK(res.as.spec);
+    struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(b->p);
 
     vm->ip = proto_ip(gab, p);
     uint8_t *ip = vm->ip;
@@ -885,7 +886,7 @@ a_gab_value *do_vmexecfiber(struct gab_triple gab, gab_value f,
 
 a_gab_value *gab_vmexec(struct gab_triple gab, gab_value f) {
   assert(gab_valkind(f) == kGAB_FIBER);
-  struct gab_obj_fiber *fiber = GAB_VAL_TO_FIBER(f);
+  struct gab_ofiber *fiber = GAB_VAL_TO_FIBER(f);
 
   gab_value receiver = fiber->data[1];
   gab_value message = fiber->data[0];
@@ -962,7 +963,7 @@ CASE_CODE(MATCHTAILSEND_BLOCK) {
   if (__gab_unlikely(ks[GAB_SEND_KTYPE + idx] != t))
     MISS_CACHED_SEND();
 
-  struct gab_obj_block *b = (void *)ks[GAB_SEND_KSPEC + idx];
+  struct gab_oblock *b = (void *)ks[GAB_SEND_KSPEC + idx];
 
   gab_value *from = SP() - have;
   gab_value *to = FB();
@@ -993,11 +994,11 @@ CASE_CODE(MATCHSEND_BLOCK) {
   if (__gab_unlikely(ks[GAB_SEND_KTYPE + idx] != t))
     MISS_CACHED_SEND();
 
-  struct gab_obj_block *blk = (void *)ks[GAB_SEND_KSPEC + idx];
+  struct gab_oblock *blk = (void *)ks[GAB_SEND_KSPEC + idx];
 
   PUSH_FRAME(blk, have);
 
-  struct gab_obj_prototype *p = GAB_VAL_TO_PROTOTYPE(blk->p);
+  struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(blk->p);
 
   if (__gab_unlikely(!has_callspace(SP(), SB(), p->nslots - have)))
     VM_PANIC(GAB_OVERFLOW, "");
@@ -1012,7 +1013,7 @@ CASE_CODE(MATCHSEND_BLOCK) {
 
 static inline bool try_setup_localmatch(struct gab_triple gab, gab_value m,
                                         gab_value *ks,
-                                        struct gab_obj_prototype *p) {
+                                        struct gab_oprototype *p) {
   gab_value specs = gab_thisfibmsgrec(gab, m);
 
   if (specs == gab_undefined)
@@ -1029,8 +1030,8 @@ static inline bool try_setup_localmatch(struct gab_triple gab, gab_value m,
     if (gab_valkind(spec) != kGAB_BLOCK)
       return false;
 
-    struct gab_obj_block *b = GAB_VAL_TO_BLOCK(spec);
-    struct gab_obj_prototype *spec_p = GAB_VAL_TO_PROTOTYPE(b->p);
+    struct gab_oblock *b = GAB_VAL_TO_BLOCK(spec);
+    struct gab_oprototype *spec_p = GAB_VAL_TO_PROTOTYPE(b->p);
 
     if (spec_p->src != p->src)
       return false;
@@ -1125,7 +1126,7 @@ CASE_CODE(SEND_NATIVE) {
   SEND_GUARD_CACHED_MESSAGE_SPECS();
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
 
-  struct gab_obj_native *n = (void *)ks[GAB_SEND_KSPEC];
+  struct gab_onative *n = (void *)ks[GAB_SEND_KSPEC];
 
   CALL_NATIVE(n, have, true);
 }
@@ -1139,7 +1140,7 @@ CASE_CODE(SEND_BLOCK) {
   SEND_GUARD_CACHED_MESSAGE_SPECS();
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
 
-  struct gab_obj_block *b = (void *)ks[GAB_SEND_KSPEC];
+  struct gab_oblock *b = (void *)ks[GAB_SEND_KSPEC];
 
   CALL_BLOCK(b, have);
 }
@@ -1153,7 +1154,7 @@ CASE_CODE(TAILSEND_BLOCK) {
   SEND_GUARD_CACHED_MESSAGE_SPECS();
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
 
-  struct gab_obj_block *b = (void *)ks[GAB_SEND_KSPEC];
+  struct gab_oblock *b = (void *)ks[GAB_SEND_KSPEC];
 
   TAILCALL_BLOCK(b, have);
 }
@@ -1167,7 +1168,7 @@ CASE_CODE(LOCALSEND_BLOCK) {
   SEND_GUARD_CACHED_MESSAGE_SPECS();
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
 
-  struct gab_obj_block *b = (void *)ks[GAB_SEND_KSPEC];
+  struct gab_oblock *b = (void *)ks[GAB_SEND_KSPEC];
 
   LOCALCALL_BLOCK(b, have);
 }
@@ -1181,7 +1182,7 @@ CASE_CODE(LOCALTAILSEND_BLOCK) {
   SEND_GUARD_CACHED_MESSAGE_SPECS();
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
 
-  struct gab_obj_block *b = (void *)ks[GAB_SEND_KSPEC];
+  struct gab_oblock *b = (void *)ks[GAB_SEND_KSPEC];
 
   LOCALTAILCALL_BLOCK(b, have);
 }
@@ -1196,7 +1197,7 @@ CASE_CODE(SEND_PRIMITIVE_CALL_BLOCK) {
 
   VM_PANIC_GUARD_KIND(r, kGAB_BLOCK);
 
-  struct gab_obj_block *blk = GAB_VAL_TO_BLOCK(r);
+  struct gab_oblock *blk = GAB_VAL_TO_BLOCK(r);
 
   CALL_BLOCK(blk, have);
 }
@@ -1211,7 +1212,7 @@ CASE_CODE(TAILSEND_PRIMITIVE_CALL_BLOCK) {
 
   VM_PANIC_GUARD_KIND(r, kGAB_BLOCK);
 
-  struct gab_obj_block *blk = GAB_VAL_TO_BLOCK(r);
+  struct gab_oblock *blk = GAB_VAL_TO_BLOCK(r);
 
   TAILCALL_BLOCK(blk, have);
 }
@@ -1226,7 +1227,7 @@ CASE_CODE(SEND_PRIMITIVE_CALL_NATIVE) {
 
   VM_PANIC_GUARD_KIND(r, kGAB_NATIVE);
 
-  struct gab_obj_native *n = GAB_VAL_TO_NATIVE(r);
+  struct gab_onative *n = GAB_VAL_TO_NATIVE(r);
 
   CALL_NATIVE(n, have, false);
 }
@@ -1706,8 +1707,8 @@ CASE_CODE(SEND) {
     break;
   }
   case kGAB_BLOCK: {
-    struct gab_obj_block *b = GAB_VAL_TO_BLOCK(spec);
-    struct gab_obj_prototype *p = GAB_VAL_TO_PROTOTYPE(b->p);
+    struct gab_oblock *b = GAB_VAL_TO_BLOCK(spec);
+    struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(b->p);
 
     uint8_t local = (GAB_VAL_TO_PROTOTYPE(b->p)->src == BLOCK_PROTO()->src);
     adjust |= (local << 1);
@@ -1722,7 +1723,7 @@ CASE_CODE(SEND) {
     break;
   }
   case kGAB_NATIVE: {
-    struct gab_obj_native *n = GAB_VAL_TO_NATIVE(spec);
+    struct gab_onative *n = GAB_VAL_TO_NATIVE(spec);
 
     ks[GAB_SEND_KSPEC] = (intptr_t)n;
     WRITE_BYTE(SEND_CACHE_DIST, OP_SEND_NATIVE);
@@ -1773,7 +1774,7 @@ CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE_BLOCK) {
   have--;
   DROP();
 
-  struct gab_obj_block *spec = (void *)ks[GAB_SEND_KSPEC];
+  struct gab_oblock *spec = (void *)ks[GAB_SEND_KSPEC];
 
   CALL_BLOCK(spec, have);
 }
@@ -1793,7 +1794,7 @@ CASE_CODE(TAILSEND_PRIMITIVE_CALL_MESSAGE_BLOCK) {
   have--;
   DROP();
 
-  struct gab_obj_block *spec = (void *)ks[GAB_SEND_KSPEC];
+  struct gab_oblock *spec = (void *)ks[GAB_SEND_KSPEC];
 
   TAILCALL_BLOCK(spec, have);
 }
@@ -1813,7 +1814,7 @@ CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE_NATIVE) {
   have--;
   DROP();
 
-  struct gab_obj_native *spec = (void *)ks[GAB_SEND_KSPEC];
+  struct gab_onative *spec = (void *)ks[GAB_SEND_KSPEC];
 
   CALL_NATIVE(spec, have, true);
 }
