@@ -49,6 +49,8 @@ static inline void bufpush(struct gab_triple gab, uint8_t b, uint8_t wkid,
   assert(b < kGAB_NBUF);
   assert(wkid < gab.eg->len);
   uint64_t len = buflen(gab, b, wkid, epoch);
+  assert(len < cGAB_GC_MOD_BUFF_MAX);
+
   struct gab_obj **buf = bufdata(gab, b, wkid, epoch);
   buf[len] = o;
   gab.eg->gc->buffers[wkid][b][epoch].len = len + 1;
@@ -574,30 +576,46 @@ void processepoch(struct gab_triple gab, int32_t e) {
   printf("PEPOCH\t%i\t%i\n", e, gab.wkid);
 #endif
 
-  if (wk->fiber == gab_invalid) {
+  if (q_gab_value_is_empty(&wk->queue))
     goto fin;
-  }
 
-  assert(gab_valkind(wk->fiber) == kGAB_FIBER ||
-         gab_valkind(wk->fiber) == kGAB_FIBERRUNNING ||
-         gab_valkind(wk->fiber) == kGAB_FIBERDONE);
-  struct gab_ofiber *fb = GAB_VAL_TO_FIBER(wk->fiber);
-
-  struct gab_vm *vm = &fb->vm;
-
-  uint64_t stack_size = vm->sp - vm->sb;
-
-  assert(stack_size + wk->lock_keep.len + 2 < cGAB_GC_MOD_BUFF_MAX);
-
-  bufpush(gab, kGAB_BUF_STK, gab.wkid, e, gab_valtoo(wk->fiber));
-
-  for (uint64_t i = 0; i < stack_size; i++) {
-    if (gab_valiso(vm->sb[i])) {
-      struct gab_obj *o = gab_valtoo(vm->sb[i]);
 #if cGAB_LOG_GC
-      printf("SAVESTK\t%i\t%p\t%d\n", epochget(gab), (void *)o, o->kind);
+  printf("QUEUENOTEMPTY\t%lu\t%lu\t%lu\n", wk->queue.head, wk->queue.tail,
+         wk->queue.size);
 #endif
-      bufpush(gab, kGAB_BUF_STK, gab.wkid, e, o);
+
+  const size_t qsize = wk->queue.size;
+  const size_t final = (wk->queue.tail + 1) % qsize;
+  for (size_t idx = wk->queue.head; idx != final; idx = (idx + 1) % qsize) {
+    gab_value fiber = wk->queue.data[idx];
+
+#if cGAB_LOG_GC
+    printf("PFIBER\t%i\t%i\t%lu\n", e, gab.wkid, idx);
+#endif
+
+    assert(gab_valkind(fiber) == kGAB_FIBER ||
+           gab_valkind(fiber) == kGAB_FIBERRUNNING);
+
+    struct gab_ofiber *fb = GAB_VAL_TO_FIBER(fiber);
+
+    struct gab_vm *vm = &fb->vm;
+
+    assert(vm->sp > vm->sb);
+    uint64_t stack_size = vm->sp - vm->sb;
+
+    assert(stack_size < cGAB_STACK_MAX);
+    assert(stack_size + wk->lock_keep.len + 2 < cGAB_GC_MOD_BUFF_MAX);
+
+    bufpush(gab, kGAB_BUF_STK, gab.wkid, e, gab_valtoo(fiber));
+
+    for (uint64_t i = 0; i < stack_size; i++) {
+      if (gab_valiso(vm->sb[i])) {
+        struct gab_obj *o = gab_valtoo(vm->sb[i]);
+#if cGAB_LOG_GC
+        printf("SAVESTK\t%i\t%p\t%d\n", epochget(gab), (void *)o, o->kind);
+#endif
+        bufpush(gab, kGAB_BUF_STK, gab.wkid, e, o);
+      }
     }
   }
 

@@ -121,15 +121,6 @@
 
 typedef uint64_t gab_value;
 
-#define T gab_value
-#include "array.h"
-
-#define T gab_value
-#include "vector.h"
-
-#define T gab_value
-#include "queue.h"
-
 enum gab_kind {
   kGAB_STRING = 0, // MUST_STAY_ZERO
   kGAB_BINARY = 1,
@@ -310,6 +301,16 @@ GAB_API_INLINE gab_value __gab_dtoval(double value) {
 #define fGAB_OBJ_FREED (1 << 8)
 #define GAB_OBJ_IS_FREED(obj) ((obj)->flags & fGAB_OBJ_FREED)
 #define GAB_OBJ_FREED(obj) ((obj)->flags |= fGAB_OBJ_FREED)
+
+#define T gab_value
+#define DEF_T gab_invalid
+#include "queue.h"
+
+#define T gab_value
+#include "array.h"
+
+#define T gab_value
+#include "vector.h"
 
 typedef enum gab_opcode {
 #define OP_CODE(name) OP_##name,
@@ -2169,11 +2170,11 @@ GAB_API gab_value gab_channel(struct gab_triple gab);
  * @param channel The channel
  * @param value The value to put
  */
-GAB_API bool gab_chnput(struct gab_triple gab, gab_value channel,
-                        gab_value value);
+GAB_API gab_value gab_chnput(struct gab_triple gab, gab_value channel,
+                             gab_value value);
 
-GAB_API bool gab_tchnput(struct gab_triple gab, gab_value channel,
-                         gab_value value, uint64_t nms);
+GAB_API gab_value gab_tchnput(struct gab_triple gab, gab_value channel,
+                              gab_value value, uint64_t nms);
 
 /**
  * @brief Take a value from the given channel. This will block the caller until
@@ -2567,8 +2568,6 @@ struct gab_eg {
 
     bool alive;
 
-    gab_value fiber;
-
     uint32_t epoch;
     int32_t locked;
     v_gab_value lock_keep;
@@ -2627,12 +2626,18 @@ GAB_API_INLINE struct gab_gc *gab_gc(struct gab_triple gab) {
   return gab.eg->gc;
 }
 
-GAB_API_INLINE gab_value gab_fb(struct gab_triple gab) {
-  return gab.eg->jobs[gab.wkid].fiber;
+/**
+ * @brief Get the running fiber of the current job.
+ *
+ * @param gab The engine
+ * @return The fiber
+ */
+GAB_API_INLINE gab_value gab_thisfiber(struct gab_triple gab) {
+  return q_gab_value_peek(&gab.eg->jobs[gab.wkid].queue);
 }
 
 GAB_API_INLINE struct gab_vm *gab_thisvm(struct gab_triple gab) {
-  gab_value fiber = gab.eg->jobs[gab.wkid].fiber;
+  gab_value fiber = gab_thisfiber(gab);
 
   if (fiber == gab_invalid)
     return nullptr;
@@ -2653,16 +2658,6 @@ GAB_API_INLINE struct gab_vm *gab_thisvm(struct gab_triple gab) {
 GAB_API_INLINE bool gab_valisa(struct gab_triple gab, gab_value value,
                                gab_value type) {
   return gab_valeq(gab_valtype(gab, value), type);
-}
-
-/**
- * @brief Get the running fiber of the current job.
- *
- * @param gab The engine
- * @return The fiber
- */
-GAB_API_INLINE gab_value gab_thisfiber(struct gab_triple gab) {
-  return gab.eg->jobs[gab.wkid].fiber;
 }
 
 /**

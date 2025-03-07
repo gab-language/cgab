@@ -1758,7 +1758,7 @@ bool channel_block_while_full(struct gab_triple gab,
       break;
     }
 
-    *timer_ns += GAB_YIELD_SLEEPTIME_NS * 2;
+    *timer_ns += GAB_YIELD_SLEEPTIME_NS;
 
     if (gab_chnisclosed(c))
       return false;
@@ -1802,7 +1802,7 @@ gab_value channel_blocking_put(struct gab_triple gab,
                                gab_value v, size_t nms) {
   gab_value res = gab_invalid;
 
-  const uint64_t timeout_ns = nms * 100000;
+  const uint64_t timeout_ns = nms * 1000000;
   uint64_t timer_ns = 0;
 
   while (!gab_chnisclosed(c)) {
@@ -1814,9 +1814,9 @@ gab_value channel_blocking_put(struct gab_triple gab,
   }
 
   // If a taker never arrives, we should remove our value as if our put
-  // failed.
+  // failed and return a timeout.
   if (channel_block_while_full(gab, channel, c, timeout_ns, &timer_ns))
-    return channel_take(channel), gab_invalid;
+    return channel_take(channel), gab_timeout;
 
   return res;
 }
@@ -1826,7 +1826,7 @@ gab_value channel_blocking_take(struct gab_triple gab,
                                 size_t nms) {
   gab_value res = gab_invalid;
 
-  const uint64_t timeout_ns = nms * 100000;
+  const uint64_t timeout_ns = nms * 1000000;
   uint64_t timer_ns = 0;
 
   while (!gab_chnisclosed(c) && res == gab_invalid) {
@@ -1838,36 +1838,34 @@ gab_value channel_blocking_take(struct gab_triple gab,
 
   return res;
 }
-bool gab_tchnput(struct gab_triple gab, gab_value c, gab_value value,
-                 uint64_t nms) {
+gab_value gab_tchnput(struct gab_triple gab, gab_value c, gab_value value,
+                      uint64_t nms) {
   assert(gab_valkind(c) >= kGAB_CHANNEL &&
          gab_valkind(c) <= kGAB_CHANNELCLOSED);
 
   struct gab_ochannel *channel = GAB_VAL_TO_CHANNEL(c);
 
   switch (channel->header.kind) {
-  case kGAB_CHANNEL: {
-    gab_value res = channel_blocking_put(gab, channel, c, value, nms);
-    return res != gab_invalid;
-  }
+  case kGAB_CHANNEL:
+    return channel_blocking_put(gab, channel, c, value, nms);
   case kGAB_CHANNELCLOSED:
-    return false;
+    return gab_invalid;
   default:
     break;
   }
 
   assert("UNREACHABLE");
-  return false;
+  return gab_invalid;
 }
 
-bool gab_chnput(struct gab_triple gab, gab_value c, gab_value value) {
+gab_value gab_chnput(struct gab_triple gab, gab_value c, gab_value value) {
   gab_value v = gab_tchnput(gab, c, value, -1);
   assert(v != gab_timeout);
   return v;
 }
 
 gab_value gab_chntake(struct gab_triple gab, gab_value c) {
-  gab_value v =  gab_tchntake(gab, c, -1);
+  gab_value v = gab_tchntake(gab, c, -1);
   assert(v != gab_timeout);
   return v;
 }

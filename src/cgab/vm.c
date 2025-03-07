@@ -346,13 +346,19 @@ static inline uint64_t compute_token_from_ip(struct gab_triple gab,
                                              uint8_t *ip) {
   struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(b->p);
 
+  assert(ip > proto_srcbegin(gab, p));
   uint64_t offset = ip - proto_srcbegin(gab, p) - 1;
+
 
   uint64_t token = v_uint64_t_val_at(&p->src->bytecode_toks, offset);
 
   return token;
 }
 
+/*
+ * This isn't a safe way to compute the message - we don't actually know
+ * if a frame is paused on an actual *send* boundary anymore (as terminate can interrupt *any* instrtuction)
+ */
 static inline gab_value compute_message_from_ip(struct gab_oblock *b,
                                                 uint8_t *ip) {
   struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(b->p);
@@ -369,7 +375,7 @@ struct gab_err_argt vm_frame_build_err(struct gab_triple gab,
                                        bool has_parent, enum gab_status s,
                                        const char *fmt) {
 
-  gab_value message = has_parent ? compute_message_from_ip(b, ip) : gab_nil;
+  gab_value message = gab_nil;
 
   if (b) {
     struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(b->p);
@@ -425,7 +431,7 @@ a_gab_value *vvm_terminate(struct gab_triple gab, const char *fmt, va_list va) {
   gab_value results[] = {
       gab_message(gab, "err"),
       gab_string(gab, gab_status_names[GAB_TERM]),
-      gab_fb(gab),
+      gab_thisfiber(gab),
   };
 
   a_gab_value *res =
@@ -457,7 +463,7 @@ a_gab_value *vvm_error(struct gab_triple gab, enum gab_status s,
   gab_value results[] = {
       gab_message(gab, "err"),
       gab_string(gab, gab_status_names[s]),
-      gab_fb(gab),
+      gab_thisfiber(gab),
   };
 
   a_gab_value *res =
@@ -1895,12 +1901,11 @@ CASE_CODE(SEND_PRIMITIVE_TAKE) {
   SEND_GUARD_ISC(c);
 
   STORE_SP();
-  gab_value v = gab_chntake(GAB(), c);
 
-  /*gab_value v = gab_tchntake(GAB(), c, 200);*/
-  /**/
-  /*if (v == gab_timeout)*/
-  /*  VM_YIELD();*/
+  gab_value v = gab_tchntake(GAB(), c, 2048);
+
+  if (v == gab_timeout)
+    VM_YIELD();
 
   DROP_N(have);
 
@@ -1931,10 +1936,9 @@ CASE_CODE(SEND_PRIMITIVE_PUT) {
     v = PEEK_N(have - 1);
 
   STORE_SP();
-  gab_chnput(GAB(), c, v);
 
-  /*if (!gab_tchnput(GAB(), c, v, 200))*/
-  /*  VM_YIELD();*/
+  if (gab_tchnput(GAB(), c, v, 2048) == gab_timeout)
+    VM_YIELD();
 
   DROP_N(have - 1);
 

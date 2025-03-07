@@ -314,8 +314,6 @@ int32_t gc_job(void *data) {
   struct gab_triple gab = *g;
   assert(gab.wkid == 0);
 
-  gab.eg->jobs[gab.wkid].fiber = gab_invalid;
-
   while (gab.eg->njobs >= 0) {
     switch (gab_yield(gab)) {
     case sGAB_TERM:
@@ -356,9 +354,12 @@ int32_t worker_job(void *data) {
 #endif
 
   while (!gab_chnisclosed(gab.eg->work_channel) ||
-         !gab_chnisempty(gab.eg->work_channel)) {
+         !gab_chnisempty(gab.eg->work_channel) ||
+         !q_gab_value_is_empty(&self->queue)) {
     switch (gab_yield(gab)) {
     case sGAB_TERM:
+      // Clear the work queue - we're terminated
+      q_gab_value_create(&self->queue);
       goto fin;
     default:
       break;
@@ -369,45 +370,40 @@ int32_t worker_job(void *data) {
                 gab_number(gab.wkid), gab_number(cGAB_WORKER_IDLEWAIT_MS));
 #endif
 
-    gab_value fiber =
-        gab_tchntake(gab, gab.eg->work_channel, cGAB_WORKER_IDLEWAIT_MS);
-
 #if cGAB_LOG_EG
     gab_fprintf(stdout, "[WORKER $] chntake succeeded: $\n",
                 gab_number(gab.wkid), fiber);
 #endif
+    if (q_gab_value_is_empty(&self->queue)) {
+      gab_value fiber =
+          gab_tchntake(gab, gab.eg->work_channel, cGAB_WORKER_IDLEWAIT_MS);
 
-    // we get undefined if:
-    //  - the channel is closed
-    //  - we timed out
-    if (fiber == gab_invalid || fiber == gab_timeout) {
-      /*if (q_gab_value_is_empty(&self->queue))*/
-      /*  goto fin;*/
+      if (fiber == gab_invalid || fiber == gab_timeout)
+        goto fin;
 
-      /*fiber = q_gab_value_pop(&self->queue);*/
-
-      /*if (fiber == gab_invalid)*/
-      goto fin;
+      if (!q_gab_value_push(&self->queue, fiber))
+        assert(false && "PUSH FAILED");
     }
 
-    self->fiber = fiber;
+    gab_value fiber = q_gab_value_peek(&self->queue);
 
     a_gab_value *res = gab_vmexec(gab, fiber);
 
-    self->fiber = gab_invalid;
+    q_gab_value_pop(&self->queue);
 
-    /*if (res == nullptr)*/
-    /*  q_gab_value_push(&self->queue, fiber);*/
+    if (res == nullptr)
+      if (!q_gab_value_push(&self->queue, fiber))
+        assert(false && "PUSH FAILED");
   }
 
 fin:
+  assert(q_gab_value_is_empty(&self->queue));
 
 #if cGAB_LOG_EG
   fprintf(stdout, "[WORKER %i] CLOSING\n", gab.wkid);
 #endif
 
   gab.eg->jobs[gab.wkid].alive = false;
-  gab.eg->jobs[gab.wkid].fiber = gab_invalid;
 
   switch (gab_yield(gab)) {
   case sGAB_TERM:
@@ -448,7 +444,6 @@ bool gab_jbcreate(struct gab_triple gab, struct gab_jb *job, int(fn)(void *)) {
 #endif
 
   job->locked = 0;
-  job->fiber = gab_invalid;
   job->alive = true;
   v_gab_value_create(&job->lock_keep, 8);
   q_gab_value_create(&job->queue);
@@ -1363,7 +1358,9 @@ resource resources[] = {
 };
 
 a_char *match_resource(resource *res, const char *name, uint64_t len) {
-  const char *roots[] = {".", gab_osprefix(GAB_VERSION_TAG)};
+  const char *prefix = gab_osprefix(GAB_VERSION_TAG);
+
+  const char *roots[] = {".", prefix};
 
   for (int i = 0; i < LEN_CARRAY(roots); i++) {
     if (roots[i] == nullptr)
@@ -1387,9 +1384,11 @@ a_char *match_resource(resource *res, const char *name, uint64_t len) {
       continue;
 
     fclose(f);
+    free((void *)prefix);
     return a_char_create(buffer, total_len);
   }
 
+  free((void *)prefix);
   return nullptr;
 }
 
