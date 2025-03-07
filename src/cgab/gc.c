@@ -87,6 +87,7 @@ static inline uint64_t do_decrement(struct gab_gc *gc, struct gab_obj *obj) {
     return rc - 1;
   }
 
+  assert(obj->references != 0);
   return obj->references--;
 }
 
@@ -225,6 +226,8 @@ static inline void for_child_do(struct gab_obj *obj, gab_gc_visitor fnc,
   default:
     break;
 
+  case kGAB_FIBERRUNNING:
+  case kGAB_FIBERDONE:
   case kGAB_FIBER: {
     struct gab_ofiber *fib = (struct gab_ofiber *)obj;
 
@@ -571,7 +574,7 @@ void processepoch(struct gab_triple gab, int32_t e) {
   printf("PEPOCH\t%i\t%i\n", e, gab.wkid);
 #endif
 
-  if (wk->fiber == gab_undefined) {
+  if (wk->fiber == gab_invalid) {
     goto fin;
   }
 
@@ -587,7 +590,6 @@ void processepoch(struct gab_triple gab, int32_t e) {
   assert(stack_size + wk->lock_keep.len + 2 < cGAB_GC_MOD_BUFF_MAX);
 
   bufpush(gab, kGAB_BUF_STK, gab.wkid, e, gab_valtoo(wk->fiber));
-  bufpush(gab, kGAB_BUF_STK, gab.wkid, e, gab_valtoo(fb->messages));
 
   for (uint64_t i = 0; i < stack_size; i++) {
     if (gab_valiso(vm->sb[i])) {

@@ -1,4 +1,65 @@
-'cgab'.use
-do
-{ a 1 }
-b + 1
+Atom = gab\testatom:
+t:.def!(Atom, Shapes.make(atom:))
+
+make:.def!(Atom, (initial) => do
+    atom = Atom.t.make(Channels.make)
+
+    Fibers.make(() => atom.atom <! initial)
+
+    atom
+  end)
+
+swap!:.def!(
+  Atom.t,
+  (f, args[]) => do
+    atom = self.atom
+
+    v = atom >! .unwrap!
+
+    v = f.(v, args**)
+
+    Fibers.make(() => atom <! v)
+
+    v
+  end)
+
+at:.def!(
+  Atom.t,
+  () => do
+    atom = self.atom
+
+    v = atom >! .unwrap!
+
+    Fibers.make(() => atom <! v)
+
+    v
+  end)
+
+put!:.def!(
+  Atom.t,
+  v => do
+    atom = self.atom
+
+    atom >! .unwrap!
+
+    Fibers.make(() => atom <! v)
+
+    v
+  end)
+
+Atom
+
+atm = Atom.make 'hi'
+
+atm.at.println
+atm.swap!(+: ' world').println
+atm.swap!(+: ' world').println
+atm.swap!(+: ' world').println
+atm.swap!(+: ' world').println
+
+atm.at.println
+atm.put!('test').println
+
+atm.at.println
+
+atm.atom.close!

@@ -15,7 +15,6 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <sys/cdefs.h>
 #include <wchar.h>
 
 #include "core.h"
@@ -81,7 +80,7 @@
  * Immediate values *don't* have the pointer bit set.
  * They also store a tag in the 3 bits just below the NaN.
  *
- *      kGAB_SYMBOL, kGAB_STRING, kGAB_MESSAGE, kGAB_MESSAGE, kGAB_UNDEFINED
+ *      kGAB_SYMBOL, kGAB_STRING, kGAB_MESSAGE, kGAB_CINVALID, kGAB_CTIMEOUT
  *                   |
  * [0][....NaN....1][---][------------------------------------------------]
  *
@@ -128,13 +127,17 @@ typedef uint64_t gab_value;
 #define T gab_value
 #include "vector.h"
 
+#define T gab_value
+#include "queue.h"
+
 enum gab_kind {
   kGAB_STRING = 0, // MUST_STAY_ZERO
   kGAB_BINARY = 1,
   kGAB_MESSAGE = 2,
   kGAB_SYMBOL = 3, // Only relevant for parsing.
   kGAB_PRIMITIVE = 4,
-  kGAB_UNDEFINED = 5,
+  kGAB_CINVALID = 5,
+  kGAB_CTIMEOUT = 6,
   kGAB_NUMBER,
   kGAB_NATIVE,
   kGAB_PROTOTYPE,
@@ -211,8 +214,11 @@ GAB_API_INLINE gab_value __gab_dtoval(double value) {
                (uint64_t)2 << 40 | (uint64_t)'n' | (uint64_t)'i' << 8 |        \
                (uint64_t)'l' << 16))
 
-#define gab_undefined                                                          \
-  ((gab_value)(__GAB_QNAN | (uint64_t)kGAB_UNDEFINED << __GAB_TAGOFFSET))
+#define gab_invalid                                                            \
+  ((gab_value)(__GAB_QNAN | (uint64_t)kGAB_CINVALID << __GAB_TAGOFFSET))
+
+#define gab_timeout                                                            \
+  ((gab_value)(__GAB_QNAN | (uint64_t)kGAB_CTIMEOUT << __GAB_TAGOFFSET))
 
 #define gab_false                                                              \
   ((gab_value)(__GAB_QNAN | (uint64_t)kGAB_MESSAGE << __GAB_TAGOFFSET |        \
@@ -344,6 +350,9 @@ typedef void (*gab_boxvisit_f)(struct gab_triple gab, gab_gcvisit_f visitor,
                                uint64_t len, char *data);
 
 typedef gab_value (*gab_atomswap_f)(struct gab_triple gab, gab_value current);
+
+typedef gab_value (*gab_atomvswap_f)(struct gab_triple gab, gab_value current,
+                                     va_list va);
 
 /**
  * @class gab_obj
@@ -618,7 +627,7 @@ struct gab_impl_rest {
    * @brief The type of the relevant type of the receiver.
    *
    * gab_value have multiple types - a gab_record has its shape, as well as
-   * the gab.record type, as well as the general gab_undefined type.
+   * the gab.record type, as well as the general gab_invalid type.
    *
    * These are checked in a specific order, and the first match is used.
    */
@@ -887,6 +896,8 @@ struct gab_send_argt {
  */
 GAB_API a_gab_value *gab_send(struct gab_triple gab, struct gab_send_argt args);
 
+GAB_API gab_value gab_asend(struct gab_triple gab, struct gab_send_argt args);
+
 /**
  * @class gab_exec_argt
  * @brief Arguments and options for executing a source string.
@@ -1009,7 +1020,7 @@ struct gab_def_argt {
  *
  * @param gab The triple.
  * @param args The arguments.
- * @return The message that was updated, or gab_undefined if specialization
+ * @return The message that was updated, or gab_invalid if specialization
  * failed.
  */
 #define gab_def(gab, ...)                                                      \
@@ -1025,11 +1036,10 @@ struct gab_def_argt {
  * @param gab The triple.
  * @param len The number of specializations to set.
  * @param args The specializations.
- * @return -1 on a success. Otherwise, returns the index in args of the first
- * specialization that failed.
+ * @return true on a success
  */
-GAB_API int gab_ndef(struct gab_triple gab, uint64_t len,
-                     struct gab_def_argt *args);
+GAB_API bool gab_ndef(struct gab_triple gab, uint64_t len,
+                      struct gab_def_argt *args);
 
 /**
  * @brief Get the runtime value that corresponds to the given kind.
@@ -1517,13 +1527,13 @@ GAB_API_INLINE gab_value gab_symtostr(gab_value sym) {
  * guaranteed to be valid utf8.
  *
  * @param bin The binary to convert
- * @return The string if bin is valid utf8, otherwise gab_undefined.
+ * @return The string if bin is valid utf8, otherwise gab_invalid.
  */
 GAB_API_INLINE gab_value gab_bintostr(gab_value bin) {
   assert(gab_valkind(bin) == kGAB_BINARY);
 
   if (gab_strmblen(bin) == -1)
-    return gab_undefined;
+    return gab_invalid;
 
   return bin & ~((uint64_t)kGAB_BINARY << __GAB_TAGOFFSET);
 }
@@ -1930,7 +1940,7 @@ GAB_API_INLINE gab_value gab_recat(gab_value record, gab_value key) {
   uint64_t i = gab_recfind(record, key);
 
   if (i == -1)
-    return gab_undefined;
+    return gab_invalid;
 
   return gab_uvrecat(record, i);
 }
@@ -2038,21 +2048,19 @@ struct gab_ofiber {
 
   uint32_t flags;
 
+  uint8_t virtual_frame_bc[6];
+  gab_value virtual_frame_ks[7];
+
   /**
    * Structure used to actually execute bytecode
    */
   struct gab_vm {
     uint8_t *ip;
 
-    gab_value *sp, *fp;
+    gab_value *sp, *fp, *kb;
 
     gab_value sb[cGAB_STACK_MAX];
   } vm;
-
-  /**
-   * The messages available to the fiber
-   */
-  gab_value messages;
 
   /**
    * Result of execution
@@ -2130,23 +2138,6 @@ GAB_API_INLINE gab_value gab_thisfibmsgat(struct gab_triple gab,
 
 GAB_API_INLINE gab_value gab_thisfibmsgrec(struct gab_triple gab,
                                            gab_value message);
-/**
- * @brief A primitive for sending data between fibers.
- */
-struct gab_oatom {
-  struct gab_obj header;
-
-  /**
-   * The value currently held. *Must* be mutated via atomic functions.
-   */
-  _Atomic gab_value data;
-};
-
-GAB_API gab_value gab_atom(struct gab_triple gab);
-
-GAB_API gab_value gab_atmpeek(struct gab_triple gab, gab_value atom);
-
-GAB_API gab_value gab_atmswap(struct gab_triple gab, gab_atomswap_f f);
 
 /**
  * @brief A primitive for sending data between fibers.
@@ -2180,6 +2171,9 @@ GAB_API gab_value gab_channel(struct gab_triple gab);
  */
 GAB_API bool gab_chnput(struct gab_triple gab, gab_value channel,
                         gab_value value);
+
+GAB_API bool gab_tchnput(struct gab_triple gab, gab_value channel,
+                         gab_value value, uint64_t nms);
 
 /**
  * @brief Take a value from the given channel. This will block the caller until
@@ -2575,9 +2569,11 @@ struct gab_eg {
 
     gab_value fiber;
 
-    _Atomic uint32_t epoch;
-    _Atomic int32_t locked;
+    uint32_t epoch;
+    int32_t locked;
     v_gab_value lock_keep;
+
+    q_gab_value queue;
   } jobs[];
 };
 
@@ -2638,7 +2634,7 @@ GAB_API_INLINE gab_value gab_fb(struct gab_triple gab) {
 GAB_API_INLINE struct gab_vm *gab_thisvm(struct gab_triple gab) {
   gab_value fiber = gab.eg->jobs[gab.wkid].fiber;
 
-  if (fiber == gab_undefined)
+  if (fiber == gab_invalid)
     return nullptr;
 
   return &GAB_VAL_TO_FIBER(fiber)->vm;
@@ -2676,11 +2672,11 @@ GAB_API_INLINE gab_value gab_thisfiber(struct gab_triple gab) {
  * @param msg The message.
  * @param receiver The receiver.
  * @param spec The specialization.
- * @return The message, or gab_undefined if it already had the spec.
+ * @return The message, or gab_invalid if it already had the spec.
  */
 GAB_API_INLINE struct gab_impl_rest
 gab_impl(struct gab_triple gab, gab_value message, gab_value receiver) {
-  gab_value spec = gab_undefined;
+  gab_value spec = gab_invalid;
   gab_value type = receiver;
 
   /* Check if the receiver has a supertype, and if that supertype implments the
@@ -2688,7 +2684,7 @@ gab_impl(struct gab_triple gab, gab_value message, gab_value receiver) {
   if (gab_valhast(receiver)) {
     type = gab_valtype(gab, receiver);
     spec = gab_thisfibmsgat(gab, message, type);
-    if (spec != gab_undefined)
+    if (spec != gab_invalid)
       return (struct gab_impl_rest){
           type,
           .as.spec = spec,
@@ -2699,7 +2695,7 @@ gab_impl(struct gab_triple gab, gab_value message, gab_value receiver) {
   /* Check for the kind of the receiver. ie 'gab\record' */
   type = gab_type(gab, gab_valkind(receiver));
   spec = gab_thisfibmsgat(gab, message, type);
-  if (spec != gab_undefined)
+  if (spec != gab_invalid)
     return (struct gab_impl_rest){
         type,
         .as.spec = spec,
@@ -2725,9 +2721,9 @@ gab_impl(struct gab_triple gab, gab_value message, gab_value receiver) {
    * is impossible to do anything with, because it is a record with a key
    * for every message in the system.
    */
-  type = gab_undefined;
+  type = gab_invalid;
   spec = gab_thisfibmsgat(gab, message, type);
-  if (spec != gab_undefined)
+  if (spec != gab_invalid)
     return (struct gab_impl_rest){
         .as.spec = spec,
         kGAB_IMPL_GENERAL,
@@ -2737,13 +2733,14 @@ gab_impl(struct gab_triple gab, gab_value message, gab_value receiver) {
 }
 
 GAB_API_INLINE gab_value gab_thisfibmsg(struct gab_triple gab) {
-  gab_value fiber = gab_thisfiber(gab);
-
-  if (fiber == gab_undefined)
-    return gab.eg->messages;
-
-  struct gab_ofiber *f = GAB_VAL_TO_FIBER(fiber);
-  return f->messages;
+  return gab.eg->messages;
+  /*gab_value fiber = gab_thisfiber(gab);*/
+  /**/
+  /*if (fiber == gab_invalid)*/
+  /*  return gab_atmat(gab, gab.eg->messages);*/
+  /**/
+  /*struct gab_ofiber *f = GAB_VAL_TO_FIBER(fiber);*/
+  /*return gab_atmat(gab, f->messages);*/
 }
 
 GAB_API_INLINE gab_value gab_thisfibmsgrec(struct gab_triple gab,
@@ -2756,8 +2753,8 @@ GAB_API_INLINE gab_value gab_thisfibmsgat(struct gab_triple gab,
                                           gab_value receiver) {
   gab_value spec_rec = gab_thisfibmsgrec(gab, message);
 
-  if (spec_rec == gab_undefined)
-    return gab_undefined;
+  if (spec_rec == gab_invalid)
+    return gab_invalid;
 
   return gab_recat(spec_rec, receiver);
 }
@@ -2801,7 +2798,7 @@ GAB_API_INLINE gab_value gab_valintos(struct gab_triple gab, gab_value value) {
 
       assert(result >= 0);
       if (result < 0)
-        return gab_undefined;
+        return gab_invalid;
 
       if (remaining == 0)
         continue;

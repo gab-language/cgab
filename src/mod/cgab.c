@@ -16,7 +16,7 @@ a_gab_value *gab_gablib_check(struct gab_triple gab, uint64_t argc,
                          .err_out = &err,
                      });
 
-  if (mod != gab_undefined) {
+  if (mod != gab_invalid) {
     gab_vmpush(gab_thisvm(gab), gab_ok);
     return nullptr;
   }
@@ -78,7 +78,7 @@ a_gab_value *gab_gablib_aeval(struct gab_triple gab, uint64_t argc,
                          });
   }
 
-  if (fib == gab_undefined) {
+  if (fib == gab_invalid) {
     gab_vmpush(gab_thisvm(gab), gab_err);
     return nullptr;
   }

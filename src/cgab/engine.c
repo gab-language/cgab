@@ -1,3 +1,4 @@
+#include <stdint.h>
 #define GAB_STATUS_NAMES_IMPL
 #define GAB_TOKEN_NAMES_IMPL
 #include "engine.h"
@@ -220,12 +221,12 @@ struct primitive kind_primitives[] = {
     },
     {
         .name = mGAB_EQ,
-        .kind = kGAB_UNDEFINED,
+        .kind = kGAB_CINVALID,
         .primitive = gab_primitive(OP_SEND_PRIMITIVE_EQ),
     },
     {
         .name = mGAB_CONS,
-        .kind = kGAB_UNDEFINED,
+        .kind = kGAB_CINVALID,
         .primitive = gab_primitive(OP_SEND_PRIMITIVE_CONS),
     },
     {
@@ -313,20 +314,28 @@ int32_t gc_job(void *data) {
   struct gab_triple gab = *g;
   assert(gab.wkid == 0);
 
-  gab.eg->jobs[gab.wkid].fiber = gab_undefined;
+  gab.eg->jobs[gab.wkid].fiber = gab_invalid;
 
   while (gab.eg->njobs >= 0) {
     switch (gab_yield(gab)) {
     case sGAB_TERM:
       gab_sigclear(gab);
-      break;
+      continue;
     case sGAB_COLL:
       gab_gcdocollect(gab);
       gab_sigclear(gab);
-      break;
+      continue;
     default:
       break;
     }
+
+    /*
+     * Coordinate work stealing here, where we are guaranteed to *not*
+     * be collecting
+     *
+     * if we have spare jobs:
+     *  look for the first worker
+     */
   }
 
   free(g);
@@ -339,6 +348,8 @@ int32_t worker_job(void *data) {
 
   assert(gab.wkid != 0);
   gab.eg->njobs++;
+
+  struct gab_jb *self = gab.eg->jobs + gab.wkid;
 
 #if cGAB_LOG_EG
   fprintf(stdout, "[WORKER %i] SPAWNED\n", gab.wkid);
@@ -354,29 +365,39 @@ int32_t worker_job(void *data) {
     }
 
 #if cGAB_LOG_EG
-    fprintf(stdout, "[WORKER %i] TAKING WITH TIMEOUT %lums\n", gab.wkid,
-            cGAB_WORKER_IDLEWAIT_MS);
+    gab_fprintf(stdout, "[WORKER $] TAKING WITH TIMEOUT $ms\n",
+                gab_number(gab.wkid), gab_number(cGAB_WORKER_IDLEWAIT_MS));
 #endif
 
     gab_value fiber =
         gab_tchntake(gab, gab.eg->work_channel, cGAB_WORKER_IDLEWAIT_MS);
 
 #if cGAB_LOG_EG
-    fprintf(stdout, "[WORKER %i] chntake succeeded: %d\n", gab.wkid,
-            fiber != gab_undefined);
+    gab_fprintf(stdout, "[WORKER $] chntake succeeded: $\n",
+                gab_number(gab.wkid), fiber);
 #endif
 
     // we get undefined if:
     //  - the channel is closed
     //  - we timed out
-    if (fiber == gab_undefined)
+    if (fiber == gab_invalid || fiber == gab_timeout) {
+      /*if (q_gab_value_is_empty(&self->queue))*/
+      /*  goto fin;*/
+
+      /*fiber = q_gab_value_pop(&self->queue);*/
+
+      /*if (fiber == gab_invalid)*/
       goto fin;
+    }
 
-    gab.eg->jobs[gab.wkid].fiber = fiber;
+    self->fiber = fiber;
 
-    gab_vmexec(gab, fiber);
+    a_gab_value *res = gab_vmexec(gab, fiber);
 
-    gab.eg->jobs[gab.wkid].fiber = gab_undefined;
+    self->fiber = gab_invalid;
+
+    /*if (res == nullptr)*/
+    /*  q_gab_value_push(&self->queue, fiber);*/
   }
 
 fin:
@@ -386,7 +407,7 @@ fin:
 #endif
 
   gab.eg->jobs[gab.wkid].alive = false;
-  gab.eg->jobs[gab.wkid].fiber = gab_undefined;
+  gab.eg->jobs[gab.wkid].fiber = gab_invalid;
 
   switch (gab_yield(gab)) {
   case sGAB_TERM:
@@ -427,9 +448,10 @@ bool gab_jbcreate(struct gab_triple gab, struct gab_jb *job, int(fn)(void *)) {
 #endif
 
   job->locked = 0;
-  job->fiber = gab_undefined;
+  job->fiber = gab_invalid;
   job->alive = true;
   v_gab_value_create(&job->lock_keep, 8);
+  q_gab_value_create(&job->queue);
 
   struct gab_triple *gabcpy = malloc(sizeof(struct gab_triple));
   memcpy(gabcpy, &gab, sizeof(struct gab_triple));
@@ -491,12 +513,8 @@ struct gab_triple gab_create(struct gab_create_argt args) {
 
   gab_gclock(gab);
 
-  eg->shapes = __gab_shape(gab, 0);
-  eg->messages = gab_erecord(gab);
-  eg->work_channel = gab_channel(gab);
-  gab_iref(gab, eg->work_channel);
-
-  eg->types[kGAB_UNDEFINED] = gab_undefined;
+  eg->types[kGAB_CINVALID] = gab_invalid;
+  eg->types[kGAB_CTIMEOUT] = gab_timeout;
   eg->types[kGAB_NUMBER] = gab_string(gab, tGAB_NUMBER);
   eg->types[kGAB_BINARY] = gab_string(gab, tGAB_BINARY);
   eg->types[kGAB_STRING] = gab_string(gab, tGAB_STRING);
@@ -519,6 +537,12 @@ struct gab_triple gab_create(struct gab_create_argt args) {
 
   gab_niref(gab, 1, kGAB_NKINDS, eg->types);
   gab_negkeep(gab.eg, kGAB_NKINDS, eg->types);
+
+  eg->shapes = __gab_shape(gab, 0);
+  eg->messages = gab_erecord(gab);
+
+  eg->work_channel = gab_channel(gab);
+  gab_iref(gab, eg->work_channel);
 
   for (int i = 0; i < LEN_CARRAY(kind_primitives); i++) {
     gab_egkeep(
@@ -596,8 +620,8 @@ void gab_destroy(struct gab_triple gab) {
   if (gab_valkind(gab.eg->shapes) == kGAB_SHAPELIST)
     dec_child_shapes(gab, gab.eg->shapes);
 
-  gab.eg->messages = gab_undefined;
-  gab.eg->shapes = gab_undefined;
+  gab.eg->messages = gab_invalid;
+  gab.eg->shapes = gab_invalid;
 
   assert(gab.eg->njobs == 0);
 
@@ -610,6 +634,8 @@ void gab_destroy(struct gab_triple gab) {
    * There are three epochs tracked, so we need three collections
    * to ensure that all rc events are processed.
    */
+  gab_sigcoll(gab);
+
   gab_sigcoll(gab);
 
   gab_sigcoll(gab);
@@ -654,8 +680,8 @@ void gab_destroy(struct gab_triple gab) {
 
 void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
   uint64_t iterations = 0;
-  gab_value env = gab_undefined;
-  gab_value fiber = gab_undefined;
+  gab_value env = gab_invalid;
+  gab_value fiber = gab_invalid;
 
   args.welcome_message = args.welcome_message ? args.welcome_message : "";
   args.prompt_prefix = args.prompt_prefix ? args.prompt_prefix : "";
@@ -685,7 +711,7 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
 
     iterations++;
 
-    if (env == gab_undefined) {
+    if (env == gab_invalid) {
       fiber =
           gab_aexec(gab, (struct gab_exec_argt){
                              .name = unique_name,
@@ -715,7 +741,7 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
                              });
     }
 
-    if (fiber == gab_undefined)
+    if (fiber == gab_invalid)
       continue;
 
     a_gab_value *result = gab_fibawait(gab, fiber);
@@ -743,13 +769,13 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
 }
 
 static const char *default_argvals[] = {
-    tGAB_STRING, tGAB_BINARY, tGAB_MESSAGE, tGAB_RECORD, tGAB_LIST,
-    tGAB_SHAPE,  tGAB_FIBER,  tGAB_CHANNEL, tGAB_NUMBER, tGAB_BLOCK,
+    tGAB_STRING, tGAB_BINARY,  tGAB_MESSAGE, tGAB_RECORD, tGAB_LIST, tGAB_SHAPE,
+    tGAB_FIBER,  tGAB_CHANNEL, tGAB_NUMBER,  tGAB_BLOCK,  tGAB_ATOM,
 };
 static const char *default_argnames[] = {
     tGAB_STRING_NAME, tGAB_BINARY_NAME, tGAB_MESSAGE_NAME, tGAB_RECORD_NAME,
     tGAB_LIST_NAME,   tGAB_SHAPE_NAME,  tGAB_FIBER_NAME,   tGAB_CHANNEL_NAME,
-    tGAB_NUMBER_NAME, tGAB_BLOCK_NAME,
+    tGAB_NUMBER_NAME, tGAB_BLOCK_NAME,  tGAB_ATOM_NAME,
 };
 static const size_t default_arglen =
     sizeof(default_argvals) / sizeof(const char *);
@@ -786,7 +812,7 @@ gab_value gab_aexec(struct gab_triple gab, struct gab_exec_argt args) {
                                       .argv = args.sargv,
                                   });
 
-  if (main == gab_undefined || gab.flags & fGAB_BUILD_CHECK)
+  if (main == gab_invalid || gab.flags & fGAB_BUILD_CHECK)
     return main;
 
   return gab_arun(gab, (struct gab_run_argt){
@@ -799,7 +825,7 @@ gab_value gab_aexec(struct gab_triple gab, struct gab_exec_argt args) {
 a_gab_value *gab_exec(struct gab_triple gab, struct gab_exec_argt args) {
   gab_value fib = gab_aexec(gab, args);
 
-  if (fib == gab_undefined)
+  if (fib == gab_invalid)
     return nullptr;
 
   return gab_fibawait(gab, fib);
@@ -815,7 +841,7 @@ gab_value dodef(struct gab_triple gab, gab_value messages, uint64_t len,
 
     gab_value specs = gab_recat(messages, arg.message);
 
-    if (specs == gab_undefined)
+    if (specs == gab_invalid)
       specs = gab_record(gab, 0, 0, nullptr, nullptr);
 
     gab_value newspecs =
@@ -827,31 +853,26 @@ gab_value dodef(struct gab_triple gab, gab_value messages, uint64_t len,
   return gab_gcunlock(gab), messages;
 }
 
-int gab_ndef(struct gab_triple gab, uint64_t len,
-             struct gab_def_argt args[static len]) {
-  gab_gclock(gab);
+gab_value swapdef(struct gab_triple gab, gab_value messages, va_list va) {
+  uint64_t len = va_arg(va, uint64_t);
+  struct gab_def_argt *args = va_arg(va, struct gab_def_argt *);
 
-  gab_value m = dodef(gab, gab_thisfibmsg(gab), len, args);
+  return dodef(gab, messages, len, args);
+}
 
-  if (m == gab_undefined)
-    return gab_gcunlock(gab), false;
+bool gab_ndef(struct gab_triple gab, uint64_t len,
+              struct gab_def_argt args[static len]) {
+  gab_value messages = gab.eg->messages;
 
-  gab_value parent = gab_thisfiber(gab);
-
-  if (parent == gab_undefined) {
-    gab.eg->messages = m;
-  } else {
-    struct gab_ofiber *p = GAB_VAL_TO_FIBER(parent);
-    p->messages = m;
-  }
+  gab_value m = dodef(gab, messages, len, args);
 
   gab.eg->messages = m;
 
-  return gab_gcunlock(gab), true;
+  return m != gab_invalid;
 }
 
 struct gab_ostring *gab_egstrfind(struct gab_eg *self, uint64_t hash,
-                                     uint64_t len, const char *data) {
+                                  uint64_t len, const char *data) {
   if (self->strings.len == 0)
     return nullptr;
 
@@ -1255,10 +1276,10 @@ a_gab_value *gab_use_dynlib(struct gab_triple gab, const char *path) {
   a_gab_value *res = mod(gab);
 
   // At this point, mod should have reported any errors.
-  gab.flags |= fGAB_ERR_QUIET;
+  /*gab.flags |= fGAB_ERR_QUIET;*/
 
   if (res == nullptr)
-    return gab_fpanic(gab, "Failed to load module.");
+    return gab_fpanic(gab, "Failed to load c module.");
 
   if (res->data[0] != gab_ok)
     return gab_fpanic(gab,
@@ -1285,7 +1306,7 @@ a_gab_value *gab_use_source(struct gab_triple gab, const char *path) {
                          .flags = gab.flags | fGAB_RUN_INCLUDEDEFAULTARGS,
                      });
 
-  if (fiber == gab_undefined)
+  if (fiber == gab_invalid)
     return nullptr;
 
   a_gab_value *res = gab_fibawait(gab, fiber);
@@ -1293,25 +1314,15 @@ a_gab_value *gab_use_source(struct gab_triple gab, const char *path) {
   a_char_destroy(src);
 
   // At this point, the fiber should have reported its own errors;
-  gab.flags |= fGAB_ERR_QUIET;
+  /*gab.flags |= fGAB_ERR_QUIET;*/
 
   if (res == nullptr)
-    return gab_fpanic(gab, "Failed to load module.");
+    return gab_fpanic(gab, "Failed to load source module.");
 
   if (res->data[0] != gab_ok)
     return gab_fpanic(gab,
                       "Failed to load module: module returned $, expected $",
                       res->data[0], gab_ok);
-
-  struct gab_ofiber *f = GAB_VAL_TO_FIBER(fiber);
-  gab_value fbparent = gab_thisfiber(gab);
-
-  if (fbparent == gab_undefined) {
-    gab.eg->messages = f->messages;
-  } else {
-    struct gab_ofiber *parent = GAB_VAL_TO_FIBER(fbparent);
-    parent->messages = f->messages;
-  }
 
   a_gab_value *final = gab_segmodput(gab.eg, path, res);
 
@@ -1422,7 +1433,7 @@ a_gab_value *gab_use(struct gab_triple gab, gab_value path) {
 a_gab_value *gab_run(struct gab_triple gab, struct gab_run_argt args) {
   gab_value fb = gab_arun(gab, args);
 
-  if (fb == gab_undefined)
+  if (fb == gab_invalid)
     return nullptr;
 
   a_gab_value *res = gab_fibawait(gab, fb);
@@ -1435,7 +1446,7 @@ gab_value gab_arun(struct gab_triple gab, struct gab_run_argt args) {
   gab.flags |= args.flags;
 
   if (gab.flags & fGAB_BUILD_CHECK)
-    return gab_undefined;
+    return gab_invalid;
 
   gab_value fb = gab_fiber(gab, (struct gab_fiber_argt){
                                     .message = gab_message(gab, mGAB_CALL),
@@ -1463,6 +1474,19 @@ gab_value gab_arun(struct gab_triple gab, struct gab_run_argt args) {
 }
 
 a_gab_value *gab_send(struct gab_triple gab, struct gab_send_argt args) {
+  gab_value fb = gab_asend(gab, args);
+
+  if (fb == gab_invalid)
+    return nullptr;
+
+  a_gab_value *res = gab_fibawait(gab, fb);
+
+  gab_dref(gab, fb);
+
+  return res;
+};
+
+gab_value gab_asend(struct gab_triple gab, struct gab_send_argt args) {
   gab.flags |= args.flags;
 
   gab_value fb = gab_fiber(gab, (struct gab_fiber_argt){
@@ -1470,10 +1494,11 @@ a_gab_value *gab_send(struct gab_triple gab, struct gab_send_argt args) {
                                     .receiver = args.receiver,
                                     .argv = args.argv,
                                     .argc = args.len,
+                                    .flags = gab.flags,
                                 });
 
-  if (fb == gab_undefined)
-    return nullptr;
+  if (fb == gab_invalid)
+    return gab_invalid;
 
   gab_iref(gab, fb);
 
@@ -1481,11 +1506,7 @@ a_gab_value *gab_send(struct gab_triple gab, struct gab_send_argt args) {
 
   gab_chnput(gab, gab.eg->work_channel, fb);
 
-  a_gab_value *res = gab_fibawait(gab, fb);
-
-  gab_dref(gab, fb);
-
-  return res;
+  return fb;
 };
 
 GAB_API void gab_sigterm(struct gab_triple gab) {

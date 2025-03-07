@@ -55,7 +55,7 @@
 // New workers are spawned as needed up until a maximum is reached (specified at
 // runtime) Worker threads wait about half a second before spinning down.
 #ifndef cGAB_WORKER_IDLEWAIT_MS
-#define cGAB_WORKER_IDLEWAIT_MS ((size_t)496)
+#define cGAB_WORKER_IDLEWAIT_MS ((size_t)2048)
 #endif
 
 // A worker (os thread) may need to yield at an arbitrary point.
@@ -65,7 +65,7 @@
 // A sleeptime of 0ms will result in *a lot* of context switching,
 // which is undesirable for the OS Scheduler. To help this, a small
 // amount of sleeping in the yield function is useful
-#define GAB_YIELD_SLEEPTIME_NS ((size_t)1 << 8)
+#define GAB_YIELD_SLEEPTIME_NS ((size_t)1 << 10)
 
 // Collect as frequently as possible (on every RC push)
 #ifndef cGAB_DEBUG_GC
@@ -266,6 +266,7 @@ enum gab_flags {
 #define tGAB_BOX "gab\\box"
 #define tGAB_FIBER "gab\\fiber"
 #define tGAB_CHANNEL "gab\\channel"
+#define tGAB_ATOM "gab\\atom"
 
 #define tGAB_STRING_NAME "Strings"
 #define tGAB_BINARY_NAME "Binaries"
@@ -282,6 +283,7 @@ enum gab_flags {
 #define tGAB_BOX_NAME "Boxes"
 #define tGAB_FIBER_NAME "Fibers"
 #define tGAB_CHANNEL_NAME "Channels"
+#define tGAB_ATOM_NAME "Atoms"
 
 #define tGAB_IOSTREAM "io\\stream"
 #define tGAB_TERMINAL "terminal"

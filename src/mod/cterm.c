@@ -34,7 +34,7 @@
 
 FILE *ogin = nullptr, *ogout = nullptr, *ogerr = nullptr;
 
-gab_value singleton = gab_undefined;
+gab_value singleton = gab_invalid;
 
 void gab_termshutdown(struct gab_triple gab, size_t, char *) {
   tb_clear();
@@ -49,7 +49,7 @@ a_gab_value *gab_termlib_make(struct gab_triple gab, uint64_t argc,
                               gab_value argv[static argc]) {
   tb_init();
 
-  if (singleton != gab_undefined) {
+  if (singleton != gab_invalid) {
     gab_vmpush(gab_thisvm(gab), singleton);
     return nullptr;
   }
@@ -162,7 +162,7 @@ a_gab_value *gab_termlib_setcell(struct gab_triple gab, uint64_t argc,
   return nullptr;
 }
 
-gab_value shape = gab_undefined;
+gab_value shape = gab_invalid;
 
 gab_value type_to_value(struct gab_triple gab, uint8_t t) {
   switch (t) {
@@ -222,7 +222,7 @@ gab_value mod_to_value(struct gab_triple gab, uint8_t mod) {
 
 a_gab_value *gab_termlib_peekevent(struct gab_triple gab, uint64_t argc,
                                    gab_value argv[static argc]) {
-  assert(shape != gab_undefined);
+  assert(shape != gab_invalid);
 
   struct tb_event ev = {};
   tb_peek_event(&ev, 1 << 6);
@@ -246,7 +246,7 @@ a_gab_value *gab_termlib_peekevent(struct gab_triple gab, uint64_t argc,
 
 a_gab_value *gab_termlib_pollevent(struct gab_triple gab, uint64_t argc,
                                    gab_value argv[static argc]) {
-  assert(shape != gab_undefined);
+  assert(shape != gab_invalid);
 
   struct tb_event ev = {};
   /*tb_poll_event(&ev);*/

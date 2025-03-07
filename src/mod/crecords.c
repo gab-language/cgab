@@ -10,7 +10,7 @@ a_gab_value *gab_reclib_at(struct gab_triple gab, uint64_t argc,
 
   gab_value val = gab_recat(rec, key);
 
-  if (val == gab_undefined)
+  if (val == gab_invalid)
     gab_vmpush(gab_thisvm(gab), gab_none);
   else
     gab_vmpush(gab_thisvm(gab), gab_ok, val);
@@ -175,16 +175,16 @@ gab_value doputvia(struct gab_triple gab, gab_value rec, gab_value val,
 
   gab_value subrec = gab_recat(rec, key);
 
-  if (subrec == gab_undefined)
+  if (subrec == gab_invalid)
     subrec = gab_record(gab, 0, 0, path, path);
 
   if (gab_valkind(subrec) != kGAB_RECORD)
-    return gab_undefined;
+    return gab_invalid;
 
   gab_value subval = doputvia(gab, subrec, val, len - 1, path + 1);
 
-  if (subval == gab_undefined)
-    return gab_undefined;
+  if (subval == gab_invalid)
+    return gab_invalid;
 
   return gab_recput(gab, rec, key, subval);
 }
@@ -204,7 +204,7 @@ a_gab_value *gab_reclib_putvia(struct gab_triple gab, uint64_t argc,
 
   gab_value result = doputvia(gab, rec, val, argc - 2, argv + 2);
 
-  if (result == gab_undefined)
+  if (result == gab_invalid)
     return gab_fpanic(gab, "Invalid path for $ on $",
                       gab_message(gab, "putvia"), rec);
 

@@ -59,7 +59,7 @@ GAB_DYNLIB_MAIN_FN {
           },
           {
               gab_message(gab, "println"),
-              gab_undefined,
+              gab_invalid,
               gab_snative(gab, "println", gab_fmtlib_println),
           },
           {
