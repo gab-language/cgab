@@ -58,6 +58,14 @@
 #define cGAB_WORKER_IDLEWAIT_MS ((size_t)2048)
 #endif
 
+#ifndef cGAB_VM_CHANNEL_PUT_TIMEOUT_MS
+#define cGAB_VM_CHANNEL_PUT_TIMEOUT_MS ((size_t)256)
+#endif
+
+#ifndef cGAB_VM_CHANNEL_TAKE_TIMEOUT_MS
+#define cGAB_VM_CHANNEL_TAKE_TIMEOUT_MS ((size_t)128)
+#endif
+
 // A worker (os thread) may need to yield at an arbitrary point.
 // This is done using the gab_yield function, which handles
 // sleeping, context switching, and checking if the worker needs
@@ -107,7 +115,7 @@
 
 // Maximum number of call frames that can be on the call stack
 #ifndef cGAB_FRAMES_MAX
-#define cGAB_FRAMES_MAX 64
+#define cGAB_FRAMES_MAX 32
 #endif
 
 // Maximum number of function defintions that can be nested.
@@ -125,16 +133,20 @@
 #define cGAB_CONSTANTS_INITIAL_CAP 64
 #endif
 
+#ifndef cGAB_WORKER_LOCALQUEUE_MAX
+#define cGAB_WORKER_LOCALQUEUE_MAX 32
+#endif
+
 // Size of the vm's stack
 #ifndef cGAB_STACK_MAX
-#define cGAB_STACK_MAX (cGAB_FRAMES_MAX * 128)
+#define cGAB_STACK_MAX (cGAB_FRAMES_MAX * 32)
 #endif
 
 // Garbage collection increment/decrement buffer size
 // I don't love having these just be static buffers, its very possible
 // for them to overflow
 #ifndef cGAB_GC_MOD_BUFF_MAX
-#define cGAB_GC_MOD_BUFF_MAX (cGAB_STACK_MAX * 4)
+#define cGAB_GC_MOD_BUFF_MAX (cGAB_STACK_MAX * cGAB_WORKER_LOCALQUEUE_MAX)
 #endif
 
 #if cGAB_GC_MOD_BUFF_MAX <= cGAB_STACK_MAX

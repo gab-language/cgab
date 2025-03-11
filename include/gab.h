@@ -304,6 +304,7 @@ GAB_API_INLINE gab_value __gab_dtoval(double value) {
 
 #define T gab_value
 #define DEF_T gab_invalid
+#define SIZE cGAB_WORKER_LOCALQUEUE_MAX
 #include "queue.h"
 
 #define T gab_value
@@ -870,6 +871,16 @@ GAB_API a_gab_value *gab_run(struct gab_triple gab, struct gab_run_argt args);
  * @return The fiber that was queued.
  */
 GAB_API gab_value gab_arun(struct gab_triple gab, struct gab_run_argt args);
+
+/**
+ * @brief Asynchronously call a block. This will create and queue a fiber - but may timeout.
+ * @see struct gab_run_argt
+ *
+ * @param  gab The triple.
+ * @param args The arguments.
+ * @return The fiber that was queued.
+ */
+GAB_API gab_value gab_tarun(struct gab_triple gab, size_t nms, struct gab_run_argt args);
 
 struct gab_send_argt {
   /**
@@ -2535,6 +2546,8 @@ struct gab_eg {
     d_gab_obj overflow_rc;
     v_gab_obj dead;
 
+    gab_value msg[GAB_GCNEPOCHS];
+
     struct gab_gcbuf {
       uint64_t len;
       struct gab_obj *data[cGAB_GC_MOD_BUFF_MAX];
@@ -2882,11 +2895,17 @@ GAB_API_INLINE void gab_sigclear(struct gab_triple gab) {
 /**
  * @brief Send signal s to worker wkid. An example usage of this system is to
  * propagate garbage collections, via sGAB_COLL
+ *
+ * This should be made atomic.
  */
 GAB_API_INLINE bool gab_signal(struct gab_triple gab, enum gab_signal s,
                                int wkid) {
   if (wkid == 0)
     return false;
+
+  if (gab_is_signaling(gab))
+    if (gab.eg->sig.signal == s)
+      return true;
 
   while (gab_is_signaling(gab))
     switch (gab_yield(gab)) {
@@ -2901,7 +2920,7 @@ GAB_API_INLINE bool gab_signal(struct gab_triple gab, enum gab_signal s,
     };
 
   if (gab.eg->sig.schedule >= 0)
-    return false;
+    return gab.eg->sig.signal == s;
 
 #if cGAB_LOG_EG
   printf("[WORKER %i] SIGNALLING %i\n", gab.wkid, s);

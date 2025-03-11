@@ -89,6 +89,18 @@ a_gab_value *gab_strlib_split(struct gab_triple gab, uint64_t argc,
   return nullptr;
 }
 
+a_gab_value *gab_binlib_len(struct gab_triple gab, uint64_t argc,
+                            gab_value argv[argc]) {
+  if (argc != 1) {
+    return gab_fpanic(gab, "&:len expects 1 argument");
+  }
+
+  gab_value result = gab_number(gab_strlen(argv[0]));
+
+  gab_vmpush(gab_thisvm(gab), result);
+  return nullptr;
+};
+
 a_gab_value *gab_strlib_len(struct gab_triple gab, uint64_t argc,
                             gab_value argv[argc]) {
   if (argc != 1) {
@@ -501,6 +513,11 @@ GAB_DYNLIB_MAIN_FN {
               gab_message(gab, "len"),
               t,
               gab_snative(gab, "len", gab_strlib_len),
+          },
+          {
+              gab_message(gab, "len"),
+              gab_type(gab, kGAB_BINARY),
+              gab_snative(gab, "len", gab_binlib_len),
           },
           {
               gab_message(gab, "at"),

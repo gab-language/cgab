@@ -922,9 +922,13 @@ uint64_t gab_egkeep(struct gab_eg *gab, gab_value v) {
 
 uint64_t gab_negkeep(struct gab_eg *gab, uint64_t len,
                      gab_value values[static len]) {
+  mtx_lock(&gab->modules_mtx);
+
   for (uint64_t i = 0; i < len; i++)
     if (gab_valiso(values[i]))
       v_gab_value_push(&gab->scratch, values[i]);
+
+  mtx_unlock(&gab->modules_mtx);
 
   return len;
 }
@@ -1442,6 +1446,10 @@ a_gab_value *gab_run(struct gab_triple gab, struct gab_run_argt args) {
 }
 
 gab_value gab_arun(struct gab_triple gab, struct gab_run_argt args) {
+  return gab_tarun(gab, -1, args);
+}
+
+gab_value gab_tarun(struct gab_triple gab, size_t nms, struct gab_run_argt args) {
   gab.flags |= args.flags;
 
   if (gab.flags & fGAB_BUILD_CHECK)
@@ -1467,7 +1475,8 @@ gab_value gab_arun(struct gab_triple gab, struct gab_run_argt args) {
   // Should check to see if the channel has takers waiting already.
   gab_wkspawn(gab);
 
-  gab_chnput(gab, gab.eg->work_channel, fb);
+  if (gab_tchnput(gab, gab.eg->work_channel, fb, nms) == gab_timeout)
+    return gab_timeout;
 
   return fb;
 }

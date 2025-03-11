@@ -349,7 +349,6 @@ static inline uint64_t compute_token_from_ip(struct gab_triple gab,
   assert(ip > proto_srcbegin(gab, p));
   uint64_t offset = ip - proto_srcbegin(gab, p) - 1;
 
-
   uint64_t token = v_uint64_t_val_at(&p->src->bytecode_toks, offset);
 
   return token;
@@ -357,7 +356,8 @@ static inline uint64_t compute_token_from_ip(struct gab_triple gab,
 
 /*
  * This isn't a safe way to compute the message - we don't actually know
- * if a frame is paused on an actual *send* boundary anymore (as terminate can interrupt *any* instrtuction)
+ * if a frame is paused on an actual *send* boundary anymore (as terminate can
+ * interrupt *any* instrtuction)
  */
 static inline gab_value compute_message_from_ip(struct gab_oblock *b,
                                                 uint8_t *ip) {
@@ -1902,7 +1902,7 @@ CASE_CODE(SEND_PRIMITIVE_TAKE) {
 
   STORE_SP();
 
-  gab_value v = gab_tchntake(GAB(), c, 2048);
+  gab_value v = gab_tchntake(GAB(), c, cGAB_VM_CHANNEL_TAKE_TIMEOUT_MS);
 
   if (v == gab_timeout)
     VM_YIELD();
@@ -1937,7 +1937,7 @@ CASE_CODE(SEND_PRIMITIVE_PUT) {
 
   STORE_SP();
 
-  if (gab_tchnput(GAB(), c, v, 2048) == gab_timeout)
+  if (gab_tchnput(GAB(), c, v, cGAB_VM_CHANNEL_PUT_TIMEOUT_MS) == gab_timeout)
     VM_YIELD();
 
   DROP_N(have - 1);
@@ -1954,19 +1954,27 @@ CASE_CODE(SEND_PRIMITIVE_FIBER) {
   SEND_GUARD_CACHED_RECEIVER_TYPE(PEEK_N(have));
 
   gab_value block = gab_nil;
+
   if (have >= 2)
     block = PEEK_N(have - 1);
 
   VM_PANIC_GUARD_KIND(block, kGAB_BLOCK);
 
+  // TODO: This will still block because it calls `gab_chnput`
+  // Manually make, timeout and yield here instead.
   STORE_SP();
-  gab_value fib = gab_arun(GAB(), (struct gab_run_argt){
-                                      .main = block,
-                                      .flags = GAB().flags,
-                                  });
+
+  gab_value fb = gab_tarun(GAB(), cGAB_VM_CHANNEL_PUT_TIMEOUT_MS,
+                           (struct gab_run_argt){
+                               .flags = GAB().flags,
+                               .main = block,
+                           });
+
+  if (fb == gab_timeout)
+    VM_YIELD();
 
   DROP_N(have);
-  PUSH(fib);
+  PUSH(fb);
 
   SET_VAR(1);
 

@@ -810,6 +810,8 @@ gab_value __gab_record(struct gab_triple gab, uint64_t len, uint64_t space,
 
   self->len = len + space;
   self->shape = gab_invalid;
+  self->shift = GAB_PVEC_BITS;
+
   if (len) {
     assert(data);
     memcpy(self->data, data, sizeof(gab_value) * len);
@@ -958,15 +960,20 @@ gab_value gab_uvrecat(gab_value rec, uint64_t i) {
 
   gab_value node = rec;
 
-  for (uint64_t level = r->shift; level > 0; level -= GAB_PVEC_BITS) {
+  for (int64_t level = r->shift; level > 0; level -= GAB_PVEC_BITS) {
     uint64_t idx = (i >> level) & GAB_PVEC_MASK;
-    gab_value next_node = recnth(rec, idx);
+
+    gab_value next_node = recnth(node, idx);
+
     assert(gab_valkind(next_node) == kGAB_RECORDNODE ||
            gab_valkind(next_node) == kGAB_RECORD);
+
     node = next_node;
   }
 
   node = recnth(node, i & GAB_PVEC_MASK);
+
+  assert(gab_valkind(node) != kGAB_RECORDNODE);
 
   return node;
 }
@@ -1057,7 +1064,7 @@ gab_value dissoc(struct gab_triple gab, gab_value rec, uint64_t i) {
   recassoc(chosen_node, recnth(rightmost_node, reclen(rightmost_node) - 1),
            i & GAB_PVEC_MASK);
 
-  // the rightmost node should have one less value. THis can be done more
+  // the rightmost node should have one less value. This can be done more
   // effieciently above.
   recpop(rightmost_node);
   return root;
@@ -1073,7 +1080,6 @@ gab_value assoc(struct gab_triple gab, gab_value rec, gab_value v, uint64_t i) {
 
   for (int64_t level = r->shift; level > 0; level -= GAB_PVEC_BITS) {
     uint64_t idx = (i >> level) & GAB_PVEC_MASK;
-
     uint64_t nidx = (i >> (level - GAB_PVEC_BITS)) & GAB_PVEC_MASK;
 
     if (idx < reclen(node))
@@ -1127,11 +1133,29 @@ gab_value cons(struct gab_triple gab, gab_value rec, gab_value v,
     new_r->shape = shp;
     new_r->shift = r->shift + 5;
 
-    return assoc(gab, new_root, v, i);
+#ifndef NDEBUG
+    for (size_t j = 0; j < i; j++)
+      gab_uvrecat(new_root, j);
+#endif
+
+    assoc(gab, new_root, v, i);
+
+#ifndef NDEBUG
+    for (size_t j = 0; j < i; j++)
+      gab_uvrecat(new_root, j);
+#endif
+
+    return new_root;
   }
 
-  return recsetshp(assoc(gab, reccpy(gab, rec, recneedsspace(rec, i)), v, i),
-                   shp);
+  gab_value record =
+      recsetshp(assoc(gab, reccpy(gab, rec, recneedsspace(rec, i)), v, i), shp);
+
+  // ASSERT ALL leaves are valid
+  for (size_t j = 0; j < i; j++)
+    gab_uvrecat(record, j);
+
+  return record;
 }
 
 gab_value gab_recput(struct gab_triple gab, gab_value rec, gab_value key,

@@ -104,9 +104,10 @@ void queue_decrement(struct gab_triple gab, struct gab_obj *obj) {
 #endif
   int32_t e = epochget(gab);
 
-  gab_gctrigger(gab);
-
   while (buflen(gab, kGAB_BUF_DEC, gab.wkid, e) >= cGAB_GC_MOD_BUFF_MAX) {
+    // Try to signal a collection
+    gab_asigcoll(gab);
+
     switch (gab_yield(gab)) {
     case sGAB_COLL:
       gab_gcepochnext(gab);
@@ -126,6 +127,12 @@ void queue_decrement(struct gab_triple gab, struct gab_obj *obj) {
     e = epochget(gab);
   }
 
+  /*
+   * GC ISSUE HERE: When queueing up massive batches of drefs (multiple
+   * cGAB_GC_MOD_BUFF_MAX worth), the dec buffer fills up before gab_gcdocollect
+   * can inc/dec the gab.eg->messages rec.
+   */
+
   bufpush(gab, kGAB_BUF_DEC, gab.wkid, e, obj);
 
 #if cGAB_LOG_GC
@@ -137,9 +144,10 @@ void queue_decrement(struct gab_triple gab, struct gab_obj *obj) {
 void queue_increment(struct gab_triple gab, struct gab_obj *obj) {
   int32_t e = epochget(gab);
 
-  gab_gctrigger(gab);
-
   while (buflen(gab, kGAB_BUF_INC, gab.wkid, e) >= cGAB_GC_MOD_BUFF_MAX) {
+    // Try to signal a collection
+    gab_asigcoll(gab);
+
     switch (gab_yield(gab)) {
     case sGAB_COLL:
       gab_gcepochnext(gab);
@@ -600,7 +608,7 @@ void processepoch(struct gab_triple gab, int32_t e) {
 
     struct gab_vm *vm = &fb->vm;
 
-    assert(vm->sp > vm->sb);
+    assert(vm->sp >= vm->sb);
     uint64_t stack_size = vm->sp - vm->sb;
 
     assert(stack_size < cGAB_STACK_MAX);
@@ -647,28 +655,6 @@ void gab_gcepochnext(struct gab_triple gab) {
     processepoch(gab, epochget(gab));
 }
 
-bool gab_gctrigger(struct gab_triple gab) {
-  if (gab_is_signaling(gab))
-    return false;
-
-  uint64_t e = epochget(gab);
-
-  for (uint64_t i = 0; i < gab.eg->len; i++) {
-    if (buflen(gab, kGAB_BUF_DEC, i, e) < cGAB_GC_MOD_BUFF_MAX &&
-        buflen(gab, kGAB_BUF_INC, i, e) < cGAB_GC_MOD_BUFF_MAX)
-      continue;
-
-#if cGAB_LOG_GC
-    printf("TRIGGERED: %i\n", gab.eg->sig.schedule);
-#endif
-
-    gab_asigcoll(gab);
-    break;
-  }
-
-  return true;
-}
-
 void gab_gcdocollect(struct gab_triple gab) {
   assert(gab.wkid == 0);
 
@@ -685,7 +671,11 @@ void gab_gcdocollect(struct gab_triple gab) {
    * as we're collecting. Just save the snapshot
    * of it now.
    */
-  gab_value messages = gab.eg->messages;
+  gab.eg->gc->msg[epoch] = gab.eg->messages;
+
+  gab_value messages = gab.eg->gc->msg[epoch];
+
+  gab_value last_messages = gab.eg->gc->msg[last];
 
 #if cGAB_LOG_GC
   printf("CEPOCH %i (last: %i, raw: %i)\n", epoch, last,
@@ -699,6 +689,9 @@ void gab_gcdocollect(struct gab_triple gab) {
 
   processincrements(gab, epoch);
 
+  if (gab_valiso(last_messages))
+    dec_obj_ref(gab, gab_valtoo(last_messages));
+
   processdecrements(gab, last);
 
   collect_dead(gab);
@@ -708,7 +701,4 @@ void gab_gcdocollect(struct gab_triple gab) {
   expected_e = (gab.eg->jobs[gab.wkid].epoch) % 3;
   assert_workers_have_epoch(gab, expected_e);
 #endif
-
-  if (gab_valiso(messages))
-    queue_decrement(gab, gab_valtoo(messages));
 }
