@@ -26,12 +26,12 @@ end
 
 HistoryElement = Shapes.make(source: result:)
 
-strings\into:.defcase! {
+to\s:.defcase! {
   Shapes.make(status: fiber:) () => do
    "=> $ $".sprintf(self.status, self.fiber)
   end
   Shapes.make(status: res: env:) () => do
-    "=> $ $".sprintf(self.status, self.res.map strings\into: .join(xf.interpose " "))
+    "=> $ $".sprintf(self.status, self.res.map to\s: .join(xf.interpose " "))
   end
 }
 
@@ -243,7 +243,7 @@ Client = Fibers.make()
         source_line = "$: $".sprintf(i, h.source)
         term.print!(0, 3 + (i * 2), source_line)
 
-        result_line = h.result.strings\into
+        result_line = h.result.to\s
         term.print!(0, 4 + (i * 2), result_line)
       end
 

@@ -143,7 +143,7 @@ Messages are the *only* mechanism for defining behavior or control flow in gab.
 ```
 The core library provides some messages for defining messages. This might feel a little lispy:
 ```gab
-say_hello: .def!('gab\string', 'gab\message', () => 'Hello, ' + self.strings\into .println)
+say_hello: .def!('gab\string', 'gab\message', () => 'Hello, ' + self.to\s.println)
 
 'Joe' .say_hello    # => Hello, Joe!
 

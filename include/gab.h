@@ -800,7 +800,7 @@ struct gab_build_argt {
 GAB_API gab_value gab_parse(struct gab_triple gab, struct gab_build_argt args);
 
 /**
- * @brief Compile an AST into a block.
+ * @brief Compile a source string into a block.
  */
 GAB_API gab_value gab_build(struct gab_triple gab, struct gab_build_argt args);
 
@@ -873,14 +873,16 @@ GAB_API a_gab_value *gab_run(struct gab_triple gab, struct gab_run_argt args);
 GAB_API gab_value gab_arun(struct gab_triple gab, struct gab_run_argt args);
 
 /**
- * @brief Asynchronously call a block. This will create and queue a fiber - but may timeout.
+ * @brief Asynchronously call a block. This will create and queue a fiber - but
+ * may timeout.
  * @see struct gab_run_argt
  *
  * @param  gab The triple.
  * @param args The arguments.
  * @return The fiber that was queued.
  */
-GAB_API gab_value gab_tarun(struct gab_triple gab, size_t nms, struct gab_run_argt args);
+GAB_API gab_value gab_tarun(struct gab_triple gab, size_t nms,
+                            struct gab_run_argt args);
 
 struct gab_send_argt {
   /**
@@ -2786,8 +2788,6 @@ GAB_API_INLINE bool gab_valintob(gab_value value) {
  */
 GAB_API_INLINE gab_value gab_valintos(struct gab_triple gab, gab_value value) {
   switch (gab_valkind(value)) {
-  case kGAB_BINARY:
-    return gab_bintostr(value);
   case kGAB_MESSAGE:
     return gab_msgtostr(value);
   case kGAB_STRING:
@@ -2796,19 +2796,15 @@ GAB_API_INLINE gab_value gab_valintos(struct gab_triple gab, gab_value value) {
     // Generally, I think this is a bad idea.
     // It can ( and will ) blow the stack up for sufficiently large
     // values. Also if some logic is wrong.
+    // Probably a good idea to put an upper bound here
+    // so as not to smash teh stack.
     for (size_t len = 128;; len *= 2) {
       char buffer[len];
 
       char *cursor = buffer;
       size_t remaining = len;
 
-      int result = gab_svalinspect(&cursor, &remaining, value, -1);
-
-      assert(result >= 0);
-      if (result < 0)
-        return gab_invalid;
-
-      if (remaining == 0)
+      if (gab_svalinspect(&cursor, &remaining, value, -1) < 0)
         continue;
 
       return gab_string(gab, buffer);

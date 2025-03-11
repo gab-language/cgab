@@ -1,12 +1,12 @@
 'transducers'.use
 
-test?: .def! ("gab\message" () => self.strings\into.ends_with? '\\test')
+test?: .def! ("gab\message" () => self.to\s.ends_with? '\\test')
 
 implementations = Messages.specializations
 
 xf = td:.filter((_ m) => m .test?)
   |> td:.map((impls m) => do
-      (path[] _) = m.strings\into.split "\"
+      (path[] _) = m.to\s.split "\"
 
       (path { path: path, impls: impls })
   end)

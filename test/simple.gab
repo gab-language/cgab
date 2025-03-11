@@ -1,49 +1,88 @@
 s = 'specs'.use
+Ranges = 'ranges'.use
 
-string?: .def! false:
-string?: .def! (Strings.t, true:)
-
-http\status: .defspec! {
-  help: "The http status code"
-  spec: string?:
+digit_spec = digit: .defspec! {
+  help: "A digit"
+  spec: s.any(Ranges.make(0 9).map to\s: .collect .**)
 }
 
-http\method: .defspec! {
+#digit_spec.spec\fits?("1").println
+
+status_spec = http\status: .defspec! {
+  help: "The http status code"
+  spec: s.pat(
+    hundreds: digit:
+    tens: digit:
+    ones: digit:
+  )
+}
+
+#status_spec.spec\fits?("200").println
+
+method_spec = http\method: .defspec! {
   help: "The http method of a request"
   spec: s.any('GET' 'PUT' 'PATCH' 'DEL')
 }
 
-http\header: .defspec! {
+#method_spec.spec\fits?("GET").println
+
+newline: .defspec! {
+  help: "A newline"
+  spec: '\n'
+}
+
+header_spec = http\header: .defspec! {
   help: "A single header"
   spec: s.pat(
-    name: s *string?:
+    name: s *s.string
     colon: ':'
-    value: s *string?:)
+    value: s *s.string
+    newline: newline:)
 }
 
-http\body: .defspec! {
+#header_spec.spec\fits?('Content-length:10\n').println
+
+body_spec = http\body: .defspec! {
   help: "The body of an HTTP req/res"
-  spec: s *string?:
+  spec: s *s.string
 }
 
-http_spec = s.cat(
+#body_spec.spec\fits?('Hello\nworld!\n').println
+
+http_spec = s.pat(
   status:  http\status:
+  status\end: newline:
   method:  http\method:
+  method\end: newline:
   headers: s *http\header:
-  empty_line: ''
+  empty_line: newline:
   body:    http\body:)
 
-req = '200\nGET\nContentLength:10\nContentType:text\n\nHelloWorld\nTest'
+test_spec = s.pat(
+  status: http\status:
+  status\end: newline:
+)
 
-http_spec.spec\fits?(req.split '\n') .println # => true
-http_spec.spec\fits?(req.split '\n') .println # => true
-http_spec.spec\fits?(req.split '\n') .println # => true
-http_spec.spec\fits?(req.split '\n') .println # => true
-http_spec.spec\fits?(req.split '\n') .println # => true
-http_spec.spec\fits?(req.split '\n') .println # => true
-http_spec.spec\fits?(req.split '\n') .println # => true
-http_spec.spec\fits?(req.split '\n') .println # => true
-http_spec.spec\fits?(req.split '\n') .println # => true
-http_spec.spec\fits?(req.split '\n') .println # => true
+test_spec.spec\fits?('200\n').println
+
+#req = '200\nGET\nContentLength:10\nContentType:text\n\nHello'
+
+#http_spec.spec\fits?(req).println # => true
+#http_spec.spec\fits?(req) .println # => true
+#http_spec.spec\fits?(req) .println # => true
+#http_spec.spec\fits?(req) .println # => true
+#http_spec.spec\fits?(req) .println # => true
+#http_spec.spec\fits?(req) .println # => true
+#http_spec.spec\fits?(req) .println # => true
+#http_spec.spec\fits?(req) .println # => true
+#http_spec.spec\fits?(req) .println # => true
+#http_spec.spec\fits?(req) .println # => true
+#http_spec.spec\fits?(req) .println # => true
+
+#generated_http = http_spec.spec\gen
+
+#generated_http.println
+
+#http_spec.spec\fits?(generated_http).println
 
 #.http.header:spec.into:spec.fits?("ContentLength:10"):println

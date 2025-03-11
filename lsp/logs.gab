@@ -12,11 +12,11 @@ log\row\t = Shapes.make(level: msg:)
 
 Fibers.make () => do
   log_channel .each row => do
-    logfile .write (row.level.strings\into) .unwrap!
+    logfile .write (row.level.to\s) .unwrap!
 
     row.msg.each m => do
       logfile.write ','
-      logfile.write (m.strings\into) .unwrap!
+      logfile.write (m.to\s) .unwrap!
     end
 
     logfile .write '\n'

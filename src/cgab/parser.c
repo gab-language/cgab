@@ -411,7 +411,7 @@ bool node_ismulti(struct gab_triple gab, gab_value node) {
 
   switch (gab_valkind(gab_recshp(node))) {
   case kGAB_SHAPE:
-    if (msg_is_specialform(gab, gab_mrecat(gab, node, "gab.msg")))
+    if (msg_is_specialform(gab, gab_mrecat(gab, node, mGAB_AST_NODE_SEND_MSG)))
       return false;
     else
       return true;
@@ -471,8 +471,18 @@ size_t node_len(struct gab_triple gab, gab_value node) {
 
 gab_value node_send(struct gab_triple gab, gab_value lhs, gab_value msg,
                     gab_value rhs) {
-  static const char *keys[] = {"gab.lhs", "gab.msg", "gab.rhs"};
-  gab_value vals[] = {lhs, msg, rhs};
+  static const char *keys[] = {
+      mGAB_AST_NODE_SEND_LHS,
+      mGAB_AST_NODE_SEND_MSG,
+      mGAB_AST_NODE_SEND_RHS,
+  };
+
+  gab_value vals[] = {
+      lhs,
+      msg,
+      rhs,
+  };
+
   return node_value(gab, gab_srecord(gab, 3, keys, vals));
 }
 
@@ -1529,9 +1539,9 @@ gab_value unpack_binding_into_env(struct gab_triple gab, struct bc *bc,
     case kGAB_RECORD: {
       if (gab_valkind(gab_recshp(binding)) == kGAB_SHAPE) {
         // Assume this is a send
-        gab_value lhs = gab_mrecat(gab, binding, "gab.lhs");
-        gab_value rhs = gab_mrecat(gab, binding, "gab.rhs");
-        gab_value m = gab_mrecat(gab, binding, "gab.msg");
+        gab_value lhs = gab_mrecat(gab, binding, mGAB_AST_NODE_SEND_LHS);
+        gab_value rhs = gab_mrecat(gab, binding, mGAB_AST_NODE_SEND_RHS);
+        gab_value m = gab_mrecat(gab, binding, mGAB_AST_NODE_SEND_MSG);
 
         gab_value rec = gab_uvrecat(lhs, 0);
 
@@ -1633,8 +1643,8 @@ gab_value unpack_binding_into_env(struct gab_triple gab, struct bc *bc,
 
 gab_value compile_block(struct gab_triple gab, struct bc *bc, gab_value node,
                         gab_value env) {
-  gab_value LHS = gab_mrecat(gab, node, "gab.lhs");
-  gab_value RHS = gab_mrecat(gab, node, "gab.rhs");
+  gab_value LHS = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_LHS);
+  gab_value RHS = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_RHS);
 
   gab_value lst = gab_listof(gab, gab_symbol(gab, "self"));
 
@@ -1666,8 +1676,8 @@ gab_value compile_block(struct gab_triple gab, struct bc *bc, gab_value node,
 
 gab_value compile_assign(struct gab_triple gab, struct bc *bc, gab_value node,
                          gab_value env) {
-  gab_value lhs_node = gab_mrecat(gab, node, "gab.lhs");
-  gab_value rhs_node = gab_mrecat(gab, node, "gab.rhs");
+  gab_value lhs_node = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_LHS);
+  gab_value rhs_node = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_RHS);
 
   env = compile_tuple(gab, bc, rhs_node, env);
 
@@ -1684,7 +1694,7 @@ gab_value compile_assign(struct gab_triple gab, struct bc *bc, gab_value node,
 
 gab_value compile_specialform(struct gab_triple gab, struct bc *bc,
                               gab_value tuple, gab_value node, gab_value env) {
-  gab_value msg = gab_mrecat(gab, node, "gab.msg");
+  gab_value msg = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_MSG);
 
   if (msg == gab_message(gab, mGAB_ASSIGN))
     return compile_assign(gab, bc, node, env);
@@ -1705,9 +1715,9 @@ gab_value compile_record(struct gab_triple gab, struct bc *bc, gab_value tuple,
   switch (gab_valkind(gab_recshp(node))) {
   case kGAB_SHAPE: {
     // We have a send node!
-    gab_value lhs_node = gab_mrecat(gab, node, "gab.lhs");
-    gab_value rhs_node = gab_mrecat(gab, node, "gab.rhs");
-    gab_value msg = gab_mrecat(gab, node, "gab.msg");
+    gab_value lhs_node = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_LHS);
+    gab_value rhs_node = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_RHS);
+    gab_value msg = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_MSG);
 
     if (msg_is_specialform(gab, msg))
       return compile_specialform(gab, bc, tuple, node, env);
@@ -1878,8 +1888,7 @@ union gab_value_pair gab_compile(struct gab_triple gab,
   assert(bc.bc.len == bc.bc_toks.len);
 
   if (args.env == gab_invalid)
-    return bc_destroy(&bc),
-           (union gab_value_pair){{gab_invalid, gab_invalid}};
+    return bc_destroy(&bc), (union gab_value_pair){{gab_invalid, gab_invalid}};
 
   assert(gab_reclen(args.env) == nenvs);
 

@@ -1,7 +1,7 @@
 #include "core.h"
 #include "gab.h"
 
-a_gab_value *gab_gablib_check(struct gab_triple gab, uint64_t argc,
+a_gab_value *gab_gablib_build(struct gab_triple gab, uint64_t argc,
                               gab_value argv[static argc]) {
   gab_value source = gab_arg(0);
   const char *src = gab_strdata(&source);
@@ -17,7 +17,40 @@ a_gab_value *gab_gablib_check(struct gab_triple gab, uint64_t argc,
                      });
 
   if (mod != gab_invalid) {
-    gab_vmpush(gab_thisvm(gab), gab_ok);
+    gab_vmpush(gab_thisvm(gab), gab_ok, mod);
+    return nullptr;
+  }
+
+  gab_value rec = gab_recordof(
+      gab, gab_message(gab, "status"), gab_string(gab, err.status_name),
+      gab_message(gab, "row"), gab_number(err.row),
+      gab_message(gab, "col\\begin"), gab_number(err.col_begin),
+      gab_message(gab, "col\\end"), gab_number(err.col_end),
+      gab_message(gab, "byte\\begin"), gab_number(err.byte_begin),
+      gab_message(gab, "byte\\end"), gab_number(err.byte_end));
+
+  gab_vmpush(gab_thisvm(gab), gab_err, rec);
+  return nullptr;
+}
+
+
+a_gab_value *gab_gablib_parse(struct gab_triple gab, uint64_t argc,
+                              gab_value argv[static argc]) {
+  gab_value source = gab_arg(0);
+  const char *src = gab_strdata(&source);
+
+  struct gab_errdetails err = {0};
+
+  gab_value mod =
+      gab_parse(gab, (struct gab_build_argt){
+                         .source = src,
+                         .name = src,
+                         .flags = fGAB_ERR_QUIET | fGAB_RUN_INCLUDEDEFAULTARGS,
+                         .err_out = &err,
+                     });
+
+  if (mod != gab_invalid) {
+    gab_vmpush(gab_thisvm(gab), gab_ok, mod);
     return nullptr;
   }
 
@@ -46,9 +79,6 @@ a_gab_value *gab_gablib_aeval(struct gab_triple gab, uint64_t argc,
   gab_value fib;
 
   if (env == gab_nil) {
-    // These flags aren't passed to the fiber
-    // That eventually runs this code.
-    // That is the issue we encounter here.
     fib = gab_aexec(gab,
                     (struct gab_exec_argt){
                         .source = src,
@@ -93,15 +123,20 @@ GAB_DYNLIB_MAIN_FN {
 
   gab_def(gab,
           {
-              gab_message(gab, "gab\\eval"),
+              gab_message(gab, "as\\gab"),
               gab_type(gab, kGAB_STRING),
-              gab_snative(gab, "gab\\eval", gab_gablib_aeval),
+              gab_snative(gab, "as\\gab", gab_gablib_aeval),
           },
           {
-              gab_message(gab, "gab\\check"),
+              gab_message(gab, "as\\gab\\block"),
               gab_type(gab, kGAB_STRING),
-              gab_snative(gab, "gab\\check", gab_gablib_check),
-          }, );
+              gab_snative(gab, "as\\gab\\block", gab_gablib_build),
+          },
+          {
+              gab_message(gab, "as\\gab\\ast"),
+              gab_type(gab, kGAB_STRING),
+              gab_snative(gab, "as\\gab\\ast", gab_gablib_parse),
+          });
 
   gab_value results[] = {gab_ok, mod};
 

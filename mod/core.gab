@@ -36,13 +36,13 @@ falsey_values .defmodule! {
   or: (alt[]) => alt**
   else: f => f.(self)
   assert!: msg => ('Assert failed: ' + msg).panic
-  options\into: none:,
-  results\into: err:,
+  to\option: none:,
+  to\result: err:,
 }
 
 [] .defmodule! {
-  options\into: (args[]) => (ok: self args**)
-  results\into: (args[]) => (ok: self args**)
+  to\option: (args[]) => (ok: self args**)
+  to\result: (args[]) => (ok: self args**)
 }
 
 cond\check: .defcase! {
@@ -79,12 +79,12 @@ put_by: .def! (
 :.def!(
   option:
   (cond, data[]) => do
-    (cond.options\into, data**)
+    (cond.to\option, data**)
   end)
 
 :.def!(
   result:
-  (cond, data[]) => (cond.results\into, data**))
+  (cond, data[]) => (cond.to\result, data**))
 
 [ok:] .defmodule! {
   ok?: (args[]) => (true: args**)
@@ -204,21 +204,23 @@ cons: .def! (nil: (o) => [o])
   end
 }
 
-Records.t .def\seq!
+Records.t.def\seq!
+
+Strings.t.def\seq!
 
 is_n?: .def! false:
 is_n?: .def! (Numbers.t, true:)
 
-numbers\into: .def! (falsey_values, 0)
-numbers\into: .def! (truthy_values, 1)
+to\n: .def! (falsey_values, 0)
+to\n: .def! (truthy_values, 1)
 
 [Numbers.t] .defmodule! {
-  ->: to => (to self) .range\into
+  ->: to => (to self) .to\range
   ++: _ => self + 1
   --: _ => self - 1
   even?: _ => self .% 2 .== 0
   odd?: _ => self .even? .!
   pos?: _ => self > 0
   neg?: _ => self < 0
-  numbers\into: _ => self
+  to\n: _ => self
 }

@@ -1,4 +1,4 @@
-makexf = td:.map strings\into:
+makexf = td:.map to\s:
 
 make:.def!(
   Strings

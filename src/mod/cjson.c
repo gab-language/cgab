@@ -207,9 +207,9 @@ a_gab_value *gab_jsonlib_decode(struct gab_triple gab, uint64_t argc,
 
 GAB_DYNLIB_MAIN_FN {
   gab_def(gab, {
-                   gab_message(gab, "json\\decode"),
+                   gab_message(gab, "as\\json"),
                    gab_type(gab, kGAB_STRING),
-                   gab_snative(gab, "json\\decode", gab_jsonlib_decode),
+                   gab_snative(gab, "as\\json", gab_jsonlib_decode),
                });
 
   return a_gab_value_one(gab_ok);

@@ -300,6 +300,10 @@ enum gab_flags {
 #define tGAB_IOSTREAM "io\\stream"
 #define tGAB_TERMINAL "terminal"
 
+#define mGAB_AST_NODE_SEND_LHS "gab\\lhs"
+#define mGAB_AST_NODE_SEND_MSG "gab\\msg"
+#define mGAB_AST_NODE_SEND_RHS "gab\\rhs"
+
 #define T char
 #include "slice.h"
 

@@ -27,7 +27,7 @@ int snprintf_through(char **dst, size_t *n, char *fmt, ...) {
   if (res > *n) {
     *dst += *n;
     *n = 0;
-    return 0;
+    return -1;
   }
 
   *dst += res;
@@ -318,30 +318,20 @@ int sinspectval(char **dest, size_t *n, gab_value self, int depth) {
     return snprintf_through(dest, n, "%s", gab_strdata(&self));
   case kGAB_BINARY: {
     const char *s = gab_strdata(&self);
-    int bytes = 0;
-    int res = snprintf_through(dest, n, "<" tGAB_BINARY " 0x");
 
-    bytes += res;
-    dest += res;
-    n -= res;
+    if (snprintf_through(dest, n, "<" tGAB_BINARY " 0x") < 0)
+      return -1;
 
     uint64_t len = gab_strlen(self);
 
-    while (len--) {
-      res = snprintf_through(dest, n, "%02x", (unsigned char)*s++);
+    while (len--)
+      if (snprintf_through(dest, n, "%02x", (unsigned char)*s++) < 0)
+        return -1;
 
-      bytes += res;
-      dest += res;
-      n -= res;
-    }
+    if (snprintf_through(dest, n, ">") < 0)
+      return -1;
 
-    res = snprintf_through(dest, n, ">");
-
-    bytes += res;
-    dest += res;
-    n -= res;
-
-    return bytes;
+    return 0;
   }
   case kGAB_MESSAGE:
     return snprintf_through(dest, n, "%s:", gab_strdata(&self));

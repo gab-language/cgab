@@ -1,10 +1,10 @@
 'cjson' .use
 xf = 'transducers' .use
 
-array_xf = xf.map json\encode:
+array_xf = xf.map to\json:
         |> xf.interpose ","
 
-object_xf = xf.map((v k) => k.json\encode + ":" + v.json\encode)
+object_xf = xf.map((v k) => k.to\json + ":" + v.to\json)
          |> xf.interpose ","
 
 do_encode_record: .defcase! {
@@ -12,11 +12,11 @@ do_encode_record: .defcase! {
   false: object => "{" + object.join object_xf + "}"
 }
 
-json\encode: .def! () => '"' + self.strings\into + '"'
-json\encode: .defcase! {
+to\json: .def! () => '"' + self.to\s + '"'
+to\json: .defcase! {
   nil:          'nil'
   true:         'true'
   false:        'false'
-  "gab\number"  () => self.strings\into
+  "gab\number"  () => self.to\s
   "gab\record"  () => self.list?.do_encode_record self
 }
