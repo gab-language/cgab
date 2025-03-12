@@ -28,6 +28,7 @@ STATUS(MISSING_INITIALIZER, "Variables must be initialized")
 
 // Run-time errors
 STATUS(TYPE_MISMATCH, "Type mismatch")
+STATUS(INVALID_SHIFT_AMOUNT, "Invalid shift amount")
 STATUS(OVERFLOW, "Reached maximum call depth")
 STATUS(IMPLEMENTATION_EXISTS, "Implementation already exists")
 STATUS(IMPLEMENTATION_MISSING, "Implementation does not exist")

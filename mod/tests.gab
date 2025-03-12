@@ -1,6 +1,8 @@
 'transducers'.use
 
-test?: .def! ("gab\message" () => self.to\s.ends_with? '\\test')
+test?:.def!(
+  Messages.t
+  () => self.to\s.ends_with? "\test")
 
 implementations = Messages.specializations
 
@@ -24,7 +26,7 @@ suites\all = tests\all.reduce(
 )
 
 test\compare: .def! (
-  "gab\block" "gab\message"
+  Blocks.t, Messages.t
   (lhs rhs) => self.(lhs, rhs)
 )
 

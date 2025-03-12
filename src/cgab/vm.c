@@ -1,5 +1,6 @@
 #include "core.h"
 #include "gab.h"
+#include <stdint.h>
 
 #define GAB_STATUS_NAMES_IMPL
 #include "engine.h"
@@ -197,6 +198,34 @@ static handler handlers[] = {
     NEXT();                                                                    \
   }
 
+#define IMPL_SEND_BINARY_SHIFT_NUMERIC(CODE, operation)                        \
+  CASE_CODE(SEND_##CODE) {                                                     \
+    gab_value *ks = READ_CONSTANTS;                                            \
+    uint64_t have = compute_arity(VAR(), READ_BYTE);                           \
+                                                                               \
+    SEND_GUARD_CACHED_RECEIVER_TYPE(PEEK_N(have));                             \
+                                                                               \
+    if (__gab_unlikely(have < 2))                                              \
+      PUSH(gab_nil), have++;                                                   \
+                                                                               \
+    VM_PANIC_GUARD_ISN(PEEK_N(have));                                          \
+    VM_PANIC_GUARD_ISN(PEEK_N(have - 1));                                      \
+                                                                               \
+    int64_t amount = gab_valton(PEEK_N(have - 1));                             \
+    uint64_t val_a = gab_valton(PEEK_N(have));                                 \
+                                                                               \
+    if (__gab_unlikely(amount < 0 || amount >= 64))                            \
+      VM_PANIC(GAB_INVALID_SHIFT_AMOUNT, "$ is outside the range (0, 63)",     \
+               PEEK_N(have - 1));                                              \
+                                                                               \
+    DROP_N(have);                                                              \
+    PUSH(gab_number(val_a operation amount));                                  \
+                                                                               \
+    SET_VAR(1);                                                                \
+                                                                               \
+    NEXT();                                                                    \
+  }
+
 // FIXME: This doesn't work
 // These boolean sends don't work because there is no longer a boolean type.
 // There are just sigils
@@ -352,22 +381,6 @@ static inline uint64_t compute_token_from_ip(struct gab_triple gab,
   uint64_t token = v_uint64_t_val_at(&p->src->bytecode_toks, offset);
 
   return token;
-}
-
-/*
- * This isn't a safe way to compute the message - we don't actually know
- * if a frame is paused on an actual *send* boundary anymore (as terminate can
- * interrupt *any* instrtuction)
- */
-static inline gab_value compute_message_from_ip(struct gab_oblock *b,
-                                                uint8_t *ip) {
-  struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(b->p);
-
-  uint16_t k = ((uint16_t)ip[-3] << 8) | ip[-2];
-
-  gab_value m = v_gab_value_val_at(&p->src->constants, k);
-
-  return m;
 }
 
 struct gab_err_argt vm_frame_build_err(struct gab_triple gab,
@@ -1204,13 +1217,16 @@ IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_DIV, gab_number, double, /);
 IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_MOD, gab_number, uint64_t, %);
 IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_BOR, gab_number, uint64_t, |);
 IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_BND, gab_number, uint64_t, &);
-IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_LSH, gab_number, uint64_t, <<);
-IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_RSH, gab_number, uint64_t, >>);
 IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_LT, gab_bool, double, <);
 IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_LTE, gab_bool, double, <=);
 IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_GT, gab_bool, double, >);
 IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_GTE, gab_bool, double, >=);
+
+IMPL_SEND_BINARY_SHIFT_NUMERIC(PRIMITIVE_LSH, <<);
+IMPL_SEND_BINARY_SHIFT_NUMERIC(PRIMITIVE_RSH, >>);
+
 IMPL_SEND_UNARY_BOOLEAN(PRIMITIVE_LIN, gab_bool, bool, !);
+
 IMPL_SEND_BINARY_BOOLEAN(PRIMITIVE_LOR, gab_bool, bool, ||);
 IMPL_SEND_BINARY_BOOLEAN(PRIMITIVE_LND, gab_bool, bool, &&);
 

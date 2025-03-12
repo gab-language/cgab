@@ -3,3 +3,7 @@ makexf = td:.map to\s:
 make:.def!(
   Strings
   (values[]) => values.join(makexf))
+
+[Strings.t, Binaries.t].defmodule! {
+  at!: (n, by) => self.at(n by).unwrap!
+}

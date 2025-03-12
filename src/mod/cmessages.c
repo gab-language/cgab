@@ -233,9 +233,9 @@ GAB_DYNLIB_MAIN_FN {
               gab_snative(gab, "defmodule!", gab_msglib_module),
           },
           {
-              gab_message(gab, "strings\\into"),
+              gab_message(gab, "to\\s"),
               t,
-              gab_snative(gab, "strings\\into", gab_msglib_to_string),
+              gab_snative(gab, "to\\s", gab_msglib_to_string),
           },
           {
               gab_message(gab, "has?"),
@@ -246,11 +246,6 @@ GAB_DYNLIB_MAIN_FN {
               gab_message(gab, "at"),
               t,
               gab_snative(gab, "at", gab_msglib_at),
-          },
-          {
-              gab_message(gab, "put"),
-              t,
-              gab_snative(gab, "put", gab_msglib_put),
           });
 
   return a_gab_value_one(gab_ok);

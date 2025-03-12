@@ -301,6 +301,67 @@ a_gab_value *gab_strlib_begins(struct gab_triple gab, uint64_t argc,
   return nullptr;
 }
 
+static uint64_t mask_table[] = {
+    0,
+    0xFF,
+    0xFFFF,
+    0xFFFFFF,
+    0xFFFFFFFF,
+    0xFFFFFFFFFF,
+    0xFFFFFFFFFFFF,
+    0xFFFFFFFFFFFFFF,
+    0xFFFFFFFFFFFFFFFF,
+};
+
+a_gab_value *gab_binlib_at(struct gab_triple gab, uint64_t argc,
+                           gab_value argv[argc]) {
+  gab_value bin = gab_arg(0);
+  gab_value idx = gab_arg(1);
+  gab_value step = gab_arg(2);
+
+  if (gab_valkind(bin) != kGAB_BINARY)
+    return gab_pktypemismatch(gab, bin, kGAB_BINARY);
+
+  if (gab_valkind(idx) != kGAB_NUMBER)
+    return gab_pktypemismatch(gab, idx, kGAB_NUMBER);
+
+  if (step == gab_nil)
+    step = gab_number(1);
+
+  if (gab_valkind(step) != kGAB_NUMBER)
+    return gab_pktypemismatch(gab, step, kGAB_NUMBER);
+
+  int64_t index = gab_valton(idx);
+  size_t stp = gab_valton(step);
+
+  if (gab_valkind(step) != kGAB_NUMBER)
+    return gab_pktypemismatch(gab, step, kGAB_NUMBER);
+
+  if (stp > 8)
+    return gab_fpanic(gab, "Step size cannot exceed 8 bytes: got $", step);
+
+  size_t len = gab_strlen(bin);
+
+  // Go from the back
+  if (index < 0)
+    index += (len / stp);
+
+  size_t offset = index * stp;
+
+  if (offset + stp > len)
+    return gab_vmpush(gab_thisvm(gab), gab_none), nullptr;
+
+  const char *begin = gab_strdata(&bin) + (index * stp);
+
+  uint64_t result = 0;
+
+  for (int i = 0; i < stp; i++)
+    result |= begin[i] << i;
+
+  gab_vmpush(gab_thisvm(gab), gab_ok, gab_number(result));
+  return nullptr;
+}
+
 a_gab_value *gab_strlib_at(struct gab_triple gab, uint64_t argc,
                            gab_value argv[argc]) {
   if (argc != 2 && gab_valkind(argv[1]) != kGAB_NUMBER) {
@@ -361,7 +422,7 @@ a_gab_value *gab_strlib_slice(struct gab_triple gab, uint64_t argc,
   if (gab_valkind(str) != kGAB_STRING)
     return gab_pktypemismatch(gab, str, kGAB_STRING);
 
-  const char* data = gab_strdata(&str);
+  const char *data = gab_strdata(&str);
 
   uint64_t len = gab_strlen(argv[0]);
   if (len == 0) {
@@ -572,13 +633,23 @@ GAB_DYNLIB_MAIN_FN {
           },
           {
               gab_message(gab, "len"),
-              t,
-              gab_snative(gab, "len", gab_strlib_len),
+              gab_type(gab, kGAB_BINARY),
+              gab_snative(gab, "len", gab_binlib_len),
+          },
+          {
+              gab_message(gab, "at"),
+              gab_type(gab, kGAB_BINARY),
+              gab_snative(gab, "at", gab_binlib_at),
+          },
+          {
+              gab_message(gab, "t"),
+              gab_strtomsg(gab_type(gab, kGAB_BINARY)),
+              gab_type(gab, kGAB_BINARY),
           },
           {
               gab_message(gab, "len"),
-              gab_type(gab, kGAB_BINARY),
-              gab_snative(gab, "len", gab_binlib_len),
+              t,
+              gab_snative(gab, "len", gab_strlib_len),
           },
           {
               gab_message(gab, "at"),

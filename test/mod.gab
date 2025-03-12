@@ -110,10 +110,33 @@ strings\dynamic_interpolate\test: .def! (t => do
   t.expect(+:.('hi ' 'world' ignore_me:) ==: 'hi world')
 end)
 
-strings\append_sigils\test: .def! (t => do
+strings\append_messages\test: .def! (t => do
   t.expect(+:.('hi ' world:) ==: 'hi world')
   t.expect(('hi ' + world:) ==:'hi world')
 end)
+
+binaries\convert_from_strings\test: .def! t => do
+  bin = "abc".to\b
+
+  t.expect(bin ?, ==:, Binaries.t)
+end
+
+binaries\index\test: .def! t => do
+  bin = "abc".to\b
+
+  t.expect(bin.at! 0, ==:, 97)
+  t.expect(bin.at! 1, ==:, 98)
+  t.expect(bin.at! 2, ==:, 99)
+
+  t.expect(bin.at! -1, ==:, 99)
+  t.expect(bin.at! -2, ==:, 98)
+  t.expect(bin.at! -3, ==:, 97)
+
+  t.expect(bin.at!(0, 2), ==:, 229)
+
+  t.expect(bin.at 42, ==:, none:)
+  t.expect(bin.at(1, 2), ==:, none:)
+end
 
 blocks\capture\test: .def! (t => do
   capture_me = 1
@@ -233,7 +256,7 @@ records\take_fields\test: .def! (t => do
   t.expect(v ==: 2)
 end)
 
-records\big_take_fields\test: .def! (t => do
+records\big_take_fields\test: .def! t => do
   list = [
     0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16
     17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32
@@ -249,7 +272,18 @@ records\big_take_fields\test: .def! (t => do
 
   t.expect(popped.len, ==:, 40)
   t.expect(v, ==:, 10)
-end)
+end
+
+Ranges = 'ranges'.use
+
+records\work_when_large\test: .def! t => do
+  list = Ranges.make(0 2048).collect
+
+  t.expect(list.at! 1024, ==:, 1024)
+  t.expect(list.at! 1999, ==:, 1999)
+  t.expect(list.at! 42, ==:, 42)
+  t.expect(list.at 2049, ==:, none:)
+end
 
 vec\t = { x: nil:, y: nil: }?
 
