@@ -9,6 +9,7 @@
 
 #include <errno.h>
 #include <inttypes.h>
+#include <math.h>
 #include <stdarg.h>
 #include <stdatomic.h>
 #include <stdbool.h>
@@ -247,8 +248,32 @@ GAB_API_INLINE gab_value __gab_dtoval(double value) {
   ((gab_value)(__GAB_QNAN | ((uint64_t)kGAB_PRIMITIVE << __GAB_TAGOFFSET) |    \
                (op)))
 
-/* Cast a gab value to a number */
-#define gab_valton(val) (__gab_valtod(val))
+/*
+ * As Gab's number type is a double (64-bit floating point)
+ *
+ * The largest integer which can be *completely stored without any loss* is 32 bits.
+ */
+GAB_API_INLINE int32_t __gab_valtoi(gab_value v) {
+  double num = floor(__gab_valtod(v));
+
+  if (num < (double)INT32_MIN)
+    return 0;
+
+  if (num >= -(double)INT32_MIN)
+    return 0;
+
+  return (int32_t)num;
+}
+
+GAB_API_INLINE uint32_t __gab_valtou(gab_value v) {
+  return (uint32_t)__gab_valtoi(v);
+}
+
+/* Cast a gab value to a number - a double-precsision floating point, signed, or
+ * unsigned integer*/
+#define gab_valtof(val) (__gab_valtod(val))
+#define gab_valtoi(val) (__gab_valtoi(val))
+#define gab_valtou(val) (__gab_valtou(val))
 
 #if cGAB_LOG_GC
 /* Cast a gab value to the generic object pointer */

@@ -1,5 +1,6 @@
 #include "colors.h"
 #include "core.h"
+#include <stdint.h>
 #define GAB_TOKEN_NAMES_IMPL
 #include "engine.h"
 #include "gab.h"
@@ -1130,7 +1131,7 @@ static inline uint8_t encode_arity(struct gab_triple gab, gab_value lhs,
   }
 
   bool is_multi = node_ismulti(gab, rhs);
-  size_t len = node_len(gab, rhs) + node_len(gab, lhs);
+  size_t len = node_len(gab, rhs) + 1;
 
   if (len && is_multi)
     len--;
@@ -1353,7 +1354,7 @@ struct lookup_res {
     kLOOKUP_LOC,
   } k;
 
-  int idx;
+  int64_t idx;
 };
 
 /*
@@ -1371,7 +1372,7 @@ static struct lookup_res add_upvalue(struct gab_triple gab, gab_value env,
   gab_value current_upv_idx = gab_recat(ctx, id);
 
   if (current_upv_idx != gab_invalid)
-    return (struct lookup_res){env, kLOOKUP_UPV, gab_valton(current_upv_idx)};
+    return (struct lookup_res){env, kLOOKUP_UPV, gab_valtoi(current_upv_idx)};
 
   uint16_t count = upvalues_in_env(ctx);
 
@@ -1390,9 +1391,9 @@ static struct lookup_res add_upvalue(struct gab_triple gab, gab_value env,
   return (struct lookup_res){env, kLOOKUP_UPV, count};
 }
 
-static int lookup_upv(gab_value ctx, gab_value id) {
+static int64_t lookup_upv(gab_value ctx, gab_value id) {
   assert(gab_valkind(gab_recat(ctx, id)) == kGAB_NUMBER);
-  return gab_valton(gab_recat(ctx, id));
+  return gab_valtoi(gab_recat(ctx, id));
 }
 
 static int lookup_local(gab_value ctx, gab_value id) {
@@ -1727,7 +1728,7 @@ gab_value compile_record(struct gab_triple gab, struct bc *bc, gab_value tuple,
     if (env == gab_invalid)
       return gab_invalid;
 
-    if (!node_isempty(rhs_node) && node_ismulti(gab, lhs_node))
+    if (!node_isempty(rhs_node))
       if (!push_trim_node(gab, bc, 1, lhs_node, lhs_node))
         return gab_invalid;
 
@@ -1831,7 +1832,7 @@ void build_upvdata(gab_value env, uint8_t len, char *data) {
 
     assert((is_local && idx < nlocals) || (!is_local && idx < nupvalues));
 
-    size_t nth_upvalue = gab_valton(v);
+    uint64_t nth_upvalue = gab_valtou(v);
     assert(nth_upvalue < len);
 
     data[nth_upvalue] = (idx << 1) | is_local;

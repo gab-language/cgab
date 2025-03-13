@@ -125,7 +125,7 @@ a_gab_value *gab_termlib_setcursor(struct gab_triple gab, uint64_t argc,
   if (gab_valkind(y) != kGAB_NUMBER)
     return gab_pktypemismatch(gab, y, kGAB_NUMBER);
 
-  tb_set_cursor(gab_valton(x), gab_valton(y));
+  tb_set_cursor(gab_valtou(x), gab_valtou(y));
 
   return nullptr;
 }
@@ -157,7 +157,7 @@ a_gab_value *gab_termlib_setcell(struct gab_triple gab, uint64_t argc,
 
   tb_utf8_char_to_unicode(&uni, gab_strdata(&cp));
 
-  tb_set_cell(gab_valton(x), gab_valton(y), uni, 0, 0);
+  tb_set_cell(gab_valtou(x), gab_valtou(y), uni, 0, 0);
 
   return nullptr;
 }
@@ -297,7 +297,7 @@ a_gab_value *gab_termlib_print(struct gab_triple gab, uint64_t argc,
 
   const char *bytes = gab_strdata(&str);
 
-  int res = tb_print(gab_valton(x), gab_valton(y), 0, 0, bytes);
+  int res = tb_print(gab_valtou(x), gab_valtou(y), 0, 0, bytes);
 
   gab_vmpush(gab_thisvm(gab), res == TB_ERR_OUT_OF_BOUNDS ? gab_err : gab_ok);
 

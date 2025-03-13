@@ -8,7 +8,7 @@ a_gab_value *gab_fiblib_sleep(struct gab_triple gab, uint64_t argc,
   if (gab_valkind(n) != kGAB_NUMBER)
     return gab_pktypemismatch(gab, n, kGAB_NUMBER);
 
-  if (thrd_sleep(&(struct timespec){.tv_nsec = gab_valton(n)}, NULL) < 0)
+  if (thrd_sleep(&(struct timespec){.tv_nsec = gab_valtou(n)}, NULL) < 0)
     return gab_fpanic(gab, "Error occurred during sleep");
 
   return nullptr;

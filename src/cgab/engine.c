@@ -764,13 +764,13 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
 }
 
 static const char *default_argvals[] = {
-    tGAB_STRING, tGAB_BINARY,  tGAB_MESSAGE, tGAB_RECORD, tGAB_LIST, tGAB_SHAPE,
-    tGAB_FIBER,  tGAB_CHANNEL, tGAB_NUMBER,  tGAB_BLOCK,  tGAB_ATOM,
+    tGAB_STRING, tGAB_BINARY, tGAB_MESSAGE, tGAB_RECORD, tGAB_LIST,
+    tGAB_SHAPE,  tGAB_FIBER,  tGAB_CHANNEL, tGAB_NUMBER, tGAB_BLOCK,
 };
 static const char *default_argnames[] = {
     tGAB_STRING_NAME, tGAB_BINARY_NAME, tGAB_MESSAGE_NAME, tGAB_RECORD_NAME,
     tGAB_LIST_NAME,   tGAB_SHAPE_NAME,  tGAB_FIBER_NAME,   tGAB_CHANNEL_NAME,
-    tGAB_NUMBER_NAME, tGAB_BLOCK_NAME,  tGAB_ATOM_NAME,
+    tGAB_NUMBER_NAME, tGAB_BLOCK_NAME,  
 };
 static const size_t default_arglen =
     sizeof(default_argvals) / sizeof(const char *);
@@ -1449,7 +1449,8 @@ gab_value gab_arun(struct gab_triple gab, struct gab_run_argt args) {
   return gab_tarun(gab, -1, args);
 }
 
-gab_value gab_tarun(struct gab_triple gab, size_t nms, struct gab_run_argt args) {
+gab_value gab_tarun(struct gab_triple gab, size_t nms,
+                    struct gab_run_argt args) {
   gab.flags |= args.flags;
 
   if (gab.flags & fGAB_BUILD_CHECK)

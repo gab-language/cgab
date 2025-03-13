@@ -2,6 +2,7 @@
 #include "core.h"
 #include "gab.h"
 #include <ctype.h>
+#include <stdint.h>
 
 static inline bool instr(char c, const char *set) {
   while (*set != '\0')
@@ -46,7 +47,7 @@ a_gab_value *gab_strlib_seqnext(struct gab_triple gab, uint64_t argc,
   if (gab_valkind(old) != kGAB_NUMBER)
     return gab_pktypemismatch(gab, old, kGAB_NUMBER);
 
-  size_t old_off = gab_valton(old);
+  uint64_t old_off = gab_valtou(old);
   uint64_t len = gab_strlen(str);
 
   if (len <= old_off) {
@@ -258,7 +259,7 @@ a_gab_value *gab_strlib_ends(struct gab_triple gab, uint64_t argc,
     const char *pat = gab_strdata(argv + 0);
     const char *str = gab_strdata(argv + 1);
 
-    gab_vmpush(gab_thisvm(gab), gab_bool(ends(str, pat, gab_valton(argv[2]))));
+    gab_vmpush(gab_thisvm(gab), gab_bool(ends(str, pat, gab_valtou(argv[2]))));
     return nullptr;
   }
   }
@@ -294,24 +295,12 @@ a_gab_value *gab_strlib_begins(struct gab_triple gab, uint64_t argc,
     const char *str = gab_strdata(&vstr);
 
     gab_vmpush(gab_thisvm(gab),
-               gab_bool(begins(str, pat, gab_valton(argv[2]))));
+               gab_bool(begins(str, pat, gab_valtou(argv[2]))));
     return nullptr;
   }
   }
   return nullptr;
 }
-
-static uint64_t mask_table[] = {
-    0,
-    0xFF,
-    0xFFFF,
-    0xFFFFFF,
-    0xFFFFFFFF,
-    0xFFFFFFFFFF,
-    0xFFFFFFFFFFFF,
-    0xFFFFFFFFFFFFFF,
-    0xFFFFFFFFFFFFFFFF,
-};
 
 a_gab_value *gab_binlib_at(struct gab_triple gab, uint64_t argc,
                            gab_value argv[argc]) {
@@ -331,8 +320,8 @@ a_gab_value *gab_binlib_at(struct gab_triple gab, uint64_t argc,
   if (gab_valkind(step) != kGAB_NUMBER)
     return gab_pktypemismatch(gab, step, kGAB_NUMBER);
 
-  int64_t index = gab_valton(idx);
-  size_t stp = gab_valton(step);
+  int64_t index = gab_valtoi(idx);
+  uint64_t stp = gab_valtou(step);
 
   if (gab_valkind(step) != kGAB_NUMBER)
     return gab_pktypemismatch(gab, step, kGAB_NUMBER);
@@ -368,7 +357,7 @@ a_gab_value *gab_strlib_at(struct gab_triple gab, uint64_t argc,
     return gab_fpanic(gab, "&:at expects 1 number argument");
   }
 
-  long int index = gab_valton(argv[1]);
+  int64_t index = gab_valtoi(argv[1]);
 
   if (index > gab_strlen(argv[0])) {
     return gab_fpanic(gab, "Index out of bounds");
@@ -437,7 +426,7 @@ a_gab_value *gab_strlib_slice(struct gab_triple gab, uint64_t argc,
     if (gab_valkind(gab_arg(1)) != kGAB_NUMBER)
       return gab_pktypemismatch(gab, gab_arg(1), kGAB_NUMBER);
 
-    int64_t a = gab_valton(gab_arg(1));
+    int64_t a = gab_valtoi(gab_arg(1));
     if (a < 0)
       a += len;
 
@@ -450,7 +439,7 @@ a_gab_value *gab_strlib_slice(struct gab_triple gab, uint64_t argc,
     if (gab_valkind(gab_arg(1)) != kGAB_NUMBER)
       return gab_pktypemismatch(gab, gab_arg(1), kGAB_NUMBER);
 
-    int64_t a = gab_valton(gab_arg(1));
+    int64_t a = gab_valtoi(gab_arg(1));
     if (a < 0)
       a += len;
 
@@ -458,7 +447,7 @@ a_gab_value *gab_strlib_slice(struct gab_triple gab, uint64_t argc,
     assert(start >= 0 && start <= len);
 
     if (gab_valkind(gab_arg(2)) == kGAB_NUMBER) {
-      int64_t b = gab_valton(gab_arg(2));
+      int64_t b = gab_valtoi(gab_arg(2));
       if (b < 0)
         b += len;
 
@@ -515,7 +504,7 @@ a_gab_value *gab_msglib_binary_into(struct gab_triple gab, uint64_t argc,
 
 a_gab_value *gab_numlib_binary_into(struct gab_triple gab, uint64_t argc,
                                     gab_value argv[argc]) {
-  uint64_t f = gab_valton(gab_arg(0));
+  uint64_t f = gab_valtou(gab_arg(0));
   gab_vmpush(gab_thisvm(gab), gab_nbinary(gab, sizeof(f), (void *)&f));
   return nullptr;
 }

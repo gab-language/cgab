@@ -150,7 +150,7 @@ a_gab_value *gab_iolib_scan(struct gab_triple gab, uint64_t argc,
   if (gab_valkind(bytesToRead) != kGAB_NUMBER)
     return gab_pktypemismatch(gab, bytesToRead, kGAB_NUMBER);
 
-  uint64_t bytes = gab_valton(bytesToRead);
+  uint64_t bytes = gab_valtou(bytesToRead);
 
   if (bytes == 0) {
     gab_vmpush(gab_thisvm(gab), gab_string(gab, ""));

@@ -312,7 +312,7 @@ int sinspectval(char **dest, size_t *n, gab_value self, int depth) {
   case kGAB_CINVALID:
     return snprintf_through(dest, n, "cinvalid");
   case kGAB_NUMBER:
-    return snprintf_through(dest, n, "%lg", gab_valton(self));
+    return snprintf_through(dest, n, "%lg", gab_valtof(self));
   case kGAB_SYMBOL:
   case kGAB_STRING:
     return snprintf_through(dest, n, "%s", gab_strdata(&self));
@@ -405,7 +405,7 @@ int finspectval(FILE *stream, gab_value self, int depth) {
   case kGAB_CINVALID:
     return fprintf(stream, "cinvalid");
   case kGAB_NUMBER:
-    return fprintf(stream, "%lg", gab_valton(self));
+    return fprintf(stream, "%lg", gab_valtof(self));
   case kGAB_SYMBOL:
   case kGAB_STRING:
     return fprintf(stream, "%s", gab_strdata(&self));

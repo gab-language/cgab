@@ -34,20 +34,20 @@ a_gab_value *gab_reclib_slice(struct gab_triple gab, uint64_t argc,
       return gab_fpanic(gab, "&:slice expects a number as the second argument");
     }
 
-    double a = gab_valton(argv[1]);
+    double a = gab_valtof(argv[1]);
     end = MIN(a, len);
     break;
   }
 
   case 3:
     if (gab_valkind(argv[1]) == kGAB_NUMBER) {
-      start = MIN(gab_valton(argv[1]), len);
+      start = MIN(gab_valtou(argv[1]), len);
     } else if (argv[1] == gab_nil) {
       return gab_fpanic(gab, "&:slice expects a number as the second argument");
     }
 
     if (gab_valkind(argv[2]) == kGAB_NUMBER) {
-      end = MIN(gab_valton(argv[2]), len);
+      end = MIN(gab_valtou(argv[2]), len);
     } else if (argv[2] == gab_nil) {
       return gab_fpanic(gab, "&:slice expects a number as the third argument");
     }

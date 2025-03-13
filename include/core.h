@@ -278,7 +278,6 @@ enum gab_flags {
 #define tGAB_BOX "gab\\box"
 #define tGAB_FIBER "gab\\fiber"
 #define tGAB_CHANNEL "gab\\channel"
-#define tGAB_ATOM "gab\\atom"
 
 #define tGAB_STRING_NAME "Strings"
 #define tGAB_BINARY_NAME "Binaries"
@@ -295,7 +294,6 @@ enum gab_flags {
 #define tGAB_BOX_NAME "Boxes"
 #define tGAB_FIBER_NAME "Fibers"
 #define tGAB_CHANNEL_NAME "Channels"
-#define tGAB_ATOM_NAME "Atoms"
 
 #define tGAB_IOSTREAM "io\\stream"
 #define tGAB_TERMINAL "terminal"

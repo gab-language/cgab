@@ -156,7 +156,8 @@ static handler handlers[] = {
     return vm_yield(GAB());                                                    \
   })
 
-#define IMPL_SEND_UNARY_NUMERIC(CODE, value_type, operation_type, operation)   \
+#define IMPL_SEND_UNARY_NUMERIC(CODE, value_type, operation_type, decoder,     \
+                                operation)                                     \
   CASE_CODE(SEND_##CODE) {                                                     \
     gab_value *ks = READ_CONSTANTS;                                            \
     uint64_t have = compute_arity(VAR(), READ_BYTE);                           \
@@ -164,7 +165,7 @@ static handler handlers[] = {
     SEND_GUARD_CACHED_RECEIVER_TYPE(PEEK_N(have));                             \
     VM_PANIC_GUARD_ISN(PEEK_N(have));                                          \
                                                                                \
-    operation_type val = gab_valton(PEEK_N(have));                             \
+    operation_type val = decoder(PEEK_N(have));                                \
                                                                                \
     DROP_N(have);                                                              \
     PUSH(value_type(operation val));                                           \
@@ -174,7 +175,8 @@ static handler handlers[] = {
     NEXT();                                                                    \
   }
 
-#define IMPL_SEND_BINARY_NUMERIC(CODE, value_type, operation_type, operation)  \
+#define IMPL_SEND_BINARY_NUMERIC(CODE, value_type, operation_type, decoder,    \
+                                 operation)                                    \
   CASE_CODE(SEND_##CODE) {                                                     \
     gab_value *ks = READ_CONSTANTS;                                            \
     uint64_t have = compute_arity(VAR(), READ_BYTE);                           \
@@ -187,8 +189,8 @@ static handler handlers[] = {
     VM_PANIC_GUARD_ISN(PEEK_N(have));                                          \
     VM_PANIC_GUARD_ISN(PEEK_N(have - 1));                                      \
                                                                                \
-    operation_type val_b = gab_valton(PEEK_N(have - 1));                       \
-    operation_type val_a = gab_valton(PEEK_N(have));                           \
+    operation_type val_b = decoder(PEEK_N(have - 1));                          \
+    operation_type val_a = decoder(PEEK_N(have));                              \
                                                                                \
     DROP_N(have);                                                              \
     PUSH(value_type(val_a operation val_b));                                   \
@@ -198,7 +200,7 @@ static handler handlers[] = {
     NEXT();                                                                    \
   }
 
-#define IMPL_SEND_BINARY_SHIFT_NUMERIC(CODE, operation)                        \
+#define IMPL_SEND_BINARY_SHIFT_NUMERIC(CODE, operation, opposite_operation)    \
   CASE_CODE(SEND_##CODE) {                                                     \
     gab_value *ks = READ_CONSTANTS;                                            \
     uint64_t have = compute_arity(VAR(), READ_BYTE);                           \
@@ -211,15 +213,22 @@ static handler handlers[] = {
     VM_PANIC_GUARD_ISN(PEEK_N(have));                                          \
     VM_PANIC_GUARD_ISN(PEEK_N(have - 1));                                      \
                                                                                \
-    int64_t amount = gab_valton(PEEK_N(have - 1));                             \
-    uint64_t val_a = gab_valton(PEEK_N(have));                                 \
-                                                                               \
-    if (__gab_unlikely(amount < 0 || amount >= 64))                            \
-      VM_PANIC(GAB_INVALID_SHIFT_AMOUNT, "$ is outside the range (0, 63)",     \
-               PEEK_N(have - 1));                                              \
+    int32_t amount = gab_valtoi(PEEK_N(have - 1));                             \
+    uint32_t val_a = gab_valtou(PEEK_N(have));                                 \
                                                                                \
     DROP_N(have);                                                              \
-    PUSH(gab_number(val_a operation amount));                                  \
+                                                                               \
+    if (__gab_unlikely(amount >= INT64_WIDTH)) {                               \
+      PUSH(gab_number(0));                                                     \
+    } else if (__gab_unlikely(amount < 0)) {                                   \
+      int32_t res = (val_a opposite_operation((uint32_t)-amount));             \
+      assert(gab_valtoi(gab_number(res)) == res);                              \
+      PUSH(gab_number(res));                                                   \
+    } else {                                                                   \
+      int32_t res = (val_a operation(uint32_t) amount);                        \
+      assert(gab_valtoi(gab_number(res)) == res);                              \
+      PUSH(gab_number(res));                                                   \
+    }                                                                          \
                                                                                \
     SET_VAR(1);                                                                \
                                                                                \
@@ -1209,26 +1218,30 @@ CASE_CODE(SEND_PRIMITIVE_CALL_NATIVE) {
   CALL_NATIVE(n, have, false);
 }
 
-IMPL_SEND_UNARY_NUMERIC(PRIMITIVE_BIN, gab_number, uint64_t, ~);
-IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_ADD, gab_number, double, +);
-IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_SUB, gab_number, double, -);
-IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_MUL, gab_number, double, *);
-IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_DIV, gab_number, double, /);
-IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_MOD, gab_number, uint64_t, %);
-IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_BOR, gab_number, uint64_t, |);
-IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_BND, gab_number, uint64_t, &);
-IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_LT, gab_bool, double, <);
-IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_LTE, gab_bool, double, <=);
-IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_GT, gab_bool, double, >);
-IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_GTE, gab_bool, double, >=);
+IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_ADD, gab_number, double, gab_valtof, +);
+IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_SUB, gab_number, double, gab_valtof, -);
+IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_MUL, gab_number, double, gab_valtof, *);
+IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_DIV, gab_number, double, gab_valtof, /);
 
-IMPL_SEND_BINARY_SHIFT_NUMERIC(PRIMITIVE_LSH, <<);
-IMPL_SEND_BINARY_SHIFT_NUMERIC(PRIMITIVE_RSH, >>);
+IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_LT, gab_bool, double, gab_valtof, <);
+IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_LTE, gab_bool, double, gab_valtof, <=);
+IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_GT, gab_bool, double, gab_valtof, >);
+IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_GTE, gab_bool, double, gab_valtof, >=);
+
+IMPL_SEND_UNARY_NUMERIC(PRIMITIVE_BIN, gab_number, int32_t, gab_valtoi, ~);
+
+IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_MOD, gab_number, int32_t, gab_valtoi, %);
+IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_BOR, gab_number, int32_t, gab_valtoi, |);
+IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_BND, gab_number, int32_t, gab_valtoi, &);
+
+IMPL_SEND_BINARY_SHIFT_NUMERIC(PRIMITIVE_LSH, <<, >>);
+IMPL_SEND_BINARY_SHIFT_NUMERIC(PRIMITIVE_RSH, >>, <<);
 
 IMPL_SEND_UNARY_BOOLEAN(PRIMITIVE_LIN, gab_bool, bool, !);
 
-IMPL_SEND_BINARY_BOOLEAN(PRIMITIVE_LOR, gab_bool, bool, ||);
-IMPL_SEND_BINARY_BOOLEAN(PRIMITIVE_LND, gab_bool, bool, &&);
+// Implemented with binary or/and, because there is no short-circuiting necessary
+IMPL_SEND_BINARY_BOOLEAN(PRIMITIVE_LOR, gab_bool, bool, |);
+IMPL_SEND_BINARY_BOOLEAN(PRIMITIVE_LND, gab_bool, bool, &);
 
 CASE_CODE(SEND_PRIMITIVE_EQ) {
   gab_value *ks = READ_CONSTANTS;
