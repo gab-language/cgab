@@ -1,7 +1,4 @@
-#include "platform.h"
-#include <errno.h>
 #include <stdint.h>
-
 #define GAB_STATUS_NAMES_IMPL
 #define GAB_TOKEN_NAMES_IMPL
 #include "engine.h"
@@ -70,6 +67,7 @@ a_char *gab_fosreadl(FILE *fd) {
 struct primitive {
   const char *name;
   union {
+    gab_value val;
     enum gab_kind kind;
     const char *message;
   };
@@ -80,6 +78,19 @@ struct primitive all_primitives[] = {
     {
         .name = mGAB_TYPE,
         .primitive = gab_primitive(OP_SEND_PRIMITIVE_TYPE),
+    },
+};
+
+struct primitive val_primitives[] = {
+    {
+        .name = mGAB_EQ,
+        .val = gab_invalid,
+        .primitive = gab_primitive(OP_SEND_PRIMITIVE_EQ),
+    },
+    {
+        .name = mGAB_CONS,
+        .val = gab_invalid,
+        .primitive = gab_primitive(OP_SEND_PRIMITIVE_CONS),
     },
 };
 
@@ -223,16 +234,6 @@ struct primitive kind_primitives[] = {
         .primitive = gab_primitive(OP_SEND_PRIMITIVE_CONCAT),
     },
     {
-        .name = mGAB_EQ,
-        .kind = kGAB_UNDEFINED,
-        .primitive = gab_primitive(OP_SEND_PRIMITIVE_EQ),
-    },
-    {
-        .name = mGAB_CONS,
-        .kind = kGAB_UNDEFINED,
-        .primitive = gab_primitive(OP_SEND_PRIMITIVE_CONS),
-    },
-    {
         .name = mGAB_MAKE,
         .kind = kGAB_SHAPE,
         .primitive = gab_primitive(OP_SEND_PRIMITIVE_MAKE_SHAPE),
@@ -296,12 +297,20 @@ struct native {
 
 static const struct timespec t = {.tv_nsec = GAB_YIELD_SLEEPTIME_NS};
 
-void gab_yield(struct gab_triple gab) {
-  if (gab.wkid && gab.eg->gc->schedule == gab.wkid)
-    gab_gcepochnext(gab);
+enum gab_signal gab_yield(struct gab_triple gab) {
+  if (gab_sigwaiting(gab)) {
+#if cGAB_LOG_EG
+    printf("[WORKER %i] RECV SIG: %i\n", gab.wkid, gab.eg->sig.signal);
+#endif
+    return gab.eg->sig.signal;
+  }
 
+  // Previously, this would perform a thrd_yield() as well as a sleep.
+  // This was causing *a lot* of context switching and was not a good idea.
+  // As far as I know
   thrd_sleep(&t, nullptr);
-  thrd_yield();
+  /*thrd_yield();*/
+  return sGAB_IGN;
 }
 
 int32_t gc_job(void *data) {
@@ -309,13 +318,26 @@ int32_t gc_job(void *data) {
   struct gab_triple gab = *g;
   assert(gab.wkid == 0);
 
-  gab.eg->jobs[gab.wkid].fiber = gab_undefined;
-
   while (gab.eg->njobs >= 0) {
-    if (gab.eg->gc->schedule == gab.wkid)
+    switch (gab_yield(gab)) {
+    case sGAB_TERM:
+      gab_sigclear(gab);
+      continue;
+    case sGAB_COLL:
       gab_gcdocollect(gab);
+      gab_sigclear(gab);
+      continue;
+    default:
+      break;
+    }
 
-    gab_yield(gab);
+    /*
+     * Coordinate work stealing here, where we are guaranteed to *not*
+     * be collecting
+     *
+     * if we have spare jobs:
+     *  look for the first worker
+     */
   }
 
   free(g);
@@ -329,45 +351,74 @@ int32_t worker_job(void *data) {
   assert(gab.wkid != 0);
   gab.eg->njobs++;
 
+  struct gab_jb *self = gab.eg->jobs + gab.wkid;
+
 #if cGAB_LOG_EG
   fprintf(stdout, "[WORKER %i] SPAWNED\n", gab.wkid);
 #endif
 
   while (!gab_chnisclosed(gab.eg->work_channel) ||
-         !gab_chnisempty(gab.eg->work_channel)) {
-
-#if cGAB_LOG_EG
-    fprintf(stdout, "[WORKER %i] TAKING WITH TIMEOUT %lus\n", gab.wkid,
-            cGAB_WORKER_IDLEWAIT_MS / 1000);
-#endif
-
-    gab_value fiber =
-        gab_tchntake(gab, gab.eg->work_channel, cGAB_WORKER_IDLEWAIT_MS);
-
-#if cGAB_LOG_EG
-    fprintf(stdout, "[WORKER %i] chntake yielded: ", gab.wkid);
-    gab_fprintf(stdout, "$\n", fiber);
-#endif
-
-    // we get undefined if:
-    //  - the channel is closed
-    //  - we timed out
-    if (fiber == gab_undefined)
+         !gab_chnisempty(gab.eg->work_channel) ||
+         !q_gab_value_is_empty(&self->queue)) {
+    switch (gab_yield(gab)) {
+    case sGAB_TERM:
+      // Clear the work queue - we're terminated
+      q_gab_value_create(&self->queue);
+      goto fin;
+    default:
       break;
+    }
 
-    gab.eg->jobs[gab.wkid].fiber = fiber;
+#if cGAB_LOG_EG
+    gab_fprintf(stdout, "[WORKER $] TAKING WITH TIMEOUT $ms\n",
+                gab_number(gab.wkid), gab_number(cGAB_WORKER_IDLEWAIT_MS));
+#endif
 
-    gab_vmexec(gab, fiber);
+#if cGAB_LOG_EG
+    gab_fprintf(stdout, "[WORKER $] chntake succeeded: $\n",
+                gab_number(gab.wkid), fiber);
+#endif
+    if (q_gab_value_is_empty(&self->queue)) {
+      gab_value fiber =
+          gab_tchntake(gab, gab.eg->work_channel, cGAB_WORKER_IDLEWAIT_MS);
 
-    gab.eg->jobs[gab.wkid].fiber = gab_undefined;
+      if (fiber == gab_invalid || fiber == gab_timeout)
+        goto fin;
+
+      if (!q_gab_value_push(&self->queue, fiber))
+        assert(false && "PUSH FAILED");
+    }
+
+    gab_value fiber = q_gab_value_peek(&self->queue);
+
+    assert(gab_valkind(fiber) != kGAB_FIBERDONE);
+
+    a_gab_value *res = gab_vmexec(gab, fiber);
+
+    q_gab_value_pop(&self->queue);
+
+    if (res == nullptr)
+      if (!q_gab_value_push(&self->queue, fiber))
+        assert(false && "PUSH FAILED");
   }
+
+fin:
+  assert(q_gab_value_is_empty(&self->queue));
 
 #if cGAB_LOG_EG
   fprintf(stdout, "[WORKER %i] CLOSING\n", gab.wkid);
 #endif
 
   gab.eg->jobs[gab.wkid].alive = false;
-  gab.eg->jobs[gab.wkid].fiber = gab_undefined;
+
+  switch (gab_yield(gab)) {
+  case sGAB_TERM:
+    gab_sigpropagate(gab);
+    goto fin;
+  default:
+    break;
+  }
+
   gab.eg->njobs--;
 
   assert(gab.eg->jobs[gab.wkid].locked == 0);
@@ -399,22 +450,15 @@ bool gab_jbcreate(struct gab_triple gab, struct gab_jb *job, int(fn)(void *)) {
 #endif
 
   job->locked = 0;
-  job->fiber = gab_undefined;
   job->alive = true;
   v_gab_value_create(&job->lock_keep, 8);
+  q_gab_value_create(&job->queue);
 
   struct gab_triple *gabcpy = malloc(sizeof(struct gab_triple));
   memcpy(gabcpy, &gab, sizeof(struct gab_triple));
   gabcpy->wkid = job - gab.eg->jobs;
 
-  int res = thrd_create(&job->td, fn, gabcpy);
-
-  if (res != thrd_success) {
-    printf("UHOH\n");
-    exit(1);
-  }
-
-  return true;
+  return thrd_create(&job->td, fn, gabcpy) == thrd_success;
 }
 
 bool gab_wkspawn(struct gab_triple gab) {
@@ -440,6 +484,7 @@ struct gab_triple gab_create(struct gab_create_argt args) {
   eg->sin = args.sin;
   eg->sout = args.sout;
   eg->serr = args.serr;
+  eg->sig.schedule = -1;
 
   // The only non-zero initialization that jobs need is epoch = 1
   for (uint64_t i = 0; i < eg->len; i++)
@@ -469,16 +514,9 @@ struct gab_triple gab_create(struct gab_create_argt args) {
 
   gab_gclock(gab);
 
-  eg->shapes = __gab_shape(gab, 0);
-  eg->messages = gab_erecord(gab);
-  eg->work_channel = gab_channel(gab);
-  gab_iref(gab, eg->work_channel);
-
-  eg->types[kGAB_UNDEFINED] = gab_undefined;
   eg->types[kGAB_NUMBER] = gab_string(gab, tGAB_NUMBER);
   eg->types[kGAB_BINARY] = gab_string(gab, tGAB_BINARY);
   eg->types[kGAB_STRING] = gab_string(gab, tGAB_STRING);
-  eg->types[kGAB_SYMBOL] = gab_string(gab, tGAB_SYMBOL);
   eg->types[kGAB_MESSAGE] = gab_string(gab, tGAB_MESSAGE);
   eg->types[kGAB_PROTOTYPE] = gab_string(gab, tGAB_PROTOTYPE);
   eg->types[kGAB_NATIVE] = gab_string(gab, tGAB_NATIVE);
@@ -498,6 +536,12 @@ struct gab_triple gab_create(struct gab_create_argt args) {
   gab_niref(gab, 1, kGAB_NKINDS, eg->types);
   gab_negkeep(gab.eg, kGAB_NKINDS, eg->types);
 
+  eg->shapes = __gab_shape(gab, 0);
+  eg->messages = gab_erecord(gab);
+
+  eg->work_channel = gab_channel(gab);
+  gab_iref(gab, eg->work_channel);
+
   for (int i = 0; i < LEN_CARRAY(kind_primitives); i++) {
     gab_egkeep(
         gab.eg,
@@ -507,6 +551,16 @@ struct gab_triple gab_create(struct gab_create_argt args) {
                                   gab_type(gab, kind_primitives[i].kind),
                                   kind_primitives[i].primitive,
                               })));
+  }
+
+  for (int i = 0; i < LEN_CARRAY(val_primitives); i++) {
+    gab_egkeep(
+        gab.eg,
+        gab_iref(gab, gab_def(gab, (struct gab_def_argt){
+                                       gab_message(gab, val_primitives[i].name),
+                                       val_primitives[i].val,
+                                       val_primitives[i].primitive,
+                                   })));
   }
 
   for (int i = 0; i < LEN_CARRAY(msg_primitives); i++) {
@@ -521,14 +575,13 @@ struct gab_triple gab_create(struct gab_create_argt args) {
   }
 
   for (int i = 0; i < LEN_CARRAY(all_primitives); i++) {
-    for (int t = 1; t < kGAB_NKINDS; t++) {
+    for (int t = 0; t < kGAB_NKINDS; t++) {
       gab_egkeep(
           gab.eg,
           gab_iref(gab,
                    gab_def(gab, (struct gab_def_argt){
                                     gab_message(gab, all_primitives[i].name),
                                     gab_type(gab, t),
-
                                     all_primitives[i].primitive,
                                 })));
     }
@@ -540,6 +593,18 @@ struct gab_triple gab_create(struct gab_create_argt args) {
   }
 
   return gab_gcunlock(gab), gab;
+}
+
+void dec_child_shapes(struct gab_triple gab, gab_value shp) {
+  assert(gab_valkind(shp) == kGAB_SHAPE || gab_valkind(shp) == kGAB_SHAPELIST);
+  struct gab_obj_shape *shape = GAB_VAL_TO_SHAPE(shp);
+
+  uint64_t len = shape->transitions.len / 2;
+
+  for (size_t i = 0; i < len; i++)
+    dec_child_shapes(gab, v_gab_value_val_at(&shape->transitions, i * 2 + 1));
+
+  gab_dref(gab, shp);
 }
 
 void gab_destroy(struct gab_triple gab) {
@@ -559,25 +624,40 @@ void gab_destroy(struct gab_triple gab) {
     if (d_strings_iexists(&gab.eg->strings, i))
       gab_dref(gab, __gab_obj(d_strings_ikey(&gab.eg->strings, i)));
 
-  gab.eg->messages = gab_undefined;
-  gab.eg->shapes = gab_undefined;
+  if (gab_valkind(gab.eg->shapes) == kGAB_SHAPELIST)
+    dec_child_shapes(gab, gab.eg->shapes);
 
-  gab_collect(gab);
-  while (gab.eg->gc->schedule >= 0)
-    ;
+  gab.eg->messages = gab_invalid;
+  gab.eg->shapes = gab_invalid;
 
+  assert(gab.eg->njobs == 0);
+
+  /**
+   * Three consececutive collections are needed here because
+   * of the delayed nature of the RC algorithm.
+   *
+   * Decrements are process an epoch *after* they are queued.
+   *
+   * There are three epochs tracked, so we need three collections
+   * to ensure that all rc events are processed.
+   */
+  gab_sigcoll(gab);
+
+  gab_sigcoll(gab);
+
+  gab_sigcoll(gab);
+
+  gab_sigcoll(gab);
+
+  gab_gcassertdone(gab);
+
+  /*assert(gab.eg->bytes_allocated == 0);*/
+  assert(gab.eg->njobs == 0);
   gab.eg->njobs = -1;
 
   thrd_join(gab.eg->jobs[0].td, nullptr);
   gab_gcdestroy(gab);
   free(gab.eg->gc);
-
-  /*for (uint64_t i = 0; i < gab.eg->modules.cap; i++) {*/
-  /*  if (d_gab_modules_iexists(&gab.eg->modules, i)) {*/
-  /*    a_gab_value *module = d_gab_modules_ival(&gab.eg->modules, i);*/
-  /*    free(module);*/
-  /*  }*/
-  /*}*/
 
   for (uint64_t i = 0; i < gab.eg->sources.cap; i++) {
     if (d_gab_src_iexists(&gab.eg->sources, i)) {
@@ -607,6 +687,8 @@ void gab_destroy(struct gab_triple gab) {
 
 void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
   uint64_t iterations = 0;
+  gab_value env = gab_invalid;
+  gab_value fiber = gab_invalid;
 
   args.welcome_message = args.welcome_message ? args.welcome_message : "";
   args.prompt_prefix = args.prompt_prefix ? args.prompt_prefix : "";
@@ -621,7 +703,6 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
 
     if ((int8_t)src->data[0] == EOF) {
       a_char_destroy(src);
-
       return;
     }
 
@@ -637,12 +718,41 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
 
     iterations++;
 
-    a_gab_value *result =
-        gab_exec(gab, (struct gab_exec_argt){
-                          .name = unique_name,
-                          .source = (char *)src->data,
-                          .flags = args.flags | fGAB_RUN_INCLUDEDEFAULTARGS,
-                      });
+    if (env == gab_invalid) {
+      fiber =
+          gab_aexec(gab, (struct gab_exec_argt){
+                             .name = unique_name,
+                             .source = (char *)src->data,
+                             .flags = args.flags | fGAB_RUN_INCLUDEDEFAULTARGS,
+                         });
+    } else {
+      size_t len = gab_reclen(env) - 1;
+      const char *keys[len];
+      gab_value keyvals[len];
+      gab_value vals[len];
+
+      for (size_t i = 0; i < len; i++) {
+        size_t index = i + 1;
+        keyvals[i] = gab_valintos(gab, gab_ukrecat(env, index));
+        vals[i] = gab_uvrecat(env, index);
+        keys[i] = gab_strdata(keyvals + i);
+      }
+
+      fiber = gab_aexec(gab, (struct gab_exec_argt){
+                                 .name = unique_name,
+                                 .source = (char *)src->data,
+                                 .flags = args.flags,
+                                 .len = len,
+                                 .sargv = keys,
+                                 .argv = vals,
+                             });
+    }
+
+    if (fiber == gab_invalid)
+      continue;
+
+    a_gab_value *result = gab_fibawait(gab, fiber);
+    env = gab_fibawaite(gab, fiber);
 
     if (result == nullptr)
       continue;
@@ -681,8 +791,9 @@ gab_value gab_aexec(struct gab_triple gab, struct gab_exec_argt args) {
   const char *sargv[default_arglen + args.len];
   gab_value vargv[default_arglen + args.len];
 
-  if (args.flags & fGAB_RUN_INCLUDEDEFAULTARGS) {
+  gab.flags |= args.flags;
 
+  if (gab.flags & fGAB_RUN_INCLUDEDEFAULTARGS) {
     // Copy given args in.
     if (args.len && args.sargv && args.argv) {
       memcpy(sargv, args.sargv, args.len * sizeof(const char *));
@@ -704,18 +815,15 @@ gab_value gab_aexec(struct gab_triple gab, struct gab_exec_argt args) {
   gab_value main = gab_build(gab, (struct gab_build_argt){
                                       .name = args.name,
                                       .source = args.source,
-                                      .flags = args.flags,
                                       .len = args.len,
                                       .argv = args.sargv,
                                   });
 
-  if (main == gab_undefined || args.flags & fGAB_BUILD_CHECK) {
-    return gab_undefined;
-  }
+  if (main == gab_invalid || gab.flags & fGAB_BUILD_CHECK)
+    return main;
 
   return gab_arun(gab, (struct gab_run_argt){
                            .main = main,
-                           .flags = args.flags,
                            .len = args.len,
                            .argv = args.argv,
                        });
@@ -724,7 +832,7 @@ gab_value gab_aexec(struct gab_triple gab, struct gab_exec_argt args) {
 a_gab_value *gab_exec(struct gab_triple gab, struct gab_exec_argt args) {
   gab_value fib = gab_aexec(gab, args);
 
-  if (fib == gab_undefined)
+  if (fib == gab_invalid)
     return nullptr;
 
   return gab_fibawait(gab, fib);
@@ -740,7 +848,7 @@ gab_value dodef(struct gab_triple gab, gab_value messages, uint64_t len,
 
     gab_value specs = gab_recat(messages, arg.message);
 
-    if (specs == gab_undefined)
+    if (specs == gab_invalid)
       specs = gab_record(gab, 0, 0, nullptr, nullptr);
 
     gab_value newspecs =
@@ -752,31 +860,26 @@ gab_value dodef(struct gab_triple gab, gab_value messages, uint64_t len,
   return gab_gcunlock(gab), messages;
 }
 
-int gab_ndef(struct gab_triple gab, uint64_t len,
-             struct gab_def_argt args[static len]) {
-  gab_gclock(gab);
+gab_value swapdef(struct gab_triple gab, gab_value messages, va_list va) {
+  uint64_t len = va_arg(va, uint64_t);
+  struct gab_def_argt *args = va_arg(va, struct gab_def_argt *);
 
-  gab_value m = dodef(gab, gab_thisfibmsg(gab), len, args);
+  return dodef(gab, messages, len, args);
+}
 
-  if (m == gab_undefined)
-    return gab_gcunlock(gab), false;
+bool gab_ndef(struct gab_triple gab, uint64_t len,
+              struct gab_def_argt args[static len]) {
+  gab_value messages = gab.eg->messages;
 
-  gab_value parent = gab_thisfiber(gab);
-
-  if (parent == gab_undefined) {
-    gab.eg->messages = m;
-  } else {
-    struct gab_obj_fiber *p = GAB_VAL_TO_FIBER(parent);
-    p->messages = m;
-  }
+  gab_value m = dodef(gab, messages, len, args);
 
   gab.eg->messages = m;
 
-  return gab_gcunlock(gab), true;
+  return m != gab_invalid;
 }
 
-struct gab_obj_string *gab_egstrfind(struct gab_eg *self, uint64_t hash,
-                                     uint64_t len, const char *data) {
+struct gab_ostring *gab_egstrfind(struct gab_eg *self, uint64_t hash,
+                                  uint64_t len, const char *data) {
   if (self->strings.len == 0)
     return nullptr;
 
@@ -784,7 +887,7 @@ struct gab_obj_string *gab_egstrfind(struct gab_eg *self, uint64_t hash,
 
   for (;;) {
     d_status status = d_strings_istatus(&self->strings, index);
-    struct gab_obj_string *key = d_strings_ikey(&self->strings, index);
+    struct gab_ostring *key = d_strings_ikey(&self->strings, index);
 
     switch (status) {
     case D_TOMBSTONE:
@@ -831,11 +934,26 @@ uint64_t gab_egkeep(struct gab_eg *gab, gab_value v) {
 
 uint64_t gab_negkeep(struct gab_eg *gab, uint64_t len,
                      gab_value values[static len]) {
+  mtx_lock(&gab->modules_mtx);
+
   for (uint64_t i = 0; i < len; i++)
     if (gab_valiso(values[i]))
       v_gab_value_push(&gab->scratch, values[i]);
 
+  mtx_unlock(&gab->modules_mtx);
+
   return len;
+}
+
+int gab_sprintf(char *dest, size_t n, const char *fmt, ...) {
+  va_list va;
+  va_start(va, fmt);
+
+  int res = gab_vsprintf(dest, n, fmt, va);
+
+  va_end(va);
+
+  return res;
 }
 
 int gab_fprintf(FILE *stream, const char *fmt, ...) {
@@ -847,6 +965,48 @@ int gab_fprintf(FILE *stream, const char *fmt, ...) {
   va_end(va);
 
   return res;
+}
+
+int gab_nsprintf(char *dest, size_t n, const char *fmt, uint64_t argc,
+                 gab_value argv[argc]) {
+  const char *c = fmt;
+  char *cursor = dest;
+  size_t remaining = n;
+  int bytes = 0;
+  uint64_t i = 0;
+
+  while (*c != '\0') {
+    if (remaining == 1)
+      return *cursor = '\0', bytes;
+
+    switch (*c) {
+    case '$': {
+      if (i >= argc)
+        return -1;
+
+      gab_value arg = argv[i++];
+
+      int res = gab_svalinspect(&cursor, &remaining, arg, 1);
+
+      if (res < 0)
+        return res;
+
+      bytes += res;
+
+      break;
+    }
+    default:
+      *cursor++ = *c;
+      bytes += 1;
+      remaining -= 1;
+    }
+    c++;
+  }
+
+  if (i != argc)
+    return -1;
+
+  return *cursor = '\0', bytes;
 }
 
 int gab_nfprintf(FILE *stream, const char *fmt, uint64_t argc,
@@ -875,6 +1035,40 @@ int gab_nfprintf(FILE *stream, const char *fmt, uint64_t argc,
 
   if (i != argc)
     return -1;
+
+  return bytes;
+}
+
+int gab_vsprintf(char *dest, size_t n, const char *fmt, va_list varargs) {
+  const char *c = fmt;
+  int bytes = 0;
+  char *cursor = dest;
+  size_t remaining = n;
+
+  while (*c != '\0') {
+    switch (*c) {
+    case '$': {
+      gab_value arg = va_arg(varargs, gab_value);
+
+      int res = gab_svalinspect(&cursor, &remaining, arg, 1);
+
+      if (res < 0)
+        return res;
+
+      bytes += res;
+
+      break;
+    }
+    default:
+      if (remaining == 0)
+        return -1;
+
+      *cursor++ = *c;
+      bytes += 1;
+      remaining -= 1;
+    }
+    c++;
+  }
 
   return bytes;
 }
@@ -962,35 +1156,15 @@ void dump_pretty_err(struct gab_triple gab, FILE *stream, va_list varargs,
 
 void dump_structured_err(struct gab_triple gab, FILE *stream, va_list varargs,
                          struct gab_err_argt args) {
-  const char *tok_name =
-      args.src
-          ? gab_token_names[v_gab_token_val_at(&args.src->tokens, args.tok)]
-          : "C";
-
-  const char *src_name = args.src ? gab_strdata(&args.src->name) : "C";
-
-  const char *msg_name = gab_strdata(&args.message);
-
-  const char *status_name = gab_status_names[args.status];
-
-  fprintf(stream, "%s:%s:%s:%s", status_name, src_name, tok_name, msg_name);
+  fprintf(stream, "%s:%s:%s:%s", args.err_out->status_name,
+          args.err_out->src_name, args.err_out->tok_name,
+          args.err_out->msg_name);
 
   if (args.src) {
-    uint64_t line = v_uint64_t_val_at(&args.src->token_lines, args.tok);
-
-    s_char line_src = v_s_char_val_at(&args.src->lines, line - 1);
-    s_char tok_src = v_s_char_val_at(&args.src->token_srcs, args.tok);
-    uint64_t line_relative_start = tok_src.data - line_src.data;
-    uint64_t line_relative_end = tok_src.data + tok_src.len - line_src.data;
-
-    uint64_t src_relative_start = tok_src.data - args.src->source->data;
-    uint64_t src_relative_end =
-        tok_src.data + tok_src.len - args.src->source->data;
-
     fprintf(stream,
             ":%" PRIu64 ":%" PRIu64 ":%" PRIu64 ":%" PRIu64 ":%" PRIu64 "",
-            line, line_relative_start, line_relative_end, src_relative_start,
-            src_relative_end);
+            args.err_out->row, args.err_out->col_begin, args.err_out->col_end,
+            args.err_out->byte_begin, args.err_out->byte_end);
   }
 
   fputc('\n', stream);
@@ -998,17 +1172,43 @@ void dump_structured_err(struct gab_triple gab, FILE *stream, va_list varargs,
 
 void gab_vfpanic(struct gab_triple gab, FILE *stream, va_list varargs,
                  struct gab_err_argt args) {
+  struct gab_errdetails err = {0};
+  args.err_out = args.err_out ? args.err_out : &err;
+
+  args.err_out->tok_name =
+      args.src
+          ? gab_token_names[v_gab_token_val_at(&args.src->tokens, args.tok)]
+          : "C";
+
+  if (args.src) {
+    args.err_out->row = v_uint64_t_val_at(&args.src->token_lines, args.tok);
+
+    s_char line_src = v_s_char_val_at(&args.src->lines, args.err_out->row - 1);
+    s_char tok_src = v_s_char_val_at(&args.src->token_srcs, args.tok);
+
+    assert(tok_src.data >= line_src.data);
+
+    args.err_out->col_begin = tok_src.data - line_src.data;
+    args.err_out->col_end = tok_src.data + tok_src.len - line_src.data;
+
+    args.err_out->byte_begin = tok_src.data - args.src->source->data;
+    args.err_out->byte_end =
+        tok_src.data + tok_src.len - args.src->source->data;
+  }
+
+  args.err_out->src_name = args.src ? gab_strdata(&args.src->name) : "C";
+
+  args.err_out->msg_name = gab_strdata(&args.message);
+
+  args.err_out->status_name = gab_status_names[args.status];
+
   if (gab.flags & fGAB_ERR_QUIET)
-    goto fin;
+    return;
 
   if (gab.flags & fGAB_ERR_STRUCTURED)
     dump_structured_err(gab, stream, varargs, args);
   else
     dump_pretty_err(gab, stream, varargs, args);
-
-fin:
-  if (gab.flags & fGAB_ERR_EXIT)
-    exit(1);
 }
 
 /*int gab_val_printf_handler(FILE *stream, const struct printf_info *info,*/
@@ -1086,8 +1286,11 @@ a_gab_value *gab_use_dynlib(struct gab_triple gab, const char *path) {
 
   a_gab_value *res = mod(gab);
 
+  // At this point, mod should have reported any errors.
+  /*gab.flags |= fGAB_ERR_QUIET;*/
+
   if (res == nullptr)
-    return gab_fpanic(gab, "Failed to load module.");
+    return gab_fpanic(gab, "Failed to load c module.");
 
   if (res->data[0] != gab_ok)
     return gab_fpanic(gab,
@@ -1114,30 +1317,23 @@ a_gab_value *gab_use_source(struct gab_triple gab, const char *path) {
                          .flags = gab.flags | fGAB_RUN_INCLUDEDEFAULTARGS,
                      });
 
-  if (fiber == gab_undefined)
+  if (fiber == gab_invalid)
     return nullptr;
 
   a_gab_value *res = gab_fibawait(gab, fiber);
 
   a_char_destroy(src);
 
+  // At this point, the fiber should have reported its own errors;
+  /*gab.flags |= fGAB_ERR_QUIET;*/
+
   if (res == nullptr)
-    return gab_fpanic(gab, "Failed to load module.");
+    return gab_fpanic(gab, "Failed to load source module.");
 
   if (res->data[0] != gab_ok)
     return gab_fpanic(gab,
                       "Failed to load module: module returned $, expected $",
                       res->data[0], gab_ok);
-
-  struct gab_obj_fiber *f = GAB_VAL_TO_FIBER(fiber);
-  gab_value fbparent = gab_thisfiber(gab);
-
-  if (fbparent == gab_undefined) {
-    gab.eg->messages = f->messages;
-  } else {
-    struct gab_obj_fiber *parent = GAB_VAL_TO_FIBER(fbparent);
-    parent->messages = f->messages;
-  }
 
   a_gab_value *final = gab_segmodput(gab.eg, path, res);
 
@@ -1178,7 +1374,9 @@ resource resources[] = {
 };
 
 a_char *match_resource(resource *res, const char *name, uint64_t len) {
-  const char *roots[] = {".", gab_osprefix(GAB_VERSION_TAG)};
+  const char *prefix = gab_osprefix(GAB_VERSION_TAG);
+
+  const char *roots[] = {".", prefix};
 
   for (int i = 0; i < LEN_CARRAY(roots); i++) {
     if (roots[i] == nullptr)
@@ -1202,9 +1400,11 @@ a_char *match_resource(resource *res, const char *name, uint64_t len) {
       continue;
 
     fclose(f);
+    free((void *)prefix);
     return a_char_create(buffer, total_len);
   }
 
+  free((void *)prefix);
   return nullptr;
 }
 
@@ -1248,7 +1448,7 @@ a_gab_value *gab_use(struct gab_triple gab, gab_value path) {
 a_gab_value *gab_run(struct gab_triple gab, struct gab_run_argt args) {
   gab_value fb = gab_arun(gab, args);
 
-  if (fb == gab_undefined)
+  if (fb == gab_invalid)
     return nullptr;
 
   a_gab_value *res = gab_fibawait(gab, fb);
@@ -1258,19 +1458,26 @@ a_gab_value *gab_run(struct gab_triple gab, struct gab_run_argt args) {
 }
 
 gab_value gab_arun(struct gab_triple gab, struct gab_run_argt args) {
-  gab.flags = args.flags;
+  return gab_tarun(gab, -1, args);
+}
+
+gab_value gab_tarun(struct gab_triple gab, size_t nms,
+                    struct gab_run_argt args) {
+  gab.flags |= args.flags;
 
   if (gab.flags & fGAB_BUILD_CHECK)
-    return gab_undefined;
+    return gab_invalid;
 
   gab_value fb = gab_fiber(gab, (struct gab_fiber_argt){
                                     .message = gab_message(gab, mGAB_CALL),
                                     .receiver = args.main,
+                                    .flags = gab.flags,
                                     .argv = args.argv,
                                     .argc = args.len,
                                 });
 
   gab_iref(gab, fb);
+  gab_egkeep(gab.eg, fb); // Not the best solution
 
 #if cGAB_LOG_EG
   fprintf(stdout, "[WORKER %i] chnput ", gab.wkid);
@@ -1281,31 +1488,17 @@ gab_value gab_arun(struct gab_triple gab, struct gab_run_argt args) {
   // Should check to see if the channel has takers waiting already.
   gab_wkspawn(gab);
 
-  gab_chnput(gab, gab.eg->work_channel, fb);
-
-  gab_dref(gab, fb);
+  if (gab_tchnput(gab, gab.eg->work_channel, fb, nms) == gab_timeout)
+    return gab_timeout;
 
   return fb;
 }
 
 a_gab_value *gab_send(struct gab_triple gab, struct gab_send_argt args) {
-  gab.flags = args.flags;
+  gab_value fb = gab_asend(gab, args);
 
-  gab_value fb = gab_fiber(gab, (struct gab_fiber_argt){
-                                    .message = args.message,
-                                    .receiver = args.receiver,
-                                    .argv = args.argv,
-                                    .argc = args.len,
-                                });
-
-  if (fb == gab_undefined)
+  if (fb == gab_invalid)
     return nullptr;
-
-  gab_iref(gab, fb);
-
-  gab_jbcreate(gab, next_available_job(gab), worker_job);
-
-  gab_chnput(gab, gab.eg->work_channel, fb);
 
   a_gab_value *res = gab_fibawait(gab, fb);
 
@@ -1313,3 +1506,43 @@ a_gab_value *gab_send(struct gab_triple gab, struct gab_send_argt args) {
 
   return res;
 };
+
+gab_value gab_asend(struct gab_triple gab, struct gab_send_argt args) {
+  gab.flags |= args.flags;
+
+  gab_value fb = gab_fiber(gab, (struct gab_fiber_argt){
+                                    .message = args.message,
+                                    .receiver = args.receiver,
+                                    .argv = args.argv,
+                                    .argc = args.len,
+                                    .flags = gab.flags,
+                                });
+
+  if (fb == gab_invalid)
+    return gab_invalid;
+
+  gab_iref(gab, fb);
+
+  gab_jbcreate(gab, next_available_job(gab), worker_job);
+
+  gab_chnput(gab, gab.eg->work_channel, fb);
+
+  return fb;
+};
+
+GAB_API void gab_sigterm(struct gab_triple gab) {
+  bool succeeded = gab_signal(gab, sGAB_TERM, 1);
+  assert(succeeded);
+}
+
+void gab_asigcoll(struct gab_triple gab) {
+  bool succeeded = gab_signal(gab, sGAB_COLL, 1);
+  assert(succeeded);
+}
+
+void gab_sigcoll(struct gab_triple gab) {
+  gab_asigcoll(gab);
+
+  while (gab_is_signaling(gab))
+    ;
+}

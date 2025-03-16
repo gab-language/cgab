@@ -26,12 +26,11 @@
 
 /**
  * PLATFORM INTERFACE
- *
+ * %--------------------------------%
+ * | Dynamic-Shared Library Loading |
+ * %--------------------------------%
  * GAB_DYNLIB_FILEENDING
  * The file ending for dynamic libraries on this platform
- *
- * gab_fisatty(f)
- * Determine if a file stream *f* is a terminal (tty).
  *
  * gab_osdynlib
  * The type corresponding to a dynamically loaded library
@@ -42,15 +41,39 @@
  * gab_oslibfind(dynlib, name)
  * Find a symbol *name* in the dynamic library *dynlib*.
  *
+ * %-----------------%
+ * | File Operations |
+ * %-----------------%
+ * gab_osfisatty(f)
+ * Determine if a file stream *f* is a terminal (tty).
+ *
+ * gab_osfisready(f)
+ * Check if a FILE* has data to be read.
+ *
+ * %----------------------%
+ * | Directory Operations |
+ * %----------------------%
+ * gab_osmkdirp(path)
+ * Make a directory at path, if it doesn't exist.
+ *
+ * %---------------------%
+ * | Spawn Sub-processes |
+ * %---------------------%
  * gab_osproc(cmd, ...args)
  * Spawn a child process with the given command and arguments.
  *
+ * %----------------------------%
+ * | Gab/Platform Install Stuff |
+ * %----------------------------%
  * gab_osprefix(version)
  * Determine the gab_prefix for the given operating system, with the given gab
  * version.
  *
- * gab_osmkdirp(path)
- * Make a directory at path, if it doesn't exist.
+ * %--------------------------%
+ * | Platform Signal Hanlding |
+ * %--------------------------%
+ * gab_ossignal(signal, handler)
+ * Assign a new signal handler *handler* for signal *signal*
  */
 
 #define GAB_DYNLIB_MAIN "gab_lib"
@@ -74,18 +97,27 @@
 #ifdef GAB_PLATFORM_UNIX
 #include <dlfcn.h>
 #include <errno.h>
+#include <poll.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
-#define gab_fisatty(f) isatty(fileno(f))
+#define gab_osfisatty(f) isatty(fileno(f))
+
+#define gab_ossignal(sig, handler) signal(sig, handler)
+
+GAB_API_INLINE bool gab_osfisready(FILE *f) {
+  struct pollfd fd = {.fd = fileno(f), .events = POLL_IN};
+  return poll(&fd, 1, 0) > 0;
+}
 
 #define gab_osdynlib void *
 #define gab_oslibopen(path) dlopen(path, RTLD_NOW)
 #define gab_oslibfind(dynlib, name) (void (*)(void)) dlsym(dynlib, name)
-static const bool gab_osmkdirp(const char *path) {
+
+GAB_API_INLINE const bool gab_osmkdirp(const char *path) {
   int res = mkdir(path, 0755);
 
   if (res == 0)
@@ -93,13 +125,13 @@ static const bool gab_osmkdirp(const char *path) {
 
   if (errno == EEXIST)
     return true; // Directory already existed
-  
+
   printf("ERR: %s\n", strerror(errno));
   // Some other error occurred
   return false;
 }
 
-static const char *gab_osprefix(const char *v) {
+GAB_API_INLINE const char *gab_osprefix(const char *v) {
   char *home = getenv("HOME");
 
   if (!home)
@@ -115,7 +147,7 @@ static const char *gab_osprefix(const char *v) {
   return str.data;
 }
 
-static int gab_nosproc(char *cmd, size_t nargs, char *args[]) {
+GAB_API_INLINE int gab_nosproc(char *cmd, size_t nargs, char *args[]) {
   pid_t pid = fork();
 
   if (pid < 0)
@@ -167,12 +199,15 @@ static int gab_nosproc(char *cmd, size_t nargs, char *args[]) {
 #elifdef GAB_PLATFORM_WIN
 #include <io.h>
 #include <shlobj.h>
+#include <signal.h>
 #include <stdio.h>
 #include <tchar.h>
 #include <wchar.h>
 #include <windows.h>
 
-#define gab_fisatty(f) _isatty(_fileno(f))
+#define gab_ossignal(sig, handler) signal(sig, handler)
+
+#define gab_osfisatty(f) _isatty(_fileno(f))
 
 #define gab_osdynlib HMODULE
 #define gab_oslibopen(path) LoadLibraryA(path)
@@ -180,7 +215,7 @@ static int gab_nosproc(char *cmd, size_t nargs, char *args[]) {
   ((void (*)(void))GetProcAddress(dynlib, name))
 #define gab_osmkdirp(path) mkdir(path)
 
-static const char *gab_osprefix(const char *v) {
+GAB_API_INLINE const char *gab_osprefix(const char *v) {
   PWSTR path = NULL;
 
   HRESULT status = SHGetKnownFolderPath(&FOLDERID_LocalAppData, 0, NULL, &path);
@@ -207,7 +242,13 @@ static const char *gab_osprefix(const char *v) {
   return str.data;
 }
 
-static int gab_nosproc(char *cmd, size_t nargs, char *args[]) {
+GAB_API_INLINE bool gab_osfisready(FILE *f) {
+  HANDLE *h = (HANDLE) _get_osfhandle(_fileno(f));
+  DWORD result = WaitForSingleObject(h, 0);
+  return result == WAIT_OBJECT_0;
+}
+
+GAB_API_INLINE int gab_nosproc(char *cmd, size_t nargs, char *args[]) {
   STARTUPINFO si;
   PROCESS_INFORMATION pi;
 

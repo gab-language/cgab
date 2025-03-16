@@ -41,6 +41,11 @@ a_gab_value *gab_chnlib_is_empty(struct gab_triple gab, uint64_t argc,
 
   gab_def(gab,
           {
+              gab_message(gab, "t"),
+              gab_strtomsg(t),
+              t,
+          },
+          {
               gab_message(gab, "close!"),
               t,
               gab_snative(gab, "close!", gab_chnlib_close),

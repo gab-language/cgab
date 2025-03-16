@@ -1,22 +1,25 @@
-'transducers'.use
+xf = 'transducers'.use
+Ranges = 'ranges'.use
 spec\t = spec:
 
-explain_specs = (specs separator) => specs
-  .transduce(
-    ''
-    +:
-    td:.map spec\name:
-    |> td:.interpose separator)
+explain_specs = (specs separator)
+  => specs
+      .transduce(
+        ''
+        +:
+        td:.map spec\name:
+        |> td:.interpose separator)
 
-explain_values = (strings separator) => strings
-  .transduce(
-    ''
-    +:
-    td:.map ((v) => Strings.make('\\' v))
-    |> td:.interpose separator)
+explain_values = (strings separator)
+  => strings
+      .transduce(
+        ''
+        +:
+        td:.map ((v) => Strings.make("\" v))
+        |> td:.interpose separator)
 
 defspec!: .def! (
-  'gab\\message'
+  Messages.t,
   (opts) => do
     spec\help:.def!(
       opts.spec
@@ -24,7 +27,7 @@ defspec!: .def! (
 
     spec\name:.def!(
       opts.spec
-      self.to_s)
+      self.to\s)
 
     spec:.def!(
       self
@@ -33,18 +36,18 @@ defspec!: .def! (
     opts.spec
   end)
 
-['gab\\message'] .defmodule! {
+[Messages.t] .defmodule! {
   spec\doc!:     () => (self.spec.help!, self.spec\explain!)
   spec\help!:    () => self.spec.spec\help.unwrap!
   spec\gen!:     () => self.spec.spec\gen
   spec\explain!: () => self.spec.spec\explain
-  spec\into:     () => do
+  to\spec:     () => do
     spec = self
     spec: .has? spec .then(() => spec.spec) .or spec
   end
 }
 
-spec\into: .def! () => self
+to\spec: .def! () => self
 
 ## PREDICATES
 # A spec predicate is a function which
@@ -121,16 +124,25 @@ spec\explain:.def!(float\predicate 'float')
 #
 string\predicate = predicate\string:
 
+is_s?:.def!(Strings.t, true:)
+is_s?:.def! false:
+
 spec\fits?:.def!(
   string\predicate
   (value) => (value.is_s?, self, value))
 
-random\strings = ['vim-users' 'emacs-users']
+random\strings = [
+  'vim-users'
+  'emacs-users'
+  'a'
+  'b'
+  'c'
+]
 
 spec\gen:.def!(
   string\predicate
   () => do
-    idx  = Numbers.int\between(0 random\strings.len - 1)
+    idx  = Numbers.int\between(0 ,random\strings.len)
     random\strings .at! idx
   end)
 
@@ -172,7 +184,7 @@ spec\explain:.def!(boolean\predicate 'boolean')
 and\predicate = (specs[]) => do
   (specs.len > 0).assert! 'Must have at least one spec for the and predicate'
 
-  pred = Strings.make('predicate:and:' specs).messages\into
+  pred = Strings.make('predicate:and:' specs).to\m
 
   [pred] .defmodule! {
     spec\explain: () => explain_specs.(specs ' & ')
@@ -213,7 +225,7 @@ end
 or\predicate = (specs[]) => do
   (specs.len > 0).assert! "The or predicate expects more than zero specs"
   
-  pred = Strings.make('predicate:any:' specs).messages\into
+  pred = Strings.make('predicate:any:' specs).to\m
 
   [pred] .defmodule! {
     spec\fits?: value => do
@@ -279,8 +291,8 @@ re\empty?:.def!(re\alt\t () => do
   res.empty?.!
 end)
 
-stringify_forms =
-  (forms, sep) => Strings.make(
+stringify_forms = (forms, sep)
+  => Strings.make(
     "("
     forms.map re\debug: .join (td:.interpose sep)
     ")")
@@ -329,7 +341,7 @@ re\debug: .defcase! {
   re\alt\t () => stringify_forms.(self.forms, " | ")
   re\rep\t () => Strings.make('*', self.form.re\name)
 }
-re\debug: .def! () => self.spec\into.spec\name
+re\debug: .def! () => self.to\spec.spec\name
 
 re\name: .defcase! {
   re\atom\t () => self.meta.name
@@ -337,7 +349,7 @@ re\name: .defcase! {
   re\alt\t () => self.meta.name
   re\rep\t () => self.meta.name
 }
-re\name: .def! () => self.spec\into.spec\name
+re\name: .def! () => self.to\spec.spec\name
 
 re\d: .defcase! {
   re\blank\t  e => regex\null  
@@ -345,7 +357,9 @@ re\d: .defcase! {
   regex\empty e => regex\null
 
   re\atom\t e => do
-    (ok, rest[]) = self.forms.spec\into.spec\fits? e
+    (ok, rest[]) = self.forms.to\spec.spec\fits? e
+
+    'Applied atom $ to $ -> $\n'.printf(self.forms.to\spec, e, ok)
 
     so_far = self.path
 
@@ -355,6 +369,8 @@ re\d: .defcase! {
   end
 
  re\alt\t e => do
+    'Applied alt $ to $\n'.printf(self.forms, e)
+
     forms = self.forms.map f => f .re\d e
 
     re:
@@ -363,6 +379,7 @@ re\d: .defcase! {
   end
 
   re\seq\t e => do
+    'Applied seq $ to $\n'.printf(self.forms, e)
     (a, rest) = (self.forms.at! 0, self.forms.slice(1, self.forms.len))
     b = self.forms.at! 1
 
@@ -384,7 +401,7 @@ re\d: .defcase! {
   end
 
  re\rep\t e => do
-
+    'Applied rep $ to $\n'.printf(self.forms, e)
     a = self.forms
 
     new_a = a.re\d e
@@ -445,7 +462,7 @@ match: .defcase! {
     (re.re\empty?, path)
   end
 
-  'gab\\record' (re) => do
+  Records.t, (re) => do
     dre = re.re\d(self.re\head)
 
     self.re\tail.match dre
@@ -461,7 +478,7 @@ match: .defcase! {
     tail.match dre
   end
 
-  'gab\\string' re => do
+  Strings.t, re => do
     dre = re.re\d(self.re\head)
 
     tail = self.re\tail
@@ -470,15 +487,20 @@ match: .defcase! {
   end
 }
 
-re\into: .def! () => re:.atom(self { name: self.spec\into.spec\name })
+to\spec\re: .def! () => re:.atom(self { name: self.to\spec.spec\name })
 
 pat: .def!(
   spec\t
   (specs{}) => do
-    pred = Strings.make('predicate:values:' specs).messages\into
+    pred = Strings.make('predicate:pat:' specs).to\m
 
-    forms = specs.map (v k)
-      => (v.spec\into.re\into.put_via(k meta: name:))
+    forms = specs
+      .map (v k) => do
+        v.to\spec
+         .to\spec\re
+         .put_via(k meta: name:)
+      end
+
 
     re = re:.seq(forms {name: ""})
 
@@ -486,16 +508,26 @@ pat: .def!(
       pred
       (value) => value .match re)
 
+    generator = xf.map to\spec:
+             |> xf.map spec\gen:
+             |> xf.map((args[]) => Strings.make(args**))
+
+    spec\gen:.def!(
+      pred
+      () => specs.collect generator .join)
+
+    to\spec\re: .def!(pred re)
+
     pred
   end)
 
 cat: .def!(
   spec\t
   (specs{}) => do
-    pred = Strings.make('predicate:values:' specs).messages\into
+    pred = Strings.make('predicate:cat:' specs).to\m
 
     forms = specs.map (v k)
-      => (v.spec\into.re\into.put_via(k meta: name:))
+      => (v.to\spec.to\spec\re.put_via(k meta: name:))
 
     re = re:.seq(forms { name: "" })
 
@@ -505,6 +537,15 @@ cat: .def!(
         values .match re
       end)
 
+    generator = xf.map to\spec:
+             |> xf.map spec\gen:
+
+    spec\gen:.def!(
+      pred
+      () => specs.transduce([] push: generator).**)
+
+    to\spec\re: .def!(pred re)
+
     pred
   end)
 
@@ -512,20 +553,26 @@ alt: .def!(
   spec\t
   (specs{}) => do
     (first rest[]) = specs**
-    pred = Strings.make('predicate:alt:' specs).messages\into
+    pred = Strings.make('predicate:alt:' specs).to\m
 
     forms = specs.map (v k)
-      => (v.spec\into.re\into.put_via(k meta: name:))
+      => (v.to\spec.to\spec\re.put_via(k meta: name:))
 
     re = re:.alt(forms { name: "" })
 
-    spec\fits?: .def!(
+    spec\fits?:.def!(
       pred
       (values[]) => do
         values .match re
       end)
 
-    re\into: .def!(pred re)
+    spec\gen:.def!(
+      pred
+      () => do
+        specs.at!(Numbers.int\between(0 specs.len)).spec\gen
+      end)
+
+    to\spec\re: .def!(pred re)
 
     pred
   end)
@@ -533,15 +580,24 @@ alt: .def!(
 *: .def!(
   spec\t
   (spec) => do
-    pred = Strings.make('predicate:*:' {} ':' spec).messages\into
+    pred = Strings.make('predicate:*:' {} ':' spec).to\m
 
-    re = re:.rep(spec.spec\into.re\into, { name: "" })
+    re = re:.rep(spec.to\spec.to\spec\re, { name: "" })
 
     spec\fits?: .def!(
       pred
       (values[]) => values .match re)
 
-    re\into: .def!(pred re)
+    generator = xf.map(_ => spec.to\spec.spec\gen)
+
+    spec\gen:.def!(
+      pred
+      () => Ranges
+              .make(0 Numbers.int\between(0 10))
+              .collect generator
+              .**)
+
+    to\spec\re: .def!(pred re)
 
     pred
   end)
@@ -549,9 +605,9 @@ alt: .def!(
 +: .def!(
   spec\t
   (spec) => do
-    pred = Strings.make('predicate:+:' {} ':' spec).messages\into
+    pred = Strings.make('predicate:+:' {} ':' spec).to\m
 
-    re = spec.spec\into.re\into
+    re = spec.to\spec.to\spec\re
 
     re = re:.seq([re, re:.rep(re, { name: "" })], { name: "" })
 
@@ -559,7 +615,16 @@ alt: .def!(
       pred
       (values[]) => values .match re)
 
-    re\into: .def!(pred re)
+    spec\gen:.def!(
+      pred
+      () => do
+        Ranges
+          .make(0 Numbers.int\between(1 10))
+          .collect(xf.map _ => spec.spec\gen
+          .**)
+      end)
+
+    to\spec\re: .def!(pred re)
 
     pred
   end)
@@ -568,7 +633,7 @@ slice\predicate = (slice) => do
   protocol = self
   keys = protocol.spec\protocol\keys
 
-  pred = Strings.make('predicate:protocol:slice:' keys ':' slice).messages\into
+  pred = Strings.make('predicate:protocol:slice:' keys ':' slice).to\m
 
   spec\fits?:.def!(
     pred
@@ -577,7 +642,7 @@ slice\predicate = (slice) => do
 # Check for a spec which corresponds to this message in the protocol
         acc.at! 0 .and acc .else () => do
           m .has? value .then () => do
-            m.messages\into.spec.ok?.then s => do
+            m.to\m.spec.ok?.then s => do
               s.spec\fits?(value .at! m)
             end
           end .or [false:, self, value, m]
@@ -586,7 +651,7 @@ slice\predicate = (slice) => do
     end)
 
   genit = td:.map (v) => do
-    found = v.sigils\into.spec
+    found = v.to\m.spec
     (v found.spec\gen)
   end
 
@@ -603,7 +668,7 @@ end
 
 
 protocol\predicate = (protocol) => do
-  pred = Strings.make('predicate:protocol:' protocol).messages\into
+  pred = Strings.make('predicate:protocol:' protocol).to\m
 
   [pred] .defmodule! {
     spec\explain: () => (protocol.len == 0)
@@ -619,7 +684,7 @@ protocol\predicate = (protocol) => do
 end
 
 list\predicate = spec => do
-  pred = Strings.make('predicate:list:' spec).messages\into
+  pred = Strings.make('predicate:list:' spec).to\m
 
   [pred] .defmodule! {
     spec\fits?: value => value.spec\fits_each? values:
@@ -633,7 +698,7 @@ list\predicate = spec => do
 end
 
 record\predicate = (k_spec v_spec) => do
-  pred = Strings.make('predicate:map:' k_spec ':' v_spec).messages\into
+  pred = Strings.make('predicate:map:' k_spec ':' v_spec).to\m
 
   spec\fits?:.def!(
     pred
@@ -708,7 +773,7 @@ spec\semantics_fits?:.def!(
 block\predicate = (args semantics) => do
   args.assert\is? spec\block\Args
 
-  pred = Strings.make('predicate:block:' args ':' semantics).messages\into
+  pred = Strings.make('predicate:block:' args ':' semantics).to\m
 
   spec\fits?:.def!(
     pred
@@ -724,7 +789,7 @@ block\predicate = (args semantics) => do
           spec\block\output_fits?:,
           spec\semantic_fits?:,
         ],
-        options\into:,
+        to\option:,
       )
     end)
 
@@ -747,7 +812,7 @@ block\predicate = (args semantics) => do
               spec\block\output_fits?:,
               spec\semantic_fits?:,
             ],
-            options\into:,
+            to\option:,
           )
         end).unwrap!
       end
@@ -770,7 +835,7 @@ block\predicate = (args semantics) => do
   pred
 end
 
-general_message\predicate = 'predicate:message' .messages\into
+general_message\predicate = 'predicate:message' .to\m
 
 spec\fits?:.def!(
   general_message\predicate
@@ -820,7 +885,7 @@ spec\message\define:.defcase! {
   nil: general_message\predicate
   'gab\\record' () => do
     args = self
-    pred = Strings.make('predicate:message:' args).messages\into
+    pred = Strings.make('predicate:message:' args).to\m
 
     spec\fits?:.def!(
       pred
@@ -976,13 +1041,13 @@ spec\fits?: .def!(
     msg .has? value .then () => msg.(value)
   end)
 
-spec\option\into:.defcase! {
+to\spec\option:.defcase! {
   nil: err => do
     spec\t.any(ok:, err.or err:)    
   end
 }
 
-spec\option\into: .def! err => do
+to\spec\option: .def! err => do
   value = self
   spec\t.any(
     spec\t.values(ok:, value),
@@ -1008,9 +1073,9 @@ end
   option:   value => spec\t.any(
                       spec\t.values(ok:, value),
                       none:)
-  result:  (value err) => value.spec\option\into err
+  result:  (value err) => value.to\spec\option err
   gt: (min) => do
-    gt\predicate = Strings.make('predicate:gt:' min).messages\into
+    gt\predicate = Strings.make('predicate:gt:' min).to\m
 
     spec\fits?:.def!(
       gt\predicate
@@ -1021,7 +1086,7 @@ end
     gt\predicate
   end
   lt: max => do
-    lt\predicate = Strings.make('predicate:lt:' max).messages.into
+    lt\predicate = Strings.make('predicate:lt:' max).to\m
 
     spec\fits?:.def!(
       lt\predicate
@@ -1035,9 +1100,9 @@ end
   doc: (mod) => do
     xf = td:.map ((v k) => (
           v
-          k .to_s
+          k .to\s
             .split '\\'
-            .sigils\into,
+            .to\m,
           k))
       |> td:.filter ((_ k) => k == mod)
       |> td:.map ((v m k) => do

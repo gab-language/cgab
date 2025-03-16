@@ -1,6 +1,7 @@
 // Compile-time errors
 STATUS(OK, "ok")
 STATUS(NONE, "")
+STATUS(TERM, "Fiber terminated")
 STATUS(PANIC, "A fatal error occurred")
 STATUS(MALFORMED_TOKEN, "Unrecognized token")
 STATUS(MALFORMED_STRING, "Malformed string")
@@ -27,6 +28,7 @@ STATUS(MISSING_INITIALIZER, "Variables must be initialized")
 
 // Run-time errors
 STATUS(TYPE_MISMATCH, "Type mismatch")
+STATUS(INVALID_SHIFT_AMOUNT, "Invalid shift amount")
 STATUS(OVERFLOW, "Reached maximum call depth")
 STATUS(IMPLEMENTATION_EXISTS, "Implementation already exists")
 STATUS(IMPLEMENTATION_MISSING, "Implementation does not exist")

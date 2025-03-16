@@ -1,3 +1,5 @@
+#include "../vendor/libgrapheme/grapheme.h"
+#include "core.h"
 #include "gab.h"
 #include <ctype.h>
 #include <stdint.h>
@@ -8,6 +10,73 @@ static inline bool instr(char c, const char *set) {
       return true;
 
   return false;
+}
+
+a_gab_value *gab_strlib_seqinit(struct gab_triple gab, uint64_t argc,
+                                gab_value argv[argc]) {
+  gab_value str = gab_arg(0);
+
+  if (gab_valkind(str) != kGAB_STRING)
+    return gab_pktypemismatch(gab, str, kGAB_STRING);
+
+  uint64_t len = gab_strmblen(str);
+
+  if (len == 0) {
+    gab_vmpush(gab_thisvm(gab), gab_none);
+    return nullptr;
+  }
+
+  const char *data = gab_strdata(&str);
+
+  size_t end = grapheme_next_character_break_utf8(data, SIZE_MAX);
+
+  gab_value grapheme = gab_nstring(gab, end, data);
+  gab_vmpush(gab_thisvm(gab), gab_ok, 0, grapheme, 0);
+
+  return nullptr;
+}
+
+a_gab_value *gab_strlib_seqnext(struct gab_triple gab, uint64_t argc,
+                                gab_value argv[argc]) {
+  gab_value str = gab_arg(0);
+  gab_value old = gab_arg(1);
+
+  if (gab_valkind(str) != kGAB_STRING)
+    return gab_pktypemismatch(gab, str, kGAB_STRING);
+
+  if (gab_valkind(old) != kGAB_NUMBER)
+    return gab_pktypemismatch(gab, old, kGAB_NUMBER);
+
+  uint64_t old_off = gab_valtou(old);
+  uint64_t len = gab_strlen(str);
+
+  if (len <= old_off) {
+    gab_vmpush(gab_thisvm(gab), gab_none);
+    return nullptr;
+  }
+
+  const char *data = gab_strdata(&str);
+
+  assert(old_off < len);
+  data += old_off;
+
+  size_t old_bytes = grapheme_next_character_break_utf8(data, SIZE_MAX);
+
+  if (len <= old_off + old_bytes) {
+    gab_vmpush(gab_thisvm(gab), gab_none);
+    return nullptr;
+  }
+
+  size_t new_bytes =
+      grapheme_next_character_break_utf8(data + old_bytes, SIZE_MAX);
+
+  gab_value new_off = gab_number(old_off + old_bytes);
+
+  gab_value grapheme = gab_nstring(gab, new_bytes, data + old_bytes);
+
+  gab_vmpush(gab_thisvm(gab), gab_ok, new_off, grapheme, new_off);
+
+  return nullptr;
 }
 
 a_gab_value *gab_strlib_trim(struct gab_triple gab, uint64_t argc,
@@ -73,7 +142,8 @@ a_gab_value *gab_strlib_split(struct gab_triple gab, uint64_t argc,
       // Memcmp to test for full sep match
       if (!memcmp(cstr + offset, csep, csep_len)) {
         // Full match found - push a string
-        gab_vmpush(gab_thisvm(gab), gab_nstring(gab, offset - begin, cstr + begin));
+        gab_vmpush(gab_thisvm(gab),
+                   gab_nstring(gab, offset - begin, cstr + begin));
         begin = offset + csep_len;
         offset = begin;
         continue;
@@ -87,6 +157,29 @@ a_gab_value *gab_strlib_split(struct gab_triple gab, uint64_t argc,
 
   return nullptr;
 }
+
+a_gab_value *gab_binlib_len(struct gab_triple gab, uint64_t argc,
+                            gab_value argv[argc]) {
+  gab_value result = gab_number(gab_strlen(argv[0]));
+
+  gab_vmpush(gab_thisvm(gab), result);
+  return nullptr;
+};
+
+a_gab_value *gab_binlib_strings_into(struct gab_triple gab, uint64_t argc,
+                                     gab_value argv[argc]) {
+  gab_value bin = gab_arg(0);
+
+  gab_value str = gab_bintostr(bin);
+
+  if (str == gab_invalid)
+    gab_vmpush(gab_thisvm(gab), gab_err,
+               gab_string(gab, "Binary is not valid UTF-8"));
+  else
+    gab_vmpush(gab_thisvm(gab), gab_ok, str);
+
+  return nullptr;
+};
 
 a_gab_value *gab_strlib_len(struct gab_triple gab, uint64_t argc,
                             gab_value argv[argc]) {
@@ -166,7 +259,7 @@ a_gab_value *gab_strlib_ends(struct gab_triple gab, uint64_t argc,
     const char *pat = gab_strdata(argv + 0);
     const char *str = gab_strdata(argv + 1);
 
-    gab_vmpush(gab_thisvm(gab), gab_bool(ends(str, pat, gab_valton(argv[2]))));
+    gab_vmpush(gab_thisvm(gab), gab_bool(ends(str, pat, gab_valtou(argv[2]))));
     return nullptr;
   }
   }
@@ -201,64 +294,61 @@ a_gab_value *gab_strlib_begins(struct gab_triple gab, uint64_t argc,
     const char *pat = gab_strdata(&vpat);
     const char *str = gab_strdata(&vstr);
 
-    gab_vmpush(gab_thisvm(gab), gab_bool(begins(str, pat, gab_valton(argv[2]))));
+    gab_vmpush(gab_thisvm(gab),
+               gab_bool(begins(str, pat, gab_valtou(argv[2]))));
     return nullptr;
   }
   }
   return nullptr;
 }
 
-a_gab_value *gab_strlib_number(struct gab_triple gab, uint64_t argc,
-                               gab_value argv[argc]) {
-  if (argc != 1) {
-    return gab_fpanic(gab, "&:is_digit? expects 0 arguments");
-  }
+a_gab_value *gab_binlib_at(struct gab_triple gab, uint64_t argc,
+                           gab_value argv[argc]) {
+  gab_value bin = gab_arg(0);
+  gab_value idx = gab_arg(1);
+  gab_value step = gab_arg(2);
 
-  int64_t index = argc == 1 ? 0 : gab_valton(argv[1]);
+  if (gab_valkind(bin) != kGAB_BINARY)
+    return gab_pktypemismatch(gab, bin, kGAB_BINARY);
 
-  if (index > gab_strlen(argv[0])) {
-    return gab_fpanic(gab, "Index out of bounds");
-  }
+  if (gab_valkind(idx) != kGAB_NUMBER)
+    return gab_pktypemismatch(gab, idx, kGAB_NUMBER);
 
-  if (index < 0) {
-    // Go from the back
-    index = gab_strlen(argv[0]) + index;
+  if (step == gab_nil)
+    step = gab_number(1);
 
-    if (index < 0) {
-      return gab_fpanic(gab, "Index out of bounds");
-    }
-  }
+  if (gab_valkind(step) != kGAB_NUMBER)
+    return gab_pktypemismatch(gab, step, kGAB_NUMBER);
 
-  int byte = gab_strdata(argv + 0)[index];
+  int64_t index = gab_valtoi(idx);
+  uint64_t stp = gab_valtou(step);
 
-  gab_vmpush(gab_thisvm(gab), gab_bool(isdigit(byte)));
-  return nullptr;
-}
+  if (gab_valkind(step) != kGAB_NUMBER)
+    return gab_pktypemismatch(gab, step, kGAB_NUMBER);
 
-a_gab_value *gab_strlib_to_byte(struct gab_triple gab, uint64_t argc,
-                                gab_value argv[argc]) {
-  if (argc != 1) {
-    return gab_fpanic(gab, "&:to_byte expects 0 arguments");
-  }
+  if (stp > 8)
+    return gab_fpanic(gab, "Step size cannot exceed 8 bytes: got $", step);
 
-  int64_t index = argc == 1 ? 0 : gab_valton(argv[1]);
+  size_t len = gab_strlen(bin);
 
-  if (index > gab_strlen(argv[0])) {
-    return gab_fpanic(gab, "Index out of bounds");
-  }
+  // Go from the back
+  if (index < 0)
+    index += (len / stp);
 
-  if (index < 0) {
-    // Go from the back
-    index = gab_strlen(argv[0]) + index;
+  size_t offset = index * stp;
 
-    if (index < 0) {
-      return gab_fpanic(gab, "Index out of bounds");
-    }
-  }
+  if (offset + stp > len)
+    return gab_vmpush(gab_thisvm(gab), gab_none), nullptr;
 
-  char byte = gab_strdata(argv + 0)[index];
+  const char *begin = gab_strdata(&bin) + (index * stp);
 
-  gab_vmpush(gab_thisvm(gab), gab_number(byte));
+  int64_t result = 0;
+
+  // Cast the char to unsigned - can't shift negative values.
+  for (size_t i = 0; i < stp; i++)
+    result |= ((unsigned char) begin[i]) << i;
+
+  gab_vmpush(gab_thisvm(gab), gab_ok, gab_number(result));
   return nullptr;
 }
 
@@ -268,7 +358,7 @@ a_gab_value *gab_strlib_at(struct gab_triple gab, uint64_t argc,
     return gab_fpanic(gab, "&:at expects 1 number argument");
   }
 
-  long int index = gab_valton(argv[1]);
+  int64_t index = gab_valtoi(argv[1]);
 
   if (index > gab_strlen(argv[0])) {
     return gab_fpanic(gab, "Index out of bounds");
@@ -285,53 +375,98 @@ a_gab_value *gab_strlib_at(struct gab_triple gab, uint64_t argc,
   return nullptr;
 }
 
-#define MIN(a, b) (a < b ? a : b)
-#define MAX(a, b) (a > b ? a : b)
+s_char utf8_slice(const char *data, size_t len, size_t from, size_t to) {
+  size_t graphemes = 0, offset = 0;
+
+  while (graphemes < from) {
+    graphemes++;
+
+    assert(offset < len);
+    offset += grapheme_next_character_break_utf8(data + offset, SIZE_MAX);
+  }
+
+  s_char result = s_char_create(data + offset, 0);
+  while (graphemes < to) {
+    graphemes++;
+
+    assert(offset < len);
+    size_t grapheme_size =
+        grapheme_next_character_break_utf8(data + offset, SIZE_MAX);
+
+    offset += grapheme_size;
+
+    result.len += grapheme_size;
+  }
+
+  return result;
+}
+
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define CLAMP(a, b) (MAX(0, MIN(a, b)))
 
 a_gab_value *gab_strlib_slice(struct gab_triple gab, uint64_t argc,
                               gab_value argv[argc]) {
-  const char *str = gab_strdata(argv + 0);
+  gab_value str = gab_arg(0);
+
+  if (gab_valkind(str) != kGAB_STRING)
+    return gab_pktypemismatch(gab, str, kGAB_STRING);
+
+  const char *data = gab_strdata(&str);
 
   uint64_t len = gab_strlen(argv[0]);
+  if (len == 0) {
+    gab_vmpush(gab_thisvm(gab), gab_string(gab, ""));
+    return nullptr;
+  }
+
   uint64_t start = 0, end = len;
 
   switch (argc) {
   case 2: {
-    if (gab_valkind(argv[1]) != kGAB_NUMBER) {
-      return gab_fpanic(gab, "&:slice expects a number as the second argument");
-    }
+    if (gab_valkind(gab_arg(1)) != kGAB_NUMBER)
+      return gab_pktypemismatch(gab, gab_arg(1), kGAB_NUMBER);
 
-    double a = gab_valton(argv[1]);
-    end = MIN(a, len);
+    int64_t a = gab_valtoi(gab_arg(1));
+    if (a < 0)
+      a += len;
+
+    end = CLAMP(a, len);
+    assert(end >= 0 && end < len);
     break;
   }
 
-  case 3:
-    if (gab_valkind(argv[1]) == kGAB_NUMBER) {
-      start = MIN(gab_valton(argv[1]), len);
-    } else if (argv[1] == gab_nil) {
-      return gab_fpanic(gab, "&:slice expects a number as the second argument");
-    }
+  default: {
+    if (gab_valkind(gab_arg(1)) != kGAB_NUMBER)
+      return gab_pktypemismatch(gab, gab_arg(1), kGAB_NUMBER);
 
-    if (gab_valkind(argv[2]) == kGAB_NUMBER) {
-      end = MIN(gab_valton(argv[2]), len);
-    } else if (argv[2] == gab_nil) {
-      return gab_fpanic(gab, "&:slice expects a number as the third argument");
+    int64_t a = gab_valtoi(gab_arg(1));
+    if (a < 0)
+      a += len;
+
+    start = CLAMP(a, len);
+    assert(start >= 0 && start <= len);
+
+    if (gab_valkind(gab_arg(2)) == kGAB_NUMBER) {
+      int64_t b = gab_valtoi(gab_arg(2));
+      if (b < 0)
+        b += len;
+
+      end = CLAMP(b, len);
+      assert(end >= 0 && end <= len);
     }
     break;
-
-  default:
-    return gab_fpanic(gab, "&:slice expects 2 or 3 arguments");
+  }
   }
 
-  if (start > end) {
-    return gab_fpanic(gab, "&:slice expects the start to be before the end");
-  }
+  if (start > end)
+    return gab_fpanic(
+        gab, "slice: expects the start to be before the end, got [$, $]", start,
+        end);
 
-  uint64_t size = end - start;
+  s_char result = utf8_slice(data, gab_strlen(str), start, end);
 
-  gab_value res = gab_nstring(gab, size, str + start);
+  gab_value res = gab_nstring(gab, result.len, result.data);
 
   gab_vmpush(gab_thisvm(gab), res);
   return nullptr;
@@ -370,7 +505,7 @@ a_gab_value *gab_msglib_binary_into(struct gab_triple gab, uint64_t argc,
 
 a_gab_value *gab_numlib_binary_into(struct gab_triple gab, uint64_t argc,
                                     gab_value argv[argc]) {
-  uint64_t f = gab_valton(gab_arg(0));
+  uint64_t f = gab_valtou(gab_arg(0));
   gab_vmpush(gab_thisvm(gab), gab_nbinary(gab, sizeof(f), (void *)&f));
   return nullptr;
 }
@@ -422,14 +557,14 @@ GAB_DYNLIB_MAIN_FN {
 
   gab_def(gab,
           {
-              gab_message(gab, "numbers\\into"),
+              gab_message(gab, "t"),
+              gab_strtomsg(t),
               t,
-              gab_snative(gab, "numbers\\into", gab_strlib_numbers_into),
           },
           {
-              gab_message(gab, "blank"),
+              gab_message(gab, "blank?"),
               t,
-              gab_snative(gab, "blank", gab_strlib_blank),
+              gab_snative(gab, "blank?", gab_strlib_blank),
           },
           {
               gab_message(gab, "split"),
@@ -452,24 +587,54 @@ GAB_DYNLIB_MAIN_FN {
               gab_snative(gab, "starts_with?", gab_strlib_begins),
           },
           {
-              gab_message(gab, "number?"),
+              gab_message(gab, "seq\\init"),
               t,
-              gab_snative(gab, "number?", gab_strlib_number),
+              gab_snative(gab, "seq\\init", gab_strlib_seqinit),
           },
           {
-              gab_message(gab, "strings\\into"),
-              gab_undefined,
-              gab_snative(gab, "strings\\into", gab_strlib_string_into),
+              gab_message(gab, "seq\\next"),
+              t,
+              gab_snative(gab, "seq\\next", gab_strlib_seqnext),
           },
           {
-              gab_message(gab, "messages\\into"),
-              t,
-              gab_snative(gab, "messages\\into", gab_strlib_messages_into),
+              gab_message(gab, "to\\s"),
+              gab_invalid,
+              gab_snative(gab, "to\\s", gab_strlib_string_into),
           },
           {
-              gab_message(gab, "byte\\into"),
+              gab_message(gab, "to\\m"),
               t,
-              gab_snative(gab, "byte\\into", gab_strlib_to_byte),
+              gab_snative(gab, "to\\m", gab_strlib_messages_into),
+          },
+          {
+              gab_message(gab, "to\\b"),
+              t,
+              gab_snative(gab, "to\\b", gab_strlib_binary_into),
+          },
+          {
+              gab_message(gab, "as\\n"),
+              t,
+              gab_snative(gab, "as\\n", gab_strlib_numbers_into),
+          },
+          {
+              gab_message(gab, "as\\s"),
+              gab_type(gab, kGAB_BINARY),
+              gab_snative(gab, "as\\s", gab_binlib_strings_into),
+          },
+          {
+              gab_message(gab, "len"),
+              gab_type(gab, kGAB_BINARY),
+              gab_snative(gab, "len", gab_binlib_len),
+          },
+          {
+              gab_message(gab, "at"),
+              gab_type(gab, kGAB_BINARY),
+              gab_snative(gab, "at", gab_binlib_at),
+          },
+          {
+              gab_message(gab, "t"),
+              gab_strtomsg(gab_type(gab, kGAB_BINARY)),
+              gab_type(gab, kGAB_BINARY),
           },
           {
               gab_message(gab, "len"),

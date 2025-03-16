@@ -1,0 +1,16 @@
+Terminal = 'cterm'.use
+
+["terminal"] .defmodule! {
+  seq\init: _ => do
+    e = self.event\poll
+    (ok: e e)
+  end
+  seq\next: _ => do
+    e = self.event\poll
+    (ok: e e)
+  end
+}
+
+"terminal" .def\seq!
+
+Terminal

@@ -55,7 +55,15 @@
 // New workers are spawned as needed up until a maximum is reached (specified at
 // runtime) Worker threads wait about half a second before spinning down.
 #ifndef cGAB_WORKER_IDLEWAIT_MS
-#define cGAB_WORKER_IDLEWAIT_MS ((size_t)496)
+#define cGAB_WORKER_IDLEWAIT_MS ((size_t)2048)
+#endif
+
+#ifndef cGAB_VM_CHANNEL_PUT_TIMEOUT_MS
+#define cGAB_VM_CHANNEL_PUT_TIMEOUT_MS ((size_t)256)
+#endif
+
+#ifndef cGAB_VM_CHANNEL_TAKE_TIMEOUT_MS
+#define cGAB_VM_CHANNEL_TAKE_TIMEOUT_MS ((size_t)128)
 #endif
 
 // A worker (os thread) may need to yield at an arbitrary point.
@@ -65,7 +73,7 @@
 // A sleeptime of 0ms will result in *a lot* of context switching,
 // which is undesirable for the OS Scheduler. To help this, a small
 // amount of sleeping in the yield function is useful
-#define GAB_YIELD_SLEEPTIME_NS ((size_t)1 << 8)
+#define GAB_YIELD_SLEEPTIME_NS ((size_t)1 << 10)
 
 // Collect as frequently as possible (on every RC push)
 #ifndef cGAB_DEBUG_GC
@@ -107,7 +115,7 @@
 
 // Maximum number of call frames that can be on the call stack
 #ifndef cGAB_FRAMES_MAX
-#define cGAB_FRAMES_MAX 64
+#define cGAB_FRAMES_MAX 32
 #endif
 
 // Maximum number of function defintions that can be nested.
@@ -125,16 +133,20 @@
 #define cGAB_CONSTANTS_INITIAL_CAP 64
 #endif
 
+#ifndef cGAB_WORKER_LOCALQUEUE_MAX
+#define cGAB_WORKER_LOCALQUEUE_MAX 32
+#endif
+
 // Size of the vm's stack
 #ifndef cGAB_STACK_MAX
-#define cGAB_STACK_MAX (cGAB_FRAMES_MAX * 128)
+#define cGAB_STACK_MAX (cGAB_FRAMES_MAX * 32)
 #endif
 
 // Garbage collection increment/decrement buffer size
 // I don't love having these just be static buffers, its very possible
 // for them to overflow
 #ifndef cGAB_GC_MOD_BUFF_MAX
-#define cGAB_GC_MOD_BUFF_MAX (cGAB_STACK_MAX * 4)
+#define cGAB_GC_MOD_BUFF_MAX (cGAB_STACK_MAX * cGAB_WORKER_LOCALQUEUE_MAX)
 #endif
 
 #if cGAB_GC_MOD_BUFF_MAX <= cGAB_STACK_MAX
@@ -217,7 +229,7 @@ enum gab_flags {
 // VERSION
 #define GAB_VERSION_MAJOR "0"
 #define GAB_VERSION_MINOR "0"
-#define GAB_VERSION_PATCH "1"
+#define GAB_VERSION_PATCH "2"
 #define GAB_VERSION_TAG GAB_VERSION_MAJOR "." GAB_VERSION_MINOR "." GAB_VERSION_PATCH
 
 // Message constants
@@ -284,6 +296,11 @@ enum gab_flags {
 #define tGAB_CHANNEL_NAME "Channels"
 
 #define tGAB_IOSTREAM "io\\stream"
+#define tGAB_TERMINAL "terminal"
+
+#define mGAB_AST_NODE_SEND_LHS "gab\\lhs"
+#define mGAB_AST_NODE_SEND_MSG "gab\\msg"
+#define mGAB_AST_NODE_SEND_RHS "gab\\rhs"
 
 #define T char
 #include "slice.h"

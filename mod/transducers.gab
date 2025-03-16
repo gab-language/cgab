@@ -6,7 +6,7 @@ td\apply: .defcase! {
 }
 
 deftransducer!: .def! (
-  'gab\message'
+  "gab\message"
   (cx init) => do
     mod\t = {
       module nil:
@@ -83,6 +83,10 @@ take:.deftransducer!(
 
 take_while:.deftransducer!(
   f => (r acc xs) => f.(xs**).td\stop_conditionally(r acc xs)
+)
+
+take_until:.deftransducer!(
+  f => (r acc xs) => f.(xs**).!.td\stop_conditionally(r acc xs)
 )
 
 drop:.deftransducer!(

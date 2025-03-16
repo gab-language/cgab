@@ -2,6 +2,29 @@
 
 cd "$CLIDE_PATH/../" || exit 1
 
+function gen-libgrapheme() {
+  cd vendor/libgrapheme || exit 1
+
+  # Compile natively to run the generators.
+  make CC="zig cc" libgrapheme.a
+
+  # Clean up native outputs
+  rm libgrapheme.a
+  rm src/*.o
+
+  cd "$CLIDE_PATH/../" || exit 1
+}
+
+function build-libgrapheme() {
+  cd vendor/libgrapheme || exit 1
+
+  make CC="zig cc --target=$1" libgrapheme.a
+  mv libgrapheme.a "$CLIDE_PATH/../$2"
+  rm src/*.o
+
+  cd "$CLIDE_PATH/../" || exit 1
+}
+
 if ! test -e "configuration"; then
   clide configure || exit 1
 fi
@@ -65,6 +88,9 @@ function build {
 
   mkdir -p "build-$1/mod"
 
+  echo "   Building static shared library dependencies"
+  build-libgrapheme "$1" "build-$1/libgrapheme.a"
+
   # Compile all src/mod c files into shared objects / dlls
   # These modules link *dynamically* to libcgab - they are loaded only at runtime by a process which is *already* exporting libcgab's symbols.
   # There *could* be some versioning issues but we're ignoring that for now.
@@ -78,7 +104,7 @@ function build {
   for file in src/mod/*.c; do
     name=$(basename "$file" ".c")
     echo "       Building gab$name..."
-    zig cc $platform_bundle  -undefined dynamic_lookup $flags $platform -o "build-$1/mod/$name$dynlib_fileending" "$file" || exit 1
+    zig cc $platform_bundle  -undefined dynamic_lookup $flags $platform -o "build-$1/mod/$name$dynlib_fileending" -lgrapheme "$file" || exit 1
     echo "       Done!"
     echo "       $(file "build-$1/mod/$name$dynlib_fileending")"
   done
@@ -87,7 +113,12 @@ function build {
 
   echo "Success!"
 }
+
 export -f build
+export -f build-libgrapheme
+
+echo "Building dependency"
+gen-libgrapheme
 
 echo "Beginning compilation."
 echo "$GAB_TARGETS"

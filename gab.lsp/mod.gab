@@ -1,3 +1,0 @@
-lsp.server = 'gab.lsp/server' :use
-
-lsp.server:make:run!

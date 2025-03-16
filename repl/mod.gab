@@ -1,0 +1,261 @@
+'cgab'.use
+'ranges'.use
+xf = 'transducers'.use
+Terminal = 'os.terminal'.use
+
+term = Terminal.make
+
+(events, server) = (Channels.make, Channels.make)
+
+event\quit?:.def!(
+  Records.t,
+  () => self.ch == 'q')
+
+# Fiber for polling terminal events and pushing them
+# into a channel for handling. Transducer terminates
+# the stream on the quit event.
+Main = Fibers.make () => do
+  term.pipe(
+    events
+    xf.take_until event\quit?:)
+
+# Close all channels at this point.
+  events.close!
+  server.close!
+end
+
+HistoryElement = Shapes.make(source: result:)
+
+to\s:.defcase! {
+  Shapes.make(status: fiber:) () => do
+   "=> $ $".sprintf(self.status, self.fiber)
+  end
+  Shapes.make(status: res: env:) () => do
+    "=> $ $".sprintf(self.status, self.res.map to\s: .join(xf.interpose " "))
+  end
+}
+
+EvalCmd = Shapes.make(eval:)
+EnvCmd = Shapes.make(env:)
+
+tick\history_element\result:.defcase! {
+  Shapes.make(status: fiber:) (he) => do
+    result = he.result
+    fib = result.fiber
+
+    fib
+      .then done?:
+      .then(() => do
+        (status, res[], env) = fib.await!
+
+        status
+          .ok?
+          .then(() => server <! EnvCmd.make(env))
+
+        he.result {
+          status: status
+          res: res
+          env: env
+        }
+      end)
+      .or he
+  end
+  Shapes.make(status: res: env:) (he) => he
+}
+
+tick\history_element:.def!(
+  HistoryElement
+  () => self.result.tick\history_element\result self)
+
+cmd\handle:.defcase! {
+  EvalCmd (state) => do
+    (ok, fib) = self.eval.gab\eval(state.env)
+
+    server <! { status: ok, fiber: fib }
+
+    state
+  end
+  EnvCmd (state) => do
+    state.env(self.env)
+  end
+}
+
+REPLServer = Shapes.make(env:)
+
+make:.def!(
+  REPLServer:
+  () => REPLServer.make(nil:))
+
+run:.def!(
+  REPLServer:
+  ()
+    => Fibers.make ()
+      => server.reduce(
+        REPLServer:.make,
+        (state, cmd)
+          => cmd.cmd\handle state))
+
+Server = REPLServer:.run
+
+REPLClient = Shapes.make(input: history_index: history:)
+
+make:.def!(
+  REPLClient:,
+  () => REPLClient.make("" 0 []))
+
+event\ctrl\key\handle:.def! (state) => state
+
+event\ctrl\key\handle:.defcase! {
+  backspace: (state, event) => do
+    input = state.input.slice(0, state.input.len - 1)
+    state.input input
+  end
+  enter: (state, event) => do
+    server <! EvalCmd.make(state.input)
+
+    (ok, res) = server >!
+
+    history_elem = HistoryElement.make(state.input, res)
+
+    state = ok
+      .and state.history(state.history.push history_elem)
+      .or state
+      .input ""
+
+    state.history_index(state.history.len)
+  end
+}
+
+event\key\key\handle:.defcase! {
+  arrow\down: (state, event) => do
+    state = state.history_index(state.history_index ++)
+    (ok, hist) = state.history.at(state.history_index)
+
+    ok
+      .then(() => state.input(hist.source))
+      .else(() => state.input "")
+  end
+  arrow\up: (state, event) => do
+    state = state.history_index(state.history_index --)
+    (ok, hist) = state.history.at(state.history_index)
+
+    ok
+      .then(() => state.input(hist.source))
+      .else(() => state.input "")
+  end
+}
+
+event\key\key\handle:.def! (state event) =>  do
+  input = state.input + event.ch
+  state.input input
+end
+
+event\key\handle:.defcase! {
+  ctrl: (state, event) => event.key.event\ctrl\key\handle(state event),
+  key: (state, event) => event.key.event\key\key\handle(state event)
+}
+
+event\handle:.defcase! {
+  key: (state, event) => event.mod.event\key\handle(state event)
+  tick: (state) => do
+    state.history(state.history.map tick\history_element:)
+  end
+}
+
+box_chars = {
+  h: "─"
+  v: "│"
+  bl: "╰"
+  br: "╯"
+  tl: "╭"
+  tr: "╮"
+}
+
+doprintline:.defcase! {
+  horizontal: (x y dx char)
+    => x .-> (x + dx) .each i
+      => term.cell\set(i y char)
+  vertical: (x y dy char)
+    => y .-> (y + dy) .each i
+      => term.cell\set(x i char)
+}
+
+printline = (x y opts{})
+  => opts.axis.doprintline(x y opts.dist, opts.char)
+
+printbox = (x y w h) => do
+  term.cell\set(x y box_chars.tl)
+  term.cell\set(x + w y box_chars.tr)
+  term.cell\set(x y + h box_chars.bl)
+  term.cell\set(x + w y + h box_chars.br)
+
+  printline.(
+    x + 1
+    y
+    char: box_chars.h
+    axis: horizontal:
+    dist: w - 2)
+
+  printline.(
+    x
+    y + 1
+    char: box_chars.v
+    axis: vertical:
+    dist: h - 2)
+
+  printline.(
+    x + 1
+    y + h
+    char: box_chars.h
+    axis: horizontal:
+    dist: w - 2)
+
+  printline.(
+    x + w
+    y + 1
+    char: box_chars.v
+    axis: vertical:
+    dist: h - 2)
+end
+
+Ticker = Fibers.make () => do
+  events <! { type: tick: }
+
+  Fibers.sleep!(100000000)
+
+  events.closed?.else self
+end
+
+Client = Fibers.make() 
+  => events
+  .reduce(
+    REPLClient:.make, # Initial state
+    (state event) => do
+      term.clear!
+
+      #term.print!(0, 0, "$".sprintf event)
+
+      state = event.type.event\handle(state, event)
+
+      (w h) = (term.width, term.height)
+
+      state.history.each (h, i) => do
+        source_line = "$: $".sprintf(i, h.source)
+        term.print!(0, 3 + (i * 2), source_line)
+
+        result_line = h.result.to\s
+        term.print!(0, 4 + (i * 2), result_line)
+      end
+
+      printbox.(0 h - 3 w - 2 2)
+      input_line = " > $".sprintf(state.input)
+      term.print!(1, h - 2, input_line)
+
+      term.render!
+
+      state
+    end)
+
+[Main Server Client Ticker]
+  .map await!:
+  .map unwrap!:

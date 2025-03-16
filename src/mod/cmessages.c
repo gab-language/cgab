@@ -12,7 +12,7 @@ a_gab_value *gab_msglib_message(struct gab_triple gab, uint64_t argc,
 }
 
 a_gab_value *gab_msglib_to_string(struct gab_triple gab, uint64_t argc,
-                                gab_value argv[static argc]) {
+                                  gab_value argv[static argc]) {
   gab_value msg = gab_arg(0);
 
   gab_vmpush(gab_thisvm(gab), gab_msgtostr(msg));
@@ -23,18 +23,17 @@ a_gab_value *gab_msglib_to_string(struct gab_triple gab, uint64_t argc,
 a_gab_value *gab_msglib_specs(struct gab_triple gab, uint64_t argc,
                               gab_value argv[static argc]) {
   if (argc == 1) {
-    gab_value rec = GAB_VAL_TO_FIBER(gab_thisfiber(gab))->messages;
+    gab_value rec = gab_thisfibmsg(gab);
     gab_vmpush(gab_thisvm(gab), rec);
-
     return nullptr;
   }
 
   gab_value msg = gab_arg(1);
 
-  gab_value rec = GAB_VAL_TO_FIBER(gab_thisfiber(gab))->messages;
-  rec = rec == gab_undefined ? rec : gab_recat(rec, msg);
+  gab_value rec = gab_thisfibmsg(gab);
+  rec = rec == gab_invalid ? rec : gab_recat(rec, msg);
 
-  if (rec == gab_undefined)
+  if (rec == gab_invalid)
     gab_vmpush(gab_thisvm(gab), gab_nil);
   else
     gab_vmpush(gab_thisvm(gab), rec);
@@ -112,7 +111,7 @@ a_gab_value *gab_msglib_def(struct gab_triple gab, uint64_t argc,
   uint64_t len = argc - 2;
 
   if (len == 0) {
-    gab_value t = gab_undefined;
+    gab_value t = gab_invalid;
 
     if (!gab_def(gab, {msg, t, spec}))
       return gab_fpanic(gab, "$ already specializes for type $", msg, t);
@@ -164,7 +163,7 @@ a_gab_value *gab_msglib_module(struct gab_triple gab, uint64_t argc,
     return gab_pktypemismatch(gab, messages, kGAB_RECORD);
 
   if (gab_reclen(cases) == 0) {
-    gab_value type = gab_undefined;
+    gab_value type = gab_invalid;
 
     for (uint64_t i = 0; i < gab_reclen(messages); i++) {
       gab_value spec = gab_uvrecat(messages, i);
@@ -204,6 +203,16 @@ GAB_DYNLIB_MAIN_FN {
 
   gab_def(gab,
           {
+              gab_message(gab, "t"),
+              gab_strtomsg(gab_type(gab, kGAB_BLOCK)),
+              gab_type(gab, kGAB_BLOCK),
+          },
+          {
+              gab_message(gab, "t"),
+              gab_strtomsg(t),
+              t,
+          },
+          {
               gab_message(gab, "specializations"),
               mod,
               gab_snative(gab, "specializations", gab_msglib_specs),
@@ -224,9 +233,9 @@ GAB_DYNLIB_MAIN_FN {
               gab_snative(gab, "defmodule!", gab_msglib_module),
           },
           {
-              gab_message(gab, "strings\\into"),
+              gab_message(gab, "to\\s"),
               t,
-              gab_snative(gab, "strings\\into", gab_msglib_to_string),
+              gab_snative(gab, "to\\s", gab_msglib_to_string),
           },
           {
               gab_message(gab, "has?"),
@@ -237,11 +246,6 @@ GAB_DYNLIB_MAIN_FN {
               gab_message(gab, "at"),
               t,
               gab_snative(gab, "at", gab_msglib_at),
-          },
-          {
-              gab_message(gab, "put"),
-              t,
-              gab_snative(gab, "put", gab_msglib_put),
           });
 
   return a_gab_value_one(gab_ok);

@@ -10,7 +10,7 @@ a_gab_value *gab_reclib_at(struct gab_triple gab, uint64_t argc,
 
   gab_value val = gab_recat(rec, key);
 
-  if (val == gab_undefined)
+  if (val == gab_invalid)
     gab_vmpush(gab_thisvm(gab), gab_none);
   else
     gab_vmpush(gab_thisvm(gab), gab_ok, val);
@@ -34,20 +34,20 @@ a_gab_value *gab_reclib_slice(struct gab_triple gab, uint64_t argc,
       return gab_fpanic(gab, "&:slice expects a number as the second argument");
     }
 
-    double a = gab_valton(argv[1]);
+    double a = gab_valtof(argv[1]);
     end = MIN(a, len);
     break;
   }
 
   case 3:
     if (gab_valkind(argv[1]) == kGAB_NUMBER) {
-      start = MIN(gab_valton(argv[1]), len);
+      start = MIN(gab_valtou(argv[1]), len);
     } else if (argv[1] == gab_nil) {
       return gab_fpanic(gab, "&:slice expects a number as the second argument");
     }
 
     if (gab_valkind(argv[2]) == kGAB_NUMBER) {
-      end = MIN(gab_valton(argv[2]), len);
+      end = MIN(gab_valtou(argv[2]), len);
     } else if (argv[2] == gab_nil) {
       return gab_fpanic(gab, "&:slice expects a number as the third argument");
     }
@@ -160,21 +160,9 @@ a_gab_value *gab_reclib_is_list(struct gab_triple gab, uint64_t argc,
     return gab_pktypemismatch(gab, rec, kGAB_RECORD);
 
   gab_value shp = gab_recshp(rec);
-  uint64_t len = gab_shplen(shp);
 
-  if (len == 0) {
-    gab_vmpush(gab_thisvm(gab), gab_false);
-    return nullptr;
-  }
+  gab_vmpush(gab_thisvm(gab), gab_bool(gab_shpislist(shp)));
 
-  for (uint64_t i = 0; i < len; i++) {
-    if (gab_valkind(gab_ushpat(shp, i)) != kGAB_NUMBER) {
-      gab_vmpush(gab_thisvm(gab), gab_false);
-      return nullptr;
-    }
-  }
-
-  gab_vmpush(gab_thisvm(gab), gab_true);
   return nullptr;
 }
 
@@ -187,16 +175,16 @@ gab_value doputvia(struct gab_triple gab, gab_value rec, gab_value val,
 
   gab_value subrec = gab_recat(rec, key);
 
-  if (subrec == gab_undefined)
+  if (subrec == gab_invalid)
     subrec = gab_record(gab, 0, 0, path, path);
 
   if (gab_valkind(subrec) != kGAB_RECORD)
-    return gab_undefined;
+    return gab_invalid;
 
   gab_value subval = doputvia(gab, subrec, val, len - 1, path + 1);
 
-  if (subval == gab_undefined)
-    return gab_undefined;
+  if (subval == gab_invalid)
+    return gab_invalid;
 
   return gab_recput(gab, rec, key, subval);
 }
@@ -216,7 +204,7 @@ a_gab_value *gab_reclib_putvia(struct gab_triple gab, uint64_t argc,
 
   gab_value result = doputvia(gab, rec, val, argc - 2, argv + 2);
 
-  if (result == gab_undefined)
+  if (result == gab_invalid)
     return gab_fpanic(gab, "Invalid path for $ on $",
                       gab_message(gab, "putvia"), rec);
 
@@ -321,6 +309,11 @@ GAB_DYNLIB_MAIN_FN {
   gab_value t = gab_type(gab, kGAB_RECORD);
 
   gab_def(gab,
+          {
+              gab_message(gab, "t"),
+              gab_strtomsg(t),
+              t,
+          },
           {
               gab_message(gab, "slice"),
               t,

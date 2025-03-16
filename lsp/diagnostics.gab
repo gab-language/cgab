@@ -1,0 +1,79 @@
+log = 'lsp/logs'.use
+
+'cgab'.use
+
+diag\jobs\in = Channels.make
+
+diag\job\t = Shapes.make(server: uri: text:)
+lsp\server\t = Shapes.make(server\in: server\out: server\data:)
+
+diagnostics\queue_all:.def!(
+  lsp\server\t
+  () => do
+    server = self
+
+    server.server\data.each (text uri) => do
+      log.("Queueing Diagnostics" uri)
+      diag\jobs\in <! diag\job\t.make(server uri text)        
+    end
+  end)
+
+[diag\job\t] .defmodule! {
+  notify\diagnostics!: diagnostics => do
+    log.("Notifying", self.uri, diagnostics)
+
+    self.server.notify!(
+        "textDocument/publishDiagnostics"
+        {
+          "uri" self.uri
+          "diagnostics" diagnostics
+        })
+
+    ok:
+  end
+  diag\check: () => do
+    text = self.text
+
+    (ok, err) = text.gab\check
+
+    err
+  end
+  complete!: () => do
+    job = self
+    log.("Diagnostics for: " self.uri)
+    diagnostic = self.diag\check
+
+    log.("Diagnostics: " diagnostic)
+
+    diagnostic
+      .then(() => do
+        job.notify\diagnostics! [
+            {
+              range: {
+                start: {
+                  line: diagnostic.row - 1
+                  character: diagnostic.col\begin
+                }
+                end: {
+                  line: diagnostic.row - 1
+                  character: diagnostic.col\end
+                }
+              }
+              severity: 1
+              code: "test"
+              codeDescription: "This is a test"
+              source: "gablsp"
+              message: diagnostic.status
+            }
+          ]
+      end)
+    .else(() => do
+      log.("Clearing diagnostics: " diagnostic)
+      job.notify\diagnostics! []
+    end)
+  end
+}
+
+diag\worker = () => diag\jobs\in .each complete!:
+
+Fibers.make diag\worker

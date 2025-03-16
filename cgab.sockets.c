@@ -14,7 +14,7 @@
 #define SOCKET_BOX_TYPE "gab.os.socket"
 #define CONNECTEDSOCKET_BOX_TYPE "gab.connected.socket"
 
-void gab_container_socket_cb(uint64_t len, char data[static len]) {
+void gab_container_socket_cb(struct gab_triple, uint64_t len, char data[static len]) {
   shutdown((int64_t)data, SHUT_RDWR);
   close((int64_t)data);
 }
@@ -42,8 +42,8 @@ a_gab_value *gab_lib_sock(struct gab_triple gab, uint64_t argc,
     if (gab_valkind(type_val) != kGAB_NUMBER)
       return gab_pktypemismatch(gab, type_val, kGAB_NUMBER);
 
-    domain = gab_valton(domain_val);
-    type = gab_valton(type_val);
+    domain = gab_valtoi(domain_val);
+    type = gab_valtoi(type_val);
 
     break;
   }
@@ -58,8 +58,8 @@ a_gab_value *gab_lib_sock(struct gab_triple gab, uint64_t argc,
     if (gab_valkind(type_val) != kGAB_NUMBER)
       return gab_pktypemismatch(gab, type_val, kGAB_NUMBER);
 
-    domain = gab_valton(argv[1]);
-    type = gab_valton(argv[2]);
+    domain = gab_valtoi(argv[1]);
+    type = gab_valtoi(argv[2]);
 
     break;
   }
@@ -68,11 +68,11 @@ a_gab_value *gab_lib_sock(struct gab_triple gab, uint64_t argc,
   int sockfd = socket(domain, type, 0);
 
   if (sockfd < 0) {
-    gab_vmpush(gab_vm(gab), gab_err, gab_string(gab, "socket failed to open"));
+    gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, "socket failed to open"));
     return nullptr;
   }
 
-  gab_vmpush(gab_vm(gab), gab_ok,
+  gab_vmpush(gab_thisvm(gab), gab_ok,
              gab_box(gab, (struct gab_box_argt){
                               .type = gab_string(gab, SOCKET_BOX_TYPE),
                               .destructor = gab_container_socket_cb,
@@ -94,7 +94,7 @@ a_gab_value *gab_lib_bind(struct gab_triple gab, uint64_t argc,
   switch (gab_valkind(config)) {
   case kGAB_NUMBER:
     family = AF_INET;
-    port = htons(gab_valton(config));
+    port = htons(gab_valtoi(config));
     break;
 
   case kGAB_RECORD: {
@@ -108,9 +108,9 @@ a_gab_value *gab_lib_bind(struct gab_triple gab, uint64_t argc,
     if (gab_valkind(port_value) != kGAB_NUMBER)
       return gab_pktypemismatch(gab, port_value, kGAB_NUMBER);
 
-    family = gab_valton(family_value);
+    family = gab_valtoi(family_value);
 
-    port = htons(gab_valton(port_value));
+    port = htons(gab_valtoi(port_value));
 
     break;
   }
@@ -128,9 +128,9 @@ a_gab_value *gab_lib_bind(struct gab_triple gab, uint64_t argc,
                     sizeof(struct sockaddr_in));
 
   if (result < 0)
-    gab_vmpush(gab_vm(gab), gab_err, gab_string(gab, strerror(errno)));
+    gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, strerror(errno)));
   else
-    gab_vmpush(gab_vm(gab), gab_ok);
+    gab_vmpush(gab_thisvm(gab), gab_ok);
 
   return nullptr;
 }
@@ -144,12 +144,12 @@ a_gab_value *gab_lib_listen(struct gab_triple gab, uint64_t argc,
 
   int socket = *(int *)gab_boxdata(gab_arg(0));
 
-  int result = listen(socket, gab_valton(port));
+  int result = listen(socket, gab_valtoi(port));
 
   if (result < 0)
-    gab_vmpush(gab_vm(gab), gab_err, gab_string(gab, "LISTEN_FAILED"));
+    gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, "LISTEN_FAILED"));
   else
-    gab_vmpush(gab_vm(gab), gab_ok);
+    gab_vmpush(gab_thisvm(gab), gab_ok);
 
   return nullptr;
 }
@@ -164,11 +164,11 @@ a_gab_value *gab_lib_accept(struct gab_triple gab, uint64_t argc,
   int64_t connfd = accept(socket, &addr, &addrlen);
 
   if (connfd < 0) {
-    gab_vmpush(gab_vm(gab), gab_err, gab_string(gab, strerror(errno)));
+    gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, strerror(errno)));
     return nullptr;
   }
 
-  gab_vmpush(gab_vm(gab), gab_ok,
+  gab_vmpush(gab_thisvm(gab), gab_ok,
              gab_box(gab, (struct gab_box_argt){
                               .type = gab_string(gab, CONNECTEDSOCKET_BOX_TYPE),
                               .destructor = gab_container_socket_cb,
@@ -196,24 +196,24 @@ a_gab_value *gab_lib_connect(struct gab_triple gab, uint64_t argc,
 
   const char *ip = gab_strdata(&host);
 
-  int cport = htons(gab_valton(port));
+  int cport = htons(gab_valtoi(port));
 
   struct sockaddr_in addr = {.sin_family = AF_INET, .sin_port = cport};
 
   int result = inet_pton(AF_INET, ip, &addr.sin_addr);
 
   if (result <= 0) {
-    gab_vmpush(gab_vm(gab), gab_err, gab_string(gab, "INET_PTON_FAILED"));
+    gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, "INET_PTON_FAILED"));
     return nullptr;
   }
 
   result = connect(socket, (struct sockaddr *)&addr, sizeof(addr));
 
   if (result < 0)
-    gab_vmpush(gab_vm(gab), gab_err, gab_string(gab, strerror(errno)));
+    gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, strerror(errno)));
   else
     gab_vmpush(
-        gab_vm(gab), gab_ok,
+        gab_thisvm(gab), gab_ok,
         gab_box(gab, (struct gab_box_argt){
                          .type = gab_string(gab, CONNECTEDSOCKET_BOX_TYPE),
                          .destructor = gab_container_socket_cb,
@@ -233,9 +233,9 @@ a_gab_value *gab_lib_receive(struct gab_triple gab, uint64_t argc,
   int32_t result = recv(socket, buffer, 1024, 0);
 
   if (result < 0)
-    gab_vmpush(gab_vm(gab), gab_err, gab_string(gab, strerror(result)));
+    gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, strerror(result)));
   else
-    gab_vmpush(gab_vm(gab), gab_ok, gab_nstring(gab, result, buffer));
+    gab_vmpush(gab_thisvm(gab), gab_ok, gab_nstring(gab, result, buffer));
 
   return nullptr;
 }
@@ -252,9 +252,9 @@ a_gab_value *gab_lib_send(struct gab_triple gab, uint64_t argc,
   int32_t result = send(socket, gab_strdata(&msg), gab_strlen(msg), 0);
 
   if (result < 0)
-    gab_vmpush(gab_vm(gab), gab_err, gab_string(gab, strerror(errno)));
+    gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, strerror(errno)));
   else
-    gab_vmpush(gab_vm(gab), gab_ok);
+    gab_vmpush(gab_thisvm(gab), gab_ok);
 
   return nullptr;
 }
@@ -266,7 +266,7 @@ a_gab_value *gab_lib(struct gab_triple gab) {
   gab_def(gab,
           {
               gab_message(gab, mGAB_CALL),
-              gab_strtosig(container_type),
+              gab_strtomsg(container_type),
               gab_snative(gab, "gab.socket", gab_lib_sock),
           },
           {

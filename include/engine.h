@@ -37,17 +37,9 @@ void gab_gcdestroy(struct gab_triple gab);
  */
 bool gab_gctrigger(struct gab_triple gab);
 
-/*
- * Begin the next epoch for the given pid
- */
-#if cGAB_LOG_GC
-#define gab_gcepochnext(gab) (__gab_gcepochnext(gab, __FUNCTION__, __LINE__))
-void __gab_gcepochnext(struct gab_triple gab, const char *func, int line);
-#else
-void gab_gcepochnext(struct gab_triple gab);
-#endif
-
 void gab_gcdocollect(struct gab_triple gab);
+
+void gab_gcassertdone(struct gab_triple gab);
 
 typedef void (*gab_gc_visitor)(struct gab_triple gab, struct gab_obj *obj);
 
@@ -74,7 +66,7 @@ static inline void *gab_egalloc(struct gab_triple gab, struct gab_obj *obj,
   return calloc(1, size);
 }
 
-struct gab_obj_string *gab_egstrfind(struct gab_eg *gab, uint64_t hash,
+struct gab_ostring *gab_egstrfind(struct gab_eg *gab, uint64_t hash,
                                      uint64_t len, const char *data);
 
 struct gab_err_argt {
@@ -82,6 +74,11 @@ struct gab_err_argt {
   const char *note_fmt;
   struct gab_src *src;
   gab_value message;
+
+  /**
+   * Optional out-parameter for captured error details.
+   */
+  struct gab_errdetails* err_out;
   uint64_t tok;
 };
 

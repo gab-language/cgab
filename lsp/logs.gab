@@ -1,0 +1,41 @@
+io = 'os.io' .use
+
+logfile = io
+  .open('/tmp/gablsp.log', 'w')
+  .unwrap!
+
+log\t = log:
+
+log_channel = Channels.make
+
+log\row\t = Shapes.make(level: msg:)
+
+Fibers.make () => do
+  log_channel .each row => do
+    logfile .write (row.level.to\s) .unwrap!
+
+    row.msg.each m => do
+      logfile.write ','
+      logfile.write (m.to\s) .unwrap!
+    end
+
+    logfile .write '\n'
+  end
+end
+
+[log\t] .defmodule! {
+  : (data[]) => do
+    self.info data
+  end,
+  info: (data[]) => do
+    log_channel <! log\row\t.make(info:, data)
+  end,
+  warn: (data[]) => do
+    log_channel <! log\row\t.make(warn:, data)
+  end,
+  error: (data[]) => do
+    log_channel <! log\row\t.make(err:, data)
+  end,
+}
+
+log\t

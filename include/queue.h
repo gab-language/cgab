@@ -31,12 +31,13 @@
 typedef struct TYPENAME TYPENAME;
 struct TYPENAME {
   T data[SIZE];
-  size_t head, tail;
+  size_t head, tail, size;
 };
 
 LINKAGE void METHOD(create)(TYPENAME *self) {
   self->head = -1;
   self->tail = -1;
+  self->size = SIZE;
 }
 
 LINKAGE bool METHOD(is_empty)(TYPENAME *self) { return self->head == -1; }
@@ -66,6 +67,15 @@ LINKAGE bool METHOD(push)(TYPENAME *self, T value) {
   self->data[self->tail] = value;
 
   return true;
+}
+
+LINKAGE T METHOD(peek)(TYPENAME *self) {
+  if (METHOD(is_empty)(self))
+    return DEF_T;
+
+  T value = self->data[self->head];
+
+  return value;
 }
 
 LINKAGE T METHOD(pop)(TYPENAME *self) {

@@ -1,0 +1,127 @@
+log = 'lsp/logs'.use
+'lsp/diagnostics'.use
+
+lsp\messages\into:.def!(
+  Records.t,
+  () => do
+    (ok, method?) = self.at 'method'
+
+    ok .else () => do
+      log.error("No Method", self)
+    end
+
+    (ok, params?) = self.at 'params'
+
+    ok .else () => do
+      log.error("No Params", self)
+    end
+
+    method = method? .or "" .messages\into
+    params = params? .or ""
+    id     = self .at 'id' .unwrap.or 1
+
+    {
+      method nil:,
+      id: id,
+      params: params,
+    }
+  end)
+
+def\lsp\handler!:.def!(
+  Strings.t,
+  handler => do
+    lsp\handle:.def!(Shapes.make(self.messages\into, id:, params:), handler)
+  end)
+
+# Dispatch a message into its handler, if we have one
+lsp\dispatch:.def!(
+  server => do
+    message = self
+
+    lsp\handle: .at message .then () => do
+        log.("Dispatch", lsp\handle: .at message)
+        (ok:, message .lsp\handle server)
+    end
+  end)
+
+
+#
+# INITIALIZATION
+#
+
+TEXTDOCUMENTSYNCKIND\FULL = 1
+
+'initialize' .def\lsp\handler! server => do
+  server.respond!(
+    self.id,
+    {
+        "capabilities" {
+          "textDocumentSync" {
+            "openClose" true:,
+            #"change": TEXTDOCUMENTSYNCKIND\FULL,
+            "save" {
+              "includeText" true:,
+            },
+          },
+        },
+        "serverInfo" {
+          "name" "gablsp",
+          "version" "0.0.1",
+        },
+      })
+
+  server
+end
+
+'initialized' .def\lsp\handler! server => do
+  server
+end
+
+#
+# SYNCHRONIZATION
+#
+
+"textDocument/didOpen" .def\lsp\handler! server => do
+  uri = self.params.at! 'textDocument' .at! 'uri'
+  text= self.params.at! 'textDocument' .at! 'text'
+
+  log.("Opened", uri)
+
+  data = server.server\data.put(uri, text)
+
+  server = server.server\data data
+
+  server.diagnostics\queue_all
+
+  server
+end
+
+"textDocument/didSave" .def\lsp\handler! server => do
+  uri = self.params.at! 'textDocument' .at! 'uri'
+  (ok, text?) = self.params.at 'text'
+
+  log.("Saved", uri)
+
+  data? = server.server\data.put(uri, text?)
+
+  updated_server? = server.server\data data?
+
+  updated_server?.diagnostics\queue_all
+
+  (ok, updated_server?) .unwrap.or (server)
+end
+
+"textDocument/didClose" .def\lsp\handler! server => do
+  # TODO: Delete documents from the server data on load
+  server
+end
+
+"textDocument/didChange" .def\lsp\handler! server => do
+  # TODO: Handle incremental changes in documents
+  server
+end
+
+
+#
+# DIAGNOSTICS
+#

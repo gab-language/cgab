@@ -12,11 +12,15 @@
 #else
 #define GAB_SYMLINK_RECOMMENDATION                                             \
   "New-Item -ItemType SymbolicLink -Path %s\gab -Target "                      \
-  "\"Some\Directory\In\Path\""
+  "\"Some\\Directory\\In\\Path\""
 #endif
 
+struct gab_triple gab;
+
+void propagate_term(int) { gab_sigterm(gab); }
+
 void run_repl(int flags) {
-  struct gab_triple gab = gab_create((struct gab_create_argt){
+  gab = gab_create((struct gab_create_argt){
       .flags = flags,
   });
 
@@ -31,7 +35,7 @@ void run_repl(int flags) {
 }
 
 int run_string(const char *string, int flags, size_t jobs) {
-  struct gab_triple gab = gab_create((struct gab_create_argt){
+  gab = gab_create((struct gab_create_argt){
       .flags = flags,
       .jobs = jobs,
   });
@@ -39,11 +43,12 @@ int run_string(const char *string, int flags, size_t jobs) {
   // This is a weird case where we actually want to include the null terminator
   s_char src = s_char_create(string, strlen(string) + 1);
 
-  a_gab_value *result = gab_exec(gab, (struct gab_exec_argt){
-                                          .name = MAIN_MODULE,
-                                          .source = (char *)src.data,
-                                          .flags = flags,
-                                      });
+  a_gab_value *result =
+      gab_exec(gab, (struct gab_exec_argt){
+                        .name = MAIN_MODULE,
+                        .source = (char *)src.data,
+                        .flags = flags | fGAB_RUN_INCLUDEDEFAULTARGS,
+                    });
 
   int exit_code = 1;
 
@@ -62,7 +67,7 @@ int run_string(const char *string, int flags, size_t jobs) {
 }
 
 int run_file(const char *path, int flags, size_t jobs) {
-  struct gab_triple gab = gab_create((struct gab_create_argt){
+  gab = gab_create((struct gab_create_argt){
       .flags = flags,
       .jobs = jobs,
   });
@@ -72,19 +77,15 @@ int run_file(const char *path, int flags, size_t jobs) {
   int exit_code = 1;
 
   if (result) {
-
     if (result->len) {
       if (result->data[0] == gab_ok)
         exit_code = 0;
     }
 
     free(result);
-  } else {
-    gab_fpanic(gab, "Module '$' not found.", gab_string(gab, path));
   }
 
   gab_destroy(gab);
-
   return exit_code;
 }
 
@@ -528,6 +529,8 @@ int help(int argc, const char **argv, int flags) {
     // Print command summaries
     for (int i = 0; i < N_COMMANDS; i++)
       cmd_summary(i);
+
+    return 0;
   }
 
   const char *subcommand = argv[0];
@@ -541,7 +544,7 @@ int help(int argc, const char **argv, int flags) {
   }
 
   printf("[gab] CLI Error: unrecognized subcommand '%s'\n", subcommand);
-  return 0;
+  return 1;
 }
 
 int main(int argc, const char **argv) {
@@ -555,6 +558,8 @@ int main(int argc, const char **argv) {
 
   if (argc < 2)
     goto fin;
+
+  gab_ossignal(SIGINT, propagate_term);
 
   for (int i = 0; i < N_COMMANDS; i++) {
     struct command cmd = commands[i];

@@ -1,11 +1,17 @@
-spawn_task = (i) => do
-    Fibers.make () => do
-        Strings
-            .make('Hello from ', i)
-            .println
-    end
+Ranges = 'ranges'.use
+
+ch = Channels.make
+
+Fibers.make () => do
+  ch
+    .reduce(0 +:)
+    .println
 end
 
-range: 
-    .make(0 20000)
-    .each spawn_task
+Ranges.make(0 100000).each i => do
+  Fibers.make () => do
+    ch <! i
+  end
+end
+
+ch.close!
