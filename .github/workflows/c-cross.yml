@@ -168,7 +168,7 @@ jobs:
           # - aarch64-windows-gnu
         build_type:
           - release
-          - debug
+          - debugoptimized
 
     steps:
       # Download artifacts created by the build step

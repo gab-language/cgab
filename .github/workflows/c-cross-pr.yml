@@ -34,7 +34,6 @@ jobs:
           # - aarch64-windows-gnu
         build_type:
           - release
-          - debugoptimized
 
     steps:
     - uses: actions/checkout@v4
