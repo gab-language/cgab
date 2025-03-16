@@ -620,7 +620,7 @@ gab_value parse_exp_sym(struct gab_triple gab, struct parser *parser,
                         gab_value lhs) {
   gab_value id = prev_id(gab, parser);
 
-  return node_value(gab, gab_strtosym(id));
+  return node_value(gab, gab_strtobin(id));
 }
 
 gab_value parse_exp_dstr(struct gab_triple gab, struct parser *parser,
@@ -744,7 +744,7 @@ gab_value parse_exp_send_op(struct gab_triple gab, struct parser *parser,
 
   gab_value msg = prev_id(gab, parser);
 
-  gab_value rhs = parse_optional_expression_prec(gab, parser, kBINARY_SEND);
+  gab_value rhs = parse_optional_expression_prec(gab, parser, kBINARY_SEND + 1);
 
   if (rhs == gab_invalid)
     return gab_invalid;
@@ -1130,6 +1130,8 @@ static inline uint8_t encode_arity(struct gab_triple gab, gab_value lhs,
     return ((uint8_t)len << 2) | is_multi;
   }
 
+  // LHS node should have been trimmed in this case.
+
   bool is_multi = node_ismulti(gab, rhs);
   size_t len = node_len(gab, rhs) + 1;
 
@@ -1498,7 +1500,7 @@ gab_value compile_value(struct gab_triple gab, struct bc *bc, gab_value tuple,
     push_loadk(gab, bc, node, tuple);
     return env;
 
-  case kGAB_SYMBOL:
+  case kGAB_BINARY:
     return compile_symbol(gab, bc, tuple, node, env);
 
   case kGAB_RECORD:
@@ -1531,7 +1533,7 @@ gab_value unpack_binding_into_env(struct gab_triple gab, struct bc *bc,
 
     switch (gab_valkind(binding)) {
 
-    case kGAB_SYMBOL:
+    case kGAB_BINARY:
       assert(gab_valkind(gab_recat(ctx, binding)) != kGAB_NUMBER);
       ctx = gab_recput(gab, ctx, binding, gab_nil);
       targets[actual_targets++] = binding;
@@ -1614,7 +1616,7 @@ gab_value unpack_binding_into_env(struct gab_triple gab, struct bc *bc,
     gab_value target = targets[actual_targets - i - 1];
 
     switch (gab_valkind(target)) {
-    case kGAB_SYMBOL: {
+    case kGAB_BINARY: {
       struct lookup_res res = resolve_id(gab, bc, env, target);
 
       switch (res.k) {
@@ -1647,7 +1649,7 @@ gab_value compile_block(struct gab_triple gab, struct bc *bc, gab_value node,
   gab_value LHS = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_LHS);
   gab_value RHS = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_RHS);
 
-  gab_value lst = gab_listof(gab, gab_symbol(gab, "self"));
+  gab_value lst = gab_listof(gab, gab_binary(gab, "self"));
 
   env = gab_lstpush(gab, env, gab_erecord(gab));
 
@@ -1976,7 +1978,7 @@ gab_value gab_build(struct gab_triple gab, struct gab_build_argt args) {
     gab_value vargs[args.len];
 
     for (int i = 0; i < args.len; i++)
-      vargs[i] = gab_symbol(gab, args.argv[i]);
+      vargs[i] = gab_binary(gab, args.argv[i]);
 
     bindings = gab_list(gab, args.len, vargs);
   }
@@ -1984,7 +1986,7 @@ gab_value gab_build(struct gab_triple gab, struct gab_build_argt args) {
   node_storeinfo(src, bindings, 0, 0);
 
   gab_value env =
-      gab_listof(gab, gab_recordof(gab, gab_symbol(gab, "self"), gab_nil));
+      gab_listof(gab, gab_recordof(gab, gab_binary(gab, "self"), gab_nil));
 
   union gab_value_pair res = gab_compile(gab, (struct gab_compile_argt){
                                                   .ast = ast,

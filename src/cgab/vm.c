@@ -213,19 +213,19 @@ static handler handlers[] = {
     VM_PANIC_GUARD_ISN(PEEK_N(have));                                          \
     VM_PANIC_GUARD_ISN(PEEK_N(have - 1));                                      \
                                                                                \
-    int32_t amount = gab_valtoi(PEEK_N(have - 1));                             \
-    uint32_t val_a = gab_valtou(PEEK_N(have));                                 \
+    gab_int amount = gab_valtoi(PEEK_N(have - 1));                             \
+    gab_uint val_a = gab_valtou(PEEK_N(have));                                 \
                                                                                \
     DROP_N(have);                                                              \
                                                                                \
-    if (__gab_unlikely(amount >= INT64_WIDTH)) {                               \
+    if (__gab_unlikely(amount >= GAB_INTWIDTH)) {                              \
       PUSH(gab_number(0));                                                     \
     } else if (__gab_unlikely(amount < 0)) {                                   \
-      int32_t res = (val_a opposite_operation((uint32_t)-amount));             \
+      gab_int res = (val_a opposite_operation((uint32_t)-amount));             \
       assert(gab_valtoi(gab_number(res)) == res);                              \
       PUSH(gab_number(res));                                                   \
     } else {                                                                   \
-      int32_t res = (val_a operation(uint32_t) amount);                        \
+      gab_int res = (val_a operation(uint32_t) amount);                        \
       assert(gab_valtoi(gab_number(res)) == res);                              \
       PUSH(gab_number(res));                                                   \
     }                                                                          \
@@ -1218,30 +1218,57 @@ CASE_CODE(SEND_PRIMITIVE_CALL_NATIVE) {
   CALL_NATIVE(n, have, false);
 }
 
-IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_ADD, gab_number, double, gab_valtof, +);
-IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_SUB, gab_number, double, gab_valtof, -);
-IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_MUL, gab_number, double, gab_valtof, *);
-IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_DIV, gab_number, double, gab_valtof, /);
+IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_ADD, gab_number, gab_float, gab_valtof, +);
+IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_SUB, gab_number, gab_float, gab_valtof, -);
+IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_MUL, gab_number, gab_float, gab_valtof, *);
+IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_DIV, gab_number, gab_float, gab_valtof, /);
 
-IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_LT, gab_bool, double, gab_valtof, <);
-IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_LTE, gab_bool, double, gab_valtof, <=);
-IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_GT, gab_bool, double, gab_valtof, >);
-IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_GTE, gab_bool, double, gab_valtof, >=);
+IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_LT, gab_bool, gab_float, gab_valtof, <);
+IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_LTE, gab_bool, gab_float, gab_valtof, <=);
+IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_GT, gab_bool, gab_float, gab_valtof, >);
+IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_GTE, gab_bool, gab_float, gab_valtof, >=);
 
-IMPL_SEND_UNARY_NUMERIC(PRIMITIVE_BIN, gab_number, int32_t, gab_valtoi, ~);
+IMPL_SEND_UNARY_NUMERIC(PRIMITIVE_BIN, gab_number, gab_int, gab_valtoi, ~);
 
-IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_MOD, gab_number, int32_t, gab_valtoi, %);
-IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_BOR, gab_number, int32_t, gab_valtoi, |);
-IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_BND, gab_number, int32_t, gab_valtoi, &);
+IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_BOR, gab_number, gab_int, gab_valtoi, |);
+IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_BND, gab_number, gab_int, gab_valtoi, &);
 
 IMPL_SEND_BINARY_SHIFT_NUMERIC(PRIMITIVE_LSH, <<, >>);
 IMPL_SEND_BINARY_SHIFT_NUMERIC(PRIMITIVE_RSH, >>, <<);
 
 IMPL_SEND_UNARY_BOOLEAN(PRIMITIVE_LIN, gab_bool, bool, !);
 
-// Implemented with binary or/and, because there is no short-circuiting necessary
+// Implemented with binary or/and, because there is no short-circuiting
+// necessary
 IMPL_SEND_BINARY_BOOLEAN(PRIMITIVE_LOR, gab_bool, bool, |);
 IMPL_SEND_BINARY_BOOLEAN(PRIMITIVE_LND, gab_bool, bool, &);
+
+CASE_CODE(SEND_PRIMITIVE_MOD) {
+  gab_value *ks = READ_CONSTANTS;
+  uint64_t have = compute_arity(VAR(), READ_BYTE);
+
+  SEND_GUARD_CACHED_RECEIVER_TYPE(PEEK_N(have));
+
+  if (__gab_unlikely(have < 2))
+    PUSH(gab_nil), have++;
+
+  VM_PANIC_GUARD_ISN(PEEK_N(have));
+  VM_PANIC_GUARD_ISN(PEEK_N(have - 1));
+
+  gab_int val_b = gab_valtoi(PEEK_N(have - 1));
+  gab_int val_a = gab_valtoi(PEEK_N(have));
+
+  DROP_N(have);
+
+  if (__gab_unlikely(val_b == 0))
+    PUSH(gab_number(0.0 / 0.0));
+  else
+    PUSH(gab_number(val_a % val_b));
+
+  SET_VAR(1);
+
+  NEXT();
+}
 
 CASE_CODE(SEND_PRIMITIVE_EQ) {
   gab_value *ks = READ_CONSTANTS;

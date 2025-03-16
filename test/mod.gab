@@ -62,7 +62,7 @@ variables\rest_assign_runtime\test: .def! (t => do
   t.expect(a.at! 2 ==: 3)
 end)
 
-variables\rest_assign_existing_variable\test: .def! (t => do
+variables\rest_assign_existing_variable\test: .def! t => do
   one_through_five = _ => (1 2 3 4 5)
 
   b = 1
@@ -74,28 +74,60 @@ variables\rest_assign_existing_variable\test: .def! (t => do
   t.expect(b.at! 0 ==: 2)
   t.expect(b.at! 1 ==: 3)
   t.expect(b.at! 2 ==: 4)
-end)
+end
 
-numbers\equal_itself\test: .def! (t => do
+numbers\equal_itself\test: .def! t => do
   t.expect(5 ==: 5)
-end)
+end
 
-numbers\do_math\test: .def! (t => do
-  t.expect(10 ==: (5 * 2))
-  t.expect(1 ==: (10 % 3))
-  t.expect(8 ==: (1 << 3))
-end)
+numbers\do_math\test: .def! t => do
+  t.expect(10 ==: 5 * 2)
+  t.expect(1 ==: 10 % 3)
+  t.expect(8 ==: 1 << 3)
+end
 
-numbers\compare\test: .def! (t => do
-  t.expect((5 < 10) ==: true:)
-  t.expect((10 > 5) ==: true:)
-end)
+numbers\compare\test: .def! t => do
+  t.expect(5 < 10 ==: true:)
+  t.expect(10 > 5 ==: true:)
+end
 
-numbers\dynamic_do_math\test: .def! (t => do
+numbers\dynamic_do_math\test: .def! t => do
   t.expect(+:.(1 2) ==: 3)
   t.expect(+:.(1 2 ignore_me:) ==: 3)
   t.expect(-:.(1 2) ==: -1)
-end)
+
+  t.expect(<<:.(1 2) ==: 4)
+  t.expect(>>:.(2 1) ==: 1)
+  t.expect(>>:.(2 100) ==: 0)
+  t.expect(<<:.(2 100) ==: 0)
+end
+
+numbers\shift\test: .def! t => do
+  t.expect(1 << 2 ==: 4)
+  t.expect(8 >> 2 ==: 2)
+end
+
+numbers\shift_negative_amount\test: .def! t => do
+  t.expect(1 >> -2 ==: 4)
+  t.expect(8 << -2 ==: 2)
+end
+
+numbers\shift_negative_integer\test: .def! t => do
+  #t.expect(-1 >> 1, ==:, 1 << 31)
+  t.expect(-1 << 1 ==: -2)
+  t.expect(-4 >> 1 << 1 ==: -4)
+end
+
+numbers\shift_intwidth\test: .def! t => do
+  #t.expect(-1 >> 1, ==:, 1 << 31)
+  t.expect(1 << 52 x => x == 0 !)
+  t.expect(1 << 53 ==: 0)
+end
+
+numbers\test_corner_cases\test: .def! t => do
+  t.expect(0 / 0 nan?:)
+  t.expect(1 / 0 inf?:)
+end
 
 strings\equal_itself\test: .def! (t => do
   t.expect('hello' ==: 'hello')
@@ -115,13 +147,23 @@ strings\append_messages\test: .def! (t => do
   t.expect(('hi ' + world:) ==:'hi world')
 end)
 
+strings\length\test: .def! t => do
+  t.expect("Hello!".len, ==: 6)
+  t.expect("Hello world".len, ==: 11)
+  t.expect("Hello 😀!".len, ==: 8)
+end
+
 binaries\convert_from_strings\test: .def! t => do
   bin = "abc".to\b
-
   t.expect(bin ?, ==:, Binaries.t)
 end
 
-binaries\index\test: .def! t => do
+binaries\len\test: .def! t => do
+  bin = "Hello 😀!".to\b
+  t.expect(bin.len, ==: 11)
+end
+
+binaries\at\test: .def! t => do
   bin = "abc".to\b
 
   t.expect(bin.at! 0, ==:, 97)
@@ -136,6 +178,12 @@ binaries\index\test: .def! t => do
 
   t.expect(bin.at 42, ==:, none:)
   t.expect(bin.at(1, 2), ==:, none:)
+
+  bin = "Hello 😀!".to\b
+
+  t.expect(bin.at! 5, ==: 32)
+  t.expect(bin.at! 6, ==: 240)
+  t.expect(bin.at! 10, ==: 33)
 end
 
 blocks\capture\test: .def! (t => do

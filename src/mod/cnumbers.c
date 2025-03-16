@@ -1,5 +1,6 @@
 #include "core.h"
 #include "gab.h"
+#include <math.h>
 
 typedef struct {
   uint32_t state[16];
@@ -99,13 +100,38 @@ a_gab_value *gab_numlib_between(struct gab_triple gab, uint64_t argc,
 
 a_gab_value *gab_numlib_floor(struct gab_triple gab, uint64_t argc,
                               gab_value argv[argc]) {
-  if (argc != 1 || gab_valkind(argv[0]) != kGAB_NUMBER)
-    return gab_fpanic(gab, "Invalid call to gab_numlib_floor");
+  gab_value num = gab_arg(0);
 
-  double float_num = gab_valtof(argv[0]);
-  int64_t int_num = gab_valtoi(argv[0]);
+  if (gab_valkind(num) != kGAB_NUMBER)
+    return gab_pktypemismatch(gab, num, kGAB_NUMBER);
 
-  gab_value res = gab_number(int_num + (float_num < 0));
+  gab_value res = gab_number(floor(gab_valtof(num)));
+
+  gab_vmpush(gab_thisvm(gab), res);
+  return nullptr;
+}
+
+a_gab_value *gab_numlib_isnan(struct gab_triple gab, uint64_t argc,
+                              gab_value argv[argc]) {
+  gab_value num = gab_arg(0);
+
+  if (gab_valkind(num) != kGAB_NUMBER)
+    return gab_pktypemismatch(gab, num, kGAB_NUMBER);
+
+  gab_value res = gab_bool(isnan(gab_valtof(num)));
+
+  gab_vmpush(gab_thisvm(gab), res);
+  return nullptr;
+}
+
+a_gab_value *gab_numlib_isinf(struct gab_triple gab, uint64_t argc,
+                              gab_value argv[argc]) {
+  gab_value num = gab_arg(0);
+
+  if (gab_valkind(num) != kGAB_NUMBER)
+    return gab_pktypemismatch(gab, num, kGAB_NUMBER);
+
+  gab_value res = gab_bool(isinf(gab_valtof(num)));
 
   gab_vmpush(gab_thisvm(gab), res);
   return nullptr;
@@ -125,6 +151,16 @@ GAB_DYNLIB_MAIN_FN {
               gab_message(gab, "floor"),
               t,
               gab_snative(gab, "floor", gab_numlib_floor),
+          },
+          {
+              gab_message(gab, "nan?"),
+              t,
+              gab_snative(gab, "nan?", gab_numlib_isnan),
+          },
+          {
+              gab_message(gab, "inf?"),
+              t,
+              gab_snative(gab, "inf?", gab_numlib_isinf),
           },
           {
               gab_message(gab, "float\\between"),

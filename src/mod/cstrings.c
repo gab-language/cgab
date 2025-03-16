@@ -342,10 +342,11 @@ a_gab_value *gab_binlib_at(struct gab_triple gab, uint64_t argc,
 
   const char *begin = gab_strdata(&bin) + (index * stp);
 
-  uint64_t result = 0;
+  int64_t result = 0;
 
-  for (int i = 0; i < stp; i++)
-    result |= begin[i] << i;
+  // Cast the char to unsigned - can't shift negative values.
+  for (size_t i = 0; i < stp; i++)
+    result |= ((unsigned char) begin[i]) << i;
 
   gab_vmpush(gab_thisvm(gab), gab_ok, gab_number(result));
   return nullptr;

@@ -304,16 +304,18 @@ static const char *chan_strs[] = {
 int sinspectval(char **dest, size_t *n, gab_value self, int depth) {
   switch (gab_valkind(self)) {
   case kGAB_PRIMITIVE: {
-    return snprintf_through(dest, n, "<" tGAB_PRIMITIVE " %s>",
-                            gab_opcode_names[gab_valtop(self)]);
+    switch (self) {
+    case gab_invalid:
+      return snprintf_through(dest, n, "cinvalid");
+    case gab_timeout:
+      return snprintf_through(dest, n, "ctimeout");
+    default:
+      return snprintf_through(dest, n, "<" tGAB_PRIMITIVE " %s>",
+                              gab_opcode_names[gab_valtop(self)]);
+    }
   }
-  case kGAB_CTIMEOUT:
-    return snprintf_through(dest, n, "ctimeout");
-  case kGAB_CINVALID:
-    return snprintf_through(dest, n, "cinvalid");
   case kGAB_NUMBER:
     return snprintf_through(dest, n, "%lg", gab_valtof(self));
-  case kGAB_SYMBOL:
   case kGAB_STRING:
     return snprintf_through(dest, n, "%s", gab_strdata(&self));
   case kGAB_BINARY: {
@@ -398,15 +400,17 @@ int sinspectval(char **dest, size_t *n, gab_value self, int depth) {
 int finspectval(FILE *stream, gab_value self, int depth) {
   switch (gab_valkind(self)) {
   case kGAB_PRIMITIVE:
-    return fprintf(stream, "<" tGAB_PRIMITIVE " %s>",
-                   gab_opcode_names[gab_valtop(self)]);
-  case kGAB_CTIMEOUT:
-    return fprintf(stream, "ctimeout");
-  case kGAB_CINVALID:
-    return fprintf(stream, "cinvalid");
+    switch (self) {
+    case gab_invalid:
+      return fprintf(stream, "cinvalid");
+    case gab_timeout:
+      return fprintf(stream, "ctimeout");
+    default:
+      return fprintf(stream, "<" tGAB_PRIMITIVE " %s>",
+                     gab_opcode_names[gab_valtop(self)]);
+    }
   case kGAB_NUMBER:
     return fprintf(stream, "%lg", gab_valtof(self));
-  case kGAB_SYMBOL:
   case kGAB_STRING:
     return fprintf(stream, "%s", gab_strdata(&self));
   case kGAB_BINARY: {
@@ -437,12 +441,25 @@ int finspectval(FILE *stream, gab_value self, int depth) {
   case kGAB_CHANNELCLOSED:
     return fprintf(stream, "<" tGAB_CHANNEL " %s>",
                    chan_strs[gab_valkind(self)]);
-  case kGAB_FIBER:
-  case kGAB_FIBERRUNNING:
-  case kGAB_FIBERDONE: {
+  case kGAB_FIBER: {
     struct gab_ofiber *fiber = GAB_VAL_TO_FIBER(self);
     return fprintf(stream, "<" tGAB_FIBER) +
            gab_fvalinspect(stream, fiber->data[0], depth) +
+           gab_fvalinspect(stream, fiber->data[1], depth) +
+           fprintf(stream, ">");
+  }
+  case kGAB_FIBERRUNNING: {
+    struct gab_ofiber *fiber = GAB_VAL_TO_FIBER(self);
+    return fprintf(stream, "<" tGAB_FIBER " running ") +
+           gab_fvalinspect(stream, fiber->data[0], depth) +
+           gab_fvalinspect(stream, fiber->data[1], depth) +
+           fprintf(stream, ">");
+  }
+  case kGAB_FIBERDONE: {
+    struct gab_ofiber *fiber = GAB_VAL_TO_FIBER(self);
+    return fprintf(stream, "<" tGAB_FIBER " done ") +
+           gab_fvalinspect(stream, fiber->data[0], depth) +
+           gab_fvalinspect(stream, fiber->data[1], depth) +
            fprintf(stream, ">");
   }
   case kGAB_RECORD: {
@@ -847,13 +864,12 @@ gab_value reccpy(struct gab_triple gab, gab_value r, int64_t adjust) {
   }
   case kGAB_RECORDNODE: {
     struct gab_obj_recnode *n = GAB_VAL_TO_RECNODE(r);
-
     return __gab_recordnode(gab, n->len, adjust, n->data);
   }
-  case kGAB_CINVALID:
-  case kGAB_CTIMEOUT: {
+    // Saw invalid
+  case kGAB_PRIMITIVE:
+    assert(r == gab_invalid);
     return __gab_recordnode(gab, 0, 1, nullptr);
-  }
   default:
     break;
   }
@@ -923,24 +939,17 @@ gab_value recnth(gab_value rec, uint64_t n) {
 
 uint64_t reclen(gab_value rec) {
   switch (gab_valkind(rec)) {
-  case kGAB_RECORDNODE: {
-    struct gab_obj_recnode *r = GAB_VAL_TO_RECNODE(rec);
-    return r->len;
-  }
-  case kGAB_RECORD: {
-    struct gab_obj_rec *r = GAB_VAL_TO_REC(rec);
-    return r->len;
-  }
-  case kGAB_CTIMEOUT:
-  case kGAB_CINVALID: {
+  case kGAB_RECORDNODE:
+    return GAB_VAL_TO_RECNODE(rec)->len;
+  case kGAB_RECORD:
+    return GAB_VAL_TO_REC(rec)->len;
+  case kGAB_PRIMITIVE:
+    assert(rec == gab_invalid);
+    return 0;
+  default:
+    assert(false && "UNREACHABLE");
     return 0;
   }
-  default:
-    break;
-  }
-
-  assert(false && "UNREACHABLE");
-  return 0;
 }
 
 gab_value gab_uvrecat(gab_value rec, uint64_t i) {
@@ -1522,6 +1531,9 @@ gab_value setup_fibersend(struct gab_triple gab, struct gab_ofiber *self,
 
   switch (gab_valkind(res->as.spec)) {
   case kGAB_PRIMITIVE: {
+    assert(res->as.spec != gab_invalid);
+    assert(res->as.spec != gab_timeout);
+
     uint8_t op = gab_valtop(res->as.spec);
 
     memcpy(self->virtual_frame_bc,

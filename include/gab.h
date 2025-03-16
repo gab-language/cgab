@@ -9,7 +9,6 @@
 
 #include <errno.h>
 #include <inttypes.h>
-#include <math.h>
 #include <stdarg.h>
 #include <stdatomic.h>
 #include <stdbool.h>
@@ -40,8 +39,8 @@
  *
  * 1 Sign bit
  * |   11 Exponent bits
- * |   |          52 Mantissa
- * |   |          |
+ * |   |           52 Mantissa
+ * |   |           |
  * [S][Exponent---][Mantissa------------------------------------------]
  *
  * The details of how these are used to represent numbers aren't really
@@ -62,10 +61,11 @@
  * operations silently. We want the latter.
  *
  * Quiet NaNs are indicated by setting the highest mantissa bit:
+ * We also need to set the *next* highest because of some intel shenanigans.
  *
  *                  Highest mantissa bit
  *                  |
- * [-][....NaN....][1---------------------------------------------------]
+ * [-][....NaN....][11--------------------------------------------------]
  *
  * This leaves the rest of the following bits to play with.
  *
@@ -76,23 +76,35 @@
  *
  *  Pointer bit set       Pointer data
  *  |                     |
- * [1][....NaN....1][---------------------------------------------------]
+ * [1][....NaN....11][--------------------------------------------------]
  *
  * Immediate values *don't* have the pointer bit set.
- * They also store a tag in the 3 bits just below the NaN.
+ * They also store a tag in the 2 bits just below the NaN.
+ * This tag differentiates how to interpret the remaining 48 bits.
  *
- *      kGAB_SYMBOL, kGAB_STRING, kGAB_MESSAGE, kGAB_CINVALID, kGAB_CTIMEOUT
+ *      kGAB_BINARY, kGAB_STRING, kGAB_MESSAGE, kGAB_INTERNAL
  *                   |
- * [0][....NaN....1][---][------------------------------------------------]
+ * [0][....NaN....11][--][------------------------------------------------]
  *
- * 'Primitives' are message specializtions which are implemented as an opcode in
- * the vm. This covers things like '+' on numbers and strings, etc.
+ * Internal contains yet *another* tag.
  *
- * The opcode is stored in the lowest byte
+ * [0][....NaN....11][11][------------------------------------------------]
  *
- *                   kGAB_PRIMITIVE                               Opcode
- *                   |                                            |
- * [0][....NaN....1][---]----------------------------------------[--------]
+ * 'Primitives' are immediates which wrap further data in the lower 48 bits.
+ *
+ * In most cases, this value is a literal bytecode instruction. This allows
+ * the vm to implement certain message specializations as bytecode ops, such
+ * as adding integers.
+ *
+ * There are two special cases which are not bytecode ops - 
+ *  - gab_invalid
+ *  - gab_timeout
+ *
+ * These are constant values used throughout cgab.
+ *
+ *                    kGAB_PRIMITIVE                  Extra data
+ *                    |                               |
+ * [0][....NaN....11][--][------------------------------------------------]
  *
  * Gab also employs a short string optimization. Lots of strings in a gab
  * program are incredibly small, and incredibly common. values like '.some',
@@ -112,24 +124,35 @@
  *
  * This layout sneakily gives us an extra byte of storage in our small strings.
  *
- *            kGAB_STRING Remaining Length                             <- Data
- *                   |    |                                               |
- * [0][....NaN....1][---][--------][----------------------------------------]
+ *             kGAB_STRING Remaining Length                             <- Data
+ *                    |    |                                               |
+ * [0][....NaN....11][--][--------][----------------------------------------]
  *                       [   0    ][   e       p       a       h       s    ]
  *                       [   2    ][----------------   0       k       o    ]
  *
  */
 
 typedef uint64_t gab_value;
+typedef double gab_float;
+
+/*
+ * A double has 52 bits of mantissa, so the largest
+ * integers that can be supported are 53-bits.
+ *
+ * This is the case for JS as well.
+ * MaxSafeInteger is (2e53 - 1)
+ */
+#define GAB_INTWIDTH 53
+typedef signed _BitInt(GAB_INTWIDTH) gab_int;
+typedef unsigned _BitInt(GAB_INTWIDTH) gab_uint;
+
+#define GAB_INTMAX (2e53 - 1.0)
 
 enum gab_kind {
   kGAB_STRING = 0, // MUST_STAY_ZERO
   kGAB_BINARY = 1,
   kGAB_MESSAGE = 2,
-  kGAB_SYMBOL = 3, // Only relevant for parsing.
-  kGAB_PRIMITIVE = 4,
-  kGAB_CINVALID = 5,
-  kGAB_CTIMEOUT = 6,
+  kGAB_PRIMITIVE = 3,
   kGAB_NUMBER,
   kGAB_NATIVE,
   kGAB_PROTOTYPE,
@@ -147,11 +170,11 @@ enum gab_kind {
   kGAB_NKINDS,
 };
 
-#define __GAB_QNAN ((uint64_t)0x7ff8000000000000)
+#define __GAB_QNAN ((uint64_t)0x7ffc000000000000)
 
 #define __GAB_SIGN_BIT ((uint64_t)1 << 63)
 
-#define __GAB_TAGMASK (7)
+#define __GAB_TAGMASK (3)
 
 #define __GAB_TAGOFFSET (48)
 
@@ -163,19 +186,19 @@ enum gab_kind {
                         : ((val) >> __GAB_TAGOFFSET) & __GAB_TAGMASK)))
 
 // Sneakily use a union to get around the type system
-GAB_API_INLINE double __gab_valtod(gab_value value) {
+GAB_API_INLINE gab_float __gab_valtod(gab_value value) {
   union {
     uint64_t bits;
-    double num;
+    gab_float num;
   } data;
   data.bits = value;
   return data.num;
 }
 
-GAB_API_INLINE gab_value __gab_dtoval(double value) {
+GAB_API_INLINE gab_value __gab_dtoval(gab_float value) {
   union {
     uint64_t bits;
-    double num;
+    gab_float num;
   } data;
   data.num = value;
   return data.bits;
@@ -205,12 +228,6 @@ GAB_API_INLINE gab_value __gab_dtoval(double value) {
   ((gab_value)(__GAB_QNAN | (uint64_t)kGAB_MESSAGE << __GAB_TAGOFFSET |        \
                (uint64_t)2 << 40 | (uint64_t)'n' | (uint64_t)'i' << 8 |        \
                (uint64_t)'l' << 16))
-
-#define gab_invalid                                                            \
-  ((gab_value)(__GAB_QNAN | (uint64_t)kGAB_CINVALID << __GAB_TAGOFFSET))
-
-#define gab_timeout                                                            \
-  ((gab_value)(__GAB_QNAN | (uint64_t)kGAB_CTIMEOUT << __GAB_TAGOFFSET))
 
 #define gab_false                                                              \
   ((gab_value)(__GAB_QNAN | (uint64_t)kGAB_MESSAGE << __GAB_TAGOFFSET |        \
@@ -248,25 +265,35 @@ GAB_API_INLINE gab_value __gab_dtoval(double value) {
   ((gab_value)(__GAB_QNAN | ((uint64_t)kGAB_PRIMITIVE << __GAB_TAGOFFSET) |    \
                (op)))
 
+#define gab_invalid (gab_primitive(INT32_MAX))
+
+#define gab_timeout (gab_primitive(INT32_MAX - 1))
+
 /*
  * As Gab's number type is a double (64-bit floating point)
  *
- * The largest integer which can be *completely stored without any loss* is 32 bits.
+ * The largest integer which can be *completely stored without any loss* is 32
+ * bits.
  */
-GAB_API_INLINE int32_t __gab_valtoi(gab_value v) {
-  double num = floor(__gab_valtod(v));
+GAB_API_INLINE gab_int __gab_valtoi(gab_value v) {
+  gab_float num = (__gab_valtod(v));
 
-  if (num < (double)INT32_MIN)
+  if (num < -(gab_float)GAB_INTMAX)
     return 0;
 
-  if (num >= -(double)INT32_MIN)
+  if (num >= (gab_float)GAB_INTMAX)
     return 0;
 
-  return (int32_t)num;
+  return (gab_int)num;
 }
 
-GAB_API_INLINE uint32_t __gab_valtou(gab_value v) {
-  return (uint32_t)__gab_valtoi(v);
+GAB_API_INLINE gab_uint __gab_valtou(gab_value v) {
+  gab_float num = (__gab_valtod(v));
+
+  if (num >= GAB_INTMAX)
+    return 0;
+
+  return (gab_uint)(gab_int)num;
 }
 
 /* Cast a gab value to a number - a double-precsision floating point, signed, or
@@ -1391,8 +1418,7 @@ GAB_API gab_value gab_strcat(struct gab_triple gab, gab_value a, gab_value b);
  */
 GAB_API_INLINE const char *gab_strdata(gab_value *str) {
   assert(gab_valkind(*str) == kGAB_STRING ||
-         gab_valkind(*str) == kGAB_MESSAGE ||
-         gab_valkind(*str) == kGAB_SYMBOL || gab_valkind(*str) == kGAB_BINARY);
+         gab_valkind(*str) == kGAB_MESSAGE || gab_valkind(*str) == kGAB_BINARY);
 
   if (gab_valiso(*str))
     return GAB_VAL_TO_STRING(*str)->data;
@@ -1407,8 +1433,8 @@ GAB_API_INLINE const char *gab_strdata(gab_value *str) {
  * @return The length of the string.
  */
 GAB_API_INLINE uint64_t gab_strlen(gab_value str) {
-  assert(gab_valkind(str) == kGAB_STRING || gab_valkind(str) == kGAB_SYMBOL ||
-         gab_valkind(str) == kGAB_MESSAGE || gab_valkind(str) == kGAB_BINARY);
+  assert(gab_valkind(str) == kGAB_STRING || gab_valkind(str) == kGAB_MESSAGE ||
+         gab_valkind(str) == kGAB_BINARY);
 
   if (gab_valiso(str))
     return GAB_VAL_TO_STRING(str)->len;
@@ -1434,7 +1460,7 @@ GAB_API_INLINE int gab_binat(gab_value str, size_t idx) {
  * This should not be called on kGAB_BINARY. (As that might not be valid utf8)
  */
 GAB_API_INLINE uint64_t gab_strmblen(gab_value str) {
-  assert(gab_valkind(str) == kGAB_STRING || gab_valkind(str) == kGAB_SYMBOL);
+  assert(gab_valkind(str) == kGAB_STRING);
 
   if (gab_valiso(str))
     return GAB_VAL_TO_STRING(str)->mb_len;
@@ -1506,14 +1532,6 @@ GAB_API_INLINE gab_value gab_strtomsg(gab_value str) {
 }
 
 /**
- * @brief Convert a string into a symbol. This is constant-time.
- */
-GAB_API_INLINE gab_value gab_strtosym(gab_value str) {
-  assert(gab_valkind(str) == kGAB_STRING);
-  return str | (uint64_t)kGAB_SYMBOL << __GAB_TAGOFFSET;
-}
-
-/**
  * @brief Convert a string into a binary. This is constant-time.
  */
 GAB_API_INLINE gab_value gab_strtobin(gab_value str) {
@@ -1556,11 +1574,6 @@ GAB_API_INLINE gab_value gab_msgtostr(gab_value msg) {
   return msg & ~((uint64_t)kGAB_MESSAGE << __GAB_TAGOFFSET);
 }
 
-GAB_API_INLINE gab_value gab_symtostr(gab_value sym) {
-  assert(gab_valkind(sym) == kGAB_SYMBOL);
-  return sym & ~((uint64_t)kGAB_SYMBOL << __GAB_TAGOFFSET);
-}
-
 /**
  * @brief Convert a binary into a string. This *can* fail, as a binary is not
  * guaranteed to be valid utf8.
@@ -1575,16 +1588,6 @@ GAB_API_INLINE gab_value gab_bintostr(gab_value bin) {
     return gab_invalid;
 
   return bin & ~((uint64_t)kGAB_BINARY << __GAB_TAGOFFSET);
-}
-
-/**
- * @brief Create a symbol value from a cstring.
- *
- * @param data the cstring
- * @return The symbol
- */
-GAB_API_INLINE gab_value gab_symbol(struct gab_triple gab, const char *data) {
-  return gab_strtosym(gab_string(gab, data));
 }
 
 /**

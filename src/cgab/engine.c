@@ -67,6 +67,7 @@ a_char *gab_fosreadl(FILE *fd) {
 struct primitive {
   const char *name;
   union {
+    gab_value val;
     enum gab_kind kind;
     const char *message;
   };
@@ -77,6 +78,19 @@ struct primitive all_primitives[] = {
     {
         .name = mGAB_TYPE,
         .primitive = gab_primitive(OP_SEND_PRIMITIVE_TYPE),
+    },
+};
+
+struct primitive val_primitives[] = {
+    {
+        .name = mGAB_EQ,
+        .val = gab_invalid,
+        .primitive = gab_primitive(OP_SEND_PRIMITIVE_EQ),
+    },
+    {
+        .name = mGAB_CONS,
+        .val = gab_invalid,
+        .primitive = gab_primitive(OP_SEND_PRIMITIVE_CONS),
     },
 };
 
@@ -218,16 +232,6 @@ struct primitive kind_primitives[] = {
         .name = mGAB_ADD,
         .kind = kGAB_STRING,
         .primitive = gab_primitive(OP_SEND_PRIMITIVE_CONCAT),
-    },
-    {
-        .name = mGAB_EQ,
-        .kind = kGAB_CINVALID,
-        .primitive = gab_primitive(OP_SEND_PRIMITIVE_EQ),
-    },
-    {
-        .name = mGAB_CONS,
-        .kind = kGAB_CINVALID,
-        .primitive = gab_primitive(OP_SEND_PRIMITIVE_CONS),
     },
     {
         .name = mGAB_MAKE,
@@ -387,6 +391,8 @@ int32_t worker_job(void *data) {
 
     gab_value fiber = q_gab_value_peek(&self->queue);
 
+    assert(gab_valkind(fiber) != kGAB_FIBERDONE);
+
     a_gab_value *res = gab_vmexec(gab, fiber);
 
     q_gab_value_pop(&self->queue);
@@ -508,12 +514,9 @@ struct gab_triple gab_create(struct gab_create_argt args) {
 
   gab_gclock(gab);
 
-  eg->types[kGAB_CINVALID] = gab_invalid;
-  eg->types[kGAB_CTIMEOUT] = gab_timeout;
   eg->types[kGAB_NUMBER] = gab_string(gab, tGAB_NUMBER);
   eg->types[kGAB_BINARY] = gab_string(gab, tGAB_BINARY);
   eg->types[kGAB_STRING] = gab_string(gab, tGAB_STRING);
-  eg->types[kGAB_SYMBOL] = gab_string(gab, tGAB_SYMBOL);
   eg->types[kGAB_MESSAGE] = gab_string(gab, tGAB_MESSAGE);
   eg->types[kGAB_PROTOTYPE] = gab_string(gab, tGAB_PROTOTYPE);
   eg->types[kGAB_NATIVE] = gab_string(gab, tGAB_NATIVE);
@@ -550,6 +553,16 @@ struct gab_triple gab_create(struct gab_create_argt args) {
                               })));
   }
 
+  for (int i = 0; i < LEN_CARRAY(val_primitives); i++) {
+    gab_egkeep(
+        gab.eg,
+        gab_iref(gab, gab_def(gab, (struct gab_def_argt){
+                                       gab_message(gab, val_primitives[i].name),
+                                       val_primitives[i].val,
+                                       val_primitives[i].primitive,
+                                   })));
+  }
+
   for (int i = 0; i < LEN_CARRAY(msg_primitives); i++) {
     gab_egkeep(
         gab.eg,
@@ -562,14 +575,13 @@ struct gab_triple gab_create(struct gab_create_argt args) {
   }
 
   for (int i = 0; i < LEN_CARRAY(all_primitives); i++) {
-    for (int t = 1; t < kGAB_NKINDS; t++) {
+    for (int t = 0; t < kGAB_NKINDS; t++) {
       gab_egkeep(
           gab.eg,
           gab_iref(gab,
                    gab_def(gab, (struct gab_def_argt){
                                     gab_message(gab, all_primitives[i].name),
                                     gab_type(gab, t),
-
                                     all_primitives[i].primitive,
                                 })));
     }
@@ -770,7 +782,7 @@ static const char *default_argvals[] = {
 static const char *default_argnames[] = {
     tGAB_STRING_NAME, tGAB_BINARY_NAME, tGAB_MESSAGE_NAME, tGAB_RECORD_NAME,
     tGAB_LIST_NAME,   tGAB_SHAPE_NAME,  tGAB_FIBER_NAME,   tGAB_CHANNEL_NAME,
-    tGAB_NUMBER_NAME, tGAB_BLOCK_NAME,  
+    tGAB_NUMBER_NAME, tGAB_BLOCK_NAME,
 };
 static const size_t default_arglen =
     sizeof(default_argvals) / sizeof(const char *);
