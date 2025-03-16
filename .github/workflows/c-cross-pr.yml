@@ -1,7 +1,7 @@
-name: Release static binaries
+name: Build and test pull requests
 
 #
-# This action builds, tests, and releases new versions of gab.
+# This action tests pull requests.
 #
 # Currently, all windows builds are disabled.
 #
@@ -130,66 +130,3 @@ jobs:
 
       - name: Run tests
         run: ${{ matrix.cmd }} run test
-
-  create_release:
-    runs-on: ubuntu-latest
-    needs: run_tests
-
-    permissions: write-all
-
-    steps:
-      - name: Checkout Repo
-        uses: actions/checkout@v4
-
-      - name: Check for existing tag
-        continue-on-error: true
-        id: tag_check
-        run: git ls-remote --tags | grep '${{ env.version }}' 
-
-      # Create a release if we didn't find an existing tag
-      - name: Create Release
-        if: ${{ steps.tag_check.outcome == 'failure' }}
-        run:  gh release create -R '${{ github.repository }}' '${{ env.version }}' --generate-notes
-
-  release_artifacts:
-    runs-on: ubuntu-latest
-    needs: create_release
-
-    permissions: write-all
-
-    strategy:
-      matrix:
-        target:
-          - x86_64-linux-gnu
-          - x86_64-macos-none
-          # - x86_64-windows-gnu
-          - aarch64-linux-gnu
-          - aarch64-macos-none
-          # - aarch64-windows-gnu
-        build_type:
-          - release
-          - debug
-
-    steps:
-      # Download artifacts created by the build step
-      - name: Download Binary
-        uses: pyTooling/download-artifact@v4
-        with:
-          name: 'gab-${{ matrix.build_type }}-${{ matrix.target }}'
-
-      - name: Download Modules
-        uses: pyTooling/download-artifact@v4
-        with:
-          name: 'gab-${{ matrix.build_type }}-${{ matrix.target }}-modules'
-
-      - name: Create Module Archive
-        run: tar -cvzf 'gab-${{ matrix.build_type }}-${{ matrix.target }}-modules' mod/*
-      
-      - name: Rename binary
-        run: mv build-${{ matrix.target }}/gab 'gab-${{ matrix.build_type }}-${{ matrix.target }}'
-
-      - name: Attach binary to release
-        run: gh release upload -R '${{ github.repository }}' '${{ env.version }}' 'gab-${{ matrix.build_type }}-${{ matrix.target }}' || exit 0
-
-      - name: Attach modules to release
-        run: gh release upload -R '${{ github.repository }}' '${{ env.version }}' 'gab-${{ matrix.build_type }}-${{ matrix.target }}-modules' || exit 0
