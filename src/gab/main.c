@@ -441,7 +441,7 @@ int get(int argc, const char **argv, int flags) {
 
     if (res) {
       printf("[gab] CLI Error: failed to download release %s", tagbuf);
-      return 1;
+      return v_char_destroy(&location), v_char_destroy(&url), 1;
     }
 
     printf("[gab] Extracted modules.\n");
@@ -453,14 +453,11 @@ int get(int argc, const char **argv, int flags) {
         "some location in PATH already.\n\t\teg: " GAB_SYMLINK_RECOMMENDATION,
         pkgbuf, tagbuf, location_prefix, location_prefix, location_prefix);
 
-    v_char_destroy(&location);
-    v_char_destroy(&url);
-
-    return 0;
+    return v_char_destroy(&location), v_char_destroy(&url), 0;
   }
 
   printf("[gab] CLI Error: Installing packages not yet supported\n");
-  return 1;
+  return v_char_destroy(&location), 1;
 }
 
 int run(int argc, const char **argv, int flags) {
