@@ -12,7 +12,7 @@ name: Build and test pull requests
 # (Unless I feel ike refactoring all the code that is using these abi features - passing structs as arguments).
 
 on:
-  push:
+  pull_request:
     branches: [ "main" ]
 
 env:
