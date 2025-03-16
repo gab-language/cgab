@@ -44,6 +44,7 @@ LINKAGE void METHOD(copy)(TYPENAME *self, TYPENAME *other) {
 
 LINKAGE void METHOD(destroy)(TYPENAME *self) {
   free(self->data);
+  self->data = nullptr;
   self->cap = 0;
   self->len = 0;
 }

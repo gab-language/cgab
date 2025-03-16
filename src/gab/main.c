@@ -312,16 +312,16 @@ int get(int argc, const char **argv, int flags) {
 
   const char *pkg = argc ? argv[0] : "@";
 
-  const size_t len = strlen(pkg);
-  char buf[len + 4];
-  strncpy(buf, pkg, len);
-  buf[len] = '\0';
+  const size_t pkglen = strlen(pkg);
+  char pkgbuf[pkglen + 4];
+  strncpy(pkgbuf, pkg, pkglen);
+  pkgbuf[pkglen] = '\0';
 
-  const char *tag = split_pkg(buf);
+  const char *tag = split_pkg(pkgbuf);
 
   if (!tag) {
     printf("[gab] CLI Error: Could not resolve package and tag for '%s'\n",
-           buf);
+           pkgbuf);
     return 1;
   }
 
@@ -330,13 +330,19 @@ int get(int argc, const char **argv, int flags) {
     tag = GAB_VERSION_TAG;
   }
 
-  if (!strlen(buf)) {
+  const size_t taglen = strlen(tag);
+  char tagbuf[taglen + 1];
+
+  strncpy(tagbuf, tag, taglen);
+  tagbuf[taglen] = '\0';
+
+  if (!strlen(pkgbuf)) {
     printf("[gab] No package specified. Defaulting to 'Gab'\n");
-    strncpy(buf, "Gab", 4);
+    strncpy(pkgbuf, "Gab", 4);
   }
 
-  printf("[gab] Resolved tag '%s'\n", tag);
-  printf("[gab] Resolved package '%s'\n", buf);
+  printf("[gab] Resolved package '%s'\n", pkgbuf);
+  printf("[gab] Resolved tag '%s'\n", tagbuf);
 
   const char *gab_prefix = gab_osprefix("");
 
@@ -350,7 +356,7 @@ int get(int argc, const char **argv, int flags) {
     return 1;
   };
 
-  const char *location_prefix = gab_osprefix(tag);
+  const char *location_prefix = gab_osprefix(tagbuf);
 
   if (location_prefix == nullptr) {
     printf("[gab] CLI Error: could not determine installation prefix\n");
@@ -370,11 +376,11 @@ int get(int argc, const char **argv, int flags) {
   v_char_spush(&location, s_char_cstr("/gab"));
   v_char_push(&location, '\0');
 
-  if (!strcmp(buf, "Gab")) {
+  if (!strcmp(pkgbuf, "Gab")) {
     v_char url = {};
 
     v_char_spush(&url, s_char_cstr(GAB_RELEASE_DOWNLOAD_URL));
-    v_char_spush(&url, s_char_cstr(tag));
+    v_char_spush(&url, s_char_cstr(tagbuf));
     v_char_spush(&url, s_char_cstr("/gab-release-" GAB_TARGET_TRIPLE));
     v_char_push(&url, '\0');
 
@@ -395,14 +401,14 @@ int get(int argc, const char **argv, int flags) {
     v_char_destroy(&url);
 
     if (res) {
-      printf("[gab] CLI Error: failed to download release %s", tag);
+      printf("[gab] CLI Error: failed to download release %s", tagbuf);
       return 1;
     }
 
-    printf("[gab] Downloaded binary for release: %s.\n", tag);
+    printf("[gab] Downloaded binary for release: %s.\n", tagbuf);
 
     v_char_spush(&url, s_char_cstr(GAB_RELEASE_DOWNLOAD_URL));
-    v_char_spush(&url, s_char_cstr(tag));
+    v_char_spush(&url, s_char_cstr(tagbuf));
     v_char_spush(&url,
                  s_char_cstr("/gab-release-" GAB_TARGET_TRIPLE "-modules"));
     v_char_push(&url, '\0');
@@ -413,13 +419,13 @@ int get(int argc, const char **argv, int flags) {
 
     // Fetch release modules
     res = gab_osproc("curl", "-L", "-#", "-o", location.data, url.data);
-    printf("[gab] Downloaded modules for release: %s.\n", tag);
+    printf("[gab] Downloaded modules for release: %s.\n", tagbuf);
 
     v_char_destroy(&location);
     v_char_destroy(&url);
 
     if (res) {
-      printf("[gab] CLI Error: failed to download release %s", tag);
+      printf("[gab] CLI Error: failed to download release %s", tagbuf);
       return 1;
     }
 
@@ -434,7 +440,7 @@ int get(int argc, const char **argv, int flags) {
     res = gab_osproc("tar", "xzf", location.data, "-C", url.data);
 
     if (res) {
-      printf("[gab] CLI Error: failed to download release %s", tag);
+      printf("[gab] CLI Error: failed to download release %s", tagbuf);
       return 1;
     }
 
@@ -445,7 +451,10 @@ int get(int argc, const char **argv, int flags) {
         "It is not recommended to add '%s' to PATH directly.\n\nInstead:\n "
         "\tOn systems that support symlinks, link the binary at %s/gab to "
         "some location in PATH already.\n\t\teg: " GAB_SYMLINK_RECOMMENDATION,
-        buf, tag, location_prefix, location_prefix, location_prefix);
+        pkgbuf, tagbuf, location_prefix, location_prefix, location_prefix);
+
+    v_char_destroy(&location);
+    v_char_destroy(&url);
 
     return 0;
   }
@@ -526,6 +535,8 @@ void cmd_details(int i) {
 
 int help(int argc, const char **argv, int flags) {
   if (argc < 1) {
+    printf("gab\\cli version %s\n", GAB_VERSION_TAG);
+
     // Print command summaries
     for (int i = 0; i < N_COMMANDS; i++)
       cmd_summary(i);
