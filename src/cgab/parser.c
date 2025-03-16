@@ -1478,7 +1478,7 @@ gab_value compile_symbol(struct gab_triple gab, struct bc *bc, gab_value tuple,
     push_loadu(bc, res.idx, tuple);
     return res.env;
   default:
-    bc_error(gab, bc, tuple, GAB_UNBOUND_SYMBOL, "$ is unbound", id);
+    bc_error(gab, bc, tuple, GAB_UNBOUND_SYMBOL, "$ is unbound", gab_bintostr(id));
     return gab_invalid;
   }
 };

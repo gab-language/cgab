@@ -753,6 +753,7 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
 
     a_gab_value *result = gab_fibawait(gab, fiber);
     env = gab_fibawaite(gab, fiber);
+    assert(env != gab_invalid);
 
     if (result == nullptr)
       continue;

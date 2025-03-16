@@ -96,7 +96,7 @@
  * the vm to implement certain message specializations as bytecode ops, such
  * as adding integers.
  *
- * There are two special cases which are not bytecode ops - 
+ * There are two special cases which are not bytecode ops -
  *  - gab_invalid
  *  - gab_timeout
  *
@@ -1460,7 +1460,8 @@ GAB_API_INLINE int gab_binat(gab_value str, size_t idx) {
  * This should not be called on kGAB_BINARY. (As that might not be valid utf8)
  */
 GAB_API_INLINE uint64_t gab_strmblen(gab_value str) {
-  assert(gab_valkind(str) == kGAB_STRING);
+  assert(gab_valkind(str) == kGAB_STRING || gab_valkind(str) == kGAB_BINARY ||
+         gab_valkind(str) == kGAB_MESSAGE);
 
   if (gab_valiso(str))
     return GAB_VAL_TO_STRING(str)->mb_len;
