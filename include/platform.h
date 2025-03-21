@@ -104,6 +104,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#define gab_osfileno(f) (fileno(f))
 #define gab_osfisatty(f) isatty(fileno(f))
 
 #define gab_ossignal(sig, handler) signal(sig, handler)

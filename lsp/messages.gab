@@ -16,7 +16,7 @@ lsp\messages\into:.def!(
       log.error("No Params", self)
     end
 
-    method = method? .or "" .messages\into
+    method = method? .or "" .to\m
     params = params? .or ""
     id     = self .at 'id' .unwrap.or 1
 
@@ -30,7 +30,7 @@ lsp\messages\into:.def!(
 def\lsp\handler!:.def!(
   Strings.t,
   handler => do
-    lsp\handle:.def!(Shapes.make(self.messages\into, id:, params:), handler)
+    lsp\handle:.def!(Shapes.make(self.to\m, id:, params:), handler)
   end)
 
 # Dispatch a message into its handler, if we have one

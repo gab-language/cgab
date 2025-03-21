@@ -398,8 +398,6 @@ typedef a_gab_value *(*gab_native_f)(struct gab_triple, uint64_t argc,
 typedef void (*gab_boxdestroy_f)(struct gab_triple gab, uint64_t len,
                                  char *data);
 
-typedef void (*gab_boxcopy_f)(uint64_t len, char *data);
-
 typedef void (*gab_boxvisit_f)(struct gab_triple gab, gab_gcvisit_f visitor,
                                uint64_t len, char *data);
 
@@ -460,11 +458,6 @@ struct gab_create_argt {
   uint64_t flags, jobs;
 
   FILE *sin, *sout, *serr;
-  /**
-   * @brief A hook for loading dynamic libraries.
-   * This is used to load native-c modules.
-   */
-  gab_osdynmod_load os_dynmod;
 };
 
 /**
@@ -2564,8 +2557,9 @@ struct gab_eg {
   gab_value types[kGAB_NKINDS];
 
   _Atomic int8_t njobs;
+
   struct gab_sig {
-    _Atomic int8_t schedule;
+    int8_t schedule;
     enum gab_signal {
       sGAB_IGN,
       sGAB_COLL,
@@ -2576,14 +2570,8 @@ struct gab_eg {
   struct gab_gc {
     d_gab_obj overflow_rc;
     v_gab_obj dead;
-
     gab_value msg[GAB_GCNEPOCHS];
-
-    struct gab_gcbuf {
-      uint64_t len;
-      struct gab_obj *data[cGAB_GC_MOD_BUFF_MAX];
-    } buffers[][kGAB_NBUF][GAB_GCNEPOCHS];
-  } *gc;
+  } gc;
 
   gab_value messages, work_channel;
 
@@ -2601,13 +2589,9 @@ struct gab_eg {
 
   FILE *sin, *sout, *serr;
 
-  gab_osdynmod_load os_dynmod;
-
-  struct gab_obj *(*os_objalloc)(struct gab_triple gab, struct gab_obj *,
-                                 uint64_t new_size);
-
   uint64_t len;
-  struct gab_jb {
+
+  struct gab_job {
     thrd_t td;
 
     bool alive;
@@ -2617,6 +2601,11 @@ struct gab_eg {
     v_gab_value lock_keep;
 
     q_gab_value queue;
+
+    struct gab_gcbuf {
+      uint64_t len;
+      struct gab_obj *data[cGAB_GC_MOD_BUFF_MAX];
+    } buffers[kGAB_NBUF][GAB_GCNEPOCHS];
   } jobs[];
 };
 
@@ -2667,7 +2656,7 @@ GAB_API_INLINE gab_value gab_type(struct gab_triple gab, enum gab_kind k) {
 }
 
 GAB_API_INLINE struct gab_gc *gab_gc(struct gab_triple gab) {
-  return gab.eg->gc;
+  return &gab.eg->gc;
 }
 
 /**

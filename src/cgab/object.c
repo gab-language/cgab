@@ -48,7 +48,7 @@ struct gab_obj *gab_obj_create(struct gab_triple gab, uint64_t sz,
   printf("CREATE\t%p\t%lu\t%d\n", (void *)self, sz, k);
 #endif
 
-  struct gab_jb *wk = gab.eg->jobs + gab.wkid;
+  struct gab_job *wk = gab.eg->jobs + gab.wkid;
   if (wk->locked) {
     v_gab_value_push(&wk->lock_keep, __gab_obj(self));
     GAB_OBJ_BUFFERED(self);

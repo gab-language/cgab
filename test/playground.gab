@@ -1,17 +1,23 @@
-Ranges = 'ranges'.use
+# Ranges = 'ranges'.use
+# 
+# ch = Channels.make
+# 
+# Fibers.make () => do
+#   ch
+#     .reduce(0 +:)
+#     .println
+# end
+# 
+# Ranges.make(0 100000).each i => do
+#   Fibers.make () => do
+#     ch <! i
+#   end
+# end
+# 
+# ch.close!
 
-ch = Channels.make
+io = 'os.io'.use
 
-Fibers.make () => do
-  ch
-    .reduce(0 +:)
-    .println
-end
+md = io.open("README.md", "rw")
 
-Ranges.make(0 100000).each i => do
-  Fibers.make () => do
-    ch <! i
-  end
-end
 
-ch.close!

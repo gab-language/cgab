@@ -22,7 +22,7 @@ _read_header:.defcase! {
   ok: (lsp m) => do
     next_header = lsp
       .server\in
-      .until('\n'.binaries\into)
+      .until('\n'.to\b)
       .unwrap!
       .trim '\n'
 

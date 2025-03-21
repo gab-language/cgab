@@ -1,15 +1,35 @@
 #include "core.h"
 #include "gab.h"
 
-void file_cb(struct gab_triple, uint64_t len, char data[static len]) {
-  fclose(*(FILE **)data);
+#ifdef GAB_PLATFORM_UNIX
+#define QIO_LINUX
+#else
+#error Unsupported QIO Platform
+#endif
+#include "qio/qio.h"
+
+int io_loop_cb(void *initialized) {
+  if (qio_init(256) < 0)
+    return 1;
+
+  *(bool *)initialized = true;
+
+  if (qio_loop() < 0)
+    return qio_destroy(), 1;
+
+  return qio_destroy(), 0;
 }
 
-gab_value iostream(struct gab_triple gab, FILE *stream, bool owning) {
+void file_cb(struct gab_triple, uint64_t len, char data[static len]) {
+  qfd_t qfd = *(qfd_t *)data;
+  qclose(qfd);
+}
+
+gab_value wrap_qfd(struct gab_triple gab, qfd_t qd, bool owning) {
   return gab_box(gab, (struct gab_box_argt){
                           .type = gab_string(gab, tGAB_IOSTREAM),
-                          .data = &stream,
-                          .size = sizeof(FILE *),
+                          .data = &qd,
+                          .size = sizeof(qfd_t),
                           .destructor = owning ? file_cb : nullptr,
                           .visitor = nullptr,
                       });
@@ -27,25 +47,14 @@ a_gab_value *gab_iolib_open(struct gab_triple gab, uint64_t argc,
     return gab_pktypemismatch(gab, perm, kGAB_STRING);
 
   const char *cpath = gab_strdata(&path);
-  const char *cperm = gab_strdata(&perm);
+  /*const char *cperm = gab_strdata(&perm);*/
 
-  FILE *stream = fopen(cpath, cperm);
+  qd_t qd = qopen(cpath);
 
-  if (stream == nullptr) {
-    gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, strerror(errno)));
-    return nullptr;
-  }
-
-  gab_vmpush(gab_thisvm(gab), gab_ok, iostream(gab, stream, true));
-
-  return nullptr;
-}
-
-bool osfgetc(struct gab_triple gab, FILE *stream, int *c) {
-  for (;;) {
+  while (!qd_status(qd))
     switch (gab_yield(gab)) {
     case sGAB_TERM:
-      return false;
+      return nullptr;
     case sGAB_COLL:
       gab_gcepochnext(gab);
       gab_sigpropagate(gab);
@@ -54,20 +63,45 @@ bool osfgetc(struct gab_triple gab, FILE *stream, int *c) {
       break;
     }
 
-    if (!gab_osfisready(stream))
-      continue;
+  qfd_t qfd = qd_result(qd);
 
-    *c = fgetc(stream);
-    return true;
+  if (qfd < 0) {
+    gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, strerror(-qfd)));
+    return nullptr;
   }
+
+  gab_vmpush(gab_thisvm(gab), gab_ok, wrap_qfd(gab, qfd, true));
+
+  return nullptr;
 }
 
-int osfread(struct gab_triple gab, FILE *stream, v_char *sb) {
+int64_t osfgetc(struct gab_triple gab, qfd_t qfd, int *c) {
+  qd_t qid = qread(qfd, 1, (uint8_t *)c);
+
+  while (!qd_status(qid))
+    switch (gab_yield(gab)) {
+    case sGAB_TERM:
+      return -1;
+    case sGAB_COLL:
+      gab_gcepochnext(gab);
+      gab_sigpropagate(gab);
+      break;
+    default:
+      break;
+    }
+
+  return qd_result(qid);
+}
+
+/* Awful - read one byte at a time */
+int osfread(struct gab_triple gab, qfd_t qfd, v_char *sb) {
   for (;;) {
     int c = -1;
 
-    if (!osfgetc(gab, stream, &c))
-      return -1;
+    int64_t res = osfgetc(gab, qfd, &c);
+
+    if (res < 0)
+      return res;
 
     if (c == EOF)
       return sb->len;
@@ -76,13 +110,14 @@ int osfread(struct gab_triple gab, FILE *stream, v_char *sb) {
   }
 }
 
-int osnfread(struct gab_triple gab, FILE *stream, size_t n, char *s) {
+int osnfread(struct gab_triple gab, qfd_t qfd, size_t n, char *s) {
   int bytes_read = 0;
   for (;;) {
     int c = -1;
 
-    if (!osfgetc(gab, stream, &c))
-      return -1;
+    int result = osfgetc(gab, qfd, &c);
+    if (result < 0)
+      return result;
 
     if (c == EOF)
       return bytes_read;
@@ -118,10 +153,10 @@ a_gab_value *gab_iolib_until(struct gab_triple gab, uint64_t argc,
   v_char_create(&buffer, 1024);
 
   int c = 0;
-  FILE *stream = *(FILE **)gab_boxdata(argv[0]);
+  qfd_t stream = *(qfd_t *)gab_boxdata(argv[0]);
 
   for (;;) {
-    if (!osfgetc(gab, stream, &c))
+    if (osfgetc(gab, stream, &c) < 0)
       return nullptr;
 
     if (c == EOF)
@@ -159,7 +194,7 @@ a_gab_value *gab_iolib_scan(struct gab_triple gab, uint64_t argc,
 
   char buffer[bytes];
 
-  FILE *stream = *(FILE **)gab_boxdata(argv[0]);
+  qfd_t stream = *(qfd_t *)gab_boxdata(iostream);
 
   // Try to read bytes number of bytes into buffer
   int bytes_read = osnfread(gab, stream, bytes, buffer);
@@ -177,13 +212,7 @@ a_gab_value *gab_iolib_read(struct gab_triple gab, uint64_t argc,
   if (argc != 1 || gab_valkind(argv[0]) != kGAB_BOX)
     return gab_fpanic(gab, "&:read expects a file handle");
 
-  FILE *stream = *(FILE **)gab_boxdata(argv[0]);
-
-  if (!gab_osfisready(stream)) {
-    gab_vmpush(gab_thisvm(gab), gab_err,
-               gab_string(gab, "File not ready for reading"));
-    return nullptr;
-  }
+  qfd_t stream = *(qfd_t *)gab_boxdata(argv[0]);
 
   v_char sb = {0};
   int bytes_read = osfread(gab, stream, &sb);
@@ -205,7 +234,7 @@ a_gab_value *gab_iolib_write(struct gab_triple gab, uint64_t argc,
   if (gab_valkind(stream) != kGAB_BOX)
     return gab_ptypemismatch(gab, stream, gab_string(gab, tGAB_IOSTREAM));
 
-  FILE *fs = *(FILE **)gab_boxdata(stream);
+  qfd_t fs = *(qfd_t *)gab_boxdata(stream);
 
   gab_value str = gab_arg(1);
 
@@ -213,11 +242,14 @@ a_gab_value *gab_iolib_write(struct gab_triple gab, uint64_t argc,
     return gab_pktypemismatch(gab, str, kGAB_STRING);
 
   const char *data = gab_strdata(&str);
+  size_t len = gab_strlen(str);
 
-  int32_t result = fputs(data, fs);
+  qd_t qd = qwrite(fs, len, (uint8_t *)data);
 
-  if (result <= 0 || fflush(fs))
-    gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, strerror(errno)));
+  int64_t result = qd_result(qd);
+
+  if (result <= 0)
+    gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, strerror(-result)));
   else
     gab_vmpush(gab_thisvm(gab), gab_ok);
 
@@ -225,6 +257,15 @@ a_gab_value *gab_iolib_write(struct gab_triple gab, uint64_t argc,
 }
 
 GAB_DYNLIB_MAIN_FN {
+  bool initialized = false;
+
+  thrd_t io_t;
+  if (thrd_create(&io_t, io_loop_cb, &initialized) != thrd_success)
+    return gab_fpanic(gab, "Failed to initialize QIO loop");
+
+  while (!initialized)
+    ;
+
   gab_value t = gab_string(gab, tGAB_IOSTREAM);
 
   gab_def(gab,
@@ -236,17 +277,17 @@ GAB_DYNLIB_MAIN_FN {
           {
               gab_message(gab, "stdin"),
               gab_strtomsg(t),
-              iostream(gab, stdin, false),
+              wrap_qfd(gab, gab_osfileno(stdin), false),
           },
           {
               gab_message(gab, "stdout"),
               gab_strtomsg(t),
-              iostream(gab, stdout, false),
+              wrap_qfd(gab, gab_osfileno(stdout), false),
           },
           {
               gab_message(gab, "stderr"),
               gab_strtomsg(t),
-              iostream(gab, stderr, false),
+              wrap_qfd(gab, gab_osfileno(stderr), false),
           },
           {
               gab_message(gab, "open"),

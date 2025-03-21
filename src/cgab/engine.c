@@ -349,9 +349,9 @@ int32_t worker_job(void *data) {
   struct gab_triple gab = *g;
 
   assert(gab.wkid != 0);
-  gab.eg->njobs++;
+  atomic_fetch_add(&gab.eg->njobs, 1);
 
-  struct gab_jb *self = gab.eg->jobs + gab.wkid;
+  struct gab_job *self = gab.eg->jobs + gab.wkid;
 
 #if cGAB_LOG_EG
   fprintf(stdout, "[WORKER %i] SPAWNED\n", gab.wkid);
@@ -419,7 +419,7 @@ fin:
     break;
   }
 
-  gab.eg->njobs--;
+  atomic_fetch_sub(&gab.eg->njobs, 1);
 
   assert(gab.eg->jobs[gab.wkid].locked == 0);
 
@@ -428,7 +428,7 @@ fin:
   return 0;
 }
 
-struct gab_jb *next_available_job(struct gab_triple gab) {
+struct gab_job *next_available_job(struct gab_triple gab) {
 
   // Try to reuse an existing job, thats exited after idling
   for (uint64_t i = 1; i < gab.eg->len; i++) {
@@ -441,7 +441,7 @@ struct gab_jb *next_available_job(struct gab_triple gab) {
   return nullptr;
 }
 
-bool gab_jbcreate(struct gab_triple gab, struct gab_jb *job, int(fn)(void *)) {
+bool gab_jbcreate(struct gab_triple gab, struct gab_job *job, int(fn)(void *)) {
   if (!job)
     return false;
 
@@ -468,7 +468,7 @@ bool gab_wkspawn(struct gab_triple gab) {
 struct gab_triple gab_create(struct gab_create_argt args) {
   uint64_t njobs = args.jobs ? args.jobs : 8;
 
-  uint64_t egsize = sizeof(struct gab_eg) + sizeof(struct gab_jb) * (njobs + 1);
+  uint64_t egsize = sizeof(struct gab_eg) + sizeof(struct gab_job) * (njobs + 1);
 
   args.sin = args.sin != nullptr ? args.sin : stdin;
   args.sout = args.sout != nullptr ? args.sout : stdout;
@@ -479,7 +479,6 @@ struct gab_triple gab_create(struct gab_create_argt args) {
 
   eg->len = njobs + 1;
   eg->njobs = 0;
-  eg->os_dynmod = args.os_dynmod;
   eg->hash_seed = time(nullptr);
   eg->sin = args.sin;
   eg->sout = args.sout;
@@ -503,11 +502,6 @@ struct gab_triple gab_create(struct gab_create_argt args) {
 
   struct gab_triple gab = {.eg = eg, .flags = args.flags};
 
-  uint64_t gcsize =
-      sizeof(struct gab_gc) +
-      sizeof(struct gab_gcbuf[kGAB_NBUF][GAB_GCNEPOCHS]) * (eg->len);
-
-  eg->gc = malloc(gcsize);
   gab_gccreate(gab);
 
   gab_jbcreate(gab, gab.eg->jobs, gc_job);
@@ -657,7 +651,6 @@ void gab_destroy(struct gab_triple gab) {
 
   thrd_join(gab.eg->jobs[0].td, nullptr);
   gab_gcdestroy(gab);
-  free(gab.eg->gc);
 
   for (uint64_t i = 0; i < gab.eg->sources.cap; i++) {
     if (d_gab_src_iexists(&gab.eg->sources, i)) {
@@ -667,7 +660,7 @@ void gab_destroy(struct gab_triple gab) {
   }
 
   for (int i = 0; i < gab.eg->len; i++) {
-    struct gab_jb *wk = &gab.eg->jobs[i];
+    struct gab_job *wk = &gab.eg->jobs[i];
     v_gab_value_destroy(&wk->lock_keep);
   }
 

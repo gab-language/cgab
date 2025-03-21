@@ -13,3 +13,6 @@
 [submodule "vendor/libgrapheme"]
 	path = vendor/libgrapheme
 	url = https://git.suckless.org/libgrapheme
+[submodule "vendor/qio"]
+	path = vendor/qio
+	url = https://github.com/TeddyRandby/qio.git

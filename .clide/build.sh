@@ -34,7 +34,7 @@ export GAB_CCFLAGS=
 export GAB_TARGETS=
 source configuration || exit 1
 
-export unixflags="-DGAB_PLATFORM_UNIX -D_POSIX_C_SOURCE=200809L"
+export unixflags="-DGAB_PLATFORM_UNIX -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE"
 export winflags="-DGAB_PLATFORM_WIN"
 
 function build {
