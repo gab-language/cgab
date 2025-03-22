@@ -34,9 +34,9 @@ diagnostics\queue_all:.def!(
   diag\check: () => do
     text = self.text
 
-    (ok, err) = text.gab\check
+    (ok, err) = text.as\gab\block
 
-    err
+    (ok == ok: !) .and err .or nil:
   end
   complete!: () => do
     job = self

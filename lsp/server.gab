@@ -50,7 +50,7 @@ _read_header:.defcase! {
       .at "Content-Length"
       .unwrap!
       .trim
-      .numbers\into
+      .as\n
 
     body = self
       .server\in
@@ -60,7 +60,7 @@ _read_header:.defcase! {
     logfile.write(body)
 
     msg = body
-      .json\decode
+      .as\json
       .unwrap!
 
     msg
@@ -77,7 +77,7 @@ _read_header:.defcase! {
   # Helpers for sending data to client
   respond!: (id result) => do
     result.println
-    msg = { "id" id "result" result } .json\encode
+    msg = { "id" id "result" result } .to\json
 
     msg.println
 
@@ -96,7 +96,7 @@ _read_header:.defcase! {
   notify!: (method params) => do 
     log.("Notification" method params ?)
 
-    msg = { "method" method "params" params } .json\encode
+    msg = { "method" method "params" params } .to\json
 
     log.("Notification" msg)
 

@@ -1,5 +1,6 @@
 #include "core.h"
 #include "gab.h"
+#include <stdint.h>
 
 #ifdef GAB_PLATFORM_UNIX
 #define QIO_LINUX
@@ -76,7 +77,7 @@ a_gab_value *gab_iolib_open(struct gab_triple gab, uint64_t argc,
 }
 
 int64_t osfgetc(struct gab_triple gab, qfd_t qfd, int *c) {
-  qd_t qid = qread(qfd, 1, (uint8_t *)c);
+  qd_t qid = qread(qfd, -1, 1, (uint8_t *)c);
 
   while (!qd_status(qid))
     switch (gab_yield(gab)) {
@@ -110,24 +111,30 @@ int osfread(struct gab_triple gab, qfd_t qfd, v_char *sb) {
   }
 }
 
-int osnfread(struct gab_triple gab, qfd_t qfd, size_t n, char *s) {
-  int bytes_read = 0;
-  for (;;) {
-    int c = -1;
+int osnfread(struct gab_triple gab, qfd_t qfd, size_t n, uint8_t buf[n]) {
+  qd_t qid = qread(qfd, -1, n, buf);
 
-    int result = osfgetc(gab, qfd, &c);
-    if (result < 0)
-      return result;
+  while (!qd_status(qid))
+    switch (gab_yield(gab)) {
+    case sGAB_TERM:
+      return -1;
+    case sGAB_COLL:
+      gab_gcepochnext(gab);
+      gab_sigpropagate(gab);
+      break;
+    default:
+      break;
+    }
 
-    if (c == EOF)
-      return bytes_read;
+  int bytes_read = qd_result(qid);
 
-    if (bytes_read == n)
-      return bytes_read;
+  if (bytes_read < 0)
+    return bytes_read;
 
-    *s++ = c;
-    bytes_read++;
-  }
+  if (bytes_read == 0)
+    return strlen((const char *)buf);
+
+  return bytes_read;
 }
 
 a_gab_value *gab_iolib_until(struct gab_triple gab, uint64_t argc,
@@ -197,12 +204,12 @@ a_gab_value *gab_iolib_scan(struct gab_triple gab, uint64_t argc,
   qfd_t stream = *(qfd_t *)gab_boxdata(iostream);
 
   // Try to read bytes number of bytes into buffer
-  int bytes_read = osnfread(gab, stream, bytes, buffer);
+  int result = osnfread(gab, stream, bytes, (uint8_t *)buffer);
 
-  if (bytes_read < bytes)
-    gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, strerror(errno)));
+  if (result < bytes)
+    gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, strerror(-result)));
   else
-    gab_vmpush(gab_thisvm(gab), gab_ok, gab_nstring(gab, bytes_read, buffer));
+    gab_vmpush(gab_thisvm(gab), gab_ok, gab_nstring(gab, bytes, buffer));
 
   return nullptr;
 }
@@ -245,6 +252,18 @@ a_gab_value *gab_iolib_write(struct gab_triple gab, uint64_t argc,
   size_t len = gab_strlen(str);
 
   qd_t qd = qwrite(fs, len, (uint8_t *)data);
+
+  while (!qd_status(qd))
+    switch (gab_yield(gab)) {
+    case sGAB_TERM:
+      return nullptr;
+    case sGAB_COLL:
+      gab_gcepochnext(gab);
+      gab_sigpropagate(gab);
+      break;
+    default:
+      break;
+    }
 
   int64_t result = qd_result(qd);
 
