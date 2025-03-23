@@ -16,7 +16,7 @@ make:.def!(
 
 t:.def!(lsp\server: lsp\server\t)
 
-logfile = io.open("/tmp/lsprpclog.txt" "w").unwrap!
+logfile = io.open("/tmp/lsprpc.log" "w").unwrap!
 
 _read_header:.defcase! {
   ok: (lsp m) => do
