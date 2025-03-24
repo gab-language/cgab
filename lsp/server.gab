@@ -76,10 +76,7 @@ _read_header:.defcase! {
   end
   # Helpers for sending data to client
   respond!: (id result) => do
-    result.println
     msg = { "id" id "result" result } .to\json
-
-    msg.println
 
     content\length = msg.len
 
@@ -88,8 +85,6 @@ _read_header:.defcase! {
       '\r\n\r\n'msg)
 
     log.("Response" id result ?)
-
-    res.println
 
     self.server\out.write res
   end
@@ -110,7 +105,7 @@ _read_header:.defcase! {
   end
   # Run the server
   run!: () => do
-    log. "Server started!"
+    log."Server started!"
 
     self.reduce(self (lsp req) => do
       msg = req .lsp\messages\into
