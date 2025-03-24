@@ -23,7 +23,8 @@ int io_loop_cb(void *initialized) {
 
 void file_cb(struct gab_triple, uint64_t len, char data[static len]) {
   qfd_t qfd = *(qfd_t *)data;
-  qclose(qfd);
+  // Block for the file to close
+  qd_result(qclose(qfd));
 }
 
 gab_value wrap_qfd(struct gab_triple gab, qfd_t qd, bool owning) {
