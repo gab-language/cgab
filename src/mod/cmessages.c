@@ -31,9 +31,9 @@ a_gab_value *gab_msglib_specs(struct gab_triple gab, uint64_t argc,
   gab_value msg = gab_arg(1);
 
   gab_value rec = gab_thisfibmsg(gab);
-  rec = rec == gab_invalid ? rec : gab_recat(rec, msg);
+  rec = rec == gab_undefined ? rec : gab_recat(rec, msg);
 
-  if (rec == gab_invalid)
+  if (rec == gab_undefined)
     gab_vmpush(gab_thisvm(gab), gab_nil);
   else
     gab_vmpush(gab_thisvm(gab), rec);
@@ -111,7 +111,7 @@ a_gab_value *gab_msglib_def(struct gab_triple gab, uint64_t argc,
   uint64_t len = argc - 2;
 
   if (len == 0) {
-    gab_value t = gab_invalid;
+    gab_value t = gab_undefined;
 
     if (!gab_def(gab, {msg, t, spec}))
       return gab_fpanic(gab, "$ already specializes for type $", msg, t);
@@ -163,7 +163,7 @@ a_gab_value *gab_msglib_module(struct gab_triple gab, uint64_t argc,
     return gab_pktypemismatch(gab, messages, kGAB_RECORD);
 
   if (gab_reclen(cases) == 0) {
-    gab_value type = gab_invalid;
+    gab_value type = gab_undefined;
 
     for (uint64_t i = 0; i < gab_reclen(messages); i++) {
       gab_value spec = gab_uvrecat(messages, i);

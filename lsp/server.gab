@@ -5,13 +5,14 @@ log = 'lsp/logs'.use
 io = 'os.io'.use
 
 diag\job\t = Shapes.make(server: uri: text:)
-lsp\server\t = Shapes.make(server\in: server\out: server\data:)
+lsp\server\t = Shapes.make(server\in: server\out: server\open_ch: server\data:)
 
 make:.def!(
   lsp\server:
   (in out) => lsp\server\t.make(
     in .or (io.stdin)
     out .or (io.stdout)
+    Channels.make
     {}))
 
 t:.def!(lsp\server: lsp\server\t)
@@ -68,11 +69,11 @@ _read_header:.defcase! {
   # Implement the lazy-sequence protocol
   seq\init: () => do
     msg = self._read_request
-    (ok: nil: msg)
+    option:.(self.server\open_ch.open?, nil: msg)
   end
   seq\next: () => do
     msg = self._read_request
-    (ok: nil: msg)
+    option:.(self.server\open_ch.open?, nil: msg)
   end
   # Helpers for sending data to client
   respond!: (id result) => do

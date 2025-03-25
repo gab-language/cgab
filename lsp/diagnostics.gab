@@ -5,7 +5,7 @@ log = 'lsp/logs'.use
 diag\jobs\in = Channels.make
 
 diag\job\t = Shapes.make(server: uri: text:)
-lsp\server\t = Shapes.make(server\in: server\out: server\data:)
+lsp\server\t = Shapes.make(server\in: server\out: server\open_ch: server\data:)
 
 diagnostics\queue_all:.def!(
   lsp\server\t
@@ -14,7 +14,7 @@ diagnostics\queue_all:.def!(
 
     server.server\data.each (text uri) => do
       log.("Queueing Diagnostics" uri)
-      diag\jobs\in <! diag\job\t.make(server uri text)        
+      diag\jobs\in <! diag\job\t.make(server uri text)
     end
   end)
 
@@ -39,6 +39,12 @@ diagnostics\queue_all:.def!(
     (ok == ok: !) .and err .or nil:
   end
   complete!: () => do
+    self
+      .server
+      .server\open_ch
+      .closed?
+      .then () => diag\jobs\in.close! 
+
     job = self
     log.("Diagnostics for: " self.uri)
     diagnostic = self.diag\check

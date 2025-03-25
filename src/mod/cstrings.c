@@ -598,7 +598,7 @@ GAB_DYNLIB_MAIN_FN {
           },
           {
               gab_message(gab, "to\\s"),
-              gab_invalid,
+              gab_undefined,
               gab_snative(gab, "to\\s", gab_strlib_string_into),
           },
           {

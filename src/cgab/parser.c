@@ -309,7 +309,6 @@ static int vparser_error(struct gab_triple gab, struct parser *parser,
   gab_vfpanic(gab, gab.eg->serr, args,
               (struct gab_err_argt){
                   .src = parser->src,
-                  .message = gab_nil,
                   .status = e,
                   .tok = parser->offset - 1,
                   .note_fmt = fmt,
@@ -894,7 +893,6 @@ static int vbc_error(struct gab_triple gab, struct bc *bc, gab_value node,
   gab_vfpanic(gab, gab.eg->serr, args,
               (struct gab_err_argt){
                   .src = bc->src,
-                  .message = gab_nil,
                   .status = e,
                   .tok = tok,
                   .note_fmt = fmt,
@@ -1334,7 +1332,7 @@ gab_value peek_env(gab_value env, int depth) {
   size_t nenv = gab_reclen(env);
 
   if (depth + 1 > nenv)
-    return gab_invalid;
+    return gab_undefined;
 
   return gab_uvrecat(env, nenv - depth - 1);
 }
@@ -1367,13 +1365,13 @@ static struct lookup_res add_upvalue(struct gab_triple gab, gab_value env,
                                      gab_value id, int depth) {
   gab_value ctx = peek_env(env, depth);
 
-  if (ctx == gab_invalid)
+  if (ctx == gab_undefined)
     return (struct lookup_res){env, kLOOKUP_NONE};
 
   // Don't pull redundant upvalues
   gab_value current_upv_idx = gab_recat(ctx, id);
 
-  if (current_upv_idx != gab_invalid)
+  if (current_upv_idx != gab_undefined)
     return (struct lookup_res){env, kLOOKUP_UPV, gab_valtoi(current_upv_idx)};
 
   uint16_t count = upvalues_in_env(ctx);
@@ -1425,7 +1423,7 @@ static int resolve_local(struct gab_triple gab, gab_value env, gab_value id,
                          uint8_t depth) {
   gab_value ctx = peek_env(env, depth);
 
-  if (ctx == gab_invalid)
+  if (ctx == gab_undefined)
     return -1;
 
   return lookup_local(ctx, id);

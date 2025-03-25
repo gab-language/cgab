@@ -12,12 +12,8 @@ lsp\messages\into:.def!(
 
     (ok, params?) = self.at 'params'
 
-    ok .else () => do
-      log.error("No Params", self)
-    end
-
     method = method? .or "" .to\m
-    params = params? .or ""
+    params = params? .or {}
     id     = self .at 'id' .unwrap.or 1
 
     {
@@ -74,6 +70,14 @@ TEXTDOCUMENTSYNCKIND\FULL = 1
 end
 
 'initialized' .def\lsp\handler! server => do
+  server
+end
+
+'shutdown' .def\lsp\handler! server => do
+  log.("Shutting down")
+
+  server.server\open_ch.close!
+
   server
 end
 

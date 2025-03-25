@@ -265,9 +265,14 @@ GAB_API_INLINE gab_value __gab_dtoval(gab_float value) {
   ((gab_value)(__GAB_QNAN | ((uint64_t)kGAB_PRIMITIVE << __GAB_TAGOFFSET) |    \
                (op)))
 
+/*
+ * Primitives useful for the c-api. These should *never* be visible to real gab
+ * code. If they are, its a bug that needs to be fixed.
+ */
 #define gab_invalid (gab_primitive(INT32_MAX))
-
 #define gab_timeout (gab_primitive(INT32_MAX - 1))
+#define gab_undefined (gab_primitive(INT32_MAX - 2))
+#define gab_valid (gab_primitive(INT32_MAX) - 3)
 
 /*
  * As Gab's number type is a double (64-bit floating point)
@@ -519,6 +524,15 @@ GAB_API int gab_fvalinspect(FILE *stream, gab_value value, int depth);
  * @return the number of bytes written to the stream.
  */
 GAB_API int gab_svalinspect(char **dest, size_t *n, gab_value value, int depth);
+
+/*
+ * These gab_*fprint* functions print to streams. This is at odds with an IO model loaded from os/io. 
+ * 
+ * Because of this, these functions should only be used internally or for debugging.
+ *
+ * (Maybe I should remove them, and encourage the *sprintf* variants only?)
+ *
+ */
 
 /**
  * @brief Format the given string to the given stream.
@@ -1247,7 +1261,7 @@ void gab_gcepochnext(struct gab_triple gab);
  *
  * @param gab The triple.
  */
-GAB_API void gab_sigterm(struct gab_triple gab);
+GAB_API bool gab_sigterm(struct gab_triple gab);
 
 /**
  * @brief Trigger a garbage collection.
@@ -1257,14 +1271,14 @@ GAB_API void gab_sigterm(struct gab_triple gab);
  *
  * @param gab The triple.
  */
-GAB_API void gab_asigcoll(struct gab_triple gab);
+GAB_API bool gab_asigcoll(struct gab_triple gab);
 
 /**
  * @brief Synchronously run the garbage collector.
  *
  * @param gab The triple.
  */
-GAB_API void gab_sigcoll(struct gab_triple gab);
+GAB_API bool gab_sigcoll(struct gab_triple gab);
 
 /**
  * @brief Lock the garbage collector to prevent collection until gab_gcunlock is
@@ -1736,7 +1750,7 @@ GAB_API gab_value gab_shpwith(struct gab_triple gab, gab_value shp,
   })
 
 /**
- * @brief Concatenate n shpords, left to rate
+ * @brief Concatenate n shapes.
  *
  */
 GAB_API gab_value gab_nshpcat(struct gab_triple gab, uint64_t len,
@@ -1976,7 +1990,7 @@ GAB_API_INLINE gab_value gab_recat(gab_value record, gab_value key) {
   uint64_t i = gab_recfind(record, key);
 
   if (i == -1)
-    return gab_invalid;
+    return gab_undefined;
 
   return gab_uvrecat(record, i);
 }
@@ -2020,10 +2034,35 @@ GAB_API gab_value gab_recput(struct gab_triple gab, gab_value record,
                              gab_value key, gab_value value);
 
 /**
- * @brief Pop a value from a record
+ * @brief Remove a key from a record.
+ *
+ * @param gab The engine
+ * @param record The record to start with
+ * @param key The key
+ * @param value_out If provided, will be filled with the value at they removed
+ * key.
+ * @return a new record without key.
  */
 GAB_API gab_value gab_rectake(struct gab_triple gab, gab_value record,
-                              gab_value key, gab_value *value);
+                              gab_value key, gab_value *value_out);
+
+/**
+ * @brief Concatenate two maps together. The last value of a given key will
+ * prevail.
+ *
+ * @param gab The engine
+ * @param record_over The record to merge *over&
+ * @param record_under The record to merge *under*
+ * @return a new record with all keys from both records.
+ */
+GAB_API gab_value gab_nreccat(struct gab_triple gab, uint64_t len,
+                              gab_value *records);
+
+#define gab_reccat(gab, ...)                                                   \
+  ({                                                                           \
+    gab_value __recs[] = {__VA_ARGS__};                                        \
+    gab_nreccat(gab, sizeof(__recs) / sizeof(gab_value), __recs);              \
+  })
 
 #define gab_lstcat(gab, ...)                                                   \
   ({                                                                           \
@@ -2704,7 +2743,7 @@ GAB_API_INLINE bool gab_valisa(struct gab_triple gab, gab_value value,
  */
 GAB_API_INLINE struct gab_impl_rest
 gab_impl(struct gab_triple gab, gab_value message, gab_value receiver) {
-  gab_value spec = gab_invalid;
+  gab_value spec = gab_undefined;
   gab_value type = receiver;
 
   /* Check if the receiver has a supertype, and if that supertype implments the
@@ -2712,7 +2751,7 @@ gab_impl(struct gab_triple gab, gab_value message, gab_value receiver) {
   if (gab_valhast(receiver)) {
     type = gab_valtype(gab, receiver);
     spec = gab_thisfibmsgat(gab, message, type);
-    if (spec != gab_invalid)
+    if (spec != gab_undefined)
       return (struct gab_impl_rest){
           type,
           .as.spec = spec,
@@ -2723,7 +2762,7 @@ gab_impl(struct gab_triple gab, gab_value message, gab_value receiver) {
   /* Check for the kind of the receiver. ie 'gab\record' */
   type = gab_type(gab, gab_valkind(receiver));
   spec = gab_thisfibmsgat(gab, message, type);
-  if (spec != gab_invalid)
+  if (spec != gab_undefined)
     return (struct gab_impl_rest){
         type,
         .as.spec = spec,
@@ -2749,9 +2788,9 @@ gab_impl(struct gab_triple gab, gab_value message, gab_value receiver) {
    * is impossible to do anything with, because it is a record with a key
    * for every message in the system.
    */
-  type = gab_invalid;
+  type = gab_undefined;
   spec = gab_thisfibmsgat(gab, message, type);
-  if (spec != gab_invalid)
+  if (spec != gab_undefined)
     return (struct gab_impl_rest){
         .as.spec = spec,
         kGAB_IMPL_GENERAL,
@@ -2781,8 +2820,8 @@ GAB_API_INLINE gab_value gab_thisfibmsgat(struct gab_triple gab,
                                           gab_value receiver) {
   gab_value spec_rec = gab_thisfibmsgrec(gab, message);
 
-  if (spec_rec == gab_invalid)
-    return gab_invalid;
+  if (spec_rec == gab_undefined)
+    return gab_undefined;
 
   return gab_recat(spec_rec, receiver);
 }
@@ -2835,6 +2874,7 @@ GAB_API_INLINE gab_value gab_valintos(struct gab_triple gab, gab_value value) {
  * signal.
  */
 GAB_API_INLINE bool gab_is_signaling(struct gab_triple gab) {
+  /*printf("SCHEDULE: %i, SIGNALING: %d\n", gab.eg->sig.schedule, gab.eg->sig.schedule >= 0);*/
   return gab.eg->sig.schedule >= 0;
 }
 

@@ -181,6 +181,7 @@ end
     (ok v) = self >!
     (ok v v)
   end
+  open?: _ => self.closed?.!
 }
 
 Channels.t.def\seq!

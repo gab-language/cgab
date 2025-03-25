@@ -84,12 +84,12 @@ struct primitive all_primitives[] = {
 struct primitive val_primitives[] = {
     {
         .name = mGAB_EQ,
-        .val = gab_invalid,
+        .val = gab_undefined,
         .primitive = gab_primitive(OP_SEND_PRIMITIVE_EQ),
     },
     {
         .name = mGAB_CONS,
-        .val = gab_invalid,
+        .val = gab_undefined,
         .primitive = gab_primitive(OP_SEND_PRIMITIVE_CONS),
     },
 };
@@ -318,6 +318,8 @@ int32_t gc_job(void *data) {
   struct gab_triple gab = *g;
   assert(gab.wkid == 0);
 
+  struct gab_job *job = gab.eg->jobs + gab.wkid;
+
   while (gab.eg->njobs >= 0) {
     switch (gab_yield(gab)) {
     case sGAB_TERM:
@@ -341,6 +343,7 @@ int32_t gc_job(void *data) {
   }
 
   free(g);
+  v_gab_value_destroy(&job->lock_keep);
   return 0;
 }
 
@@ -351,7 +354,7 @@ int32_t worker_job(void *data) {
   assert(gab.wkid != 0);
   atomic_fetch_add(&gab.eg->njobs, 1);
 
-  struct gab_job *self = gab.eg->jobs + gab.wkid;
+  struct gab_job *job = gab.eg->jobs + gab.wkid;
 
 #if cGAB_LOG_EG
   fprintf(stdout, "[WORKER %i] SPAWNED\n", gab.wkid);
@@ -359,11 +362,11 @@ int32_t worker_job(void *data) {
 
   while (!gab_chnisclosed(gab.eg->work_channel) ||
          !gab_chnisempty(gab.eg->work_channel) ||
-         !q_gab_value_is_empty(&self->queue)) {
+         !q_gab_value_is_empty(&job->queue)) {
     switch (gab_yield(gab)) {
     case sGAB_TERM:
       // Clear the work queue - we're terminated
-      q_gab_value_create(&self->queue);
+      q_gab_value_create(&job->queue);
       goto fin;
     default:
       break;
@@ -378,32 +381,33 @@ int32_t worker_job(void *data) {
     gab_fprintf(stdout, "[WORKER $] chntake succeeded: $\n",
                 gab_number(gab.wkid), fiber);
 #endif
-    if (q_gab_value_is_empty(&self->queue)) {
+    if (q_gab_value_is_empty(&job->queue)) {
       gab_value fiber =
           gab_tchntake(gab, gab.eg->work_channel, cGAB_WORKER_IDLEWAIT_MS);
 
-      if (fiber == gab_invalid || fiber == gab_timeout)
+      if (fiber == gab_invalid || fiber == gab_timeout ||
+          fiber == gab_undefined)
         goto fin;
 
-      if (!q_gab_value_push(&self->queue, fiber))
+      if (!q_gab_value_push(&job->queue, fiber))
         assert(false && "PUSH FAILED");
     }
 
-    gab_value fiber = q_gab_value_peek(&self->queue);
+    gab_value fiber = q_gab_value_peek(&job->queue);
 
     assert(gab_valkind(fiber) != kGAB_FIBERDONE);
 
     a_gab_value *res = gab_vmexec(gab, fiber);
 
-    q_gab_value_pop(&self->queue);
+    q_gab_value_pop(&job->queue);
 
     if (res == nullptr)
-      if (!q_gab_value_push(&self->queue, fiber))
+      if (!q_gab_value_push(&job->queue, fiber))
         assert(false && "PUSH FAILED");
   }
 
 fin:
-  assert(q_gab_value_is_empty(&self->queue));
+  assert(q_gab_value_is_empty(&job->queue));
 
 #if cGAB_LOG_EG
   fprintf(stdout, "[WORKER %i] CLOSING\n", gab.wkid);
@@ -421,9 +425,10 @@ fin:
 
   atomic_fetch_sub(&gab.eg->njobs, 1);
 
-  assert(gab.eg->jobs[gab.wkid].locked == 0);
+  assert(job->locked == 0);
 
   free(g);
+  v_gab_value_destroy(&job->lock_keep);
 
   return 0;
 }
@@ -468,7 +473,8 @@ bool gab_wkspawn(struct gab_triple gab) {
 struct gab_triple gab_create(struct gab_create_argt args) {
   uint64_t njobs = args.jobs ? args.jobs : 8;
 
-  uint64_t egsize = sizeof(struct gab_eg) + sizeof(struct gab_job) * (njobs + 1);
+  uint64_t egsize =
+      sizeof(struct gab_eg) + sizeof(struct gab_job) * (njobs + 1);
 
   args.sin = args.sin != nullptr ? args.sin : stdin;
   args.sout = args.sout != nullptr ? args.sout : stdout;
@@ -603,6 +609,8 @@ void dec_child_shapes(struct gab_triple gab, gab_value shp) {
 
 void gab_destroy(struct gab_triple gab) {
   // Wait until there is no work to be done
+  // This doesn't quite work anymore as now
+  // Workers have local queues of work to do.
   while (!gab_chnisempty(gab.eg->work_channel))
     ;
 
@@ -627,7 +635,7 @@ void gab_destroy(struct gab_triple gab) {
   assert(gab.eg->njobs == 0);
 
   /**
-   * Three consececutive collections are needed here because
+   * Four consececutive collections are needed here because
    * of the delayed nature of the RC algorithm.
    *
    * Decrements are process an epoch *after* they are queued.
@@ -657,11 +665,6 @@ void gab_destroy(struct gab_triple gab) {
       struct gab_src *s = d_gab_src_ival(&gab.eg->sources, i);
       gab_srcdestroy(s);
     }
-  }
-
-  for (int i = 0; i < gab.eg->len; i++) {
-    struct gab_job *wk = &gab.eg->jobs[i];
-    v_gab_value_destroy(&wk->lock_keep);
   }
 
   d_strings_destroy(&gab.eg->strings);
@@ -694,6 +697,11 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
     fflush(stdout);
     a_char *src = gab_fosreadl(stdin);
 
+    if (src->len <= 1) {
+      a_char_destroy(src);
+      return;
+    }
+
     if ((int8_t)src->data[0] == EOF) {
       a_char_destroy(src);
       return;
@@ -720,13 +728,13 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
                          });
     } else {
       size_t len = gab_reclen(env) - 1;
-      const char *keys[len];
-      gab_value keyvals[len];
-      gab_value vals[len];
+      const char *keys[len + 1];
+      gab_value keyvals[len + 1];
+      gab_value vals[len + 1];
 
       for (size_t i = 0; i < len; i++) {
         size_t index = i + 1;
-        keyvals[i] = gab_valintos(gab, gab_ukrecat(env, index));
+        keyvals[i] = gab_ukrecat(env, index);
         vals[i] = gab_uvrecat(env, index);
         keys[i] = gab_strdata(keyvals + i);
       }
@@ -745,7 +753,13 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
       continue;
 
     a_gab_value *result = gab_fibawait(gab, fiber);
-    env = gab_fibawaite(gab, fiber);
+    gab_value new_env = gab_fibawaite(gab, fiber);
+
+    if (env == gab_invalid)
+      env = new_env;
+    else
+      env = gab_reccat(gab, env, new_env);
+
     assert(env != gab_invalid);
 
     if (result == nullptr)
@@ -842,7 +856,7 @@ gab_value dodef(struct gab_triple gab, gab_value messages, uint64_t len,
 
     gab_value specs = gab_recat(messages, arg.message);
 
-    if (specs == gab_invalid)
+    if (specs == gab_undefined)
       specs = gab_record(gab, 0, 0, nullptr, nullptr);
 
     gab_value newspecs =
@@ -1098,8 +1112,7 @@ void dump_pretty_err(struct gab_triple gab, FILE *stream, va_list varargs,
 
   gab_value src_name = args.src ? args.src->name : gab_string(gab, "C");
 
-  gab_fprintf(stream, "\n[$] $ panicked near $", src_name, args.message,
-              tok_name);
+  gab_fprintf(stream, "[$] panicked near $", src_name, tok_name);
 
   if (args.status != GAB_NONE) {
     gab_value status_name = gab_string(gab, gab_status_names[args.status]);
@@ -1141,11 +1154,11 @@ void dump_pretty_err(struct gab_triple gab, FILE *stream, va_list varargs,
   }
 
   if (args.note_fmt && strlen(args.note_fmt) > 0) {
-    fprintf(stream, "\n\n");
+    fprintf(stream, "\n");
     gab_vfprintf(stream, args.note_fmt, varargs);
   }
 
-  fprintf(stream, "\n\n");
+  fprintf(stream, "\n");
 };
 
 void dump_structured_err(struct gab_triple gab, FILE *stream, va_list varargs,
@@ -1191,8 +1204,6 @@ void gab_vfpanic(struct gab_triple gab, FILE *stream, va_list varargs,
   }
 
   args.err_out->src_name = args.src ? gab_strdata(&args.src->name) : "C";
-
-  args.err_out->msg_name = gab_strdata(&args.message);
 
   args.err_out->status_name = gab_status_names[args.status];
 
@@ -1524,19 +1535,45 @@ gab_value gab_asend(struct gab_triple gab, struct gab_send_argt args) {
   return fb;
 };
 
-GAB_API void gab_sigterm(struct gab_triple gab) {
+bool gab_sigterm(struct gab_triple gab) {
   bool succeeded = gab_signal(gab, sGAB_TERM, 1);
-  assert(succeeded);
+
+  if (succeeded)
+    while (gab_is_signaling(gab))
+      switch (gab_yield(gab)) {
+      case sGAB_COLL:
+        gab_gcepochnext(gab);
+        gab_sigpropagate(gab);
+        break;
+      case sGAB_TERM:
+        return false;
+      default:
+        break;
+      };
+
+  return succeeded;
 }
 
-void gab_asigcoll(struct gab_triple gab) {
+bool gab_asigcoll(struct gab_triple gab) {
   bool succeeded = gab_signal(gab, sGAB_COLL, 1);
-  assert(succeeded);
+  return succeeded;
 }
 
-void gab_sigcoll(struct gab_triple gab) {
-  gab_asigcoll(gab);
+bool gab_sigcoll(struct gab_triple gab) {
+  bool succeeded = gab_asigcoll(gab);
 
-  while (gab_is_signaling(gab))
-    ;
+  if (succeeded)
+    while (gab_is_signaling(gab))
+      switch (gab_yield(gab)) {
+      case sGAB_COLL:
+        gab_gcepochnext(gab);
+        gab_sigpropagate(gab);
+        break;
+      case sGAB_TERM:
+        return false;
+      default:
+        break;
+      };
+
+  return succeeded;
 }

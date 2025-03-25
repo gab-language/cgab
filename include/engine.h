@@ -73,7 +73,6 @@ struct gab_err_argt {
   enum gab_status status;
   const char *note_fmt;
   struct gab_src *src;
-  gab_value message;
 
   /**
    * Optional out-parameter for captured error details.
