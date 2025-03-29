@@ -1,5 +1,7 @@
 'transducers'.use
 
+io = 'os.io'.use
+
 test?:.def!(
   Messages.t
   () => self.to\s.ends_with? "\test")
@@ -52,13 +54,17 @@ test\result\display: .defcase! {
   end
   test\result\fail\t  _ => do
     (suite behavior) = self.test\path**
-    ' ❌$ should $\n\t$ $ $\n' .printf (suite, behavior, self.test\meta**)
+
+    msg = ' ❌$ should $\n\t$ $ $\n'.sprintf(suite, behavior, self.test\meta**)
+    io.stdout.write msg
   end,
 }
 
-gab\fiber:.make () => do
+Fibers.make () => do
   suites\all .each (c s) => do
-    '✔ $\n' .printf (s)
+    msg = '✔ $\n'.sprintf(s)
+    io.stdout.write msg
+
     c .each test\result\display:
   end
 end

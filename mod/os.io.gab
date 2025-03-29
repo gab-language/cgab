@@ -1,1 +1,7 @@
-'cio'.use
+io = 'cio'.use
+
+stdout = io.stdout
+
+println:.def! () => stdout.write('$\n'.sprintf self)
+
+io

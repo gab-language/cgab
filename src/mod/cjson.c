@@ -159,8 +159,8 @@ gab_value *push_value(struct gab_triple gab, const char *json, gab_value *sp,
   return sp;
 }
 
-a_gab_value *gab_jsonlib_decode(struct gab_triple gab, uint64_t argc,
-                                gab_value argv[static argc]) {
+union gab_value_pair gab_jsonlib_decode(struct gab_triple gab, uint64_t argc,
+                                        gab_value argv[static argc]) {
   gab_value str = gab_arg(0);
 
   if (gab_valkind(str) != kGAB_STRING)
@@ -191,7 +191,7 @@ a_gab_value *gab_jsonlib_decode(struct gab_triple gab, uint64_t argc,
                  gab_string(gab, "Invalid character"));
       break;
     }
-    return nullptr;
+    return gab_union_cvalid(gab_nil);
   }
 
   uint64_t token = 0;
@@ -202,7 +202,7 @@ a_gab_value *gab_jsonlib_decode(struct gab_triple gab, uint64_t argc,
   gab_value res = *(--sp);
 
   gab_vmpush(gab_thisvm(gab), gab_ok, res);
-  return nullptr;
+  return gab_union_cvalid(gab_nil);
 }
 
 GAB_DYNLIB_MAIN_FN {
@@ -212,5 +212,10 @@ GAB_DYNLIB_MAIN_FN {
                    gab_snative(gab, "as\\json", gab_jsonlib_decode),
                });
 
-  return a_gab_value_one(gab_ok);
+  gab_value res[] = {gab_ok};
+
+  return (union gab_value_pair){
+      .status = gab_cvalid,
+      .aresult = a_gab_value_create(res, sizeof(res) / sizeof(gab_value)),
+  };
 }

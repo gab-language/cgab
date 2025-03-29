@@ -43,7 +43,7 @@ int run_string(const char *string, int flags, size_t jobs) {
   // This is a weird case where we actually want to include the null terminator
   s_char src = s_char_create(string, strlen(string) + 1);
 
-  a_gab_value *result =
+  union gab_value_pair res =
       gab_exec(gab, (struct gab_exec_argt){
                         .name = MAIN_MODULE,
                         .source = (char *)src.data,
@@ -52,13 +52,18 @@ int run_string(const char *string, int flags, size_t jobs) {
 
   int exit_code = 1;
 
-  if (result) {
-
-    if (result->len)
-      if (result->data[0] == gab_ok)
+  if (res.status == gab_cvalid) {
+    if (res.aresult->len)
+      if (res.aresult->data[0] == gab_ok)
         exit_code = 0;
 
-    free(result);
+    gab_value strmsg = gab_valintos(gab, res.aresult->data[1]);
+    fprintf(stderr, "ERROR: %s\n", gab_strdata(&strmsg));
+
+    free(res.aresult);
+  } else {
+    gab_value strmsg = gab_valintos(gab, res.vresult);
+    fprintf(stderr, "INVALID: %s\n", gab_strdata(&strmsg));
   }
 
   gab_destroy(gab);
@@ -72,21 +77,27 @@ int run_file(const char *path, int flags, size_t jobs) {
       .jobs = jobs,
   });
 
-  a_gab_value *result = gab_suse(gab, path);
+  union gab_value_pair res = gab_use(gab, (struct gab_use_argt){
+                                              .sname = path,
+                                          });
 
-  int exit_code = 1;
+  if (res.status == gab_cvalid) {
+    assert(res.aresult->len > 0);
 
-  if (result) {
-    if (result->len) {
-      if (result->data[0] == gab_ok)
-        exit_code = 0;
-    }
+    if (res.aresult->data[0] == gab_ok)
+      return free(res.aresult), gab_destroy(gab), 0;
 
-    free(result);
+    gab_value err = gab_mrecat(gab, res.aresult->data[1], "hint");
+    gab_value strmsg = gab_valintos(gab, err);
+    fprintf(stderr, "%s\n", gab_strdata(&strmsg));
+
+    return free(res.aresult), gab_destroy(gab), 1;
+  } else {
+    gab_value strmsg = gab_valintos(gab, res.vresult);
+    fprintf(stderr, "%s\n", gab_strdata(&strmsg));
+
+    return gab_destroy(gab), 1;
   }
-
-  gab_destroy(gab);
-  return exit_code;
 }
 
 struct option {

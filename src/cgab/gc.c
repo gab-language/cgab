@@ -236,6 +236,15 @@ static inline void for_child_do(struct gab_obj *obj, gab_gc_visitor fnc,
   default:
     break;
 
+  case kGAB_PROTOTYPE: {
+    struct gab_oprototype *prt = (struct gab_oprototype *)obj;
+
+    assert(gab_valiso(prt->env));
+    fnc(gab, gab_valtoo(prt->env));
+
+    break;
+  }
+
   case kGAB_FIBERRUNNING:
   case kGAB_FIBERDONE:
   case kGAB_FIBER: {

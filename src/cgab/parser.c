@@ -81,9 +81,9 @@
  */
 
 struct parser {
-  struct gab_errdetails *err_out;
   struct gab_src *src;
   size_t offset;
+  gab_value err;
 };
 
 struct bc {
@@ -91,11 +91,12 @@ struct bc {
   v_uint64_t bc_toks;
   v_gab_value *ks;
 
-  struct gab_errdetails *err_out;
   struct gab_src *src;
 
   uint8_t prev_op, pprev_op;
   size_t prev_op_at;
+
+  gab_value err;
 };
 
 enum prec_k { kNONE, kEXP, kBINARY_SEND, kSEND, kSPECIAL_SEND, kPRIMARY };
@@ -306,14 +307,13 @@ static inline bool match_terminator(struct parser *parser) {
 
 static int vparser_error(struct gab_triple gab, struct parser *parser,
                          enum gab_status e, const char *fmt, va_list args) {
-  gab_vfpanic(gab, gab.eg->serr, args,
-              (struct gab_err_argt){
-                  .src = parser->src,
-                  .status = e,
-                  .tok = parser->offset - 1,
-                  .note_fmt = fmt,
-                  .err_out = parser->err_out,
-              });
+  parser->err = gab_vspanicf(gab, args,
+                             (struct gab_err_argt){
+                                 .src = parser->src,
+                                 .status = e,
+                                 .tok = parser->offset - 1,
+                                 .note_fmt = fmt,
+                             });
 
   va_end(args);
 
@@ -496,8 +496,8 @@ static gab_value parse_expressions_body(struct gab_triple gab,
   while (!match_terminator(parser) && !match_token(parser, TOKEN_EOF)) {
     gab_value rhs = parse_expression(gab, parser, kEXP);
 
-    if (rhs == gab_invalid)
-      return gab_invalid;
+    if (rhs == gab_cinvalid)
+      return gab_cinvalid;
 
     gab_value tup = node_value(gab, rhs);
     node_stealinfo(parser->src, rhs, tup);
@@ -526,13 +526,13 @@ gab_value parse_expressions_until(struct gab_triple gab, struct parser *parser,
   while (!match_and_eat_token(gab, parser, t)) {
     gab_value exp = parse_expression(gab, parser, kEXP);
 
-    if (exp == gab_invalid)
-      return gab_invalid;
+    if (exp == gab_cinvalid)
+      return gab_cinvalid;
 
     result = gab_lstcat(gab, result, exp);
 
-    if (result == gab_invalid)
-      return gab_invalid;
+    if (result == gab_cinvalid)
+      return gab_cinvalid;
 
     skip_newlines(gab, parser);
   }
@@ -548,7 +548,7 @@ fin:
 gab_value parse_expression(struct gab_triple gab, struct parser *parser,
                            enum prec_k prec) {
   if (!eat_token(gab, parser))
-    return gab_invalid;
+    return gab_cinvalid;
 
   size_t tok = prev_tok(parser);
 
@@ -557,11 +557,11 @@ gab_value parse_expression(struct gab_triple gab, struct parser *parser,
   if (rule.prefix == nullptr)
     return parser_error(gab, parser, GAB_UNEXPECTED_TOKEN,
                         FMT_EXPECTED_EXPRESSION),
-           gab_invalid;
+           gab_cinvalid;
 
   size_t begin = parser->offset;
 
-  gab_value node = rule.prefix(gab, parser, gab_invalid);
+  gab_value node = rule.prefix(gab, parser, gab_cinvalid);
 
   size_t end = parser->offset;
 
@@ -570,11 +570,11 @@ gab_value parse_expression(struct gab_triple gab, struct parser *parser,
   skip_newlines(gab, parser);
 
   while (prec <= get_parse_rule(curr_tok(parser)).prec) {
-    if (node == gab_invalid)
-      return gab_invalid;
+    if (node == gab_cinvalid)
+      return gab_cinvalid;
 
     if (!eat_token(gab, parser))
-      return gab_invalid;
+      return gab_cinvalid;
 
     rule = get_parse_rule(prev_tok(parser));
 
@@ -641,7 +641,7 @@ gab_value parse_exp_sstr(struct gab_triple gab, struct parser *parser,
                         "'a unicode codepoint by number: " GAB_MAGENTA
                         "\\u[" GAB_YELLOW "2502" GAB_MAGENTA "]" GAB_GREEN
                         "'" GAB_RESET),
-           gab_invalid;
+           gab_cinvalid;
 
   gab_value str = gab_nstring(gab, parsed->len, parsed->data);
 
@@ -656,8 +656,8 @@ gab_value parse_exp_rec(struct gab_triple gab, struct parser *parser,
 
   gab_value result = parse_expressions_until(gab, parser, TOKEN_RBRACK);
 
-  if (result == gab_invalid)
-    return gab_invalid;
+  if (result == gab_cinvalid)
+    return gab_cinvalid;
 
   gab_value lhs_node = node_value(gab, gab_message(gab, tGAB_RECORD));
   gab_value msg_node = gab_message(gab, mGAB_MAKE);
@@ -680,8 +680,8 @@ gab_value parse_exp_lst(struct gab_triple gab, struct parser *parser,
 
   gab_value result = parse_expressions_until(gab, parser, TOKEN_RBRACE);
 
-  if (result == gab_invalid)
-    return gab_invalid;
+  if (result == gab_cinvalid)
+    return gab_cinvalid;
 
   gab_value lhs_node = node_value(gab, gab_message(gab, tGAB_LIST));
   gab_value msg_node = gab_message(gab, mGAB_MAKE);
@@ -707,11 +707,11 @@ gab_value parse_exp_blk(struct gab_triple gab, struct parser *parser,
                         gab_value lhs) {
   gab_value res = parse_expressions_body(gab, parser);
 
-  if (res == gab_invalid)
-    return gab_invalid;
+  if (res == gab_cinvalid)
+    return gab_cinvalid;
 
   if (!expect_token(gab, parser, TOKEN_END))
-    return gab_invalid;
+    return gab_cinvalid;
 
   return res;
 }
@@ -724,8 +724,8 @@ gab_value parse_exp_send(struct gab_triple gab, struct parser *parser,
 
   gab_value rhs = parse_optional_expression_prec(gab, parser, kSEND + 1);
 
-  if (rhs == gab_invalid)
-    return gab_invalid;
+  if (rhs == gab_cinvalid)
+    return gab_cinvalid;
 
   gab_value node = node_send(gab, lhs, gab_strtomsg(msg), rhs);
 
@@ -745,8 +745,8 @@ gab_value parse_exp_send_op(struct gab_triple gab, struct parser *parser,
 
   gab_value rhs = parse_optional_expression_prec(gab, parser, kBINARY_SEND + 1);
 
-  if (rhs == gab_invalid)
-    return gab_invalid;
+  if (rhs == gab_cinvalid)
+    return gab_cinvalid;
 
   gab_value node = node_send(gab, lhs, gab_strtomsg(msg), rhs);
 
@@ -766,8 +766,8 @@ gab_value parse_exp_send_special(struct gab_triple gab, struct parser *parser,
 
   gab_value rhs = parse_expression(gab, parser, kEXP);
 
-  if (rhs == gab_invalid)
-    return gab_invalid;
+  if (rhs == gab_cinvalid)
+    return gab_cinvalid;
 
   gab_value node = node_send(gab, lhs, gab_strtomsg(msg), rhs);
 
@@ -803,24 +803,23 @@ const struct parse_rule parse_rules[] = {
 
 struct parse_rule get_parse_rule(gab_token k) { return parse_rules[k]; }
 
-gab_value parse(struct gab_triple gab, struct parser *parser,
-                uint8_t narguments, gab_value *arguments) {
+gab_value parse(struct gab_triple gab, struct parser *parser) {
   size_t begin = parser->offset;
 
   if (curr_tok(parser) == TOKEN_EOF)
-    return gab_invalid;
+    return gab_cinvalid;
 
   if (curr_tok(parser) == TOKEN_ERROR) {
     eat_token(gab, parser);
     parser_error(gab, parser, GAB_MALFORMED_TOKEN,
                  "This token is malformed or unrecognized.");
-    return gab_invalid;
+    return gab_cinvalid;
   }
 
   gab_value ast = parse_expressions_body(gab, parser);
 
-  if (ast == gab_invalid)
-    return gab_invalid;
+  if (ast == gab_cinvalid)
+    return gab_cinvalid;
 
   if (gab.flags & fGAB_AST_DUMP)
     gab_fvalinspect(gab.eg->sout, ast, -1), printf("\n");
@@ -835,7 +834,8 @@ gab_value parse(struct gab_triple gab, struct parser *parser,
   return ast;
 }
 
-gab_value gab_parse(struct gab_triple gab, struct gab_build_argt args) {
+union gab_value_pair gab_parse(struct gab_triple gab,
+                               struct gab_parse_argt args) {
   gab.flags = args.flags;
 
   args.name = args.name ? args.name : "__main__";
@@ -847,22 +847,17 @@ gab_value gab_parse(struct gab_triple gab, struct gab_build_argt args) {
   struct gab_src *src =
       gab_src(gab, name, (char *)args.source, strlen(args.source) + 1);
 
-  struct parser parser = {.src = src, .err_out = args.err_out};
+  struct parser parser = {.src = src};
 
-  gab_value *vargs = nullptr;
+  gab_value ast = parse(gab, &parser);
 
-  if (args.len) {
-    gab_value vargv[args.len];
+  gab_gcunlock(gab);
 
-    for (int i = 0; i < args.len; i++)
-      vargv[i] = gab_string(gab, args.argv[i]);
-
-    vargs = vargv;
-  }
-
-  gab_value ast = parse(gab, &parser, args.len, vargs);
-
-  return gab_gcunlock(gab), ast;
+  if (ast == gab_cinvalid)
+    return (union gab_value_pair){.status = gab_cinvalid,
+                                  .vresult = parser.err};
+  else
+    return (union gab_value_pair){.status = gab_cvalid, .vresult = ast};
 }
 
 /*
@@ -890,14 +885,13 @@ static int vbc_error(struct gab_triple gab, struct bc *bc, gab_value node,
   if (tok > 0)
     tok--;
 
-  gab_vfpanic(gab, gab.eg->serr, args,
-              (struct gab_err_argt){
-                  .src = bc->src,
-                  .status = e,
-                  .tok = tok,
-                  .note_fmt = fmt,
-                  .err_out = bc->err_out,
-              });
+  bc->err = gab_vspanicf(gab, args,
+                         (struct gab_err_argt){
+                             .src = bc->src,
+                             .status = e,
+                             .tok = tok,
+                             .note_fmt = fmt,
+                         });
 
   va_end(args);
 
@@ -987,7 +981,7 @@ static inline void push_k(struct bc *bc, uint16_t k, gab_value node) {
 }
 
 static inline void push_loadi(struct bc *bc, gab_value i, gab_value node) {
-  assert(i == gab_invalid || i == gab_true || i == gab_false || i == gab_nil);
+  assert(i == gab_cinvalid || i == gab_true || i == gab_false || i == gab_nil);
 
   switch (i) {
   case gab_nil:
@@ -1114,10 +1108,10 @@ static inline void push_storel(struct bc *bc, uint8_t local, gab_value node) {
 
 static inline uint8_t encode_arity(struct gab_triple gab, gab_value lhs,
                                    gab_value rhs) {
-  if (rhs == gab_invalid && lhs == gab_invalid)
+  if (rhs == gab_cinvalid && lhs == gab_cinvalid)
     return 1;
 
-  if (rhs == gab_invalid || node_isempty(rhs)) {
+  if (rhs == gab_cinvalid || node_isempty(rhs)) {
     bool is_multi = node_ismulti(gab, lhs);
     size_t len = node_len(gab, lhs);
 
@@ -1148,11 +1142,11 @@ static inline void push_send(struct gab_triple gab, struct bc *bc, gab_value m,
   assert(gab_valkind(m) == kGAB_MESSAGE);
 
   uint16_t ks = addk(gab, bc, m);
-  addk(gab, bc, gab_invalid);
+  addk(gab, bc, gab_cinvalid);
 
   for (int i = 0; i < cGAB_SEND_CACHE_LEN; i++) {
     for (int j = 0; j < GAB_SEND_CACHE_SIZE; j++) {
-      addk(gab, bc, gab_invalid);
+      addk(gab, bc, gab_cinvalid);
     }
   }
 
@@ -1197,7 +1191,7 @@ static inline bool push_trim_node(struct gab_triple gab, struct bc *bc,
     return true;
   }
 
-  if (values == gab_invalid) {
+  if (values == gab_cinvalid) {
     push_op(bc, OP_TRIM, node);
     push_byte(bc, want, node);
     return true;
@@ -1240,7 +1234,7 @@ static inline void push_listpack(struct gab_triple gab, struct bc *bc,
                                  gab_value rhs, uint8_t below, uint8_t above,
                                  gab_value node) {
   push_op(bc, OP_PACK_LIST, node);
-  push_byte(bc, encode_arity(gab, rhs, gab_invalid), node);
+  push_byte(bc, encode_arity(gab, rhs, gab_cinvalid), node);
   push_byte(bc, below, node);
   push_byte(bc, above, node);
 }
@@ -1249,7 +1243,7 @@ static inline void push_recordpack(struct gab_triple gab, struct bc *bc,
                                    gab_value rhs, uint8_t below, uint8_t above,
                                    gab_value node) {
   push_op(bc, OP_PACK_RECORD, node);
-  push_byte(bc, encode_arity(gab, rhs, gab_invalid), node);
+  push_byte(bc, encode_arity(gab, rhs, gab_cinvalid), node);
   push_byte(bc, below, node);
   push_byte(bc, above, node);
 }
@@ -1271,7 +1265,7 @@ static inline void push_ret(struct gab_triple gab, struct bc *bc, gab_value tup,
       uint8_t have_byte = v_uint8_t_val_at(&bc->bc, bc->bc.len - 1);
       v_uint8_t_set(&bc->bc, bc->bc.len - 1, have_byte | fHAVE_TAIL);
       push_op(bc, OP_RETURN, node);
-      push_byte(bc, encode_arity(gab, tup, gab_invalid), node);
+      push_byte(bc, encode_arity(gab, tup, gab_cinvalid), node);
       return;
     }
     case OP_TRIM: {
@@ -1284,7 +1278,7 @@ static inline void push_ret(struct gab_triple gab, struct bc *bc, gab_value tup,
       bc->bc.len -= 2;
       bc->bc_toks.len -= 2;
       push_op(bc, OP_RETURN, node);
-      push_byte(bc, encode_arity(gab, tup, gab_invalid), node);
+      push_byte(bc, encode_arity(gab, tup, gab_cinvalid), node);
       return;
     }
     }
@@ -1292,7 +1286,7 @@ static inline void push_ret(struct gab_triple gab, struct bc *bc, gab_value tup,
 #endif
 
   push_op(bc, OP_RETURN, node);
-  push_byte(bc, encode_arity(gab, tup, gab_invalid), node);
+  push_byte(bc, encode_arity(gab, tup, gab_cinvalid), node);
 }
 
 void patch_init(struct bc *bc, uint8_t nlocals) {
@@ -1332,7 +1326,7 @@ gab_value peek_env(gab_value env, int depth) {
   size_t nenv = gab_reclen(env);
 
   if (depth + 1 > nenv)
-    return gab_undefined;
+    return gab_cundefined;
 
   return gab_uvrecat(env, nenv - depth - 1);
 }
@@ -1365,13 +1359,13 @@ static struct lookup_res add_upvalue(struct gab_triple gab, gab_value env,
                                      gab_value id, int depth) {
   gab_value ctx = peek_env(env, depth);
 
-  if (ctx == gab_undefined)
+  if (ctx == gab_cundefined)
     return (struct lookup_res){env, kLOOKUP_NONE};
 
   // Don't pull redundant upvalues
   gab_value current_upv_idx = gab_recat(ctx, id);
 
-  if (current_upv_idx != gab_undefined)
+  if (current_upv_idx != gab_cundefined)
     return (struct lookup_res){env, kLOOKUP_UPV, gab_valtoi(current_upv_idx)};
 
   uint16_t count = upvalues_in_env(ctx);
@@ -1423,7 +1417,7 @@ static int resolve_local(struct gab_triple gab, gab_value env, gab_value id,
                          uint8_t depth) {
   gab_value ctx = peek_env(env, depth);
 
-  if (ctx == gab_undefined)
+  if (ctx == gab_cundefined)
     return -1;
 
   return lookup_local(ctx, id);
@@ -1476,8 +1470,9 @@ gab_value compile_symbol(struct gab_triple gab, struct bc *bc, gab_value tuple,
     push_loadu(bc, res.idx, tuple);
     return res.env;
   default:
-    bc_error(gab, bc, tuple, GAB_UNBOUND_SYMBOL, "$ is unbound", gab_bintostr(id));
-    return gab_invalid;
+    bc_error(gab, bc, tuple, GAB_UNBOUND_SYMBOL, "$ is unbound",
+             gab_bintostr(id));
+    return gab_cinvalid;
   }
 };
 
@@ -1506,7 +1501,7 @@ gab_value compile_value(struct gab_triple gab, struct bc *bc, gab_value tuple,
 
   default:
     assert(false && "UN-UNQUOATABLE VALUE");
-    return gab_invalid;
+    return gab_cinvalid;
   }
 }
 
@@ -1585,14 +1580,14 @@ gab_value unpack_binding_into_env(struct gab_triple gab, struct bc *bc,
       err:
         return bc_error(gab, bc, bindings, GAB_INVALID_REST_VARIABLE,
                         "$ is invalid assignment", lhs),
-               gab_invalid;
+               gab_cinvalid;
       }
     }
 
     default:
       return bc_error(gab, bc, bindings, GAB_INVALID_REST_VARIABLE,
                       "$ is invalid assignment", binding),
-             gab_invalid;
+             gab_cinvalid;
     }
   }
 
@@ -1603,11 +1598,11 @@ gab_value unpack_binding_into_env(struct gab_triple gab, struct bc *bc,
     push_recordpack(gab, bc, values, recpack_at_n,
                     actual_targets - recpack_at_n - 1, bindings);
   else if (!push_trim_node(gab, bc, actual_targets, values, bindings))
-    return gab_invalid;
+    return gab_cinvalid;
 
   env = gab_urecput(gab, env, local_ctx, ctx);
 
-  if (values == gab_invalid)
+  if (values == gab_cinvalid)
     return env;
 
   for (size_t i = 0; i < actual_targets; i++) {
@@ -1632,7 +1627,7 @@ gab_value unpack_binding_into_env(struct gab_triple gab, struct bc *bc,
     default:
       return bc_error(gab, bc, bindings, GAB_INVALID_REST_VARIABLE,
                       "$ is invalid assignment", target),
-             gab_invalid;
+             gab_cinvalid;
     }
 
     if (i + 1 < actual_targets)
@@ -1659,18 +1654,18 @@ gab_value compile_block(struct gab_triple gab, struct bc *bc, gab_value node,
                                                    .env = env,
                                                    .bindings = bindings,
                                                    .mod = bc->src->name,
-                                                   .err_out = bc->err_out,
                                                });
 
-  if (pair.prototype == gab_invalid)
-    return gab_invalid;
+  if (pair.status == gab_cinvalid)
+    return gab_cinvalid;
 
-  env = gab_lstpop(gab, pair.environment, nullptr);
+  gab_value prt = pair.vresult;
+  assert(gab_valkind(prt) == kGAB_PROTOTYPE);
 
-  assert(gab_valkind(pair.prototype) == kGAB_PROTOTYPE);
+  env = gab_lstpop(gab, gab_prtenv(prt), nullptr);
 
   push_op(bc, OP_BLOCK, RHS);
-  push_short(bc, addk(gab, bc, pair.prototype), RHS);
+  push_short(bc, addk(gab, bc, prt), RHS);
 
   return env;
 }
@@ -1682,13 +1677,13 @@ gab_value compile_assign(struct gab_triple gab, struct bc *bc, gab_value node,
 
   env = compile_tuple(gab, bc, rhs_node, env);
 
-  if (env == gab_invalid)
-    return gab_invalid;
+  if (env == gab_cinvalid)
+    return gab_cinvalid;
 
   env = unpack_binding_into_env(gab, bc, lhs_node, env, rhs_node);
 
-  if (env == gab_invalid)
-    return gab_invalid;
+  if (env == gab_cinvalid)
+    return gab_cinvalid;
 
   return env;
 }
@@ -1704,7 +1699,7 @@ gab_value compile_specialform(struct gab_triple gab, struct bc *bc,
     return compile_block(gab, bc, node, env);
 
   assert(false && "UNHANDLED SPECIAL FORM");
-  return gab_invalid;
+  return gab_cinvalid;
 };
 
 gab_value compile_record(struct gab_triple gab, struct bc *bc, gab_value tuple,
@@ -1725,17 +1720,17 @@ gab_value compile_record(struct gab_triple gab, struct bc *bc, gab_value tuple,
 
     env = compile_tuple(gab, bc, lhs_node, env);
 
-    if (env == gab_invalid)
-      return gab_invalid;
+    if (env == gab_cinvalid)
+      return gab_cinvalid;
 
     if (!node_isempty(rhs_node))
       if (!push_trim_node(gab, bc, 1, lhs_node, lhs_node))
-        return gab_invalid;
+        return gab_cinvalid;
 
     env = compile_tuple(gab, bc, rhs_node, env);
 
-    if (env == gab_invalid)
-      return gab_invalid;
+    if (env == gab_cinvalid)
+      return gab_cinvalid;
 
     push_send(gab, bc, msg, lhs_node, rhs_node, node);
     break;
@@ -1749,12 +1744,12 @@ gab_value compile_record(struct gab_triple gab, struct bc *bc, gab_value tuple,
 
       env = compile_tuple(gab, bc, child_node, env);
 
-      if (env == gab_invalid)
-        return gab_invalid;
+      if (env == gab_cinvalid)
+        return gab_cinvalid;
 
       if (i != last_node)
         if (!push_trim_node(gab, bc, 0, child_node, child_node))
-          return gab_invalid;
+          return gab_cinvalid;
     }
     break;
   }
@@ -1774,8 +1769,8 @@ gab_value compile_tuple(struct gab_triple gab, struct bc *bc, gab_value node,
     gab_value child_node = gab_uvrecat(node, i);
     env = compile_value(gab, bc, node, i, env);
 
-    if (env == gab_invalid)
-      return gab_invalid;
+    if (env == gab_cinvalid)
+      return gab_cinvalid;
 
     if (node_ismulti(gab, child_node) && i != last_node) {
       push_op(bc, OP_TRIM, node);
@@ -1861,19 +1856,20 @@ union gab_value_pair gab_compile(struct gab_triple gab,
                                  struct gab_compile_argt args) {
   assert(gab_valkind(args.ast) == kGAB_RECORD);
   assert(gab_valkind(args.env) == kGAB_RECORD);
+  gab.flags |= args.flags;
 
   struct gab_src *src = d_gab_src_read(&gab.eg->sources, args.mod);
 
   if (src == nullptr)
-    return (union gab_value_pair){{gab_invalid, gab_invalid}};
+    return (union gab_value_pair){{gab_cinvalid, gab_cinvalid}};
 
-  struct bc bc = {.ks = &src->constants, .src = src, .err_out = args.err_out};
+  struct bc bc = {.ks = &src->constants, .src = src};
 
   args.env =
-      unpack_binding_into_env(gab, &bc, args.bindings, args.env, gab_invalid);
+      unpack_binding_into_env(gab, &bc, args.bindings, args.env, gab_cinvalid);
 
-  if (args.env == gab_invalid)
-    return (union gab_value_pair){{gab_invalid, gab_invalid}};
+  if (args.env == gab_cinvalid)
+    return (union gab_value_pair){{gab_cinvalid, bc.err}};
 
   size_t nenvs = gab_reclen(args.env);
   assert(nenvs > 0);
@@ -1881,15 +1877,15 @@ union gab_value_pair gab_compile(struct gab_triple gab,
   size_t nargs = gab_reclen(gab_uvrecat(args.env, nenvs - 1));
   assert(nargs < GAB_ARG_MAX);
 
-  if (!push_trim_node(gab, &bc, nargs, gab_invalid, args.bindings))
-    return (union gab_value_pair){{gab_invalid, gab_invalid}};
+  if (!push_trim_node(gab, &bc, nargs, gab_cinvalid, args.bindings))
+    return (union gab_value_pair){{gab_cinvalid, bc.err}};
 
   assert(bc.bc.len == bc.bc_toks.len);
   args.env = compile_tuple(gab, &bc, args.ast, args.env);
   assert(bc.bc.len == bc.bc_toks.len);
 
-  if (args.env == gab_invalid)
-    return bc_destroy(&bc), (union gab_value_pair){{gab_invalid, gab_invalid}};
+  if (args.env == gab_cinvalid)
+    return bc_destroy(&bc), (union gab_value_pair){{gab_cinvalid, bc.err}};
 
   assert(gab_reclen(args.env) == nenvs);
 
@@ -1915,14 +1911,16 @@ union gab_value_pair gab_compile(struct gab_triple gab,
 
   size_t begin = end - len;
 
-  // It is undefined behavior for a VLA to have length 0.
+  /*
+   * Some blocks may have 0 upvalues.
+   * To prevent undefined behavior, just allocate an extra
+   * byte that is always unused.
+   */
   char data[nupvalues + 1];
   build_upvdata(args.env, nupvalues, data);
 
   size_t bco = d_uint64_t_read(&bc.src->node_begin_toks, args.ast);
   v_uint64_t_set(&bc.src->bytecode_toks, begin, bco);
-
-  gab_value e = peek_env(args.env, 0);
 
   gab_value proto = gab_prototype(gab, src, begin, len,
                                   (struct gab_prototype_argt){
@@ -1930,28 +1928,22 @@ union gab_value_pair gab_compile(struct gab_triple gab,
                                       .nlocals = nlocals,
                                       .narguments = nargs,
                                       .nslots = (nlocals + 3),
-                                      .shape = gab_recshp(e),
-                                      /*.data = upvdata,*/
+                                      .env = args.env,
                                       .data = data,
                                   });
 
   if (gab.flags & fGAB_BUILD_DUMP)
     gab_fmodinspect(gab.eg->sout, proto);
 
-  // call srcappend to append bytecode to src module
-  // actually track bc_tok offset
-  // addk should add constant to source
-  // addk should check for common immediates
-  //  - :ok, :err, :nil, :none, 1, 2
-
   return (union gab_value_pair){
-      .environment = args.env,
-      .prototype = proto,
+      .status = gab_cvalid,
+      .vresult = proto,
   };
 }
 
-gab_value gab_build(struct gab_triple gab, struct gab_build_argt args) {
-  gab.flags |= args.flags;
+union gab_value_pair gab_build(struct gab_triple gab,
+                               struct gab_parse_argt args) {
+  gab.flags = args.flags;
 
   args.name = args.name ? args.name : "__main__";
 
@@ -1959,15 +1951,15 @@ gab_value gab_build(struct gab_triple gab, struct gab_build_argt args) {
 
   gab_value mod = gab_string(gab, args.name);
 
-  gab_value ast = gab_parse(gab, args);
+  union gab_value_pair ast = gab_parse(gab, args);
 
-  if (ast == gab_invalid)
-    return gab_gcunlock(gab), gab_invalid;
+  if (ast.status == gab_cinvalid)
+    return gab_gcunlock(gab), ast;
 
   struct gab_src *src = d_gab_src_read(&gab.eg->sources, mod);
 
   if (src == nullptr)
-    return gab_gcunlock(gab), gab_invalid;
+    return gab_gcunlock(gab), (union gab_value_pair){.status = gab_cinvalid};
 
   // Default to empty list here
   gab_value bindings = gab_listof(gab);
@@ -1987,24 +1979,24 @@ gab_value gab_build(struct gab_triple gab, struct gab_build_argt args) {
       gab_listof(gab, gab_recordof(gab, gab_binary(gab, "self"), gab_nil));
 
   union gab_value_pair res = gab_compile(gab, (struct gab_compile_argt){
-                                                  .ast = ast,
+                                                  .ast = ast.vresult,
                                                   .env = env,
                                                   .mod = mod,
                                                   .bindings = bindings,
-                                                  .err_out = args.err_out,
                                               });
 
-  if (res.prototype == gab_invalid)
-    return gab_gcunlock(gab), gab_invalid;
+  if (res.status == gab_cinvalid)
+    return gab_gcunlock(gab), res;
 
   gab_srccomplete(gab, src);
 
-  gab_value main = gab_block(gab, res.prototype);
+  gab_value main = gab_block(gab, res.vresult);
 
   gab_iref(gab, main);
-  gab_iref(gab, res.prototype);
+  gab_iref(gab, res.vresult);
   gab_egkeep(gab.eg, main);
-  gab_egkeep(gab.eg, res.prototype);
+  gab_egkeep(gab.eg, res.vresult);
 
-  return gab_gcunlock(gab), main;
+  return gab_gcunlock(gab),
+         (union gab_value_pair){.status = gab_cvalid, .vresult = main};
 }

@@ -37,8 +37,8 @@ gab_value wrap_qfd(struct gab_triple gab, qfd_t qd, bool owning) {
                       });
 }
 
-a_gab_value *gab_iolib_open(struct gab_triple gab, uint64_t argc,
-                            gab_value argv[argc]) {
+union gab_value_pair gab_iolib_open(struct gab_triple gab, uint64_t argc,
+                                    gab_value argv[argc]) {
   gab_value path = gab_arg(1);
   gab_value perm = gab_arg(2);
 
@@ -56,7 +56,7 @@ a_gab_value *gab_iolib_open(struct gab_triple gab, uint64_t argc,
   while (!qd_status(qd))
     switch (gab_yield(gab)) {
     case sGAB_TERM:
-      return nullptr;
+      return gab_union_cvalid(gab_nil);
     case sGAB_COLL:
       gab_gcepochnext(gab);
       gab_sigpropagate(gab);
@@ -69,12 +69,12 @@ a_gab_value *gab_iolib_open(struct gab_triple gab, uint64_t argc,
 
   if (qfd < 0) {
     gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, strerror(-qfd)));
-    return nullptr;
+    return gab_union_cvalid(gab_nil);
   }
 
   gab_vmpush(gab_thisvm(gab), gab_ok, wrap_qfd(gab, qfd, true));
 
-  return nullptr;
+  return gab_union_cvalid(gab_nil);
 }
 
 int64_t osfgetc(struct gab_triple gab, qfd_t qfd, int *c) {
@@ -138,8 +138,8 @@ int osnfread(struct gab_triple gab, qfd_t qfd, size_t n, uint8_t buf[n]) {
   return bytes_read;
 }
 
-a_gab_value *gab_iolib_until(struct gab_triple gab, uint64_t argc,
-                             gab_value argv[argc]) {
+union gab_value_pair gab_iolib_until(struct gab_triple gab, uint64_t argc,
+                                     gab_value argv[argc]) {
   gab_value iostream = gab_arg(0);
   gab_value delim = gab_arg(1);
 
@@ -153,7 +153,7 @@ a_gab_value *gab_iolib_until(struct gab_triple gab, uint64_t argc,
     return gab_pktypemismatch(gab, delim, kGAB_BINARY);
 
   if (gab_strlen(delim) > 1)
-    return gab_fpanic(gab, "Expected delimiter '$' to be one byte long", delim);
+    return gab_panicf(gab, "Expected delimiter '$' to be one byte long", delim);
 
   char delim_byte = gab_binat(delim, 0);
 
@@ -165,7 +165,7 @@ a_gab_value *gab_iolib_until(struct gab_triple gab, uint64_t argc,
 
   for (;;) {
     if (osfgetc(gab, stream, &c) < 0)
-      return nullptr;
+      return gab_union_cvalid(gab_nil);
 
     if (c == EOF)
       break;
@@ -179,11 +179,11 @@ a_gab_value *gab_iolib_until(struct gab_triple gab, uint64_t argc,
   gab_vmpush(gab_thisvm(gab), gab_ok,
              gab_nstring(gab, buffer.len, buffer.data));
 
-  return nullptr;
+  return gab_union_cvalid(gab_nil);
 }
 
-a_gab_value *gab_iolib_scan(struct gab_triple gab, uint64_t argc,
-                            gab_value argv[argc]) {
+union gab_value_pair gab_iolib_scan(struct gab_triple gab, uint64_t argc,
+                                    gab_value argv[argc]) {
   gab_value iostream = gab_arg(0);
   gab_value bytesToRead = gab_arg(1);
 
@@ -197,7 +197,7 @@ a_gab_value *gab_iolib_scan(struct gab_triple gab, uint64_t argc,
 
   if (bytes == 0) {
     gab_vmpush(gab_thisvm(gab), gab_string(gab, ""));
-    return nullptr;
+    return gab_union_cvalid(gab_nil);
   }
 
   char buffer[bytes];
@@ -212,13 +212,13 @@ a_gab_value *gab_iolib_scan(struct gab_triple gab, uint64_t argc,
   else
     gab_vmpush(gab_thisvm(gab), gab_ok, gab_nstring(gab, bytes, buffer));
 
-  return nullptr;
+  return gab_union_cvalid(gab_nil);
 }
 
-a_gab_value *gab_iolib_read(struct gab_triple gab, uint64_t argc,
-                            gab_value argv[argc]) {
+union gab_value_pair gab_iolib_read(struct gab_triple gab, uint64_t argc,
+                                    gab_value argv[argc]) {
   if (argc != 1 || gab_valkind(argv[0]) != kGAB_BOX)
-    return gab_fpanic(gab, "&:read expects a file handle");
+    return gab_panicf(gab, "&:read expects a file handle");
 
   qfd_t stream = *(qfd_t *)gab_boxdata(argv[0]);
 
@@ -227,16 +227,16 @@ a_gab_value *gab_iolib_read(struct gab_triple gab, uint64_t argc,
 
   if (bytes_read < sb.len) {
     gab_vmpush(gab_thisvm(gab), gab_string(gab, "File was not fully read"));
-    return nullptr;
+    return gab_union_cvalid(gab_nil);
   }
 
   gab_vmpush(gab_thisvm(gab), gab_ok, gab_nstring(gab, sb.len, sb.data));
 
-  return nullptr;
+  return gab_union_cvalid(gab_nil);
 }
 
-a_gab_value *gab_iolib_write(struct gab_triple gab, uint64_t argc,
-                             gab_value argv[argc]) {
+union gab_value_pair gab_iolib_write(struct gab_triple gab, uint64_t argc,
+                                     gab_value argv[argc]) {
   gab_value stream = gab_arg(0);
 
   if (gab_valkind(stream) != kGAB_BOX)
@@ -257,7 +257,7 @@ a_gab_value *gab_iolib_write(struct gab_triple gab, uint64_t argc,
   while (!qd_status(qd))
     switch (gab_yield(gab)) {
     case sGAB_TERM:
-      return nullptr;
+      return gab_union_cvalid(gab_nil);
     case sGAB_COLL:
       gab_gcepochnext(gab);
       gab_sigpropagate(gab);
@@ -273,7 +273,7 @@ a_gab_value *gab_iolib_write(struct gab_triple gab, uint64_t argc,
   else
     gab_vmpush(gab_thisvm(gab), gab_ok);
 
-  return nullptr;
+  return gab_union_cvalid(gab_nil);
 }
 
 GAB_DYNLIB_MAIN_FN {
@@ -281,7 +281,7 @@ GAB_DYNLIB_MAIN_FN {
 
   thrd_t io_t;
   if (thrd_create(&io_t, io_loop_cb, &initialized) != thrd_success)
-    return gab_fpanic(gab, "Failed to initialize QIO loop");
+    return gab_panicf(gab, "Failed to initialize QIO loop");
 
   while (!initialized)
     ;
@@ -337,5 +337,8 @@ GAB_DYNLIB_MAIN_FN {
 
   gab_value res[] = {gab_ok, gab_strtomsg(t)};
 
-  return a_gab_value_create(res, 2);
+  return (union gab_value_pair){
+      .status = gab_cvalid,
+      .aresult = a_gab_value_create(res, sizeof(res) / sizeof(gab_value)),
+  };
 }

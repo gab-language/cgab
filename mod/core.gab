@@ -1,12 +1,12 @@
 'cchannels' .use
 'cfibers' .use
-'cfmt' .use
 'cnumbers' .use
 'crecords' .use
 'cstrings'.use
 'cmessages' .use
 'transducers' .use
 'strings' .use
+'os.io'.use
 
 int\between: .def! (
   gab\number:,

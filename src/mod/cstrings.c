@@ -12,8 +12,8 @@ static inline bool instr(char c, const char *set) {
   return false;
 }
 
-a_gab_value *gab_strlib_seqinit(struct gab_triple gab, uint64_t argc,
-                                gab_value argv[argc]) {
+union gab_value_pair gab_strlib_seqinit(struct gab_triple gab, uint64_t argc,
+                                        gab_value argv[argc]) {
   gab_value str = gab_arg(0);
 
   if (gab_valkind(str) != kGAB_STRING)
@@ -23,7 +23,7 @@ a_gab_value *gab_strlib_seqinit(struct gab_triple gab, uint64_t argc,
 
   if (len == 0) {
     gab_vmpush(gab_thisvm(gab), gab_none);
-    return nullptr;
+    return gab_union_cvalid(gab_nil);
   }
 
   const char *data = gab_strdata(&str);
@@ -33,11 +33,11 @@ a_gab_value *gab_strlib_seqinit(struct gab_triple gab, uint64_t argc,
   gab_value grapheme = gab_nstring(gab, end, data);
   gab_vmpush(gab_thisvm(gab), gab_ok, 0, grapheme, 0);
 
-  return nullptr;
+  return gab_union_cvalid(gab_nil);
 }
 
-a_gab_value *gab_strlib_seqnext(struct gab_triple gab, uint64_t argc,
-                                gab_value argv[argc]) {
+union gab_value_pair gab_strlib_seqnext(struct gab_triple gab, uint64_t argc,
+                                        gab_value argv[argc]) {
   gab_value str = gab_arg(0);
   gab_value old = gab_arg(1);
 
@@ -52,7 +52,7 @@ a_gab_value *gab_strlib_seqnext(struct gab_triple gab, uint64_t argc,
 
   if (len <= old_off) {
     gab_vmpush(gab_thisvm(gab), gab_none);
-    return nullptr;
+    return gab_union_cvalid(gab_nil);
   }
 
   const char *data = gab_strdata(&str);
@@ -64,7 +64,7 @@ a_gab_value *gab_strlib_seqnext(struct gab_triple gab, uint64_t argc,
 
   if (len <= old_off + old_bytes) {
     gab_vmpush(gab_thisvm(gab), gab_none);
-    return nullptr;
+    return gab_union_cvalid(gab_nil);
   }
 
   size_t new_bytes =
@@ -76,11 +76,11 @@ a_gab_value *gab_strlib_seqnext(struct gab_triple gab, uint64_t argc,
 
   gab_vmpush(gab_thisvm(gab), gab_ok, new_off, grapheme, new_off);
 
-  return nullptr;
+  return gab_union_cvalid(gab_nil);
 }
 
-a_gab_value *gab_strlib_trim(struct gab_triple gab, uint64_t argc,
-                             gab_value argv[argc]) {
+union gab_value_pair gab_strlib_trim(struct gab_triple gab, uint64_t argc,
+                                     gab_value argv[argc]) {
   gab_value str = gab_arg(0);
   gab_value trimset = gab_arg(1);
 
@@ -96,7 +96,7 @@ a_gab_value *gab_strlib_trim(struct gab_triple gab, uint64_t argc,
 
   if (cstrlen == 0) {
     gab_vmpush(gab_thisvm(gab), str);
-    return nullptr;
+    return gab_union_cvalid(gab_nil);
   }
 
   ctrimset = gab_strdata(&trimset);
@@ -113,11 +113,11 @@ a_gab_value *gab_strlib_trim(struct gab_triple gab, uint64_t argc,
   uint64_t result_len = back - front + 1;
 
   gab_vmpush(gab_thisvm(gab), gab_nstring(gab, result_len, front));
-  return nullptr;
+  return gab_union_cvalid(gab_nil);
 }
 
-a_gab_value *gab_strlib_split(struct gab_triple gab, uint64_t argc,
-                              gab_value argv[argc]) {
+union gab_value_pair gab_strlib_split(struct gab_triple gab, uint64_t argc,
+                                      gab_value argv[argc]) {
   gab_value str = gab_arg(0);
   gab_value sep = gab_arg(1);
 
@@ -128,7 +128,7 @@ a_gab_value *gab_strlib_split(struct gab_triple gab, uint64_t argc,
   uint64_t csep_len = gab_strlen(sep);
 
   if (cstr_len == 0 || csep_len == 0)
-    return nullptr;
+    return gab_union_cvalid(gab_nil);
 
   const char *cstr = gab_strdata(&str);
   const char *csep = gab_strdata(&sep);
@@ -155,42 +155,43 @@ a_gab_value *gab_strlib_split(struct gab_triple gab, uint64_t argc,
 
   gab_vmpush(gab_thisvm(gab), gab_nstring(gab, cstr_len - begin, cstr + begin));
 
-  return nullptr;
+  return gab_union_cvalid(gab_nil);
 }
 
-a_gab_value *gab_binlib_len(struct gab_triple gab, uint64_t argc,
-                            gab_value argv[argc]) {
+union gab_value_pair gab_binlib_len(struct gab_triple gab, uint64_t argc,
+                                    gab_value argv[argc]) {
   gab_value result = gab_number(gab_strlen(argv[0]));
 
   gab_vmpush(gab_thisvm(gab), result);
-  return nullptr;
+  return gab_union_cvalid(gab_nil);
 };
 
-a_gab_value *gab_binlib_strings_into(struct gab_triple gab, uint64_t argc,
-                                     gab_value argv[argc]) {
+union gab_value_pair gab_binlib_strings_into(struct gab_triple gab,
+                                             uint64_t argc,
+                                             gab_value argv[argc]) {
   gab_value bin = gab_arg(0);
 
   gab_value str = gab_bintostr(bin);
 
-  if (str == gab_invalid)
+  if (str == gab_cvalid)
     gab_vmpush(gab_thisvm(gab), gab_err,
                gab_string(gab, "Binary is not valid UTF-8"));
   else
     gab_vmpush(gab_thisvm(gab), gab_ok, str);
 
-  return nullptr;
+  return gab_union_cvalid(gab_nil);
 };
 
-a_gab_value *gab_strlib_len(struct gab_triple gab, uint64_t argc,
-                            gab_value argv[argc]) {
+union gab_value_pair gab_strlib_len(struct gab_triple gab, uint64_t argc,
+                                    gab_value argv[argc]) {
   if (argc != 1) {
-    return gab_fpanic(gab, "&:len expects 1 argument");
+    return gab_panicf(gab, "&:len expects 1 argument");
   }
 
   gab_value result = gab_number(gab_strmblen(argv[0]));
 
   gab_vmpush(gab_thisvm(gab), result);
-  return nullptr;
+  return gab_union_cvalid(gab_nil);
 };
 
 static inline bool begins(const char *str, const char *pat, uint64_t offset) {
@@ -211,8 +212,8 @@ static inline bool ends(const char *str, const char *pat, uint64_t offset) {
   return !memcmp(str + strlen(str) - offset - len, pat, len);
 }
 
-a_gab_value *gab_strlib_blank(struct gab_triple gab, uint64_t argc,
-                              gab_value argv[argc]) {
+union gab_value_pair gab_strlib_blank(struct gab_triple gab, uint64_t argc,
+                                      gab_value argv[argc]) {
   gab_value str = gab_arg(0);
 
   if (gab_valkind(str) != kGAB_STRING)
@@ -223,87 +224,87 @@ a_gab_value *gab_strlib_blank(struct gab_triple gab, uint64_t argc,
   while (*cstr) {
     if (!isspace(*cstr)) {
       gab_vmpush(gab_thisvm(gab), gab_false);
-      return nullptr;
+      return gab_union_cvalid(gab_nil);
     }
 
     cstr++;
   }
 
   gab_vmpush(gab_thisvm(gab), gab_true);
-  return nullptr;
+  return gab_union_cvalid(gab_nil);
 }
 
-a_gab_value *gab_strlib_ends(struct gab_triple gab, uint64_t argc,
-                             gab_value argv[argc]) {
+union gab_value_pair gab_strlib_ends(struct gab_triple gab, uint64_t argc,
+                                     gab_value argv[argc]) {
   switch (argc) {
   case 2: {
     if (gab_valkind(argv[1]) != kGAB_STRING) {
-      return gab_fpanic(gab, "&:ends? expects 1 string argument");
+      return gab_panicf(gab, "&:ends? expects 1 string argument");
     }
 
     const char *str = gab_strdata(argv + 0);
     const char *pat = gab_strdata(argv + 1);
 
     gab_vmpush(gab_thisvm(gab), gab_bool(ends(str, pat, 0)));
-    return nullptr;
+    return gab_union_cvalid(gab_nil);
   }
 
   case 3: {
     if (gab_valkind(argv[1]) != kGAB_STRING) {
-      return gab_fpanic(gab, "&:ends? expects 1 string argument");
+      return gab_panicf(gab, "&:ends? expects 1 string argument");
     }
 
     if (gab_valkind(argv[2]) != kGAB_NUMBER) {
-      return gab_fpanic(gab, "&:ends? expects an optinal number argument");
+      return gab_panicf(gab, "&:ends? expects an optinal number argument");
     }
     const char *pat = gab_strdata(argv + 0);
     const char *str = gab_strdata(argv + 1);
 
     gab_vmpush(gab_thisvm(gab), gab_bool(ends(str, pat, gab_valtou(argv[2]))));
-    return nullptr;
+    return gab_union_cvalid(gab_nil);
   }
   }
 
-  return nullptr;
+  return gab_union_cvalid(gab_nil);
 }
 
-a_gab_value *gab_strlib_begins(struct gab_triple gab, uint64_t argc,
-                               gab_value argv[argc]) {
+union gab_value_pair gab_strlib_begins(struct gab_triple gab, uint64_t argc,
+                                       gab_value argv[argc]) {
   gab_value vstr = gab_arg(0);
   gab_value vpat = gab_arg(1);
   switch (argc) {
   case 2: {
     if (gab_valkind(argv[1]) != kGAB_STRING) {
-      return gab_fpanic(gab, "&:begins? expects 1 string argument");
+      return gab_panicf(gab, "&:begins? expects 1 string argument");
     }
 
     const char *pat = gab_strdata(&vpat);
     const char *str = gab_strdata(&vstr);
 
     gab_vmpush(gab_thisvm(gab), gab_bool(begins(str, pat, 0)));
-    return nullptr;
+    return gab_union_cvalid(gab_nil);
   }
   case 3: {
     if (gab_valkind(argv[1]) != kGAB_STRING) {
-      return gab_fpanic(gab, "&:begins? expects 1 string argument");
+      return gab_panicf(gab, "&:begins? expects 1 string argument");
     }
 
     if (gab_valkind(argv[2]) != kGAB_NUMBER) {
-      return gab_fpanic(gab, "&:begins? expects an optinal number argument");
+      return gab_panicf(gab, "&:begins? expects an optinal number argument");
     }
     const char *pat = gab_strdata(&vpat);
     const char *str = gab_strdata(&vstr);
 
     gab_vmpush(gab_thisvm(gab),
                gab_bool(begins(str, pat, gab_valtou(argv[2]))));
-    return nullptr;
+    return gab_union_cvalid(gab_nil);
   }
   }
-  return nullptr;
+  return gab_union_cvalid(gab_nil);
 }
 
-a_gab_value *gab_binlib_at(struct gab_triple gab, uint64_t argc,
-                           gab_value argv[argc]) {
+union gab_value_pair gab_binlib_at(struct gab_triple gab, uint64_t argc,
+                                   gab_value argv[argc]) {
   gab_value bin = gab_arg(0);
   gab_value idx = gab_arg(1);
   gab_value step = gab_arg(2);
@@ -327,7 +328,7 @@ a_gab_value *gab_binlib_at(struct gab_triple gab, uint64_t argc,
     return gab_pktypemismatch(gab, step, kGAB_NUMBER);
 
   if (stp > 8)
-    return gab_fpanic(gab, "Step size cannot exceed 8 bytes: got $", step);
+    return gab_panicf(gab, "Step size cannot exceed 8 bytes: got $", step);
 
   size_t len = gab_strlen(bin);
 
@@ -338,7 +339,7 @@ a_gab_value *gab_binlib_at(struct gab_triple gab, uint64_t argc,
   size_t offset = index * stp;
 
   if (offset + stp > len)
-    return gab_vmpush(gab_thisvm(gab), gab_none), nullptr;
+    return gab_vmpush(gab_thisvm(gab), gab_none), gab_union_cvalid(gab_nil);
 
   const char *begin = gab_strdata(&bin) + (index * stp);
 
@@ -346,22 +347,22 @@ a_gab_value *gab_binlib_at(struct gab_triple gab, uint64_t argc,
 
   // Cast the char to unsigned - can't shift negative values.
   for (size_t i = 0; i < stp; i++)
-    result |= ((unsigned char) begin[i]) << i;
+    result |= ((unsigned char)begin[i]) << i;
 
   gab_vmpush(gab_thisvm(gab), gab_ok, gab_number(result));
-  return nullptr;
+  return gab_union_cvalid(gab_nil);
 }
 
-a_gab_value *gab_strlib_at(struct gab_triple gab, uint64_t argc,
-                           gab_value argv[argc]) {
+union gab_value_pair gab_strlib_at(struct gab_triple gab, uint64_t argc,
+                                   gab_value argv[argc]) {
   if (argc != 2 && gab_valkind(argv[1]) != kGAB_NUMBER) {
-    return gab_fpanic(gab, "&:at expects 1 number argument");
+    return gab_panicf(gab, "&:at expects 1 number argument");
   }
 
   int64_t index = gab_valtoi(argv[1]);
 
   if (index > gab_strlen(argv[0])) {
-    return gab_fpanic(gab, "Index out of bounds");
+    return gab_panicf(gab, "Index out of bounds");
   }
 
   if (index < 0) {
@@ -372,7 +373,7 @@ a_gab_value *gab_strlib_at(struct gab_triple gab, uint64_t argc,
   char byte = gab_strdata(argv + 0)[index];
 
   gab_vmpush(gab_thisvm(gab), gab_nstring(gab, 1, &byte));
-  return nullptr;
+  return gab_union_cvalid(gab_nil);
 }
 
 s_char utf8_slice(const char *data, size_t len, size_t from, size_t to) {
@@ -405,8 +406,8 @@ s_char utf8_slice(const char *data, size_t len, size_t from, size_t to) {
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define CLAMP(a, b) (MAX(0, MIN(a, b)))
 
-a_gab_value *gab_strlib_slice(struct gab_triple gab, uint64_t argc,
-                              gab_value argv[argc]) {
+union gab_value_pair gab_strlib_slice(struct gab_triple gab, uint64_t argc,
+                                      gab_value argv[argc]) {
   gab_value str = gab_arg(0);
 
   if (gab_valkind(str) != kGAB_STRING)
@@ -417,7 +418,7 @@ a_gab_value *gab_strlib_slice(struct gab_triple gab, uint64_t argc,
   uint64_t len = gab_strlen(argv[0]);
   if (len == 0) {
     gab_vmpush(gab_thisvm(gab), gab_string(gab, ""));
-    return nullptr;
+    return gab_union_cvalid(gab_nil);
   }
 
   uint64_t start = 0, end = len;
@@ -460,7 +461,7 @@ a_gab_value *gab_strlib_slice(struct gab_triple gab, uint64_t argc,
   }
 
   if (start > end)
-    return gab_fpanic(
+    return gab_panicf(
         gab, "slice: expects the start to be before the end, got [$, $]", start,
         end);
 
@@ -469,65 +470,70 @@ a_gab_value *gab_strlib_slice(struct gab_triple gab, uint64_t argc,
   gab_value res = gab_nstring(gab, result.len, result.data);
 
   gab_vmpush(gab_thisvm(gab), res);
-  return nullptr;
+  return gab_union_cvalid(gab_nil);
 }
 
-a_gab_value *gab_strlib_has(struct gab_triple gab, uint64_t argc,
-                            gab_value argv[argc]) {
+union gab_value_pair gab_strlib_has(struct gab_triple gab, uint64_t argc,
+                                    gab_value argv[argc]) {
   if (argc < 2) {
-    return gab_fpanic(gab, "&:has? expects one argument");
+    return gab_panicf(gab, "&:has? expects one argument");
   }
 
   const char *str = gab_strdata(argv + 0);
   const char *pat = gab_strdata(argv + 1);
 
   gab_vmpush(gab_thisvm(gab), gab_bool(strstr(str, pat)));
-  return nullptr;
+  return gab_union_cvalid(gab_nil);
 }
 
-a_gab_value *gab_strlib_string_into(struct gab_triple gab, uint64_t argc,
-                                    gab_value argv[argc]) {
+union gab_value_pair gab_strlib_string_into(struct gab_triple gab,
+                                            uint64_t argc,
+                                            gab_value argv[argc]) {
   gab_vmpush(gab_thisvm(gab), gab_valintos(gab, gab_arg(0)));
-  return nullptr;
+  return gab_union_cvalid(gab_nil);
 }
 
-a_gab_value *gab_strlib_binary_into(struct gab_triple gab, uint64_t argc,
-                                    gab_value argv[argc]) {
+union gab_value_pair gab_strlib_binary_into(struct gab_triple gab,
+                                            uint64_t argc,
+                                            gab_value argv[argc]) {
   gab_vmpush(gab_thisvm(gab), gab_strtobin(gab_arg(0)));
-  return nullptr;
+  return gab_union_cvalid(gab_nil);
 }
 
-a_gab_value *gab_msglib_binary_into(struct gab_triple gab, uint64_t argc,
-                                    gab_value argv[argc]) {
+union gab_value_pair gab_msglib_binary_into(struct gab_triple gab,
+                                            uint64_t argc,
+                                            gab_value argv[argc]) {
   gab_vmpush(gab_thisvm(gab), gab_strtobin(gab_msgtostr(gab_arg(0))));
-  return nullptr;
+  return gab_union_cvalid(gab_nil);
 }
 
-a_gab_value *gab_numlib_binary_into(struct gab_triple gab, uint64_t argc,
-                                    gab_value argv[argc]) {
+union gab_value_pair gab_numlib_binary_into(struct gab_triple gab,
+                                            uint64_t argc,
+                                            gab_value argv[argc]) {
   uint64_t f = gab_valtou(gab_arg(0));
   gab_vmpush(gab_thisvm(gab), gab_nbinary(gab, sizeof(f), (void *)&f));
-  return nullptr;
+  return gab_union_cvalid(gab_nil);
 }
 
-a_gab_value *gab_strlib_messages_into(struct gab_triple gab, uint64_t argc,
-                                      gab_value argv[argc]) {
+union gab_value_pair gab_strlib_messages_into(struct gab_triple gab,
+                                              uint64_t argc,
+                                              gab_value argv[argc]) {
   gab_vmpush(gab_thisvm(gab), gab_strtomsg(gab_arg(0)));
-  return nullptr;
+  return gab_union_cvalid(gab_nil);
 }
 
-a_gab_value *gab_strlib_new(struct gab_triple gab, uint64_t argc,
-                            gab_value argv[argc]) {
+union gab_value_pair gab_strlib_new(struct gab_triple gab, uint64_t argc,
+                                    gab_value argv[argc]) {
   if (argc < 2) {
     gab_vmpush(gab_thisvm(gab), gab_string(gab, ""));
-    return nullptr;
+    return gab_union_cvalid(gab_nil);
   }
 
   gab_value str = gab_valintos(gab, gab_arg(1));
 
   if (argc == 2) {
     gab_vmpush(gab_thisvm(gab), str);
-    return nullptr;
+    return gab_union_cvalid(gab_nil);
   }
 
   gab_gclock(gab);
@@ -539,18 +545,38 @@ a_gab_value *gab_strlib_new(struct gab_triple gab, uint64_t argc,
 
   gab_vmpush(gab_thisvm(gab), str);
   gab_gcunlock(gab);
-  return nullptr;
+  return gab_union_cvalid(gab_nil);
 }
 
-a_gab_value *gab_strlib_numbers_into(struct gab_triple gab, uint64_t argc,
-                                     gab_value argv[argc]) {
+union gab_value_pair gab_strlib_numbers_into(struct gab_triple gab,
+                                             uint64_t argc,
+                                             gab_value argv[argc]) {
   const char *str = gab_strdata(argv + 0);
 
   gab_value res = gab_number(strtod(str, nullptr));
 
   gab_vmpush(gab_thisvm(gab), res);
-  return nullptr;
+  return gab_union_cvalid(gab_nil);
 };
+
+union gab_value_pair gab_fmtlib_sprintf(struct gab_triple gab, uint64_t argc,
+                                        gab_value argv[argc]) {
+  gab_value fmtstr = gab_arg(0);
+
+  const char *fmt = gab_strdata(&fmtstr);
+
+  char buf[1000];
+  int len = gab_nsprintf(buf, sizeof(buf), fmt, argc - 1, argv + 1);
+
+  if (len < 0)
+    return gab_panicf(
+        gab, "Wrong number of format arguments to sprintf (expected $)",
+        gab_number(argc - 1));
+
+  gab_vmpush(gab_thisvm(gab), gab_string(gab, buf));
+
+  return gab_union_cvalid(gab_nil);
+}
 
 GAB_DYNLIB_MAIN_FN {
   gab_value t = gab_type(gab, kGAB_STRING);
@@ -598,7 +624,7 @@ GAB_DYNLIB_MAIN_FN {
           },
           {
               gab_message(gab, "to\\s"),
-              gab_undefined,
+              gab_cundefined,
               gab_snative(gab, "to\\s", gab_strlib_string_into),
           },
           {
@@ -652,10 +678,20 @@ GAB_DYNLIB_MAIN_FN {
               gab_snative(gab, "slice", gab_strlib_slice),
           },
           {
+              gab_message(gab, "sprintf"),
+              t,
+              gab_snative(gab, "sprintf", gab_fmtlib_sprintf),
+          },
+          {
               gab_message(gab, "trim"),
               t,
               gab_snative(gab, "trim", gab_strlib_trim),
           });
 
-  return a_gab_value_one(gab_ok);
+  gab_value res[] = {gab_ok, gab_strtomsg(t)};
+
+  return (union gab_value_pair){
+      .status = gab_cvalid,
+      .aresult = a_gab_value_create(res, sizeof(res) / sizeof(gab_value)),
+  };
 }

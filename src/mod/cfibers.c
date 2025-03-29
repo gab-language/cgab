@@ -1,6 +1,6 @@
 #include "gab.h"
 
-a_gab_value *gab_fiblib_sleep(struct gab_triple gab, uint64_t argc,
+union gab_value_pair gab_fiblib_sleep(struct gab_triple gab, uint64_t argc,
                               gab_value argv[argc]) {
 
   gab_value n = gab_arg(1);
@@ -9,27 +9,27 @@ a_gab_value *gab_fiblib_sleep(struct gab_triple gab, uint64_t argc,
     return gab_pktypemismatch(gab, n, kGAB_NUMBER);
 
   if (thrd_sleep(&(struct timespec){.tv_nsec = gab_valtou(n)}, NULL) < 0)
-    return gab_fpanic(gab, "Error occurred during sleep");
+    return gab_panicf(gab, "Error occurred during sleep");
 
-  return nullptr;
+  return gab_union_cvalid(gab_nil);
 }
 
-a_gab_value *gab_fiblib_await(struct gab_triple gab, uint64_t argc,
+union gab_value_pair gab_fiblib_await(struct gab_triple gab, uint64_t argc,
                               gab_value argv[argc]) {
   gab_value fib = gab_arg(0);
 
-  a_gab_value *res = gab_fibawait(gab, fib);
+  union gab_value_pair res = gab_fibawait(gab, fib);
   gab_value env = gab_fibawaite(gab, fib);
 
-  if (res != nullptr) {
-    gab_nvmpush(gab_thisvm(gab), res->len, res->data);
+  if (res.status == gab_cvalid) {
+    gab_nvmpush(gab_thisvm(gab), res.aresult->len, res.aresult->data);
     gab_vmpush(gab_thisvm(gab), env);
   }
 
-  return nullptr;
+  return gab_union_cvalid(gab_nil);
 }
 
-a_gab_value *gab_fiblib_is_done(struct gab_triple gab, uint64_t argc,
+union gab_value_pair gab_fiblib_is_done(struct gab_triple gab, uint64_t argc,
                                 gab_value argv[argc]) {
   gab_value fib = gab_arg(0);
 
@@ -37,7 +37,7 @@ a_gab_value *gab_fiblib_is_done(struct gab_triple gab, uint64_t argc,
 
   gab_vmpush(gab_thisvm(gab), gab_bool(is_done));
 
-  return nullptr;
+  return gab_union_cvalid(gab_nil);
 }
 
 GAB_DYNLIB_MAIN_FN {
@@ -65,5 +65,10 @@ GAB_DYNLIB_MAIN_FN {
               gab_snative(gab, "done?", gab_fiblib_is_done),
           });
 
-  return a_gab_value_one(gab_ok);
+  gab_value res[] = {gab_ok, gab_strtomsg(t)};
+
+  return (union gab_value_pair){
+      .status = gab_cvalid,
+      .aresult = a_gab_value_create(res, sizeof(res) / sizeof(gab_value)),
+  };
 }

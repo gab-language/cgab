@@ -15,10 +15,10 @@
   struct gab_triple __gab, uint8_t *__ip, gab_value *__kb, gab_value *__fb,    \
       gab_value *__sp
 
-typedef a_gab_value *(*handler)(OP_HANDLER_ARGS);
+typedef union gab_value_pair (*handler)(OP_HANDLER_ARGS);
 
 // Forward declare all our opcode handlers
-#define OP_CODE(name) a_gab_value *OP_##name##_HANDLER(OP_HANDLER_ARGS);
+#define OP_CODE(name) union gab_value_pair OP_##name##_HANDLER(OP_HANDLER_ARGS);
 #include "bytecode.h"
 #undef OP_CODE
 
@@ -38,7 +38,7 @@ static handler handlers[] = {
 #define ATTRIBUTES
 
 #define CASE_CODE(name)                                                        \
-  ATTRIBUTES a_gab_value *OP_##name##_HANDLER(OP_HANDLER_ARGS)
+  ATTRIBUTES union gab_value_pair OP_##name##_HANDLER(OP_HANDLER_ARGS)
 
 #define DISPATCH_ARGS() GAB(), IP(), KB(), FB(), SP()
 
@@ -420,17 +420,18 @@ struct gab_err_argt vm_frame_build_err(struct gab_triple gab,
   };
 }
 
-a_gab_value *vm_yield(struct gab_triple gab) {
+union gab_value_pair vm_yield(struct gab_triple gab) {
   gab_value fiber = gab_thisfiber(gab);
   assert(GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERRUNNING);
   GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBER;
-  return nullptr;
+  return (union gab_value_pair){{gab_ctimeout}};
 }
 
-void print_stacktrace(struct gab_triple gab, struct gab_vm *vm, gab_value *f,
-                      uint8_t *ip, int s, const char *fmt, va_list va) {
-  struct gab_err_argt frames[cGAB_FRAMES_MAX] = {0};
+gab_value sprint_stacktrace(struct gab_triple gab, struct gab_vm *vm,
+                            gab_value *f, uint8_t *ip, int s, const char *fmt,
+                            va_list va) {
   int nframes = 0;
+  struct gab_err_argt frames[cGAB_FRAMES_MAX] = {0};
 
   frames[nframes++] =
       vm_frame_build_err(gab, frame_block(f), ip, false, s, fmt);
@@ -443,34 +444,27 @@ void print_stacktrace(struct gab_triple gab, struct gab_vm *vm, gab_value *f,
     f = frame_parent(f);
   }
 
-  while (--nframes >= 0)
-    gab_vfpanic(gab, gab.eg->serr, va, frames[nframes]);
-
-  fflush(gab.eg->serr);
+  return gab_vspanicf(gab, va, frames[0]);
 }
 
-a_gab_value *vvm_terminate(struct gab_triple gab, const char *fmt, va_list va) {
+union gab_value_pair vvm_terminate(struct gab_triple gab, const char *fmt,
+                                   va_list va) {
   gab_value fiber = gab_thisfiber(gab);
 
   struct gab_vm *vm = gab_thisvm(gab);
+
   gab_value *f = vm->fp;
   uint8_t *ip = vm->ip;
 
-  print_stacktrace(gab, vm, f, ip, GAB_TERM, fmt, va);
+  gab_value err = sprint_stacktrace(gab, vm, f, ip, GAB_TERM, fmt, va);
 
-  gab_value results[] = {
-      gab_err,
-      gab_string(gab, gab_status_names[GAB_TERM]),
-      gab_thisfiber(gab),
-  };
+  gab_iref(gab, err);
+  gab_egkeep(gab.eg, err);
 
-  a_gab_value *res =
-      a_gab_value_create(results, sizeof(results) / sizeof(gab_value));
-  gab_niref(gab, 1, res->len, res->data);
-  gab_negkeep(gab.eg, res->len, res->data);
+  union gab_value_pair res = {{gab_cinvalid, err}};
 
   gab_value p = frame_block(vm->fp)->p;
-  gab_value shape = GAB_VAL_TO_PROTOTYPE(p)->s;
+  gab_value shape = gab_prtshp(p);
   gab_value env = gab_recordfrom(gab, shape, 1, vm->fp);
   gab_egkeep(gab.eg, gab_iref(gab, env));
 
@@ -482,28 +476,31 @@ a_gab_value *vvm_terminate(struct gab_triple gab, const char *fmt, va_list va) {
   return res;
 }
 
-a_gab_value *vvm_error(struct gab_triple gab, enum gab_status s,
-                       const char *fmt, va_list va) {
+union gab_value_pair vvm_error(struct gab_triple gab, enum gab_status s,
+                               const char *fmt, va_list va) {
   gab_value fiber = gab_thisfiber(gab);
+
   struct gab_vm *vm = gab_thisvm(gab);
+
   gab_value *f = vm->fp;
   uint8_t *ip = vm->ip;
 
-  print_stacktrace(gab, vm, f, ip, s, fmt, va);
+  gab_value err = sprint_stacktrace(gab, vm, f, ip, s, fmt, va);
 
-  gab_value results[] = {
-      gab_err,
-      gab_string(gab, gab_status_names[s]),
-      gab_thisfiber(gab),
-  };
+  gab_iref(gab, err);
+  gab_egkeep(gab.eg, err);
 
-  a_gab_value *res =
-      a_gab_value_create(results, sizeof(results) / sizeof(gab_value));
-  gab_niref(gab, 1, res->len, res->data);
-  gab_negkeep(gab.eg, res->len, res->data);
+  gab_value vals[] = {gab_err, err};
+  a_gab_value *results =
+      a_gab_value_create(vals, sizeof(vals) / sizeof(gab_value));
+
+  gab_niref(gab, 1, results->len, results->data);
+  gab_negkeep(gab.eg, results->len, results->data);
+
+  union gab_value_pair res = {.status = gab_cvalid, .aresult = results};
 
   gab_value p = frame_block(vm->fp)->p;
-  gab_value shape = GAB_VAL_TO_PROTOTYPE(p)->s;
+  gab_value shape = gab_prtshp(p);
   gab_value env = gab_recordfrom(gab, shape, 1, vm->fp);
   gab_egkeep(gab.eg, gab_iref(gab, env));
 
@@ -515,23 +512,23 @@ a_gab_value *vvm_error(struct gab_triple gab, enum gab_status s,
   return res;
 }
 
-a_gab_value *vm_terminate(struct gab_triple gab, const char *fmt, ...) {
+union gab_value_pair vm_terminate(struct gab_triple gab, const char *fmt, ...) {
   va_list va;
   va_start(va, fmt);
 
-  a_gab_value *res = vvm_terminate(gab, fmt, va);
+  union gab_value_pair res = vvm_terminate(gab, fmt, va);
 
   va_end(va);
 
   return res;
 }
 
-a_gab_value *vm_error(struct gab_triple gab, enum gab_status s, const char *fmt,
-                      ...) {
+union gab_value_pair vm_error(struct gab_triple gab, enum gab_status s,
+                              const char *fmt, ...) {
   va_list va;
   va_start(va, fmt);
 
-  a_gab_value *res = vvm_error(gab, s, fmt, va);
+  union gab_value_pair res = vvm_error(gab, s, fmt, va);
 
   va_end(va);
 
@@ -539,41 +536,51 @@ a_gab_value *vm_error(struct gab_triple gab, enum gab_status s, const char *fmt,
 }
 
 #define FMT_TYPEMISMATCH                                                       \
-  "found:\n\n >> $\n\nof type:\n\n >> $\n\nbut expected type:\n\n >> $"
+  "found\n\n >> $\n\nof type\n\n >> $\n\nbut expected type\n\n >> $\n"
 
 #define FMT_MISSINGIMPL                                                        \
-  "$ does not specialize for:\n\n >> $\n\nof type:\n\n >> $"
+  "$ does not specialize for receiver\n\n >> $\n\nof type\n\n >> $\n"
 
-/*a_gab_value *gab_nfpanic(struct gab_triple gab, const char *fmt, uint64_t
- * argc, gab_value argv[static argc]) {*/
-/*  if (!gab_vm(gab)) {*/
-/*}*/
+union gab_value_pair gab_vpanicf(struct gab_triple gab, const char *fmt,
+                                 va_list va) {
+  if (!gab_thisvm(gab)) {
+    gab_value err = gab_vspanicf(gab, va,
+                                 (struct gab_err_argt){
+                                     .status = GAB_PANIC,
+                                     .note_fmt = fmt,
+                                 });
 
-a_gab_value *gab_fpanic(struct gab_triple gab, const char *fmt, ...) {
+    gab_iref(gab, err);
+    gab_egkeep(gab.eg, err);
+
+    gab_value res[] = {gab_err, err};
+    a_gab_value *results =
+        a_gab_value_create(res, sizeof(res) / sizeof(gab_value));
+
+    return (union gab_value_pair){
+        .status = gab_cvalid,
+        .aresult = results,
+    };
+  };
+
+  union gab_value_pair res = vvm_error(gab, GAB_PANIC, fmt, va);
+
+  return res;
+}
+
+union gab_value_pair gab_panicf(struct gab_triple gab, const char *fmt, ...) {
   va_list va;
   va_start(va, fmt);
 
-  if (!gab_thisvm(gab)) {
-    gab_vfpanic(gab, gab.eg->serr, va,
-                (struct gab_err_argt){
-                    .status = GAB_PANIC,
-                    .note_fmt = fmt,
-                });
-
-    va_end(va);
-
-    return nullptr;
-  }
-
-  a_gab_value *res = vvm_error(gab, GAB_PANIC, fmt, va);
+  union gab_value_pair res = gab_vpanicf(gab, fmt, va);
 
   va_end(va);
 
   return res;
 }
 
-a_gab_value *gab_ptypemismatch(struct gab_triple gab, gab_value found,
-                               gab_value texpected) {
+union gab_value_pair gab_ptypemismatch(struct gab_triple gab, gab_value found,
+                                       gab_value texpected) {
 
   return vm_error(gab, GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, found,
                   gab_valtype(gab, found), texpected);
@@ -583,7 +590,7 @@ gab_value gab_vmframe(struct gab_triple gab, uint64_t depth) {
   // uint64_t frame_count = gab_vm(gab)->fp - gab_vm(gab)->sb;
   //
   // if (depth >= frame_count)
-  return gab_invalid;
+  return gab_cinvalid;
 
   // struct gab_vm_frame *f = gab_vm(gab)->fp - depth;
   //
@@ -790,9 +797,9 @@ inline uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc,
                                                                                \
     uint64_t pass = message ? have : have - 1;                                 \
                                                                                \
-    a_gab_value *res = (*native->function)(GAB(), pass, SP() - pass);          \
+    union gab_value_pair res = (*native->function)(GAB(), pass, SP() - pass);  \
                                                                                \
-    if (__gab_unlikely(res))                                                   \
+    if (__gab_unlikely(res.status != gab_cvalid))                              \
       return res;                                                              \
                                                                                \
     SP() = VM()->sp;                                                           \
@@ -831,7 +838,7 @@ static inline gab_value block(struct gab_triple gab, gab_value p,
   return blk;
 }
 
-a_gab_value *vm_ok(OP_HANDLER_ARGS) {
+union gab_value_pair vm_ok(OP_HANDLER_ARGS) {
   uint64_t have = *VM()->sp;
   gab_value *from = VM()->sp - have;
 
@@ -842,23 +849,28 @@ a_gab_value *vm_ok(OP_HANDLER_ARGS) {
   gab_niref(GAB(), 1, results->len, results->data);
   gab_negkeep(EG(), results->len, results->data);
 
+  union gab_value_pair res = (union gab_value_pair){
+      .status = gab_cvalid,
+      .aresult = results,
+  };
+
   VM()->sp = VM()->sb;
 
   gab_value p = frame_block(VM()->fp)->p;
-  gab_value shape = GAB_VAL_TO_PROTOTYPE(p)->s;
+  gab_value shape = gab_prtshp(p);
 
   gab_value env = gab_recordfrom(GAB(), shape, 1, VM()->fp);
   gab_egkeep(EG(), gab_iref(GAB(), env));
 
   assert(FIBER()->header.kind = kGAB_FIBERRUNNING);
-  FIBER()->res_values = results;
+  FIBER()->res_values = res;
   FIBER()->res_env = env;
   FIBER()->header.kind = kGAB_FIBERDONE;
 
-  return results;
+  return res;
 }
 
-a_gab_value *do_vmexecfiber(struct gab_triple gab, gab_value f) {
+union gab_value_pair do_vmexecfiber(struct gab_triple gab, gab_value f) {
   assert(gab_valkind(f) == kGAB_FIBER);
   struct gab_ofiber *fiber = GAB_VAL_TO_FIBER(f);
 
@@ -887,7 +899,7 @@ a_gab_value *do_vmexecfiber(struct gab_triple gab, gab_value f) {
   return handlers[op](gab, ip, fiber->vm.kb, fiber->vm.fp, fiber->vm.sp);
 };
 
-a_gab_value *gab_vmexec(struct gab_triple gab, gab_value f) {
+union gab_value_pair gab_vmexec(struct gab_triple gab, gab_value f) {
   assert(gab_valkind(f) == kGAB_FIBER);
   struct gab_ofiber *fiber = GAB_VAL_TO_FIBER(f);
 
@@ -1014,7 +1026,7 @@ static inline bool try_setup_localmatch(struct gab_triple gab, gab_value m,
                                         struct gab_oprototype *p) {
   gab_value specs = gab_thisfibmsgrec(gab, m);
 
-  if (specs == gab_undefined)
+  if (specs == gab_cundefined)
     return false;
 
   if (gab_reclen(specs) > 4 || gab_reclen(specs) < 2)
@@ -1039,7 +1051,7 @@ static inline bool try_setup_localmatch(struct gab_triple gab, gab_value m,
     uint8_t idx = GAB_SEND_HASH(t) * GAB_SEND_CACHE_SIZE;
 
     // We have a collision - no point in messing about with this.
-    if (ks[GAB_SEND_KSPEC + idx] != gab_invalid)
+    if (ks[GAB_SEND_KSPEC + idx] != gab_cinvalid)
       return false;
 
     uint8_t *ip = proto_ip(gab, spec_p);
@@ -1343,17 +1355,23 @@ CASE_CODE(SEND_PRIMITIVE_USE) {
 
   STORE();
 
-  a_gab_value *mod = gab_use(GAB(), r);
+  union gab_value_pair mod = gab_use(GAB(), (struct gab_use_argt){
+                                                .vname = r,
+                                            });
 
   DROP_N(have);
 
-  if (!mod)
+  if (mod.status != gab_cvalid)
     VM_PANIC(GAB_PANIC, "Couldn't locate module $.", r);
 
-  for (uint64_t i = 1; i < mod->len; i++)
-    PUSH(mod->data[i]);
+  if (mod.aresult->data[0] != gab_ok)
+    VM_PANIC(GAB_PANIC, "Module $ returned $, expected $.", r,
+             mod.aresult->data[0], gab_ok);
 
-  SET_VAR(mod->len - 1);
+  for (uint64_t i = 1; i < mod.aresult->len; i++)
+    PUSH(mod.aresult->data[i]);
+
+  SET_VAR(mod.aresult->len - 1);
 
   NEXT();
 }
@@ -1973,11 +1991,11 @@ CASE_CODE(SEND_PRIMITIVE_TAKE) {
   gab_value v = gab_tchntake(GAB(), c, cGAB_VM_CHANNEL_TAKE_TIMEOUT_MS);
 
   switch (v) {
-  case gab_timeout:
+  case gab_ctimeout:
     VM_YIELD();
-  case gab_invalid:
+  case gab_cinvalid:
     VM_TERM();
-  case gab_undefined:
+  case gab_cundefined:
     DROP_N(have);
     PUSH(gab_none);
     SET_VAR(1);
@@ -2011,9 +2029,9 @@ CASE_CODE(SEND_PRIMITIVE_PUT) {
   // TODO: Should this handle the case of channel closing underneath, and behave
   // differently?
   switch (r) {
-  case gab_timeout:
+  case gab_ctimeout:
     VM_YIELD();
-  case gab_invalid:
+  case gab_cinvalid:
     VM_TERM();
   default:
     DROP_N(have - 1);
@@ -2037,17 +2055,19 @@ CASE_CODE(SEND_PRIMITIVE_FIBER) {
 
   STORE_SP();
 
-  gab_value fb = gab_tarun(GAB(), cGAB_VM_CHANNEL_PUT_TIMEOUT_MS,
-                           (struct gab_run_argt){
-                               .flags = GAB().flags,
-                               .main = block,
-                           });
+  union gab_value_pair fb = gab_tarun(GAB(), cGAB_VM_CHANNEL_PUT_TIMEOUT_MS,
+                                      (struct gab_run_argt){
+                                          .flags = GAB().flags,
+                                          .main = block,
+                                      });
 
-  if (fb == gab_timeout)
+  if (fb.status == gab_ctimeout)
     VM_YIELD();
 
+  assert(fb.status == gab_cvalid);
+
   DROP_N(have);
-  PUSH(fb);
+  PUSH(fb.vresult);
 
   SET_VAR(1);
 

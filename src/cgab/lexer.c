@@ -345,7 +345,6 @@ gab_token gab_lexnext(gab_lx *self) {
       advance(self);
   }
 
-  // Sanity check
   assert(self->cursor - self->source->source->data < self->source->source->len);
 
   gab_token tok;
@@ -353,17 +352,27 @@ gab_token gab_lexnext(gab_lx *self) {
 
   if (peek(self) == '\0' || peek(self) == EOF) {
     advance(self);
-    finish_row(self);
-    self->row--; // There is no next row
     tok = TOKEN_EOF;
-    goto fin;
+    v_gab_token_push(&self->source->tokens, tok);
+    v_s_char_push(&self->source->token_srcs, self->current_token_src);
+    v_uint64_t_push(&self->source->token_lines, self->row);
+
+    finish_row(self);
+
+    return tok;
   }
 
   if (peek(self) == '\n') {
     advance(self);
-    finish_row(self);
     tok = TOKEN_NEWLINE;
-    goto fin;
+
+    v_gab_token_push(&self->source->tokens, tok);
+    v_s_char_push(&self->source->token_srcs, self->current_token_src);
+    v_uint64_t_push(&self->source->token_lines, self->row);
+
+    finish_row(self);
+
+    return tok;
   }
 
   if (is_alpha(peek(self))) {

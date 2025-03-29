@@ -86,7 +86,7 @@
 #define GAB_API extern
 #endif
 
-#define GAB_DYNLIB_MAIN_FN a_gab_value *gab_lib(struct gab_triple gab)
+#define GAB_DYNLIB_MAIN_FN union gab_value_pair gab_lib(struct gab_triple gab)
 
 #define gab_osproc(cmd, ...)                                                   \
   ({                                                                           \

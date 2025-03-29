@@ -56,8 +56,8 @@ static double random_float() {
   return result;
 }
 
-a_gab_value *gab_numlib_between(struct gab_triple gab, uint64_t argc,
-                                gab_value argv[argc]) {
+union gab_value_pair gab_numlib_between(struct gab_triple gab, uint64_t argc,
+                                        gab_value argv[argc]) {
   double min = 0, max = 1;
 
   switch (argc) {
@@ -66,7 +66,7 @@ a_gab_value *gab_numlib_between(struct gab_triple gab, uint64_t argc,
 
   case 2: {
     if (gab_valkind(argv[1]) != kGAB_NUMBER)
-      return gab_fpanic(gab, "Invalid call to gab_numlib_random");
+      return gab_panicf(gab, "Invalid call to gab_numlib_random");
 
     max = gab_valtof(argv[1]);
 
@@ -76,7 +76,7 @@ a_gab_value *gab_numlib_between(struct gab_triple gab, uint64_t argc,
   case 3: {
     if (gab_valkind(argv[1]) != kGAB_NUMBER ||
         gab_valkind(argv[2]) != kGAB_NUMBER) {
-      return gab_fpanic(gab, "Invalid call to gab_numlib_random");
+      return gab_panicf(gab, "Invalid call to gab_numlib_random");
     }
 
     min = gab_valtof(argv[1]);
@@ -85,7 +85,7 @@ a_gab_value *gab_numlib_between(struct gab_triple gab, uint64_t argc,
   }
 
   default:
-    return gab_fpanic(gab, "Invalid call to gab_numlib_random");
+    return gab_panicf(gab, "Invalid call to gab_numlib_random");
   }
 
   double range = max - min;
@@ -95,11 +95,11 @@ a_gab_value *gab_numlib_between(struct gab_triple gab, uint64_t argc,
   gab_value res = gab_number(num);
 
   gab_vmpush(gab_thisvm(gab), res);
-  return nullptr;
+  return gab_union_cvalid(gab_nil);
 }
 
-a_gab_value *gab_numlib_floor(struct gab_triple gab, uint64_t argc,
-                              gab_value argv[argc]) {
+union gab_value_pair gab_numlib_floor(struct gab_triple gab, uint64_t argc,
+                                      gab_value argv[argc]) {
   gab_value num = gab_arg(0);
 
   if (gab_valkind(num) != kGAB_NUMBER)
@@ -108,11 +108,11 @@ a_gab_value *gab_numlib_floor(struct gab_triple gab, uint64_t argc,
   gab_value res = gab_number(floor(gab_valtof(num)));
 
   gab_vmpush(gab_thisvm(gab), res);
-  return nullptr;
+  return gab_union_cvalid(gab_nil);
 }
 
-a_gab_value *gab_numlib_isnan(struct gab_triple gab, uint64_t argc,
-                              gab_value argv[argc]) {
+union gab_value_pair gab_numlib_isnan(struct gab_triple gab, uint64_t argc,
+                                      gab_value argv[argc]) {
   gab_value num = gab_arg(0);
 
   if (gab_valkind(num) != kGAB_NUMBER)
@@ -121,11 +121,11 @@ a_gab_value *gab_numlib_isnan(struct gab_triple gab, uint64_t argc,
   gab_value res = gab_bool(isnan(gab_valtof(num)));
 
   gab_vmpush(gab_thisvm(gab), res);
-  return nullptr;
+  return gab_union_cvalid(gab_nil);
 }
 
-a_gab_value *gab_numlib_isinf(struct gab_triple gab, uint64_t argc,
-                              gab_value argv[argc]) {
+union gab_value_pair gab_numlib_isinf(struct gab_triple gab, uint64_t argc,
+                                      gab_value argv[argc]) {
   gab_value num = gab_arg(0);
 
   if (gab_valkind(num) != kGAB_NUMBER)
@@ -134,12 +134,12 @@ a_gab_value *gab_numlib_isinf(struct gab_triple gab, uint64_t argc,
   gab_value res = gab_bool(isinf(gab_valtof(num)));
 
   gab_vmpush(gab_thisvm(gab), res);
-  return nullptr;
+  return gab_union_cvalid(gab_nil);
 }
 
 GAB_DYNLIB_MAIN_FN {
-  gab_value mod = gab_message(gab, tGAB_NUMBER);
   gab_value t = gab_type(gab, kGAB_NUMBER);
+  gab_value mod = gab_strtomsg(t);
 
   gab_def(gab,
           {
@@ -168,5 +168,10 @@ GAB_DYNLIB_MAIN_FN {
               gab_snative(gab, "float\\between", gab_numlib_between),
           });
 
-  return a_gab_value_one(gab_ok);
+  gab_value res[] = {gab_ok, mod};
+
+  return (union gab_value_pair){
+      .status = gab_cvalid,
+      .aresult = a_gab_value_create(res, sizeof(res) / sizeof(gab_value)),
+  };
 }
