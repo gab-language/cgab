@@ -50,25 +50,19 @@ int run_string(const char *string, int flags, size_t jobs) {
                         .flags = flags | fGAB_RUN_INCLUDEDEFAULTARGS,
                     });
 
-  int exit_code = 1;
-
   if (res.status == gab_cvalid) {
-    if (res.aresult->len)
-      if (res.aresult->data[0] == gab_ok)
-        exit_code = 0;
+    if (res.aresult->data[0] == gab_ok)
+      return free(res.aresult), gab_destroy(gab), 0;
 
-    gab_value strmsg = gab_valintos(gab, res.aresult->data[1]);
-    fprintf(stderr, "ERROR: %s\n", gab_strdata(&strmsg));
+    const char *errstr = gab_errtocs(gab, res.aresult->data[1]);
+    puts(errstr);
 
-    free(res.aresult);
+    return free(res.aresult), gab_destroy(gab), 1;
   } else {
-    gab_value strmsg = gab_valintos(gab, res.vresult);
-    fprintf(stderr, "INVALID: %s\n", gab_strdata(&strmsg));
+    const char *errstr = gab_errtocs(gab, res.vresult);
+    puts(errstr);
+    return gab_destroy(gab), 1;
   }
-
-  gab_destroy(gab);
-
-  return exit_code;
 }
 
 int run_file(const char *path, int flags, size_t jobs) {
@@ -87,14 +81,13 @@ int run_file(const char *path, int flags, size_t jobs) {
     if (res.aresult->data[0] == gab_ok)
       return free(res.aresult), gab_destroy(gab), 0;
 
-    gab_value err = gab_mrecat(gab, res.aresult->data[1], "hint");
-    gab_value strmsg = gab_valintos(gab, err);
-    fprintf(stderr, "%s\n", gab_strdata(&strmsg));
+    const char *errstr = gab_errtocs(gab, res.aresult->data[1]);
+    puts(errstr);
 
     return free(res.aresult), gab_destroy(gab), 1;
   } else {
-    gab_value strmsg = gab_valintos(gab, res.vresult);
-    fprintf(stderr, "%s\n", gab_strdata(&strmsg));
+    const char *errstr = gab_errtocs(gab, res.vresult);
+    puts(errstr);
 
     return gab_destroy(gab), 1;
   }

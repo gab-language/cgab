@@ -11,7 +11,7 @@
   "  " GAB_YELLOW "-1.23" GAB_MAGENTA "\t\t\t# A number \n" GAB_RESET          \
   "  " GAB_GREEN "'hello, Joe!'" GAB_MAGENTA "\t\t# A string \n" GAB_RESET     \
   "  " GAB_RED "greet:" GAB_MAGENTA "\t\t# A message\n" GAB_RESET              \
-  "  " GAB_BLUE "x => x + 1 end" GAB_MAGENTA "\t# A block \n" GAB_RESET        \
+  "  " GAB_BLUE "x => x + 1" GAB_MAGENTA "\t# A block \n" GAB_RESET            \
   "  " GAB_CYAN "{ key: value }" GAB_MAGENTA "\t# A record\n" GAB_RESET "  "   \
   "(" GAB_YELLOW "-1.23" GAB_RESET ", " GAB_GREEN "true:" GAB_RESET            \
   ")" GAB_MAGENTA "\t# A tuple\n" GAB_RESET "  "                               \
@@ -25,6 +25,9 @@
   "\nBlocks and assignments can only declare one target as a rest-target."
 
 #define FMT_UNEXPECTEDTOKEN "Expected $ instead."
+#define FMT_MISSINGSEPARATOR                                                   \
+  "Expected one of " GAB_GREEN "';'" GAB_RESET ", " GAB_GREEN "','" GAB_RESET  \
+  ", or a newline instead."
 
 #define FMT_REFERENCE_BEFORE_INIT "$ is referenced before it is initialized."
 
@@ -378,6 +381,15 @@ static inline void skip_newlines(struct gab_triple gab, struct parser *parser) {
     ;
 }
 
+static inline int expect_newline(struct gab_triple gab, struct parser *parser) {
+  if (!match_and_eat_token(gab, parser, TOKEN_NEWLINE))
+    return eat_token(gab, parser),
+           parser_error(gab, parser, GAB_MISSING_SEPARATOR,
+                        FMT_MISSINGSEPARATOR, tok_id(gab, TOKEN_NEWLINE));
+
+  return true;
+}
+
 void node_storeinfo(struct gab_src *src, gab_value node, size_t begin,
                     size_t end) {
   d_uint64_t_insert(&src->node_begin_toks, node, begin);
@@ -511,19 +523,17 @@ static gab_value parse_expressions_body(struct gab_triple gab,
 }
 
 gab_value parse_expressions_until(struct gab_triple gab, struct parser *parser,
-                                  enum gab_token t) {
+                                  enum gab_token t, size_t newline_stride) {
   size_t begin = parser->offset;
 
   gab_value result = node_empty(gab, parser);
-
-  skip_newlines(gab, parser);
-
-  if (match_and_eat_token(gab, parser, t))
-    goto fin;
+  int groups = 0;
 
   skip_newlines(gab, parser);
 
   while (!match_and_eat_token(gab, parser, t)) {
+    skip_newlines(gab, parser);
+
     gab_value exp = parse_expression(gab, parser, kEXP);
 
     if (exp == gab_cinvalid)
@@ -534,6 +544,17 @@ gab_value parse_expressions_until(struct gab_triple gab, struct parser *parser,
     if (result == gab_cinvalid)
       return gab_cinvalid;
 
+    if (match_and_eat_token(gab, parser, t))
+      break;
+
+    groups++;
+    if (groups == newline_stride) {
+      if (!expect_newline(gab, parser))
+        return gab_cinvalid;
+
+      groups = 0;
+    };
+
     skip_newlines(gab, parser);
   }
 
@@ -541,7 +562,6 @@ gab_value parse_expressions_until(struct gab_triple gab, struct parser *parser,
 
   node_storeinfo(parser->src, result, begin, end);
 
-fin:
   return result;
 }
 
@@ -564,12 +584,24 @@ gab_value parse_expression(struct gab_triple gab, struct parser *parser,
   gab_value node = rule.prefix(gab, parser, gab_cinvalid);
 
   size_t end = parser->offset;
+  size_t latest_valid_offset = parser->offset;
 
   node_storeinfo(parser->src, node, begin, end);
 
+  /*
+   * The next section will skip newlines to peek and see
+   * if we have an infix expression to continue.
+   *
+   * If we don't find one, we need to *backtrack* the
+   * parser to where our initial prefix expression left off.
+   *
+   * This is because newlines are *expected* in some places as
+   * separators. (tuples, lists, and dicts)
+   */
   skip_newlines(gab, parser);
 
   while (prec <= get_parse_rule(curr_tok(parser)).prec) {
+
     if (node == gab_cinvalid)
       return gab_cinvalid;
 
@@ -581,8 +613,12 @@ gab_value parse_expression(struct gab_triple gab, struct parser *parser,
     if (rule.infix != nullptr)
       node = rule.infix(gab, parser, node);
 
+    latest_valid_offset = parser->offset;
+
     skip_newlines(gab, parser);
   }
+
+  parser->offset = latest_valid_offset;
 
   end = parser->offset;
 
@@ -654,7 +690,7 @@ gab_value parse_exp_rec(struct gab_triple gab, struct parser *parser,
                         gab_value lhs) {
   size_t begin = parser->offset;
 
-  gab_value result = parse_expressions_until(gab, parser, TOKEN_RBRACK);
+  gab_value result = parse_expressions_until(gab, parser, TOKEN_RBRACK, 2);
 
   if (result == gab_cinvalid)
     return gab_cinvalid;
@@ -678,7 +714,7 @@ gab_value parse_exp_lst(struct gab_triple gab, struct parser *parser,
                         gab_value lhs) {
   size_t begin = parser->offset;
 
-  gab_value result = parse_expressions_until(gab, parser, TOKEN_RBRACE);
+  gab_value result = parse_expressions_until(gab, parser, TOKEN_RBRACE, 1);
 
   if (result == gab_cinvalid)
     return gab_cinvalid;
@@ -700,7 +736,7 @@ gab_value parse_exp_lst(struct gab_triple gab, struct parser *parser,
 
 gab_value parse_exp_tup(struct gab_triple gab, struct parser *parser,
                         gab_value lhs) {
-  return parse_expressions_until(gab, parser, TOKEN_RPAREN);
+  return parse_expressions_until(gab, parser, TOKEN_RPAREN, 1);
 }
 
 gab_value parse_exp_blk(struct gab_triple gab, struct parser *parser,
@@ -822,7 +858,7 @@ gab_value parse(struct gab_triple gab, struct parser *parser) {
     return gab_cinvalid;
 
   if (gab.flags & fGAB_AST_DUMP)
-    gab_fvalinspect(gab.eg->sout, ast, -1), printf("\n");
+    gab_fprintf(stdout, "$\n", ast);
 
   gab_iref(gab, ast);
   gab_egkeep(gab.eg, ast);
@@ -836,7 +872,7 @@ gab_value parse(struct gab_triple gab, struct parser *parser) {
 
 union gab_value_pair gab_parse(struct gab_triple gab,
                                struct gab_parse_argt args) {
-  gab.flags = args.flags;
+  gab.flags |= args.flags;
 
   args.name = args.name ? args.name : "__main__";
 
@@ -847,7 +883,7 @@ union gab_value_pair gab_parse(struct gab_triple gab,
   struct gab_src *src =
       gab_src(gab, name, (char *)args.source, strlen(args.source) + 1);
 
-  struct parser parser = {.src = src};
+  struct parser parser = {.src = src, .err = gab_cundefined};
 
   gab_value ast = parse(gab, &parser);
 
@@ -1524,13 +1560,15 @@ gab_value unpack_binding_into_env(struct gab_triple gab, struct bc *bc,
   for (size_t i = 0; i < len; i++) {
     gab_value binding = gab_uvrecat(bindings, i);
 
+    gab_fprintf(stdout, "BINDING: $\n", binding);
+
     switch (gab_valkind(binding)) {
 
     case kGAB_BINARY:
       assert(gab_valkind(gab_recat(ctx, binding)) != kGAB_NUMBER);
       ctx = gab_recput(gab, ctx, binding, gab_nil);
       targets[actual_targets++] = binding;
-      break;
+      continue;
 
     case kGAB_RECORD: {
       if (gab_valkind(gab_recshp(binding)) == kGAB_SHAPE) {
@@ -1540,6 +1578,27 @@ gab_value unpack_binding_into_env(struct gab_triple gab, struct bc *bc,
         gab_value m = gab_mrecat(gab, binding, mGAB_AST_NODE_SEND_MSG);
 
         gab_value rec = gab_uvrecat(lhs, 0);
+
+        gab_fprintf(stdout, "Binding: $\nLHS: $\nM: $\nREC: $\n", binding, lhs, m, rec);
+
+        if (m == gab_message(gab, mGAB_SPLAT)) {
+          if (gab_valkind(rec) != kGAB_BINARY)
+            goto err;
+
+          if (!node_isempty(rhs))
+            goto err;
+
+          assert(gab_valkind(gab_recat(ctx, rec)) != kGAB_NUMBER);
+          ctx = gab_recput(gab, ctx, rec, gab_nil);
+          targets[actual_targets++] = rec;
+
+          if (listpack_at_n >= 0 || recpack_at_n >= 0)
+            goto err;
+
+          listpack_at_n = i;
+
+          continue;
+        }
 
         if (rec == gab_message(gab, tGAB_LIST)) {
           if (m != gab_message(gab, mGAB_MAKE))
@@ -1591,6 +1650,8 @@ gab_value unpack_binding_into_env(struct gab_triple gab, struct bc *bc,
     }
   }
 
+  gab_fprintf(stdout, "CONTEXT: $\n", ctx);
+
   if (listpack_at_n >= 0)
     push_listpack(gab, bc, values, listpack_at_n,
                   actual_targets - listpack_at_n - 1, bindings);
@@ -1617,8 +1678,9 @@ gab_value unpack_binding_into_env(struct gab_triple gab, struct bc *bc,
         push_storel(bc, res.idx, bindings);
         break;
       case kLOOKUP_UPV:
+        assert(false && "INVALID UPV TARGET");
       case kLOOKUP_NONE:
-        assert(false && "INVALID ASSIGNMENT TARGET");
+        assert(false && "INVALID NONE TARGET");
         break;
       }
 
@@ -1943,7 +2005,7 @@ union gab_value_pair gab_compile(struct gab_triple gab,
 
 union gab_value_pair gab_build(struct gab_triple gab,
                                struct gab_parse_argt args) {
-  gab.flags = args.flags;
+  gab.flags |= args.flags;
 
   args.name = args.name ? args.name : "__main__";
 
@@ -1953,7 +2015,7 @@ union gab_value_pair gab_build(struct gab_triple gab,
 
   union gab_value_pair ast = gab_parse(gab, args);
 
-  if (ast.status == gab_cinvalid)
+  if (ast.status != gab_cvalid)
     return gab_gcunlock(gab), ast;
 
   struct gab_src *src = d_gab_src_read(&gab.eg->sources, mod);

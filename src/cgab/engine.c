@@ -603,9 +603,9 @@ struct gab_triple gab_create(struct gab_create_argt args) {
 
     if (res.status != gab_cvalid) {
       printf("[Error]: Failed to find core library\n");
-    }
 
-    if (res.aresult->data[0] != gab_ok) {
+      printf("%s\n", gab_errtocs(gab, res.vresult));
+    } else if (res.aresult->data[0] != gab_ok) {
       printf("[Error]: Failed to find core library:\n");
     }
   }
@@ -786,7 +786,6 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
     assert(env != gab_cinvalid);
 
     if (res.status != gab_cvalid) {
-      gab_fprintf(stderr, "$: $\n", res.status, res.vresult);
       continue;
     }
 
@@ -999,13 +998,18 @@ int gab_sprintf(char *dest, size_t n, const char *fmt, ...) {
 
 int gab_fprintf(FILE *stream, const char *fmt, ...) {
   va_list va;
-  va_start(va, fmt);
 
-  int res = gab_vfprintf(stream, fmt, va);
+  for (size_t i = 128;; i <<= 1) {
+    va_start(va, fmt);
 
-  va_end(va);
+    char buf[i];
+    if (gab_vsprintf(buf, i, fmt, va) >= 0)
+      return va_end(va), fputs(buf, stream);
 
-  return res;
+    va_end(va);
+  }
+
+  return -1;
 }
 
 int gab_nsprintf(char *dest, size_t n, const char *fmt, uint64_t argc,
@@ -1031,11 +1035,21 @@ int gab_nsprintf(char *dest, size_t n, const char *fmt, uint64_t argc,
       break;
     }
     default:
+      if (remaining == 0)
+        return -1;
+
       *cursor++ = *c;
       remaining -= 1;
     }
+
     c++;
   }
+
+  if (remaining == 0)
+    return -1;
+
+  *cursor++ = *c;
+  remaining -= 1;
 
   if (i != argc)
     return -1;
@@ -1070,19 +1084,13 @@ int gab_vsprintf(char *dest, size_t n, const char *fmt, va_list varargs) {
     c++;
   }
 
+  if (remaining == 0)
+    return -1;
+
+  *cursor++ = *c;
+  remaining -= 1;
+
   return n - remaining;
-}
-
-int gab_vfprintf(FILE *stream, const char *fmt, va_list varargs) {
-  for (size_t i = 128;; i <<= 1) {
-    char buf[i];
-    if (gab_vsprintf(buf, i, fmt, varargs) >= 0) {
-      fprintf(stream, "%.*s", (int)i, buf);
-      return 1;
-    };
-  }
-
-  return 0;
 }
 
 int sprint_pretty_err(struct gab_triple gab, char **buf, size_t *len,
@@ -1096,22 +1104,23 @@ int sprint_pretty_err(struct gab_triple gab, char **buf, size_t *len,
 
   const char *src_name = src ? gab_strdata(&src->name) : "C";
 
-  if (snprintf_through(buf, len, "[%s] panicked near %s", src_name, tok_name) <
-      0)
+  if (snprintf_through(buf, len,
+                       "[" GAB_GREEN "%s" GAB_RESET
+                       "] panicked near " GAB_YELLOW "%s" GAB_RESET,
+                       src_name, tok_name) < 0)
     return -1;
 
   if (args->status_name)
-    if (snprintf_through(buf, len, ": %s.", args->status_name) < 0)
+    if (snprintf_through(buf, len, ": " GAB_RED "%s" GAB_RESET ".",
+                         args->status_name) < 0)
       return -1;
 
   if (src) {
     s_char tok_src = v_s_char_val_at(&src->token_srcs, args->token);
-    const char *tok_start = tok_src.data;
-    const char *tok_end = tok_src.data + tok_src.len;
 
-    uint64_t line = v_uint64_t_val_at(&src->token_lines, args->token);
+    uint64_t line_num = v_uint64_t_val_at(&src->token_lines, args->token);
 
-    s_char line_src = v_s_char_val_at(&src->lines, line - 1);
+    s_char line_src = v_s_char_val_at(&src->lines, line_num - 1);
 
     while (*line_src.data == ' ' || *line_src.data == '\t') {
       line_src.data++;
@@ -1119,29 +1128,25 @@ int sprint_pretty_err(struct gab_triple gab, char **buf, size_t *len,
       if (line_src.len == 0)
         break;
     }
+    assert(line_src.len != 0);
 
-    a_char *under_src = a_char_empty(line_src.len);
+    int leftpad = (int)(tok_src.data - line_src.data);
+    // int tokpad = (int)tok_src.len - 2;
+    int rhs_width = (int)tok_src.len - 1;
 
-    for (uint8_t i = 0; i < under_src->len; i++) {
-      if (line_src.data + i >= tok_start && line_src.data + i < tok_end)
-        under_src->data[i] = '^';
-      else
-        under_src->data[i] = ' ';
-    }
+    const char *lhs = "^";
+    const char *rhs = "^^^^^^^^^^^^^^^^^^^^^^";
 
     if (snprintf_through(buf, len,
                          "\n\n" GAB_RED "%.4" PRIu64 "" GAB_RESET "| %.*s"
-                         "\n      " GAB_YELLOW "%.*s" GAB_RESET "",
-                         line, (int)line_src.len, line_src.data,
-                         (int)under_src->len, under_src->data) < 0) {
-      a_char_destroy(under_src);
+                         "\n      " GAB_YELLOW "%*s%s%.*s" GAB_RESET "",
+                         line_num, (int)line_src.len, line_src.data, leftpad,
+                         "", lhs, rhs_width, rhs) < 0) {
       return -1;
     }
-
-    a_char_destroy(under_src);
   }
 
-  if (hint && strlen(hint) > 0)
+  if (hint > 0)
     if (snprintf_through(buf, len, "\n%s", hint) < 0)
       return -1;
 
@@ -1458,12 +1463,7 @@ union gab_value_pair gab_use(struct gab_triple gab, struct gab_use_argt args) {
 
       union gab_value_pair result = res->handler(gab, module_path->data);
 
-      if (result.status == gab_cvalid) {
-        a_char_destroy(module_path);
-        return result;
-      }
-
-      a_char_destroy(module_path);
+      return a_char_destroy(module_path), result;
     }
   }
 

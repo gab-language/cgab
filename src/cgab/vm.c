@@ -536,10 +536,16 @@ union gab_value_pair vm_error(struct gab_triple gab, enum gab_status s,
 }
 
 #define FMT_TYPEMISMATCH                                                       \
-  "found\n\n >> $\n\nof type\n\n >> $\n\nbut expected type\n\n >> $\n"
+  "Sent message " GAB_CYAN "$" GAB_RESET                                       \
+  " found an invalid type.\n\n    | " GAB_GREEN "$" GAB_RESET                  \
+  "\n\nhas type\n\n    | " GAB_GREEN "$" GAB_RESET                              \
+  "\n\nbut expected type\n\n    | " GAB_GREEN "$" GAB_RESET "\n"
 
 #define FMT_MISSINGIMPL                                                        \
-  "$ does not specialize for receiver\n\n >> $\n\nof type\n\n >> $\n"
+  "Sent message " GAB_CYAN "$" GAB_RESET                                       \
+  " does not specialize for this receiver.\n\n    | " GAB_CYAN "$" GAB_RESET   \
+  "\n\nof type\n\n    "                                                        \
+  "| " GAB_CYAN "$" GAB_RESET "\n"
 
 union gab_value_pair gab_vpanicf(struct gab_triple gab, const char *fmt,
                                  va_list va) {
@@ -582,7 +588,8 @@ union gab_value_pair gab_panicf(struct gab_triple gab, const char *fmt, ...) {
 union gab_value_pair gab_ptypemismatch(struct gab_triple gab, gab_value found,
                                        gab_value texpected) {
 
-  return vm_error(gab, GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, found,
+  // TODO: Properly set message here.
+  return vm_error(gab, GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, gab_nil, found,
                   gab_valtype(gab, found), texpected);
 }
 
@@ -911,30 +918,30 @@ union gab_value_pair gab_vmexec(struct gab_triple gab, gab_value f) {
 #define VM_PANIC_GUARD_KIND(value, kind)                                       \
   if (__gab_unlikely(gab_valkind(value) != kind)) {                            \
     STORE_PRIMITIVE_VM_PANIC_FRAME(1);                                         \
-    VM_PANIC(GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, value,                       \
-             gab_valtype(GAB(), value), gab_type(GAB(), kind));                \
+    VM_PANIC(GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, ks[GAB_SEND_KMESSAGE],       \
+             value, gab_valtype(GAB(), value), gab_type(GAB(), kind));         \
   }
 
 #define VM_PANIC_GUARD_ISB(value)                                              \
   if (__gab_unlikely(!__gab_valisb(value))) {                                  \
     STORE_PRIMITIVE_VM_PANIC_FRAME(have);                                      \
-    VM_PANIC(GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, value,                       \
-             gab_valtype(GAB(), value), gab_type(GAB(), kGAB_MESSAGE));        \
+    VM_PANIC(GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, ks[GAB_SEND_KMESSAGE],       \
+             value, gab_valtype(GAB(), value), gab_type(GAB(), kGAB_MESSAGE)); \
   }
 
 #define VM_PANIC_GUARD_ISN(value)                                              \
   if (__gab_unlikely(!__gab_valisn(value))) {                                  \
     STORE_PRIMITIVE_VM_PANIC_FRAME(have);                                      \
-    VM_PANIC(GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, value,                       \
-             gab_valtype(GAB(), value), gab_type(GAB(), kGAB_NUMBER));         \
+    VM_PANIC(GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, ks[GAB_SEND_KMESSAGE],       \
+             value, gab_valtype(GAB(), value), gab_type(GAB(), kGAB_NUMBER));  \
   }
 
 #define VM_PANIC_GUARD_ISS(value)                                              \
   if (__gab_unlikely(gab_valkind(value) != kGAB_STRING &&                      \
                      gab_valkind(value) != kGAB_MESSAGE)) {                    \
     STORE_PRIMITIVE_VM_PANIC_FRAME(have);                                      \
-    VM_PANIC(GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, value,                       \
-             gab_valtype(GAB(), value), gab_type(GAB(), kGAB_STRING));         \
+    VM_PANIC(GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, ks[GAB_SEND_KMESSAGE],       \
+             value, gab_valtype(GAB(), value), gab_type(GAB(), kGAB_STRING));  \
   }
 
 #define SEND_GUARD(clause)                                                     \
@@ -1733,7 +1740,7 @@ CASE_CODE(SEND) {
 
   if (__gab_unlikely(!res.status)) {
     STORE();
-    VM_PANIC(GAB_IMPLEMENTATION_MISSING, FMT_MISSINGIMPL, m, r,
+    VM_PANIC(GAB_SPECIALIZATION_MISSING, FMT_MISSINGIMPL, m, r,
              gab_valtype(GAB(), r));
   }
 
@@ -1929,7 +1936,7 @@ CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE) {
 
   if (__gab_unlikely(!res.status)) {
     STORE();
-    VM_PANIC(GAB_IMPLEMENTATION_MISSING, FMT_MISSINGIMPL, m, r,
+    VM_PANIC(GAB_SPECIALIZATION_MISSING, FMT_MISSINGIMPL, m, r,
              gab_valtype(GAB(), r));
   }
 

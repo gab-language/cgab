@@ -308,7 +308,6 @@ int gab_fvalinspect(FILE *stream, gab_value self, int depth) {
   for (size_t i = 128;; i <<= 1) {
     size_t n = i;
     char buf[n];
-
     char* cursor = buf;
     if (gab_svalinspect(&cursor, &n, self, depth) >= 0) {
       fprintf(stream, "%.*s", (int)n, buf);

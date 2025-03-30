@@ -1,3 +1,18 @@
+
+# Rethinking current tuple destructuring
+
+(a, b, c[]) = (1, 2, 3) # => Now invalid, as a newline is expected between 'c' and '[]'
+(a, b, c{}) = (1, 2, 3) # => Now invalid, as a newline is expected between 'c' and '{}'
+
+(a, b, [ self: c ]**) = (1, 2, 3) # -> Valid, as '**' is in the operator send position here.
+# It is consistent with the '**' splat syntax, which is nice.
+
+# Now there is no syntax for collecting extra values as a dict, instead of just a list.
+(a, b, { self: c }**) => c
+
+
+
+
 # This syntax sugar is fine, but because everything is *messages*, you can destructure
 # Anything that implements these messages.
 # This is kinda good?
@@ -21,7 +36,7 @@
 #  sequentially. (By default, this includes records and strings)
 #
 # Desugar eg:
-[f, s, **rest] = ['hello', 'world']
+[f, s, rest**] = ['hello', 'world']
   f = (...) .at! 0
   s = (...) .at! 1
   rest = (...) .slice(2, -1)
@@ -32,7 +47,7 @@
 # - PACK_LIST => 'slice' the on-stack tuple
 # - NPOPSTORE_STORELOCAL => pop the now-appropriate number of values into locals
 # Alternative desugar ex:
-[f, s, **rest] = ['hello', 'world']
+[f, s, rest**] = ['hello', 'world']
   (f, s, rest[], l) = ['hello', 'world']**
 
 # Is this worth it? We can sort of destructure manually

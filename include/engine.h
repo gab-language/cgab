@@ -99,17 +99,6 @@ gab_value gab_vspanicf(struct gab_triple gab, va_list vastruct,
 GAB_API int gab_fprintf(FILE *stream, const char *fmt, ...);
 
 /**
- * @brief Format the given string to the given stream.
- * @see gab_fprintf
- *
- * @param stream The stream to print to
- * @param fmt The format string
- * @param varargs The arguments
- * @return the number of bytes written to the stream.
- */
-GAB_API int gab_vfprintf(FILE *stream, const char *fmt, va_list varargs);
-
-/**
  * @brief Print the bytecode to the stream - useful for debugging.
  *
  * @param stream The stream to print to
