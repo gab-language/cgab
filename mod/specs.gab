@@ -181,7 +181,7 @@ spec\explain:.def!(boolean\predicate 'boolean')
 #
 # COMPOSING SPECS
 #
-and\predicate = (specs[]) => do
+and\predicate = (specs*) => do
   (specs.len > 0).assert! 'Must have at least one spec for the and predicate'
 
   pred = Strings.make('predicate:and:' specs).to\m
@@ -191,7 +191,7 @@ and\predicate = (specs[]) => do
 
     spec\fits?: value => specs.reduce(
           []
-          (acc  spec  key) => [spec.spec\fits?(value) .or (false: spec value key)])**
+          (acc  spec  key) => [spec.spec\fits?(value) .or (false: spec value key)])*
     
     spec\gen: () => do
         start = specs .at! 0
@@ -222,7 +222,7 @@ and\predicate = (specs[]) => do
   pred
 end
 
-or\predicate = (specs[]) => do
+or\predicate = (specs*) => do
   (specs.len > 0).assert! "The or predicate expects more than zero specs"
   
   pred = Strings.make('predicate:any:' specs).to\m
@@ -281,10 +281,10 @@ re\second_null?:.def! (other) => other.re\null?
 
 re\fields = [forms: meta: path:]
 
-re\atom\t = Shapes.make(re\atom: re\fields**)
-re\seq\t = Shapes.make(re\seq: re\fields**)
-re\alt\t = Shapes.make(re\alt: re\fields**)
-re\rep\t = Shapes.make(re\rep: re\fields**)
+re\atom\t = Shapes.make(re\atom: re\fields*)
+re\seq\t = Shapes.make(re\seq: re\fields*)
+re\alt\t = Shapes.make(re\alt: re\fields*)
+re\rep\t = Shapes.make(re\rep: re\fields*)
 
 re\empty?:.def!(re\alt\t () => do
   res = self.forms.collect(td:.filter re\empty?: |> td:.take 1)
@@ -357,7 +357,7 @@ re\d: .defcase! {
   regex\empty e => regex\null
 
   re\atom\t e => do
-    (ok, rest[]) = self.forms.to\spec.spec\fits? e
+    (ok, rest*) = self.forms.to\spec.spec\fits? e
 
     'Applied atom $ to $ -> $\n'.printf(self.forms.to\spec, e, ok)
 
@@ -491,7 +491,7 @@ to\spec\re: .def! () => re:.atom(self { name: self.to\spec.spec\name })
 
 pat: .def!(
   spec\t
-  (specs{}) => do
+  (specs**) => do
     pred = Strings.make('predicate:pat:' specs).to\m
 
     forms = specs
@@ -510,7 +510,7 @@ pat: .def!(
 
     generator = xf.map to\spec:
              |> xf.map spec\gen:
-             |> xf.map((args[]) => Strings.make(args**))
+             |> xf.map((args*) => Strings.make(args*))
 
     spec\gen:.def!(
       pred
@@ -523,7 +523,7 @@ pat: .def!(
 
 cat: .def!(
   spec\t
-  (specs{}) => do
+  (specs**) => do
     pred = Strings.make('predicate:cat:' specs).to\m
 
     forms = specs.map (v k)
@@ -533,7 +533,7 @@ cat: .def!(
 
     spec\fits?: .def! (
       pred
-      (values[]) => do
+      (values*) => do
         values .match re
       end)
 
@@ -542,7 +542,7 @@ cat: .def!(
 
     spec\gen:.def!(
       pred
-      () => specs.transduce([] push: generator).**)
+      () => specs.transduce([] push: generator).*)
 
     to\spec\re: .def!(pred re)
 
@@ -551,8 +551,8 @@ cat: .def!(
 
 alt: .def!(
   spec\t
-  (specs{}) => do
-    (first rest[]) = specs**
+  (specs**) => do
+    (first rest*) = specs*
     pred = Strings.make('predicate:alt:' specs).to\m
 
     forms = specs.map (v k)
@@ -562,7 +562,7 @@ alt: .def!(
 
     spec\fits?:.def!(
       pred
-      (values[]) => do
+      (values*) => do
         values .match re
       end)
 
@@ -586,7 +586,7 @@ alt: .def!(
 
     spec\fits?: .def!(
       pred
-      (values[]) => values .match re)
+      (values*) => values .match re)
 
     generator = xf.map(_ => spec.to\spec.spec\gen)
 
@@ -595,7 +595,7 @@ alt: .def!(
       () => Ranges
               .make(0 Numbers.int\between(0 10))
               .collect generator
-              .**)
+              .*)
 
     to\spec\re: .def!(pred re)
 
@@ -613,7 +613,7 @@ alt: .def!(
 
     spec\fits?:.def!(
       pred
-      (values[]) => values .match re)
+      (values*) => values .match re)
 
     spec\gen:.def!(
       pred
@@ -621,7 +621,7 @@ alt: .def!(
         Ranges
           .make(0 Numbers.int\between(1 10))
           .collect(xf.map _ => spec.spec\gen
-          .**)
+          .*)
       end)
 
     to\spec\re: .def!(pred re)
@@ -647,7 +647,7 @@ slice\predicate = (slice) => do
             end
           end .or [false:, self, value, m]
         end
-      end).**
+      end).*
     end)
 
   genit = td:.map (v) => do
@@ -675,7 +675,7 @@ protocol\predicate = (protocol) => do
         .and "[]"
         .or ("[ " + explain_values.(protocol, ', ') + " ]")
 
-    spec\protocol\keys: [protocol**]
+    spec\protocol\keys: [protocol*]
 
     spec\slice: slice\predicate
   }
@@ -731,20 +731,20 @@ spec\recursively: .defcase! {
   # In the boolean cases, recurse if the spec matched
   # and bail early if it didn't
   true: (tail curr alt) => do
-    tail.spec\recursively(alt**)
+    tail.spec\recursively(alt*)
   end
   false: (tail curr alt) => do
-    (self curr**)
+    (self curr*)
   end
   # In the recursion cases, continue to check head 
   # until there is no tail
-  nil: (alt[]) => do
-    alt**
+  nil: (alt*) => do
+    alt*
   end
-  'gab\\record' (alt[]) => do
-    (spec value) = self.head**
+  'gab\\record' (alt*) => do
+    (spec value) = self.head*
 
-    (does_fit result[]) = spec.spec\fits? value
+    (does_fit result*) = spec.spec\fits? value
 
     does_fit .spec\recursively (self.tail, result alt)
   end
@@ -756,11 +756,11 @@ spec\block\Application = Shapes.make(input: output: semantics: in: out:)
 
 spec\block\input_fits?:.def!(
   spec\block\Application
-  () => self.input.spec\fits?(self.in**))
+  () => self.input.spec\fits?(self.in*))
 
 spec\block\output_fits?:.def!(
   spec\block\Application
-  () => self.output.spec\fits?(self.out**))
+  () => self.output.spec\fits?(self.out*))
 
 spec\semantics_fits?:.def!(
   nil:
@@ -796,10 +796,10 @@ block\predicate = (args semantics) => do
   spec\gen:.def!(
     pred
     () => do
-      block\gen = (input[]) => do
+      block\gen = input* => do
         range:.make 100 .transduce(0, () => do
           # Generate an output
-          (output[]) = args.output.spec\gen
+          output* = args.output.spec\gen
 
           v = args
             .put(input_value: input)
@@ -822,10 +822,10 @@ block\predicate = (args semantics) => do
     pred
     (block) => do
       range:.make 100 .transduce(() => do
-        (input[]) = args.input.spec\gen
+        (input*) = args.input.spec\gen
 
-        args.input.spec\fits?(input**) .then do
-          (output[]) = block.(input**)
+        args.input.spec\fits?(input*) .then do
+          output* = block.(input*)
           
           (some:, pred.(input, output))
         end
@@ -851,15 +851,15 @@ spec\explain:.def!(
 
 spec\message\input_fits?:.def!(
   'gab\\record'
-  () => self.input.spec\fits?(self.in**))
+  () => self.input.spec\fits?(self.in*))
 
 spec\message\output_fits?:.def!(
   'gab\\record'
-  () => self.output.spec\fits?(self.out**))
+  () => self.output.spec\fits?(self.out*))
 
 spec\message\receiver_fits?:.def!(
   'gab\\record'
-  () => self.receiver.spec\fits?(self.rec**))
+  () => self.receiver.spec\fits?(self.rec*))
 
 spec\message\semantics_fits?:.def!(
   'gab\\record'
@@ -873,12 +873,12 @@ dospec\apply: .defcase! {
   false: (v acc f) => acc
 }
 
--!>: .def! (fs[]) => do
+-!>: .def! (fs*) => do
   me = self # I'd like doing this to be a little neater
   fs.reduce([true:]
     (so_far f) => so_far
       .at! 0
-      .dospec\apply(me so_far f))**
+      .dospec\apply(me so_far f))*
 end
 
 spec\message\define:.defcase! {
@@ -904,24 +904,24 @@ spec\message\define:.defcase! {
       receiver => do
         args.message.def!(
           receiver
-          (input[]) => do
+          (input*) => do
             (ok pred value path) = args.receiver.spec\fits? self
 
             (ok pred value path) = ok
               .or (ok pred value path)
-              .then () => args.input.spec\fits?(input**)
+              .then () => args.input.spec\fits?(input*)
 
             ok
               .or (ok pred value path)
               .then () => do
-                (ok pred value path) = args.input.spec\fits?(input**)
-                (output[]) = args.output.spec\gen
+                (ok pred value path) = args.input.spec\fits?(input*)
+                (output*) = args.output.spec\gen
                 iter = td:.map(() => do
-                    (output[]) = args.output.spec\gen
+                    (output*) = args.output.spec\gen
 
-                    args.output.spec\fits?(output**) .then () => do
+                    args.output.spec\fits?(output*) .then () => do
                       # If there are no semantics to satisfy, just return this output
-                      (args.has? semantics: .else () => output**) .then () => do
+                      (args.has? semantics: .else () => output*) .then () => do
                         rec = args.receiver.spec\gen
 
                         args.receiver.spec\fits?(rec) .then () => do
@@ -930,7 +930,7 @@ spec\message\define:.defcase! {
                           # find a receiver and output which satisfy the semantics.
                           args.semantics.(input, output) .then () => do
                             # Return the generated output
-                            (ok: output**)
+                            (ok: output*)
                           end
                         end
                       end
@@ -954,19 +954,19 @@ spec\message\define:.defcase! {
             receiver = args.receiver.spec\gen
 
             args.receiver.spec\fits?(receiver) .then () => do
-              (input[]) = args.input.spec\gen
+              (input*) = args.input.spec\gen
 
-              args.input.spec\fits?(input**) .then () => do
-                (output[]) = args.message.(receiver input**)
+              args.input.spec\fits?(input*) .then () => do
+                (output*) = args.message.(receiver input*)
 
-                (ok res[]) = args.output.spec\fits?(output**)
+                (ok res*) = args.output.spec\fits?(output*)
                 
                  ok.then () => do
                   args.has? semantics:
-                    .or (ok, res**)
+                    .or (ok, res*)
                     .then () => do
                       args.semantics.(input output)
-                        .and(ok, res**)
+                        .and(ok, res*)
                         .or(false:, args.semantics, [input output], 'semantics')
                     end
                 end
@@ -977,7 +977,7 @@ spec\message\define:.defcase! {
           |> td:.map((valid? spec value path) => option:.make(valid? !, spec value path))
           |> td:.take 1
 
-        range:.make 100 .transduce([none:] all: xf)**
+        range:.make 100 .transduce([none:] all: xf)*
       end)
 
     spec\explain:.def!(

@@ -308,9 +308,9 @@ int gab_fvalinspect(FILE *stream, gab_value self, int depth) {
   for (size_t i = 128;; i <<= 1) {
     size_t n = i;
     char buf[n];
-    char* cursor = buf;
+    char *cursor = buf;
     if (gab_svalinspect(&cursor, &n, self, depth) >= 0) {
-      fprintf(stream, "%.*s", (int)n, buf);
+      fprintf(stream, "%s", buf);
       return 1;
     };
   }
@@ -787,7 +787,7 @@ gab_value recsetshp(gab_value rec, gab_value shp) {
  * this will create a new shape. (to account for the swapped value, not seen
  * here)
  *
- * There is a fast case, where the value popped is the last value.
+ * There is a fast case, where the value popped *is* the last value.
  */
 gab_value dissoc(struct gab_triple gab, gab_value rec, uint64_t i) {
   assert(gab_valkind(rec) == kGAB_RECORD);
@@ -799,11 +799,13 @@ gab_value dissoc(struct gab_triple gab, gab_value rec, uint64_t i) {
   gab_value rightmost_node = rec;
   gab_value rightmost_path = root;
 
+  /*
+   * Keep track of if the path to chosen elem has diverged
+   * from the path to the last elem.
+   *
+   * While they converge, we only have to copy one path.
+   */
   bool diverged = false;
-
-  // Sometimes the chose node _is_ in the rightmost node, and this
-  // will copy the same path twice. This results in the second path
-  // overwriting the first.
 
   for (int64_t level = r->shift; level > 0; level -= GAB_PVEC_BITS) {
     uint64_t idx = (i >> level) & GAB_PVEC_MASK;
@@ -1087,14 +1089,16 @@ gab_value gab_shptorec(struct gab_triple gab, gab_value shp) {
 }
 
 gab_value gab_recordfrom(struct gab_triple gab, gab_value shape,
-                         uint64_t stride, gab_value *vals) {
+                         uint64_t stride, uint64_t len, gab_value *vals,
+                         uint64_t *km) {
   gab_gclock(gab);
 
-  uint64_t len = gab_shplen(shape);
+  uint64_t real_len = gab_shplen(shape);
+  assert(real_len <= len);
 
-  uint64_t shift = getshift(len);
+  uint64_t shift = getshift(real_len);
 
-  uint64_t rootlen = getlen(len, shift);
+  uint64_t rootlen = getlen(real_len, shift);
 
   struct gab_obj_rec *self =
       GAB_CREATE_FLEX_OBJ(gab_obj_rec, gab_value, rootlen, kGAB_RECORD);
@@ -1105,13 +1109,19 @@ gab_value gab_recordfrom(struct gab_triple gab, gab_value shape,
 
   gab_value res = __gab_obj(self);
 
-  if (len) {
-    recfillchildren(gab, res, shift, len, rootlen);
+  if (real_len) {
+    recfillchildren(gab, res, shift, real_len, rootlen);
 
-    assert(len == gab_shplen(self->shape));
+    assert(real_len == gab_shplen(self->shape));
 
-    for (uint64_t i = 0; i < len; i++)
-      massoc(gab, res, vals[i * stride], i);
+    uint64_t real_i = 0;
+    for (uint64_t i = 0; i < len; i++) {
+      uint64_t km_idx = i / 64;
+      uint64_t in_idx = i % 64;
+      assert(in_idx < 64);
+      if (!km || !(km[km_idx] & ((uint64_t)1 << in_idx)))
+        massoc(gab, res, vals[i * stride], real_i++);
+    }
   }
 
   return gab_gcunlock(gab), res;
@@ -1120,8 +1130,13 @@ gab_value gab_recordfrom(struct gab_triple gab, gab_value shape,
 gab_value gab_record(struct gab_triple gab, uint64_t stride, uint64_t len,
                      gab_value *keys, gab_value *vals) {
   gab_gclock(gab);
-  gab_value shp = gab_shape(gab, stride, len, keys);
-  gab_value rec = gab_recordfrom(gab, shp, stride, vals);
+
+  uint64_t km_size = 1 + (len / 64);
+  uint64_t km[km_size];
+  memset(km, 0, km_size * sizeof(uint64_t));
+
+  gab_value shp = gab_shape(gab, stride, len, keys, km);
+  gab_value rec = gab_recordfrom(gab, shp, stride, len, vals, km);
   return gab_gcunlock(gab), rec;
 }
 
@@ -1139,10 +1154,16 @@ gab_value nth_amongst(uint64_t n, uint64_t len, gab_value records[static len]) {
 
 gab_value gab_nlstcat(struct gab_triple gab, uint64_t len,
                       gab_value records[static len]) {
+  if (len == 0)
+    return gab_erecord(gab);
+
   uint64_t total_len = 0;
 
   for (uint64_t i = 0; i < len; i++)
     total_len += gab_reclen(records[i]);
+
+  if (total_len == 0)
+    return gab_erecord(gab);
 
   gab_value total_keys[total_len];
   for (uint64_t i = 0; i < total_len; i++)
@@ -1157,7 +1178,7 @@ gab_value gab_nlstcat(struct gab_triple gab, uint64_t len,
   struct gab_obj_rec *self =
       GAB_CREATE_FLEX_OBJ(gab_obj_rec, gab_value, rootlen, kGAB_RECORD);
 
-  self->shape = gab_shape(gab, 1, total_len, total_keys);
+  self->shape = gab_shape(gab, 1, total_len, total_keys, nullptr);
   self->shift = shift;
   self->len = rootlen;
 
@@ -1234,13 +1255,22 @@ gab_value gab_list(struct gab_triple gab, uint64_t size, gab_value *values) {
 }
 
 gab_value gab_shape(struct gab_triple gab, uint64_t stride, uint64_t len,
-                    gab_value *keys) {
+                    gab_value *keys, uint64_t *km_out) {
   gab_value shp = gab.eg->shapes;
 
   gab_gclock(gab);
 
-  for (uint64_t i = 0; i < len; i++)
-    shp = gab_shpwith(gab, shp, keys[i * stride]);
+  for (uint64_t i = 0; i < len; i++) {
+    gab_value new_shp = gab_shpwith(gab, shp, keys[i * stride]);
+
+    if (km_out && new_shp == shp) {
+      uint64_t km_idx = i / 64;
+      uint64_t in_idx = i % 64;
+      km_out[km_idx] |= ((uint64_t)1 << in_idx);
+    }
+
+    shp = new_shp;
+  }
 
   gab_gcunlock(gab);
 
@@ -1921,7 +1951,8 @@ static uint64_t dumpInstruction(FILE *stream, struct gab_oprototype *self,
   case OP_SEND_NATIVE:
   case OP_SEND_PROPERTY:
   case OP_SEND_PRIMITIVE_CONCAT:
-  case OP_SEND_PRIMITIVE_SPLAT:
+  case OP_SEND_PRIMITIVE_SPLATLIST:
+  case OP_SEND_PRIMITIVE_SPLATDICT:
   case OP_SEND_PRIMITIVE_ADD:
   case OP_SEND_PRIMITIVE_SUB:
   case OP_SEND_PRIMITIVE_MUL:

@@ -10,7 +10,7 @@ implementations = Messages.specializations
 
 xf = td:.filter((_ m) => m .test?)
   |> td:.map((impls m) => do
-      (path[] _) = m.to\s.split "\"
+      (path*, _) = m.to\s.split "\"
 
       (path { path: path, impls: impls })
   end)
@@ -18,7 +18,7 @@ xf = td:.filter((_ m) => m .test?)
 # Collect all the implementations into a giant, nested map.
 tests\all = implementations.transduce(
   {}
-  (t p i) => t.put_via(i p**)
+  (t p i) => t.put_via(i p*)
   xf
 )
 
@@ -53,9 +53,9 @@ test\result\display: .defcase! {
     nil:
   end
   test\result\fail\t  _ => do
-    (suite behavior) = self.test\path**
+    (suite behavior) = self.test\path*
 
-    msg = ' ❌$ should $\n\t$ $ $\n'.sprintf(suite, behavior, self.test\meta**)
+    msg = ' ❌$ should $\n\t$ $ $\n'.sprintf(suite, behavior, self.test\meta*)
     io.stdout.write msg
   end,
 }
@@ -73,7 +73,7 @@ end
   fibers = tests\all.map (behaviors suite) => do 
       Fibers.make () => do
         behaviors.each (runnable) => do 
-          (path body) = runnable**
+          (path body) = runnable*
           body.each(t r) => do
             t. { test\path: path, test\receiver: r }
           end

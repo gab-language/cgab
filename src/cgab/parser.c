@@ -1,5 +1,6 @@
 #include "colors.h"
 #include "core.h"
+#include <stddef.h>
 #include <stdint.h>
 #define GAB_TOKEN_NAMES_IMPL
 #include "engine.h"
@@ -25,6 +26,7 @@
   "\nBlocks and assignments can only declare one target as a rest-target."
 
 #define FMT_UNEXPECTEDTOKEN "Expected $ instead."
+
 #define FMT_MISSINGSEPARATOR                                                   \
   "Expected one of " GAB_GREEN "';'" GAB_RESET ", " GAB_GREEN "','" GAB_RESET  \
   ", or a newline instead."
@@ -40,6 +42,11 @@
   "  a, b = " GAB_YELLOW "1" GAB_RESET ", " GAB_YELLOW "2\n" GAB_RESET         \
   "  a:put!(" GAB_GREEN ".key" GAB_RESET "), b = " GAB_YELLOW "1" GAB_RESET    \
   ", " GAB_YELLOW "2\n" GAB_RESET
+
+#define FMT_TOO_MANY_EXPRESSIONS_IN_TUPLE                                      \
+  "Tuples cannot have more than 64 compile-time "                              \
+  "values.\n\nThis is an artificial limitiation,\n but is enforced by "        \
+  "the compiler for performance reasons."
 
 /*
  *******
@@ -381,15 +388,6 @@ static inline void skip_newlines(struct gab_triple gab, struct parser *parser) {
     ;
 }
 
-static inline int expect_newline(struct gab_triple gab, struct parser *parser) {
-  if (!match_and_eat_token(gab, parser, TOKEN_NEWLINE))
-    return eat_token(gab, parser),
-           parser_error(gab, parser, GAB_MISSING_SEPARATOR,
-                        FMT_MISSINGSEPARATOR, tok_id(gab, TOKEN_NEWLINE));
-
-  return true;
-}
-
 void node_storeinfo(struct gab_src *src, gab_value node, size_t begin,
                     size_t end) {
   d_uint64_t_insert(&src->node_begin_toks, node, begin);
@@ -523,11 +521,10 @@ static gab_value parse_expressions_body(struct gab_triple gab,
 }
 
 gab_value parse_expressions_until(struct gab_triple gab, struct parser *parser,
-                                  enum gab_token t, size_t newline_stride) {
+                                  enum gab_token t) {
   size_t begin = parser->offset;
 
   gab_value result = node_empty(gab, parser);
-  int groups = 0;
 
   skip_newlines(gab, parser);
 
@@ -546,14 +543,6 @@ gab_value parse_expressions_until(struct gab_triple gab, struct parser *parser,
 
     if (match_and_eat_token(gab, parser, t))
       break;
-
-    groups++;
-    if (groups == newline_stride) {
-      if (!expect_newline(gab, parser))
-        return gab_cinvalid;
-
-      groups = 0;
-    };
 
     skip_newlines(gab, parser);
   }
@@ -690,7 +679,7 @@ gab_value parse_exp_rec(struct gab_triple gab, struct parser *parser,
                         gab_value lhs) {
   size_t begin = parser->offset;
 
-  gab_value result = parse_expressions_until(gab, parser, TOKEN_RBRACK, 2);
+  gab_value result = parse_expressions_until(gab, parser, TOKEN_RBRACK);
 
   if (result == gab_cinvalid)
     return gab_cinvalid;
@@ -714,7 +703,7 @@ gab_value parse_exp_lst(struct gab_triple gab, struct parser *parser,
                         gab_value lhs) {
   size_t begin = parser->offset;
 
-  gab_value result = parse_expressions_until(gab, parser, TOKEN_RBRACE, 1);
+  gab_value result = parse_expressions_until(gab, parser, TOKEN_RBRACE);
 
   if (result == gab_cinvalid)
     return gab_cinvalid;
@@ -736,7 +725,7 @@ gab_value parse_exp_lst(struct gab_triple gab, struct parser *parser,
 
 gab_value parse_exp_tup(struct gab_triple gab, struct parser *parser,
                         gab_value lhs) {
-  return parse_expressions_until(gab, parser, TOKEN_RPAREN, 1);
+  return parse_expressions_until(gab, parser, TOKEN_RPAREN);
 }
 
 gab_value parse_exp_blk(struct gab_triple gab, struct parser *parser,
@@ -1142,8 +1131,11 @@ static inline void push_storel(struct bc *bc, uint8_t local, gab_value node) {
   return;
 }
 
-static inline uint8_t encode_arity(struct gab_triple gab, gab_value lhs,
-                                   gab_value rhs) {
+static inline uint8_t encode_arity(struct gab_triple gab, struct bc *bc,
+                                   gab_value lhs, gab_value rhs,
+                                   gab_value *vout) {
+  *vout = gab_cvalid;
+
   if (rhs == gab_cinvalid && lhs == gab_cinvalid)
     return 1;
 
@@ -1153,6 +1145,11 @@ static inline uint8_t encode_arity(struct gab_triple gab, gab_value lhs,
 
     if (len && is_multi)
       len--;
+
+    if (len >= 64)
+      return bc_error(gab, bc, lhs, GAB_TOO_MANY_EXPRESSIONS,
+                      FMT_TOO_MANY_EXPRESSIONS_IN_TUPLE),
+             *vout = gab_cinvalid, 0;
 
     assert(len < 64);
     return ((uint8_t)len << 2) | is_multi;
@@ -1166,12 +1163,19 @@ static inline uint8_t encode_arity(struct gab_triple gab, gab_value lhs,
   if (len && is_multi)
     len--;
 
+  if (len >= 64)
+    return bc_error(gab, bc, rhs, GAB_TOO_MANY_EXPRESSIONS,
+                    FMT_TOO_MANY_EXPRESSIONS_IN_TUPLE),
+           *vout = gab_cinvalid, 0;
+
   assert(len < 64);
   return ((uint8_t)len << 2) | is_multi;
 }
 
-static inline void push_send(struct gab_triple gab, struct bc *bc, gab_value m,
-                             gab_value lhs, gab_value rhs, gab_value node) {
+[[nodiscard]]
+static inline gab_value push_send(struct gab_triple gab, struct bc *bc,
+                                  gab_value m, gab_value lhs, gab_value rhs,
+                                  gab_value node) {
   if (gab_valkind(m) == kGAB_STRING)
     m = gab_strtomsg(m);
 
@@ -1188,7 +1192,14 @@ static inline void push_send(struct gab_triple gab, struct bc *bc, gab_value m,
 
   push_op(bc, OP_SEND, node);
   push_short(bc, ks, node);
-  push_byte(bc, encode_arity(gab, lhs, rhs), node);
+
+  gab_value res;
+  push_byte(bc, encode_arity(gab, bc, lhs, rhs, &res), node);
+
+  if (res != gab_cvalid)
+    return res;
+
+  return gab_cvalid;
 }
 
 static inline void push_pop(struct bc *bc, uint8_t n, gab_value node) {
@@ -1266,26 +1277,37 @@ static inline bool push_trim_node(struct gab_triple gab, struct bc *bc,
   return true;
 }
 
-static inline void push_listpack(struct gab_triple gab, struct bc *bc,
-                                 gab_value rhs, uint8_t below, uint8_t above,
-                                 gab_value node) {
+[[nodiscard]]
+static inline gab_value push_listpack(struct gab_triple gab, struct bc *bc,
+                                      gab_value rhs, uint8_t below,
+                                      uint8_t above, gab_value node) {
+  gab_value res;
+
   push_op(bc, OP_PACK_LIST, node);
-  push_byte(bc, encode_arity(gab, rhs, gab_cinvalid), node);
+  push_byte(bc, encode_arity(gab, bc, rhs, gab_cinvalid, &res), node);
   push_byte(bc, below, node);
   push_byte(bc, above, node);
+
+  return res;
 }
 
-static inline void push_recordpack(struct gab_triple gab, struct bc *bc,
-                                   gab_value rhs, uint8_t below, uint8_t above,
-                                   gab_value node) {
+[[nodiscard]]
+static inline gab_value push_recordpack(struct gab_triple gab, struct bc *bc,
+                                        gab_value rhs, uint8_t below,
+                                        uint8_t above, gab_value node) {
+  gab_value res;
+
   push_op(bc, OP_PACK_RECORD, node);
-  push_byte(bc, encode_arity(gab, rhs, gab_cinvalid), node);
+  push_byte(bc, encode_arity(gab, bc, rhs, gab_cinvalid, &res), node);
   push_byte(bc, below, node);
   push_byte(bc, above, node);
+
+  return res;
 }
 
-static inline void push_ret(struct gab_triple gab, struct bc *bc, gab_value tup,
-                            gab_value node) {
+[[nodiscard]]
+static inline gab_value push_ret(struct gab_triple gab, struct bc *bc,
+                                 gab_value tup, gab_value node) {
   assert(node_len(gab, tup) < 16);
 
   bool is_multi = node_ismulti(gab, tup);
@@ -1298,31 +1320,39 @@ static inline void push_ret(struct gab_triple gab, struct bc *bc, gab_value tup,
   if (len == 0) {
     switch (bc->prev_op) {
     case OP_SEND: {
+      gab_value res;
+
       uint8_t have_byte = v_uint8_t_val_at(&bc->bc, bc->bc.len - 1);
       v_uint8_t_set(&bc->bc, bc->bc.len - 1, have_byte | fHAVE_TAIL);
       push_op(bc, OP_RETURN, node);
-      push_byte(bc, encode_arity(gab, tup, gab_cinvalid), node);
-      return;
+      push_byte(bc, encode_arity(gab, bc, tup, gab_cinvalid, &res), node);
+
+      return res;
     }
     case OP_TRIM: {
       if (bc->pprev_op != OP_SEND)
         break;
 
+      gab_value res;
       uint8_t have_byte = v_uint8_t_val_at(&bc->bc, bc->bc.len - 3);
       v_uint8_t_set(&bc->bc, bc->bc.len - 3, have_byte | fHAVE_TAIL);
       bc->prev_op = bc->pprev_op;
       bc->bc.len -= 2;
       bc->bc_toks.len -= 2;
       push_op(bc, OP_RETURN, node);
-      push_byte(bc, encode_arity(gab, tup, gab_cinvalid), node);
-      return;
+      push_byte(bc, encode_arity(gab, bc, tup, gab_cinvalid, &res), node);
+
+      return res;
     }
     }
   }
 #endif
+  gab_value res;
 
   push_op(bc, OP_RETURN, node);
-  push_byte(bc, encode_arity(gab, tup, gab_cinvalid), node);
+  push_byte(bc, encode_arity(gab, bc, tup, gab_cinvalid, &res), node);
+
+  return res;
 }
 
 void patch_init(struct bc *bc, uint8_t nlocals) {
@@ -1541,9 +1571,87 @@ gab_value compile_value(struct gab_triple gab, struct bc *bc, gab_value tuple,
   }
 }
 
-gab_value unpack_binding_into_env(struct gab_triple gab, struct bc *bc,
-                                  gab_value bindings, gab_value env,
-                                  gab_value values) {
+gab_value unpack_binding(struct gab_triple gab, struct bc *bc,
+                         gab_value bindings, size_t i, gab_value ctx,
+                         v_gab_value *targets, int *listpack_at_n,
+                         int *recpack_at_n) {
+  gab_value binding = gab_uvrecat(bindings, i);
+
+  switch (gab_valkind(binding)) {
+
+  case kGAB_BINARY:
+    assert(gab_valkind(gab_recat(ctx, binding)) != kGAB_NUMBER);
+    ctx = gab_recput(gab, ctx, binding, gab_nil);
+    v_gab_value_push(targets, binding);
+    return ctx;
+
+  case kGAB_RECORD: {
+    if (gab_valkind(gab_recshp(binding)) == kGAB_SHAPE) {
+      // Assume this is a send
+      gab_value lhs = gab_mrecat(gab, binding, mGAB_AST_NODE_SEND_LHS);
+      gab_value rhs = gab_mrecat(gab, binding, mGAB_AST_NODE_SEND_RHS);
+      gab_value m = gab_mrecat(gab, binding, mGAB_AST_NODE_SEND_MSG);
+
+      gab_value rec = gab_uvrecat(lhs, 0);
+
+      /*
+       * Compiling a PACK member.
+       */
+      if (m == gab_message(gab, mGAB_SPLATLIST)) {
+        if (gab_valkind(rec) != kGAB_BINARY)
+          goto err;
+
+        if (!node_isempty(rhs))
+          goto err;
+
+        if (*listpack_at_n >= 0 || *recpack_at_n >= 0)
+          goto err;
+
+        assert(gab_valkind(gab_recat(ctx, rec)) != kGAB_NUMBER);
+        ctx = gab_recput(gab, ctx, rec, gab_nil);
+        v_gab_value_push(targets, rec);
+
+        *listpack_at_n = i;
+
+        return ctx;
+      }
+
+      if (m == gab_message(gab, mGAB_SPLATDICT)) {
+        if (gab_valkind(rec) != kGAB_BINARY)
+          goto err;
+
+        if (!node_isempty(rhs))
+          goto err;
+
+        if (*listpack_at_n >= 0 || *recpack_at_n >= 0)
+          goto err;
+
+        assert(gab_valkind(gab_recat(ctx, rec)) != kGAB_NUMBER);
+        ctx = gab_recput(gab, ctx, rec, gab_nil);
+        v_gab_value_push(targets, rec);
+
+        *recpack_at_n = i;
+
+        return ctx;
+      }
+
+    err:
+      return bc_error(gab, bc, binding, GAB_INVALID_REST_VARIABLE,
+                      "$ is invalid assignment", lhs),
+             gab_cinvalid;
+    }
+  }
+
+  default:
+    return bc_error(gab, bc, binding, GAB_INVALID_REST_VARIABLE,
+                    "$ is invalid assignment", binding),
+           gab_cinvalid;
+  }
+}
+
+gab_value unpack_bindings_into_env(struct gab_triple gab, struct bc *bc,
+                                   gab_value bindings, gab_value env,
+                                   gab_value values) {
   size_t local_ctx = gab_reclen(env) - 1;
   gab_value ctx = gab_uvrecat(env, local_ctx);
 
@@ -1554,120 +1662,45 @@ gab_value unpack_binding_into_env(struct gab_triple gab, struct bc *bc,
   if (!len)
     return env;
 
-  gab_value targets[len];
-  size_t actual_targets = 0; // May be less than we started with (destructuring
+  v_gab_value targets = {};
 
   for (size_t i = 0; i < len; i++) {
-    gab_value binding = gab_uvrecat(bindings, i);
+    ctx = unpack_binding(gab, bc, bindings, i, ctx, &targets, &listpack_at_n,
+                         &recpack_at_n);
 
-    gab_fprintf(stdout, "BINDING: $\n", binding);
-
-    switch (gab_valkind(binding)) {
-
-    case kGAB_BINARY:
-      assert(gab_valkind(gab_recat(ctx, binding)) != kGAB_NUMBER);
-      ctx = gab_recput(gab, ctx, binding, gab_nil);
-      targets[actual_targets++] = binding;
-      continue;
-
-    case kGAB_RECORD: {
-      if (gab_valkind(gab_recshp(binding)) == kGAB_SHAPE) {
-        // Assume this is a send
-        gab_value lhs = gab_mrecat(gab, binding, mGAB_AST_NODE_SEND_LHS);
-        gab_value rhs = gab_mrecat(gab, binding, mGAB_AST_NODE_SEND_RHS);
-        gab_value m = gab_mrecat(gab, binding, mGAB_AST_NODE_SEND_MSG);
-
-        gab_value rec = gab_uvrecat(lhs, 0);
-
-        gab_fprintf(stdout, "Binding: $\nLHS: $\nM: $\nREC: $\n", binding, lhs, m, rec);
-
-        if (m == gab_message(gab, mGAB_SPLAT)) {
-          if (gab_valkind(rec) != kGAB_BINARY)
-            goto err;
-
-          if (!node_isempty(rhs))
-            goto err;
-
-          assert(gab_valkind(gab_recat(ctx, rec)) != kGAB_NUMBER);
-          ctx = gab_recput(gab, ctx, rec, gab_nil);
-          targets[actual_targets++] = rec;
-
-          if (listpack_at_n >= 0 || recpack_at_n >= 0)
-            goto err;
-
-          listpack_at_n = i;
-
-          continue;
-        }
-
-        if (rec == gab_message(gab, tGAB_LIST)) {
-          if (m != gab_message(gab, mGAB_MAKE))
-            goto err;
-
-          if (!node_isempty(rhs))
-            goto err;
-
-          if (i == 0)
-            goto err;
-
-          if (listpack_at_n >= 0 || recpack_at_n >= 0)
-            goto err;
-
-          listpack_at_n = i - 1;
-
-          continue;
-        }
-
-        if (rec == gab_message(gab, tGAB_RECORD)) {
-          if (m != gab_message(gab, mGAB_MAKE))
-            goto err;
-
-          if (!node_isempty(rhs))
-            goto err;
-
-          if (i == 0)
-            goto err;
-
-          if (listpack_at_n >= 0 || recpack_at_n >= 0)
-            goto err;
-
-          recpack_at_n = i - 1;
-
-          continue;
-        }
-
-      err:
-        return bc_error(gab, bc, bindings, GAB_INVALID_REST_VARIABLE,
-                        "$ is invalid assignment", lhs),
-               gab_cinvalid;
-      }
-    }
-
-    default:
-      return bc_error(gab, bc, bindings, GAB_INVALID_REST_VARIABLE,
-                      "$ is invalid assignment", binding),
-             gab_cinvalid;
-    }
+    if (ctx == gab_cinvalid)
+      return v_gab_value_destroy(&targets), ctx;
   }
 
-  gab_fprintf(stdout, "CONTEXT: $\n", ctx);
+  size_t actual_targets = targets.len;
 
-  if (listpack_at_n >= 0)
-    push_listpack(gab, bc, values, listpack_at_n,
-                  actual_targets - listpack_at_n - 1, bindings);
-  else if (recpack_at_n >= 0)
-    push_recordpack(gab, bc, values, recpack_at_n,
-                    actual_targets - recpack_at_n - 1, bindings);
-  else if (!push_trim_node(gab, bc, actual_targets, values, bindings))
-    return gab_cinvalid;
+  if (listpack_at_n >= 0) {
+    gab_value res = push_listpack(gab, bc, values, listpack_at_n,
+                                  actual_targets - listpack_at_n - 1, bindings);
+    if (res != gab_cvalid)
+      return v_gab_value_destroy(&targets), res;
+  } else if (recpack_at_n >= 0) {
+    gab_value res =
+        push_recordpack(gab, bc, values, recpack_at_n,
+                        actual_targets - recpack_at_n - 1, bindings);
+    if (res != gab_cvalid)
+      return v_gab_value_destroy(&targets), res;
+  } else if (!push_trim_node(gab, bc, actual_targets, values, bindings)) {
+    return v_gab_value_destroy(&targets), gab_cinvalid;
+  }
 
   env = gab_urecput(gab, env, local_ctx, ctx);
 
+  /*
+   * Sometimes, these bindings don't have a corresponding value AST
+   * to take care of right now (Such as arguments to a function).
+   * In thase case, binding stops here.
+   */
   if (values == gab_cinvalid)
-    return env;
+    return v_gab_value_destroy(&targets), env;
 
   for (size_t i = 0; i < actual_targets; i++) {
-    gab_value target = targets[actual_targets - i - 1];
+    gab_value target = targets.data[actual_targets - i - 1];
 
     switch (gab_valkind(target)) {
     case kGAB_BINARY: {
@@ -1687,7 +1720,8 @@ gab_value unpack_binding_into_env(struct gab_triple gab, struct bc *bc,
       break;
     }
     default:
-      return bc_error(gab, bc, bindings, GAB_INVALID_REST_VARIABLE,
+      return v_gab_value_destroy(&targets),
+             bc_error(gab, bc, bindings, GAB_INVALID_REST_VARIABLE,
                       "$ is invalid assignment", target),
              gab_cinvalid;
     }
@@ -1696,7 +1730,7 @@ gab_value unpack_binding_into_env(struct gab_triple gab, struct bc *bc,
       push_pop(bc, 1, bindings);
   }
 
-  return env;
+  return v_gab_value_destroy(&targets), env;
 }
 
 gab_value compile_block(struct gab_triple gab, struct bc *bc, gab_value node,
@@ -1719,7 +1753,7 @@ gab_value compile_block(struct gab_triple gab, struct bc *bc, gab_value node,
                                                });
 
   if (pair.status == gab_cinvalid)
-    return gab_cinvalid;
+    return bc->err = pair.vresult, gab_cinvalid;
 
   gab_value prt = pair.vresult;
   assert(gab_valkind(prt) == kGAB_PROTOTYPE);
@@ -1742,7 +1776,7 @@ gab_value compile_assign(struct gab_triple gab, struct bc *bc, gab_value node,
   if (env == gab_cinvalid)
     return gab_cinvalid;
 
-  env = unpack_binding_into_env(gab, bc, lhs_node, env, rhs_node);
+  env = unpack_bindings_into_env(gab, bc, lhs_node, env, rhs_node);
 
   if (env == gab_cinvalid)
     return gab_cinvalid;
@@ -1794,7 +1828,11 @@ gab_value compile_record(struct gab_triple gab, struct bc *bc, gab_value tuple,
     if (env == gab_cinvalid)
       return gab_cinvalid;
 
-    push_send(gab, bc, msg, lhs_node, rhs_node, node);
+    gab_value res = push_send(gab, bc, msg, lhs_node, rhs_node, node);
+
+    if (res != gab_cvalid)
+      return res;
+
     break;
   }
   case kGAB_SHAPELIST: {
@@ -1925,13 +1963,14 @@ union gab_value_pair gab_compile(struct gab_triple gab,
   if (src == nullptr)
     return (union gab_value_pair){{gab_cinvalid, gab_cinvalid}};
 
-  struct bc bc = {.ks = &src->constants, .src = src};
+  struct bc bc = {.ks = &src->constants, .src = src, .err = gab_cinvalid};
 
   args.env =
-      unpack_binding_into_env(gab, &bc, args.bindings, args.env, gab_cinvalid);
+      unpack_bindings_into_env(gab, &bc, args.bindings, args.env, gab_cinvalid);
 
   if (args.env == gab_cinvalid)
-    return (union gab_value_pair){{gab_cinvalid, bc.err}};
+    return assert(bc.err != gab_cinvalid),
+           (union gab_value_pair){{gab_cinvalid, bc.err}};
 
   size_t nenvs = gab_reclen(args.env);
   assert(nenvs > 0);
@@ -1940,21 +1979,26 @@ union gab_value_pair gab_compile(struct gab_triple gab,
   assert(nargs < GAB_ARG_MAX);
 
   if (!push_trim_node(gab, &bc, nargs, gab_cinvalid, args.bindings))
-    return (union gab_value_pair){{gab_cinvalid, bc.err}};
+    return assert(bc.err != gab_cinvalid),
+           (union gab_value_pair){{gab_cinvalid, bc.err}};
 
   assert(bc.bc.len == bc.bc_toks.len);
   args.env = compile_tuple(gab, &bc, args.ast, args.env);
   assert(bc.bc.len == bc.bc_toks.len);
 
   if (args.env == gab_cinvalid)
-    return bc_destroy(&bc), (union gab_value_pair){{gab_cinvalid, bc.err}};
+    return assert(bc.err != gab_cinvalid), bc_destroy(&bc),
+           (union gab_value_pair){{gab_cinvalid, bc.err}};
 
   assert(gab_reclen(args.env) == nenvs);
 
   gab_value local_env = gab_uvrecat(args.env, nenvs - 1);
   assert(bc.bc.len == bc.bc_toks.len);
 
-  push_ret(gab, &bc, args.ast, args.ast);
+  gab_value res = push_ret(gab, &bc, args.ast, args.ast);
+  if (res != gab_cvalid)
+    return assert(bc.err != gab_cinvalid), bc_destroy(&bc),
+           (union gab_value_pair){{gab_cinvalid, bc.err}};
 
   size_t nlocals = locals_in_env(local_env);
   assert(nlocals < GAB_LOCAL_MAX);
@@ -1995,7 +2039,9 @@ union gab_value_pair gab_compile(struct gab_triple gab,
                                   });
 
   if (gab.flags & fGAB_BUILD_DUMP)
-    gab_fmodinspect(gab.eg->sout, proto);
+    gab_fmodinspect(stdout, proto);
+
+  assert(bc.err == gab_cinvalid);
 
   return (union gab_value_pair){
       .status = gab_cvalid,

@@ -469,8 +469,6 @@ typedef a_gab_value *(*gab_osdynmod)(struct gab_triple);
  */
 struct gab_create_argt {
   uint64_t flags, jobs;
-
-  FILE *sin, *sout, *serr;
 };
 
 /**
@@ -859,7 +857,8 @@ GAB_API union gab_value_pair gab_compile(struct gab_triple gab,
  * @brief Compile a source string into a block.
  * Flag options are defined in @link enum gab_flags.
  *
- * Building is essentially equivalent to calling gab_parse, and then gab_compile.
+ * Building is essentially equivalent to calling gab_parse, and then
+ * gab_compile.
  *
  * If compilation is successful, the pair result will be:
  *  - status:  gab_cvalid
@@ -1174,9 +1173,10 @@ GAB_API union gab_value_pair gab_panicf(struct gab_triple gab, const char *fmt,
                                         ...);
 
 /**
- * @brief Convert a gab_record error (as produced by a call to gab_build, gab_compile, gab_run, etc). Into a c-string.
+ * @brief Convert a gab_record error (as produced by a call to gab_build,
+ * gab_compile, gab_run, etc). Into a c-string.
  */
-GAB_API const char* gab_errtocs(struct gab_triple gab, gab_value err);
+GAB_API const char *gab_errtocs(struct gab_triple gab, gab_value err);
 
 /**
  * @brief Construct an error for returning from a native message send.
@@ -1729,15 +1729,22 @@ struct gab_obj_shape {
     gab_shape(gab, 1, sizeof(keys) / sizeof(gab_value), keys);                 \
   })
 
+/*
+ * @brief Create a shape.
+ *
+ * @param gab The engine
+ * @param stride The stride between the keys in keys.
+ * @param len The number of keys to traverse in keys.
+ * @param keys The list of keys.
+ * @param km_out The key-mask which marks repeat keys.
+ * @return The new shape.
+ */
 GAB_API gab_value gab_shape(struct gab_triple gab, uint64_t stride,
-                            uint64_t len, gab_value *keys);
-
-GAB_API gab_value __gab_shape(struct gab_triple gab, uint64_t len);
+                            uint64_t len, gab_value *keys, uint64_t *km_out);
 
 GAB_API_INLINE uint64_t gab_shpislist(gab_value shp) {
   assert(gab_valkind(shp) == kGAB_SHAPE || gab_valkind(shp) == kGAB_SHAPELIST);
-  struct gab_obj_shape *s = GAB_VAL_TO_SHAPE(shp);
-  return s->header.kind == kGAB_SHAPELIST;
+  return gab_valkind(shp) == kGAB_SHAPELIST;
 }
 
 GAB_API_INLINE uint64_t gab_shplen(gab_value shp) {
@@ -1756,14 +1763,33 @@ GAB_API_INLINE uint64_t gab_shpfind(gab_value shp, gab_value key) {
   assert(gab_valkind(shp) == kGAB_SHAPE || gab_valkind(shp) == kGAB_SHAPELIST);
   struct gab_obj_shape *s = GAB_VAL_TO_SHAPE(shp);
 
-  uint64_t len = s->len;
+  switch (gab_valkind(shp)) {
+  case kGAB_SHAPELIST:
+  case kGAB_SHAPE: {
+    uint64_t len = s->len;
 
-  for (uint64_t i = 0; i < len; i++) {
-    if (gab_valeq(key, s->keys[i]))
-      return i;
+    // TODO: SIMDIFY ME (or use trees, sure)
+    for (uint64_t i = 0; i < len; i++) {
+      if (gab_valeq(key, s->keys[i]))
+        return i;
+    }
+
+    return -1;
   }
-
-  return -1;
+    // Fastpath for lists.
+  // case kGAB_SHAPELIST: {
+  //   if (gab_valkind(key) != kGAB_NUMBER)
+  //     return -1;
+  //
+  //   uint64_t len = s->len;
+  //
+  //   int64_t i = gab_valtoi(key);
+  //
+  //   return i < len ? i : -1;
+  // }
+  default:
+    assert(false && "UNREACHABLE");
+  }
 }
 
 GAB_API_INLINE bool gab_shphas(gab_value shape, gab_value key) {
@@ -1882,6 +1908,33 @@ struct gab_obj_rec {
                kvps + 1);                                                      \
   })
 
+/*
+ * TODO: How do the following record-creation functions handle repeating keys?
+ * What behavior do we want here?
+ *
+ * Currently:
+ *  { ok: 2, ok: 3 }
+ *  => { ok: 2 }
+ *
+ * This is because the first thing done is creating the appropriate shape.
+ * This trims (ok: ok:) to just (ok:), and so only looks for one value when
+ * creating the record.
+ *
+ * This leads to the following troubling behavior:
+ *  { ok: 2, ok: 3, another: 4 }
+ *  => { ok: 2, another: 3 }
+ *
+ * As the shape is refined to (ok: another:), we pull 2 values, when we should
+ * really be *skipping* values in repeat positions.
+ *
+ * The shape trimming is correct and should remain.
+ *  but maybe the shape function should build out a bit-mask as it
+ *  scans over the keys.
+ *
+ * If a key is a valid new addition, the corresponding bit is flipped.
+ * Then when creating records, we can skip values whose bit is 0.
+ */
+
 /**
  * @brief Create a record.
  *
@@ -1895,8 +1948,19 @@ struct gab_obj_rec {
 GAB_API gab_value gab_record(struct gab_triple gab, uint64_t stride,
                              uint64_t len, gab_value *keys, gab_value *vals);
 
+/**
+ * @brief Create a record.
+ *
+ * @param gab The engine
+ * @param shape The shape that the record should have.
+ * @param stride The stride between the values in vals
+ * @param vals The vals
+ * @param km A key-mask produced by @see gab_shape, for skipping repeat values.
+ * @return The new record
+ */
 GAB_API gab_value gab_recordfrom(struct gab_triple gab, gab_value shape,
-                                 uint64_t stride, gab_value *vals);
+                                 uint64_t stride, uint64_t len, gab_value *vals,
+                                 uint64_t *km);
 
 GAB_API_INLINE gab_value gab_erecord(struct gab_triple gab) {
   return gab_record(gab, 0, 0, nullptr, nullptr);
@@ -2685,8 +2749,6 @@ struct gab_eg {
 
   mtx_t modules_mtx;
   d_gab_modules modules;
-
-  FILE *sin, *sout, *serr;
 
   uint64_t len;
 

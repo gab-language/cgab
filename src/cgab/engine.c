@@ -245,14 +245,14 @@ struct primitive kind_primitives[] = {
         .primitive = gab_primitive(OP_SEND_PRIMITIVE_MAKE_SHAPE),
     },
     {
-        .name = mGAB_SPLAT,
+        .name = mGAB_SPLATLIST,
         .kind = kGAB_RECORD,
-        .primitive = gab_primitive(OP_SEND_PRIMITIVE_SPLAT),
+        .primitive = gab_primitive(OP_SEND_PRIMITIVE_SPLATLIST),
     },
     {
-        .name = mGAB_SPLATKEYS,
+        .name = mGAB_SPLATDICT,
         .kind = kGAB_RECORD,
-        .primitive = gab_primitive(OP_SEND_PRIMITIVE_SPLATKEYS),
+        .primitive = gab_primitive(OP_SEND_PRIMITIVE_SPLATDICT),
     },
     {
         .name = mGAB_CONS,
@@ -398,9 +398,32 @@ int32_t worker_job(void *data) {
 
     q_gab_value_pop(&job->queue);
 
-    if (res.status == gab_ctimeout)
+    switch (res.status) {
+    case gab_ctimeout:
+      // Run timed out - return to queue
       if (!q_gab_value_push(&job->queue, fiber))
         assert(false && "PUSH FAILED");
+      break;
+    case gab_cvalid: {
+      // Run finished - check for error
+      if (res.aresult->data[0] == gab_ok)
+        break;
+
+      // TODO: Add some sort of hook here for applications to handle
+      // when fibers fail
+      const char *errstr = gab_errtocs(gab, res.aresult->data[1]);
+      puts(errstr);
+      break;
+    }
+    case gab_cinvalid: {
+      // Run terminated externally
+      const char *errstr = gab_errtocs(gab, res.vresult);
+      puts(errstr);
+      break;
+    }
+    default:
+      assert(false && "UNREACHABLE");
+    }
 
     switch (gab_yield(gab)) {
     case sGAB_TERM:
@@ -486,28 +509,17 @@ struct gab_triple gab_create(struct gab_create_argt args) {
   uint64_t egsize =
       sizeof(struct gab_eg) + sizeof(struct gab_job) * (njobs + 1);
 
-  args.sin = args.sin != nullptr ? args.sin : stdin;
-  args.sout = args.sout != nullptr ? args.sout : stdout;
-  args.serr = args.serr != nullptr ? args.serr : stderr;
-
   struct gab_eg *eg = malloc(egsize);
   memset(eg, 0, egsize);
 
   eg->len = njobs + 1;
   eg->njobs = 0;
   eg->hash_seed = time(nullptr);
-  eg->sin = args.sin;
-  eg->sout = args.sout;
-  eg->serr = args.serr;
   eg->sig.schedule = -1;
 
   // The only non-zero initialization that jobs need is epoch = 1
   for (uint64_t i = 0; i < eg->len; i++)
     eg->jobs[i].epoch = 1;
-
-  assert(eg->sin);
-  assert(eg->sout);
-  assert(eg->serr);
 
   mtx_init(&eg->shapes_mtx, mtx_plain);
   mtx_init(&eg->sources_mtx, mtx_plain);
@@ -1199,7 +1211,7 @@ gab_value gab_vspanicf(struct gab_triple gab, va_list va,
 
   gab_gclock(gab);
 
-  char hint[512] = {0};
+  char hint[cGAB_ERR_SPRINTF_BUF_MAX] = {0};
   if (args.note_fmt) {
     int res = gab_vsprintf(hint, sizeof(hint), args.note_fmt, va);
     assert(res >= 0);

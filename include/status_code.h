@@ -17,8 +17,6 @@ STATUS(TOO_MANY_PARAMETERS, "Blocks cannot have more than 16 parameters")
 STATUS(TOO_MANY_ARGUMENTS, "Blocks calls cannot have more than 16 arguments")
 STATUS(TOO_MANY_RETURN_VALUES, "Blocks cannot return more than 16 values")
 STATUS(TOO_MANY_EXPRESSIONS, "Expected fewer expressions")
-STATUS(TOO_MANY_EXPRESSIONS_IN_INITIALIZER,
-       "Record literals cannot initialize more than 255 properties")
 STATUS(REFERENCE_BEFORE_INITIALIZE, "Uninitialized variable")
 STATUS(UNBOUND_SYMBOL, "Symbols must be bound before they can be referenced")
 STATUS(MALFORMED_ASSIGNMENT, "Malformed assignment expression")

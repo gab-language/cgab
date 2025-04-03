@@ -2,11 +2,6 @@
 #include "gab.h"
 #include <stdint.h>
 
-#ifdef GAB_PLATFORM_UNIX
-#define QIO_LINUX
-#else
-#error Unsupported QIO Platform
-#endif
 #include "qio/qio.h"
 
 int io_loop_cb(void *initialized) {

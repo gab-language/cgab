@@ -10,20 +10,20 @@
 
 int\between: .def! (
   gab\number:,
-  (floor ceil) => self.float\between(floor ceil).floor)
+  (floor, ceil) => self.float\between(floor, ceil).floor)
 
 truthy_values = []
-falsey_values = [nil: false: none: err:]
+falsey_values = [nil:, false:, none:, err:]
 
 self: .def! _ => self
 first: .def! x => x
 second: .def! (_, x) => x
-all: .def! (xs[]) => xs
+all: .def! (xs*) => xs
 
 is?: .def! other => self.? == other
 
 truthy_values .defmodule! {
-  and: (alt[]) => alt**
+  and: (alt*) => alt*
   then: f => f . self
   or: _ => self
   else: _ => self
@@ -33,7 +33,7 @@ truthy_values .defmodule! {
 falsey_values .defmodule! {
   and: _ => self
   then: _ => self
-  or: (alt[]) => alt**
+  or: (alt*) => alt*
   else: f => f.(self)
   assert!: msg => ('Assert failed: ' + msg).panic
   to\option: none:,
@@ -41,27 +41,27 @@ falsey_values .defmodule! {
 }
 
 [] .defmodule! {
-  to\option: (args[]) => (ok: self args**)
-  to\result: (args[]) => (ok: self args**)
+  to\option: (args*) => (ok:, self, args*)
+  to\result: (args*) => (ok:, self, args*)
 }
 
 cond\check: .defcase! {
-  "gab\block"   (args[]) => self.(args**)
-  "gab\message" (args[]) => self.(args**)
+  Blocks.t,   (args*) => self.(args*)
+  Messages.t, (args*) => self.(args*)
   else: ok:
 }
 
-docond: .def! (fs[]) => do
+docond: .def! (fs*) => do
   args = self
   fs.reduce(
     nil:
-    (acc f)
+    (acc, f)
       => acc.else ()
-        => f .cond\check(args**) .and f)
+        => f .cond\check(args*) .and f)
 end
 
-cond: .def! (vs[] branches) => do
-  args = [self vs**]
+cond: .def! (vs*, branches) => do
+  args = [self, vs*]
 
   k = args.docond(branches.keys)
 
@@ -69,27 +69,27 @@ cond: .def! (vs[] branches) => do
 end
 
 put_by: .def! (
-  "gab\record"
-  (k f) => do
+  Records.t
+  (k, f) => do
     v = self.at k .unwrap
 
-    self.put(k f.(v))
+    self.put(k, f.(v))
   end)
 
 :.def!(
   option:
-  (cond, data[]) => do
-    (cond.to\option, data**)
+  (cond, data*) => do
+    (cond.to\option, data*)
   end)
 
 :.def!(
   result:
-  (cond, data[]) => (cond.to\result, data**))
+  (cond, data*) => (cond.to\result, data*))
 
 [ok:] .defmodule! {
-  ok?: (args[]) => (true: args**)
-  unwrap: (args[]) => args**
-  unwrap!: (args[]) => args**
+  ok?: (args*) => (true:, args*)
+  unwrap: (args*) => args*
+  unwrap!: (args*) => args*
 }
 
 [] .defmodule! {
@@ -100,40 +100,40 @@ put_by: .def! (
 
 doreduce: .defcase! {
   ## The sequence continues
-  ok: (seq\i seq\v acc r xs) => do
+  ok: (seq\i, seq\v, acc, r, xs) => do
     # Apply the reducer
-    (cmd r acc) = r.reduce\step(acc xs**)
+    (cmd, r, acc) = r.reduce\step(acc, xs*)
     # proceed to the next sep
-    cmd.doreduce(seq\i seq\v acc r)
+    cmd.doreduce(seq\i, seq\v, acc, r)
   end
   ## The sequence is done
-  none: (seq\i seq\v acc r) => do
+  none: (seq\i, seq\v, acc, r) => do
     r.reduce\done(acc)
   end
   ## The reducer continues
-  next: (seq\i seq\v acc r) => do
+  next: (seq\i, seq\v, acc, r) => do
     # Apply the producer resolving new values for the next step
-    (ok seq\v xs[]) = seq\i .seq\next seq\v
+    (ok, seq\v, xs*) = seq\i .seq\next seq\v
     # Tailcall to the next step
-    ok.doreduce(seq\i seq\v acc r xs)
+    ok.doreduce(seq\i, seq\v, acc, r, xs)
   end
   ## The reducer is done
-  stop: (seq\i seq\v acc r) => do
+  stop: (seq\i, seq\v, acc, r) => do
     r.reduce\done(acc)
   end
 }
 
 def\seq!: .def! do
   _ => [self] .defmodule! {
-    reduce: (acc r) => do
-      (ok seq\v xs[]) = self.seq\init
-      ok.doreduce(self seq\v acc r xs)
+    reduce: (acc, r) => do
+      (ok, seq\v, xs*) = self.seq\init
+      ok.doreduce(self, seq\v, acc, r, xs)
     end,
-    transduce: (acc r td) => do
-      self.reduce(acc td .td\apply r)
+    transduce: (acc, r, td) => do
+      self.reduce(acc, td .td\apply r)
     end,
     each: f => do
-      self.transduce(nil: all: td:.tap f)
+      self.transduce(nil:, all:, td:.tap f)
     end,
     map: f => do
       self.collect(td:.map f)
@@ -157,13 +157,13 @@ def\seq!: .def! do
       self.collect xf .empty?.!
     end,
     join: xf => do
-      self.transduce("" +: xf)
+      self.transduce("", +:, xf)
     end,
     collect: xf => do
-      self.transduce({} cons: xf)
+      self.transduce({}, cons:, xf)
     end,
-    pipe: (ch xf) =>do
-      self.transduce(ch <!: xf)
+    pipe: (ch, xf) =>do
+      self.transduce(ch, <!:, xf)
     end
   }
 end
@@ -174,12 +174,12 @@ end
 # Forget about their values as soon as they're taken
 [Channels.t] .defmodule! {
   seq\init: _ => do
-    (ok v) = self >!
-    (ok v v)
+    (ok, v) = self >!
+    (ok, v, v)
   end
   seq\next: _ => do
-    (ok v) = self >!
-    (ok v v)
+    (ok, v) = self >!
+    (ok, v, v)
   end
   open?: _ => self.closed?.!
 }
@@ -188,13 +188,13 @@ Channels.t.def\seq!
 
 # Implement the reducer protocol for blocks and messages
 [Blocks.t, Messages.t] .defmodule! {
-  reduce\step: (acc, xs[]) => do
-    (next: self self.(acc xs**))
+  reduce\step: (acc, xs*) => do
+    (next:, self, self.(acc, xs*))
   end
   reduce\done: acc => acc
 }
 
-cons: .def! (nil: (o) => [o])
+cons: .def! (nil:, o => [o])
 
 [Records.t] .defmodule! {
   has?: key => do
@@ -216,7 +216,7 @@ to\n: .def! (falsey_values, 0)
 to\n: .def! (truthy_values, 1)
 
 [Numbers.t] .defmodule! {
-  ->: to => (to self) .to\range
+  ->: to => (to, self) .to\range
   ++: _ => self + 1
   --: _ => self - 1
   even?: _ => self .% 2 .== 0

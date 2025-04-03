@@ -45,15 +45,15 @@ function build {
   platform_bundle=""
 
   if [[ "$1" =~ "linux" ]]; then
-    platform="$unixflags"
+    platform="$unixflags -DQIO_LINUX"
     platform_bundle="-shared"
     dynlib_fileending=".so"
   elif [[ "$1" =~ "mac" ]]; then
-    platform="$unixflags"
+    platform="$unixflags -DQIO_MACOS"
     platform_bundle="-shared"
     dynlib_fileending=".so"
   elif [[ "$1" =~ "windows" ]]; then
-    platform="$winflags"
+    platform="$winflags -DQIO_WINDOWS"
     dynlib_fileending=".dll"
     platform_bundle="-shared"
   fi

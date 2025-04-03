@@ -137,6 +137,10 @@
 #define cGAB_WORKER_LOCALQUEUE_MAX 32
 #endif
 
+#ifndef cGAB_ERR_SPRINTF_BUF_MAX
+#define cGAB_ERR_SPRINTF_BUF_MAX 2048
+#endif
+
 // Size of the vm's stack
 #ifndef cGAB_STACK_MAX
 #define cGAB_STACK_MAX (cGAB_FRAMES_MAX * 32)
@@ -249,8 +253,8 @@ enum gab_flags {
 #define mGAB_RSH ">>"
 #define mGAB_LTE "<="
 #define mGAB_GTE ">="
-#define mGAB_SPLAT "**"
-#define mGAB_SPLATKEYS "keys"
+#define mGAB_SPLATLIST "*"
+#define mGAB_SPLATDICT "**"
 #define mGAB_CONS "cons"
 #define mGAB_TYPE "?"
 #define mGAB_BIN "~"

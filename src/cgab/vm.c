@@ -76,6 +76,12 @@ static handler handlers[] = {
     return vm_error(GAB(), status, help __VA_OPT__(, ) __VA_ARGS__);           \
   })
 
+#define VM_GIVEN(err)                                                          \
+  ({                                                                           \
+    STORE();                                                                   \
+    return vm_givenerr(GAB(), err);                                            \
+  })
+
 /*
   Lots of helper macros.
 */
@@ -465,7 +471,7 @@ union gab_value_pair vvm_terminate(struct gab_triple gab, const char *fmt,
 
   gab_value p = frame_block(vm->fp)->p;
   gab_value shape = gab_prtshp(p);
-  gab_value env = gab_recordfrom(gab, shape, 1, vm->fp);
+  gab_value env = gab_recordfrom(gab, shape, 1, gab_shplen(shape), vm->fp, nullptr);
   gab_egkeep(gab.eg, gab_iref(gab, env));
 
   assert(GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERRUNNING);
@@ -474,6 +480,23 @@ union gab_value_pair vvm_terminate(struct gab_triple gab, const char *fmt,
   GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERDONE;
 
   return res;
+}
+union gab_value_pair vm_givenerr(struct gab_triple gab,
+                                 union gab_value_pair given) {
+  gab_value fiber = gab_thisfiber(gab);
+
+  struct gab_vm *vm = gab_thisvm(gab);
+
+  gab_value p = frame_block(vm->fp)->p;
+  gab_value shape = gab_prtshp(p);
+  gab_value env = gab_recordfrom(gab, shape, 1, gab_shplen(shape), vm->fp, nullptr);
+  gab_egkeep(gab.eg, gab_iref(gab, env));
+
+  assert(GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERRUNNING);
+  GAB_VAL_TO_FIBER(fiber)->res_values = given;
+  GAB_VAL_TO_FIBER(fiber)->res_env = env;
+  GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERDONE;
+  return given;
 }
 
 union gab_value_pair vvm_error(struct gab_triple gab, enum gab_status s,
@@ -501,7 +524,7 @@ union gab_value_pair vvm_error(struct gab_triple gab, enum gab_status s,
 
   gab_value p = frame_block(vm->fp)->p;
   gab_value shape = gab_prtshp(p);
-  gab_value env = gab_recordfrom(gab, shape, 1, vm->fp);
+  gab_value env = gab_recordfrom(gab, shape, 1, gab_shplen(shape), vm->fp, nullptr);
   gab_egkeep(gab.eg, gab_iref(gab, env));
 
   assert(GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERRUNNING);
@@ -538,7 +561,7 @@ union gab_value_pair vm_error(struct gab_triple gab, enum gab_status s,
 #define FMT_TYPEMISMATCH                                                       \
   "Sent message " GAB_CYAN "$" GAB_RESET                                       \
   " found an invalid type.\n\n    | " GAB_GREEN "$" GAB_RESET                  \
-  "\n\nhas type\n\n    | " GAB_GREEN "$" GAB_RESET                              \
+  "\n\nhas type\n\n    | " GAB_GREEN "$" GAB_RESET                             \
   "\n\nbut expected type\n\n    | " GAB_GREEN "$" GAB_RESET "\n"
 
 #define FMT_MISSINGIMPL                                                        \
@@ -866,7 +889,7 @@ union gab_value_pair vm_ok(OP_HANDLER_ARGS) {
   gab_value p = frame_block(VM()->fp)->p;
   gab_value shape = gab_prtshp(p);
 
-  gab_value env = gab_recordfrom(GAB(), shape, 1, VM()->fp);
+  gab_value env = gab_recordfrom(GAB(), shape, 1, gab_shplen(shape), VM()->fp, nullptr);
   gab_egkeep(EG(), gab_iref(GAB(), env));
 
   assert(FIBER()->header.kind = kGAB_FIBERRUNNING);
@@ -1369,11 +1392,10 @@ CASE_CODE(SEND_PRIMITIVE_USE) {
   DROP_N(have);
 
   if (mod.status != gab_cvalid)
-    VM_PANIC(GAB_PANIC, "Couldn't locate module $.", r);
+    VM_PANIC(GAB_PANIC, "Couldn't locate module '$'.", r);
 
   if (mod.aresult->data[0] != gab_ok)
-    VM_PANIC(GAB_PANIC, "Module $ returned $, expected $.", r,
-             mod.aresult->data[0], gab_ok);
+    VM_GIVEN(mod);
 
   for (uint64_t i = 1; i < mod.aresult->len; i++)
     PUSH(mod.aresult->data[i]);
@@ -1433,7 +1455,7 @@ CASE_CODE(SEND_PRIMITIVE_CONS_RECORD) {
   NEXT();
 }
 
-CASE_CODE(SEND_PRIMITIVE_SPLAT) {
+CASE_CODE(SEND_PRIMITIVE_SPLATLIST) {
   gab_value *ks = READ_CONSTANTS;
   uint64_t have = compute_arity(VAR(), READ_BYTE);
 
@@ -1457,7 +1479,7 @@ CASE_CODE(SEND_PRIMITIVE_SPLAT) {
   NEXT();
 }
 
-CASE_CODE(SEND_PRIMITIVE_SPLATKEYS) {
+CASE_CODE(SEND_PRIMITIVE_SPLATDICT) {
   gab_value *ks = READ_CONSTANTS;
   uint64_t have = compute_arity(VAR(), READ_BYTE);
 
@@ -1474,9 +1496,9 @@ CASE_CODE(SEND_PRIMITIVE_SPLATKEYS) {
   assert(VM()->sp + len < VM()->sp + cGAB_STACK_MAX);
 
   for (uint64_t i = 0; i < len; i++)
-    PUSH(gab_ukrecat(r, i));
+    PUSH(gab_ukrecat(r, i)), PUSH(gab_uvrecat(r, i));
 
-  SET_VAR(len);
+  SET_VAR(len * 2);
 
   NEXT();
 }
@@ -1738,11 +1760,9 @@ CASE_CODE(SEND) {
   /* Do the expensive lookup */
   struct gab_impl_rest res = gab_impl(GAB(), m, r);
 
-  if (__gab_unlikely(!res.status)) {
-    STORE();
+  if (__gab_unlikely(!res.status))
     VM_PANIC(GAB_SPECIALIZATION_MISSING, FMT_MISSINGIMPL, m, r,
              gab_valtype(GAB(), r));
-  }
 
   gab_value spec = res.status == kGAB_IMPL_PROPERTY
                        ? gab_primitive(OP_SEND_PROPERTY)
@@ -2132,7 +2152,7 @@ CASE_CODE(SEND_PRIMITIVE_MAKE_SHAPE) {
              gab_number(gab_shplen(shape)), gab_number(len));
 
   STORE_SP();
-  gab_value record = gab_recordfrom(GAB(), shape, 1, SP() - len);
+  gab_value record = gab_recordfrom(GAB(), shape, 1, len, SP() - len, nullptr);
 
   DROP_N(have);
   PUSH(record);
@@ -2150,7 +2170,7 @@ CASE_CODE(SEND_PRIMITIVE_SHAPE) {
   uint64_t len = have - 1;
 
   STORE_SP();
-  gab_value shape = gab_shape(GAB(), 1, len, SP() - len);
+  gab_value shape = gab_shape(GAB(), 1, len, SP() - len, nullptr);
 
   DROP_N(have);
   PUSH(shape);

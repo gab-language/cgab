@@ -168,4 +168,6 @@ static inline int gsnprintf_through(char **dst, size_t *n, const char *fmt,
   return res;
 }
 
+gab_value __gab_shape(struct gab_triple gab, uint64_t len);
+
 #endif

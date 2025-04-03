@@ -86,8 +86,10 @@ int run_file(const char *path, int flags, size_t jobs) {
 
     return free(res.aresult), gab_destroy(gab), 1;
   } else {
-    const char *errstr = gab_errtocs(gab, res.vresult);
-    puts(errstr);
+    if (res.vresult != gab_cinvalid) {
+      const char *errstr = gab_errtocs(gab, res.vresult);
+      puts(errstr);
+    }
 
     return gab_destroy(gab), 1;
   }

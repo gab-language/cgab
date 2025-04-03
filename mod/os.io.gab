@@ -2,6 +2,6 @@ io = 'cio'.use
 
 stdout = io.stdout
 
-println:.def! () => stdout.write('$\n'.sprintf self)
+println:.def! (args*) => stdout.write('$ & $\n'.sprintf(self args))
 
 io

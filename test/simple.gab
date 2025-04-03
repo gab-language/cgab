@@ -3,7 +3,7 @@ Ranges = 'ranges'.use
 
 digit_spec = digit: .defspec! {
   help: "A digit"
-  spec: s.any(Ranges.make(0 9).map to\s: .collect .**)
+  spec: s.any(Ranges.make(0 9).map to\s: .collect .*)
 }
 
 #digit_spec.spec\fits?("1").println

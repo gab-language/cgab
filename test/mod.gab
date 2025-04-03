@@ -31,7 +31,7 @@ variables\reassign_variables\test: .def! (t => do
 end)
 
 variables\rest_assign_constant\test: .def! (t => do
-  (a b c[]) = (1 2 3 4 5)
+  (a b c*) = (1 2 3 4 5)
 
   t.expect(a ==: 1)
   t.expect(b ==: 2)
@@ -41,7 +41,7 @@ variables\rest_assign_constant\test: .def! (t => do
 end)
 
 variables\rest_assign_middle\test: .def! (t => do
-  (a b[] c) = (1 2 3 4 5)
+  (a b*, c) = (1 2 3 4 5)
 
   t.expect(a ==: 1)
   t.expect(c ==: 5)
@@ -53,7 +53,7 @@ end)
 variables\rest_assign_runtime\test: .def! (t => do
   one_through_five = _ => (1 2 3 4 5)
 
-  (a[] b c) = one_through_five.()
+  (a*, b c) = one_through_five.()
 
   t.expect(b ==: 4)
   t.expect(c ==: 5)
@@ -67,13 +67,31 @@ variables\rest_assign_existing_variable\test: .def! t => do
 
   b = 1
 
-  (a b[] c) = one_through_five.()
+  (a b*, c) = one_through_five.()
 
   t.expect(a ==: 1)
   t.expect(c ==: 5)
   t.expect(b.at! 0 ==: 2)
   t.expect(b.at! 1 ==: 3)
   t.expect(b.at! 2 ==: 4)
+end
+
+variables\rest_kw_assign\test:.def! t => do
+  (a b opts**) = (1, 2, config: 3)
+
+  t.expect(a ==: 1)
+  t.expect(b ==: 2)
+  t.expect(opts.len, ==:, 1)
+  t.expect(opts.config, ==:, 3)
+end
+
+variables\rest_kw_assign_middle\test:.def! t => do
+  (a opts**, b) = (1, config: 3, 2)
+
+  t.expect(a ==: 1)
+  t.expect(b ==: 2)
+  t.expect(opts.len, ==:, 1)
+  t.expect(opts.config, ==:, 3)
 end
 
 numbers\equal_itself\test: .def! t => do
@@ -200,7 +218,7 @@ blocks\capture\test: .def! (t => do
 end)
 
 blocks\work_with_varargs\test: .def! (t => do
-  varfunc = (first args[]) => do
+  varfunc = (first args*) => do
     t.expect(first ==: 1)
     t.expect(args.at! 0 ==: 2)
   end
@@ -211,7 +229,7 @@ blocks\work_with_varargs\test: .def! (t => do
 
   varfunc.(onetwo.())
 
-  varfunc = (first args[] last) => do
+  varfunc = (first args*, last) => do
     t.expect(first ==: 1)
     t.expect(args.at! 0 ==: 2)
     t.expect(last ==: 3)
@@ -225,7 +243,7 @@ blocks\work_with_varargs\test: .def! (t => do
 end)
 
 blocks\empty_varargs\test: .def! (t => do
-  varfunc = (first args[] other last) => do
+  varfunc = (first args*, other last) => do
     t.expect(first ==: 1)
     t.expect(args.len, ==: 0)
     t.expect(other ==: 2)
@@ -308,18 +326,24 @@ records\big_take_fields\test: .def! t => do
   list = [
     0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16
     17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32
-    33 34 35 36 37 38 39 40
+    33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48
+    49 50 51 52 53 54 55 56 57 58 59 60 61
   ]
 
-  (popped, v) = list .take 40
+  (popped, v) = list .take 61
+  t.expect(popped.len, ==:, 61)
 
-  t.expect(popped.len, ==:, 40)
-  t.expect(v, ==:, 40)
+  t.expect(popped.len, ==:, 61)
+  t.expect(v, ==:, 61)
 
   (popped, v) = list .take 10
 
-  t.expect(popped.len, ==:, 40)
+  t.expect(popped.len, ==:, 61)
   t.expect(v, ==:, 10)
+
+  (popped, v) = popped .take 42
+  t.expect(popped.len, ==:, 60)
+  t.expect(v, ==:, 42)
 end
 
 Ranges = 'ranges'.use
@@ -331,6 +355,23 @@ records\work_when_large\test: .def! t => do
   t.expect(list.at! 1999, ==:, 1999)
   t.expect(list.at! 42, ==:, 42)
   t.expect(list.at 2049, ==:, none:)
+
+  (popped, v) = list.take(2048)
+
+  t.expect(popped.list?, ==: true:)
+  t.expect(v ==: 2048)
+
+  (popped, v) = list.take(1234)
+  t.expect(popped.list?, ==: false:)
+  t.expect(v ==: 1234)
+end
+
+records\work_with_duplicate_keys\test:.def! t => do
+# The middle a: should be ignored
+  rec = { a: 2 a: 3 b: 4 }
+
+  t.expect(rec.at! a: ==: 2)
+  t.expect(rec.at! b: ==: 4)
 end
 
 vec\t = { x: nil:, y: nil: }?
@@ -462,7 +503,7 @@ messages\send_dynamically\test: .def! (t => do
 
   t.expect(result.hi, ==: 2)
 
-  result = **:.['hi']
+  result = *:.['hi']
 
   t.expect(result ==: 'hi')
 
