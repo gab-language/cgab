@@ -58,7 +58,8 @@ function build {
     platform_bundle="-shared"
   fi
 
-  flags="-std=c23 -fPIC -Wall --target=$1 -Iinclude -Ivendor -Lbuild-$1 -DGAB_TARGET_TRIPLE=\"$1\" -DGAB_DYNLIB_FILEENDING=\"$dynlib_fileending\" $GAB_CCFLAGS"
+  # -isystem is used for vendor so that c11 <threads.h> is used if it exists. Otherwise, local fallback in vendor.
+  flags="-std=c23 -fPIC -Wall --target=$1 -Iinclude -isystem vendor -Lbuild-$1 -DGAB_TARGET_TRIPLE=\"$1\" -DGAB_DYNLIB_FILEENDING=\"$dynlib_fileending\" $GAB_CCFLAGS"
 
   echo "   $flags $platform ($platform_bundle)"
 

@@ -250,6 +250,11 @@ struct primitive kind_primitives[] = {
         .primitive = gab_primitive(OP_SEND_PRIMITIVE_SPLATLIST),
     },
     {
+        .name = mGAB_SPLATLIST,
+        .kind = kGAB_SHAPE,
+        .primitive = gab_primitive(OP_SEND_PRIMITIVE_SPLATSHAPE),
+    },
+    {
         .name = mGAB_SPLATDICT,
         .kind = kGAB_RECORD,
         .primitive = gab_primitive(OP_SEND_PRIMITIVE_SPLATDICT),
@@ -780,8 +785,8 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
     }
 
     if (fiber.status != gab_cvalid) {
-      const char *errstr = gab_errtocs(gab, fiber.vresult);
-      puts(errstr);
+      // const char *errstr = gab_errtocs(gab, fiber.vresult);
+      // puts(errstr);
       continue;
     }
 
@@ -802,8 +807,8 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
     }
 
     if (res.aresult->data[0] != gab_ok) {
-      const char *errstr = gab_errtocs(gab, res.aresult->data[1]);
-      puts(errstr);
+      // const char *errstr = gab_errtocs(gab, res.aresult->data[1]);
+      // puts(errstr);
       continue;
     }
 
@@ -1181,6 +1186,7 @@ int sprint_structured_err(struct gab_triple gab, char **buf, size_t *len,
   return snprintf_through(buf, len, "\n");
 }
 
+// This should take an array (a stacktrace) and produce an array (stacktrace)
 gab_value gab_vspanicf(struct gab_triple gab, va_list va,
                        struct gab_err_argt args) {
   struct errdetails err = {

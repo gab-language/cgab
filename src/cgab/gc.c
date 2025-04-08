@@ -217,13 +217,12 @@ static inline void for_buf_do(uint8_t b, uint8_t wkid, uint8_t epoch,
 
   // Sanity check that buffer hasn't been modified while operating over buffer
 #if cGAB_LOG_GC
-
-#endif
   if (len != buflen(gab, b, wkid, epoch)) {
     printf("INVALID BUFMOD: %d, %i, %i, %lu vs %li\n", b, wkid, epoch, len,
            buflen(gab, b, wkid, epoch));
     exit(1);
   }
+#endif
   assert(len == buflen(gab, b, wkid, epoch));
 }
 

@@ -507,7 +507,7 @@ messages\send_dynamically\test: .def! (t => do
 
   t.expect(result ==: 'hi')
 
-  result = hi:.({ hi: nil: } 4)
+  result = put:.({ hi: nil: } hi: 4)
 
   t.expect(result.hi, ==: 4)
 end)

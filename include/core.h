@@ -299,8 +299,9 @@ enum gab_flags {
 #define tGAB_FIBER_NAME "Fibers"
 #define tGAB_CHANNEL_NAME "Channels"
 
-#define tGAB_IOSTREAM "io\\stream"
-#define tGAB_TERMINAL "terminal"
+#define tGAB_IO "io"
+#define tGAB_IOFILE "io\\file"
+#define tGAB_IOSOCK "io\\sock"
 
 #define mGAB_AST_NODE_SEND_LHS "gab\\lhs"
 #define mGAB_AST_NODE_SEND_MSG "gab\\msg"

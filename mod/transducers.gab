@@ -16,20 +16,26 @@ deftransducer!: .def! (
       reducer: nil:
     }
 
-    self .def! (
+    self.def!(
       module
-      (xs*) => mod\t.reducer(cx.(xs*)))
+      (xs*) => mod\t.put(reducer: cx.(xs*)))
 
     [mod\t ?] .defmodule! {
 
       |>: o => self.td\apply o
 
-      td\apply: c => self.continuation(self.continuation.td\apply c)
+      td\apply: c => self.put(continuation: self.continuation.td\apply c)
 
       reduce\step: (acc, xs*) => do
         (s, cmd, c, acc) = self.reducer.(self.continuation, acc, xs, self.state)
 
-        (cmd, self.continuation c .state s, acc)
+        (
+          cmd, 
+          self
+            .put(continuation: c)
+            .put(state: s),
+          acc,
+        )
      end
 
       reduce\done: (acc) => self.continuation.reduce\done acc

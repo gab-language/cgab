@@ -405,8 +405,7 @@ static inline uint64_t compute_token_from_ip(struct gab_triple gab,
 
 struct gab_err_argt vm_frame_build_err(struct gab_triple gab,
                                        struct gab_oblock *b, uint8_t *ip,
-                                       bool has_parent, enum gab_status s,
-                                       const char *fmt) {
+                                       enum gab_status s, const char *fmt) {
   if (b) {
     struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(b->p);
 
@@ -439,12 +438,11 @@ gab_value sprint_stacktrace(struct gab_triple gab, struct gab_vm *vm,
   int nframes = 0;
   struct gab_err_argt frames[cGAB_FRAMES_MAX] = {0};
 
-  frames[nframes++] =
-      vm_frame_build_err(gab, frame_block(f), ip, false, s, fmt);
+  frames[nframes++] = vm_frame_build_err(gab, frame_block(f), ip, s, fmt);
 
   while (frame_parent(f) > vm->sb) {
-    frames[nframes++] = vm_frame_build_err(
-        gab, frame_block(f), ip, frame_parent(f) > vm->sb, GAB_NONE, "");
+    frames[nframes++] =
+        vm_frame_build_err(gab, frame_block(f), ip, GAB_NONE, "");
 
     ip = frame_ip(f);
     f = frame_parent(f);
@@ -471,7 +469,8 @@ union gab_value_pair vvm_terminate(struct gab_triple gab, const char *fmt,
 
   gab_value p = frame_block(vm->fp)->p;
   gab_value shape = gab_prtshp(p);
-  gab_value env = gab_recordfrom(gab, shape, 1, gab_shplen(shape), vm->fp, nullptr);
+  gab_value env =
+      gab_recordfrom(gab, shape, 1, gab_shplen(shape), vm->fp, nullptr);
   gab_egkeep(gab.eg, gab_iref(gab, env));
 
   assert(GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERRUNNING);
@@ -489,7 +488,8 @@ union gab_value_pair vm_givenerr(struct gab_triple gab,
 
   gab_value p = frame_block(vm->fp)->p;
   gab_value shape = gab_prtshp(p);
-  gab_value env = gab_recordfrom(gab, shape, 1, gab_shplen(shape), vm->fp, nullptr);
+  gab_value env =
+      gab_recordfrom(gab, shape, 1, gab_shplen(shape), vm->fp, nullptr);
   gab_egkeep(gab.eg, gab_iref(gab, env));
 
   assert(GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERRUNNING);
@@ -524,7 +524,8 @@ union gab_value_pair vvm_error(struct gab_triple gab, enum gab_status s,
 
   gab_value p = frame_block(vm->fp)->p;
   gab_value shape = gab_prtshp(p);
-  gab_value env = gab_recordfrom(gab, shape, 1, gab_shplen(shape), vm->fp, nullptr);
+  gab_value env =
+      gab_recordfrom(gab, shape, 1, gab_shplen(shape), vm->fp, nullptr);
   gab_egkeep(gab.eg, gab_iref(gab, env));
 
   assert(GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERRUNNING);
@@ -695,8 +696,8 @@ static inline uint64_t compute_arity(uint64_t var, uint8_t have) {
   return var * (have & fHAVE_VAR) + (have >> 2);
 }
 
-static inline bool has_callspace(gab_value *sp, gab_value *sb,
-                                 uint64_t space_needed) {
+static inline bool has_stackspace(gab_value *sp, gab_value *sb,
+                                  uint64_t space_needed) {
   if ((sp - sb) + space_needed + 3 >= cGAB_STACK_MAX) {
     return false;
   }
@@ -706,7 +707,7 @@ static inline bool has_callspace(gab_value *sp, gab_value *sb,
 
 inline uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc,
                             gab_value argv[argc]) {
-  if (__gab_unlikely(argc == 0 || !has_callspace(vm->sp, vm->sb, argc))) {
+  if (__gab_unlikely(argc == 0 || !has_stackspace(vm->sp, vm->sb, argc))) {
     return 0;
   }
 
@@ -725,12 +726,14 @@ inline uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc,
     VAR() = n;                                                                 \
   })
 
+#define VM_PANIC_GUARD_STACKSPACE(space)                                       \
+  if (__gab_unlikely(!has_stackspace(SP(), SB(), space)))                      \
+    VM_PANIC(GAB_OVERFLOW, "");
+
 #define CALL_BLOCK(blk, have)                                                  \
   ({                                                                           \
     struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(blk->p);                   \
-                                                                               \
-    if (__gab_unlikely(!has_callspace(SP(), SB(), p->nslots - have)))          \
-      VM_PANIC(GAB_OVERFLOW, "");                                              \
+    VM_PANIC_GUARD_STACKSPACE(3 + p->nslots - have);                           \
                                                                                \
     PUSH_FRAME(blk, have);                                                     \
                                                                                \
@@ -746,9 +749,7 @@ inline uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc,
 #define LOCALCALL_BLOCK(blk, have)                                             \
   ({                                                                           \
     struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(blk->p);                   \
-                                                                               \
-    if (__gab_unlikely(!has_callspace(SP(), SB(), 3 + p->nslots - have)))      \
-      VM_PANIC(GAB_OVERFLOW, "");                                              \
+    VM_PANIC_GUARD_STACKSPACE(3 + p->nslots - have);                           \
                                                                                \
     PUSH_FRAME(blk, have);                                                     \
                                                                                \
@@ -762,13 +763,14 @@ inline uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc,
 
 #define TAILCALL_BLOCK(blk, have)                                              \
   ({                                                                           \
+    struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(blk->p);                   \
+    VM_PANIC_GUARD_STACKSPACE(p->nslots - have);                               \
+                                                                               \
     gab_value *from = SP() - have;                                             \
     gab_value *to = FB();                                                      \
                                                                                \
     memmove(to, from, have * sizeof(gab_value));                               \
     SP() = to + have;                                                          \
-                                                                               \
-    struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(blk->p);                   \
                                                                                \
     IP() = proto_ip(GAB(), p);                                                 \
     KB() = proto_ks(GAB(), p);                                                 \
@@ -781,6 +783,9 @@ inline uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc,
 
 #define LOCALTAILCALL_BLOCK(blk, have)                                         \
   ({                                                                           \
+    struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(blk->p);                   \
+    VM_PANIC_GUARD_STACKSPACE(p->nslots - have);                               \
+                                                                               \
     gab_value *from = SP() - have;                                             \
     gab_value *to = FB();                                                      \
                                                                                \
@@ -797,20 +802,8 @@ inline uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc,
 
 #define PROPERTY_RECORD(r, have)                                               \
   ({                                                                           \
-    switch (have) {                                                            \
-    case 1:                                                                    \
-      PEEK() = gab_uvrecat(r, ks[GAB_SEND_KSPEC]);                             \
-      break;                                                                   \
-    default:                                                                   \
-      DROP_N((have) - 1);                                                      \
-    case 2: {                                                                  \
-      STORE_SP();                                                              \
-      gab_value value = gab_urecput(GAB(), r, ks[GAB_SEND_KSPEC], PEEK());     \
-      DROP();                                                                  \
-      PEEK() = value;                                                          \
-      break;                                                                   \
-    }                                                                          \
-    }                                                                          \
+    DROP_N(have);                                                              \
+    PUSH(gab_uvrecat(r, ks[GAB_SEND_KSPEC]));                                  \
                                                                                \
     SET_VAR(1);                                                                \
                                                                                \
@@ -829,7 +822,7 @@ inline uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc,
                                                                                \
     union gab_value_pair res = (*native->function)(GAB(), pass, SP() - pass);  \
                                                                                \
-    if (__gab_unlikely(res.status != gab_cvalid))                              \
+    if (__gab_unlikely(res.status != gab_cundefined))                          \
       return res;                                                              \
                                                                                \
     SP() = VM()->sp;                                                           \
@@ -889,7 +882,8 @@ union gab_value_pair vm_ok(OP_HANDLER_ARGS) {
   gab_value p = frame_block(VM()->fp)->p;
   gab_value shape = gab_prtshp(p);
 
-  gab_value env = gab_recordfrom(GAB(), shape, 1, gab_shplen(shape), VM()->fp, nullptr);
+  gab_value env =
+      gab_recordfrom(GAB(), shape, 1, gab_shplen(shape), VM()->fp, nullptr);
   gab_egkeep(EG(), gab_iref(GAB(), env));
 
   assert(FIBER()->header.kind = kGAB_FIBERRUNNING);
@@ -974,8 +968,11 @@ union gab_value_pair gab_vmexec(struct gab_triple gab, gab_value f) {
 #define SEND_GUARD_KIND(r, k) SEND_GUARD(gab_valkind(r) == k)
 
 #define SEND_GUARD_ISC(r)                                                      \
-  SEND_GUARD(gab_valkind(c) >= kGAB_CHANNEL &&                                 \
-             gab_valkind(c) <= kGAB_CHANNELCLOSED)
+  SEND_GUARD(gab_valkind(r) >= kGAB_CHANNEL &&                                 \
+             gab_valkind(r) <= kGAB_CHANNELCLOSED)
+
+#define SEND_GUARD_ISSHP(r)                                                    \
+  SEND_GUARD(gab_valkind(r) == kGAB_SHAPE || gab_valkind(r) == kGAB_SHAPELIST)
 
 #define SEND_GUARD_CACHED_MESSAGE_SPECS()                                      \
   SEND_GUARD(gab_valeq(gab_thisfibmsgrec(GAB(), ks[GAB_SEND_KMESSAGE]),        \
@@ -1040,7 +1037,7 @@ CASE_CODE(MATCHSEND_BLOCK) {
 
   struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(blk->p);
 
-  if (__gab_unlikely(!has_callspace(SP(), SB(), p->nslots - have)))
+  if (__gab_unlikely(!has_stackspace(SP(), SB(), p->nslots - have)))
     VM_PANIC(GAB_OVERFLOW, "");
 
   IP() = (void *)ks[GAB_SEND_KOFFSET + idx];
@@ -1455,6 +1452,28 @@ CASE_CODE(SEND_PRIMITIVE_CONS_RECORD) {
   NEXT();
 }
 
+CASE_CODE(SEND_PRIMITIVE_SPLATSHAPE) {
+  gab_value *ks = READ_CONSTANTS;
+  uint64_t have = compute_arity(VAR(), READ_BYTE);
+
+  gab_value s = PEEK_N(have);
+
+  SEND_GUARD_ISSHP(s);
+
+  DROP_N(have);
+
+  uint64_t len = gab_shplen(s);
+
+  assert(VM()->sp + len < VM()->sp + cGAB_STACK_MAX);
+
+  for (uint64_t i = 0; i < len; i++)
+    PUSH(gab_ushpat(s, i));
+
+  SET_VAR(len);
+
+  NEXT();
+}
+
 CASE_CODE(SEND_PRIMITIVE_SPLATLIST) {
   gab_value *ks = READ_CONSTANTS;
   uint64_t have = compute_arity(VAR(), READ_BYTE);
@@ -1462,8 +1481,6 @@ CASE_CODE(SEND_PRIMITIVE_SPLATLIST) {
   gab_value r = PEEK_N(have);
 
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
-
-  SEND_GUARD_KIND(r, kGAB_RECORD);
 
   DROP_N(have);
 
@@ -1486,8 +1503,6 @@ CASE_CODE(SEND_PRIMITIVE_SPLATDICT) {
   gab_value r = PEEK_N(have);
 
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
-
-  SEND_GUARD_KIND(r, kGAB_RECORD);
 
   DROP_N(have);
 

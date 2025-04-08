@@ -18,11 +18,7 @@
  * In the other cases, use our vendored, cthreads submodule as a cross platform
  * replacement until c11 threads is supported.
  */
-#if __has_include("threads.h")
-#include <threads.h>
-#else
-#include <cthreads.h>
-#endif
+#include "threads.h"
 
 /**
  * PLATFORM INTERFACE

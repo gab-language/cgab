@@ -53,14 +53,14 @@ int run_string(const char *string, int flags, size_t jobs) {
   if (res.status == gab_cvalid) {
     if (res.aresult->data[0] == gab_ok)
       return free(res.aresult), gab_destroy(gab), 0;
-
-    const char *errstr = gab_errtocs(gab, res.aresult->data[1]);
-    puts(errstr);
+    //
+    // const char *errstr = gab_errtocs(gab, res.aresult->data[1]);
+    // puts(errstr);
 
     return free(res.aresult), gab_destroy(gab), 1;
   } else {
-    const char *errstr = gab_errtocs(gab, res.vresult);
-    puts(errstr);
+    // const char *errstr = gab_errtocs(gab, res.vresult);
+    // puts(errstr);
     return gab_destroy(gab), 1;
   }
 }
@@ -81,14 +81,14 @@ int run_file(const char *path, int flags, size_t jobs) {
     if (res.aresult->data[0] == gab_ok)
       return free(res.aresult), gab_destroy(gab), 0;
 
-    const char *errstr = gab_errtocs(gab, res.aresult->data[1]);
-    puts(errstr);
+    // const char *errstr = gab_errtocs(gab, res.aresult->data[1]);
+    // puts(errstr);
 
     return free(res.aresult), gab_destroy(gab), 1;
   } else {
     if (res.vresult != gab_cinvalid) {
-      const char *errstr = gab_errtocs(gab, res.vresult);
-      puts(errstr);
+      // const char *errstr = gab_errtocs(gab, res.vresult);
+      // puts(errstr);
     }
 
     return gab_destroy(gab), 1;

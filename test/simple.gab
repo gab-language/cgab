@@ -65,19 +65,19 @@ test_spec = s.pat(
 
 test_spec.spec\fits?('200\n').println
 
-#req = '200\nGET\nContentLength:10\nContentType:text\n\nHello'
+req = '200\nGET\nContentLength:10\nContentType:text\n\nHello'
 
-#http_spec.spec\fits?(req).println # => true
-#http_spec.spec\fits?(req) .println # => true
-#http_spec.spec\fits?(req) .println # => true
-#http_spec.spec\fits?(req) .println # => true
-#http_spec.spec\fits?(req) .println # => true
-#http_spec.spec\fits?(req) .println # => true
-#http_spec.spec\fits?(req) .println # => true
-#http_spec.spec\fits?(req) .println # => true
-#http_spec.spec\fits?(req) .println # => true
-#http_spec.spec\fits?(req) .println # => true
-#http_spec.spec\fits?(req) .println # => true
+http_spec.spec\fits?(req).println # => true
+http_spec.spec\fits?(req).println # => true
+http_spec.spec\fits?(req).println # => true
+http_spec.spec\fits?(req).println # => true
+http_spec.spec\fits?(req).println # => true
+http_spec.spec\fits?(req).println # => true
+http_spec.spec\fits?(req).println # => true
+http_spec.spec\fits?(req).println # => true
+http_spec.spec\fits?(req).println # => true
+http_spec.spec\fits?(req).println # => true
+http_spec.spec\fits?(req).println # => true
 
 #generated_http = http_spec.spec\gen
 

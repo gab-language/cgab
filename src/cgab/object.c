@@ -198,14 +198,22 @@ int srec_dumpproperties(char **dest, size_t *n, gab_value rec, int depth) {
   return 0;
 }
 static const char *chan_strs[] = {
-    [kGAB_CHANNEL] = "",
-    [kGAB_CHANNELCLOSED] = "closed ",
+    [kGAB_CHANNEL] = " is: open",
+    [kGAB_CHANNELCLOSED] = " is: closed ",
+};
+
+static const char *fib_strs[] = {
+    [kGAB_FIBER] = " is: idle",
+    [kGAB_FIBERRUNNING] = " is: running",
+    [kGAB_FIBERDONE] = " is: done",
 };
 
 int sinspectval(char **dest, size_t *n, gab_value self, int depth) {
   switch (gab_valkind(self)) {
   case kGAB_PRIMITIVE: {
     switch (self) {
+    case gab_cundefined:
+      return snprintf_through(dest, n, "cundefined");
     case gab_cinvalid:
       return snprintf_through(dest, n, "cinvalid");
     case gab_ctimeout:
@@ -247,13 +255,13 @@ int sinspectval(char **dest, size_t *n, gab_value self, int depth) {
            snprintf_through(dest, n, ">");
   case kGAB_CHANNEL:
   case kGAB_CHANNELCLOSED:
-    return snprintf_through(dest, n, "<" tGAB_CHANNEL " %s>",
+    return snprintf_through(dest, n, "<" tGAB_CHANNEL "%s>",
                             chan_strs[gab_valkind(self)]);
   case kGAB_FIBER:
   case kGAB_FIBERRUNNING:
   case kGAB_FIBERDONE:
-    return snprintf_through(dest, n, "<" tGAB_FIBER " %p>",
-                            GAB_VAL_TO_FIBER(self));
+    return snprintf_through(dest, n, "<" tGAB_FIBER " %s>",
+                            fib_strs[gab_valkind(self)]);
   case kGAB_RECORD: {
     if (gab_valkind(gab_recshp(self)) == kGAB_SHAPELIST)
       return snprintf_through(dest, n, "[") +
@@ -270,7 +278,7 @@ int sinspectval(char **dest, size_t *n, gab_value self, int depth) {
     struct gab_obox *con = GAB_VAL_TO_BOX(self);
     return snprintf_through(dest, n, "<" tGAB_BOX " ") +
            gab_svalinspect(dest, n, con->type, depth) +
-           snprintf_through(dest, n, "%p>", con->data);
+           snprintf_through(dest, n, " len: %lu>", con->len);
   }
   case kGAB_BLOCK: {
     struct gab_oblock *blk = GAB_VAL_TO_BLOCK(self);
@@ -278,7 +286,7 @@ int sinspectval(char **dest, size_t *n, gab_value self, int depth) {
     uint64_t line = gab_srcline(p->src, p->offset);
     return snprintf_through(dest, n, "<" tGAB_BLOCK " ") +
            gab_svalinspect(dest, n, gab_srcname(p->src), depth) +
-           snprintf_through(dest, n, ":%" PRIu64 ">", line);
+           snprintf_through(dest, n, ":%lu>", line);
   }
   case kGAB_NATIVE: {
     struct gab_onative *native = GAB_VAL_TO_NATIVE(self);
@@ -291,7 +299,7 @@ int sinspectval(char **dest, size_t *n, gab_value self, int depth) {
     uint64_t line = gab_srcline(p->src, p->offset);
     return snprintf_through(dest, n, "<" tGAB_PROTOTYPE " ") +
            gab_svalinspect(dest, n, gab_srcname(p->src), depth) +
-           snprintf_through(dest, n, ":%" PRIu64 ">", line);
+           snprintf_through(dest, n, ":%lu>", line);
   }
   default:
     break;

@@ -277,7 +277,7 @@ GAB_API_INLINE gab_value __gab_dtoval(gab_float value) {
 #define gab_union_cinvalid ((union gab_value_pair){{gab_cinvalid}})
 
 #define gab_union_cvalid(v)                                                    \
-  (union gab_value_pair) { .status = gab_cvalid, .vresult = v }
+  (union gab_value_pair) { .status = gab_cundefined, .vresult = v }
 
 #define gab_union_ok(v)                                                        \
   (union gab_value_pair) { .status = gab_ok, .vresult = v }
@@ -1789,6 +1789,7 @@ GAB_API_INLINE uint64_t gab_shpfind(gab_value shp, gab_value key) {
   // }
   default:
     assert(false && "UNREACHABLE");
+    return -1;
   }
 }
 

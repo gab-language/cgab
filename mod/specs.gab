@@ -359,27 +359,27 @@ re\d: .defcase! {
   re\atom\t e => do
     (ok, rest*) = self.forms.to\spec.spec\fits? e
 
-    'Applied atom $ to $ -> $\n'.printf(self.forms.to\spec, e, ok)
+    #'Applied atom $ to $ -> $\n'.printf(self.forms.to\spec, e, ok)
 
     so_far = self.path
 
     path = so_far.push [self.re\name, e]
 
-    (ok .and regex\blank .or regex\null .path(path), rest)
+    (ok .and regex\blank .or regex\null .put(path: path), rest)
   end
 
  re\alt\t e => do
-    'Applied alt $ to $\n'.printf(self.forms, e)
+    #'Applied alt $ to $\n'.printf(self.forms, e)
 
     forms = self.forms.map f => f .re\d e
 
     re:
       .alt(forms, self.meta)
-      .path(self.path)
+      .put(path: self.path)
   end
 
   re\seq\t e => do
-    'Applied seq $ to $\n'.printf(self.forms, e)
+    #'Applied seq $ to $\n'.printf(self.forms, e)
     (a, rest) = (self.forms.at! 0, self.forms.slice(1, self.forms.len))
     b = self.forms.at! 1
 
@@ -390,9 +390,9 @@ re\d: .defcase! {
 
     so_far = self.path
 
-    left = re:.seq(self.forms.put(0, new_a), self.meta).path (so_far.push [a.re\name, e])
+    left = re:.seq(self.forms.put(0, new_a), self.meta).put(path: so_far.push [a.re\name, e])
 
-    right = re:.seq(rest.put(0, new_b), self.meta).path (so_far.push [b.re\name, e])
+    right = re:.seq(rest.put(0, new_b), self.meta).put(path: so_far.push [b.re\name, e])
 
     re:
       .alt(
@@ -401,7 +401,7 @@ re\d: .defcase! {
   end
 
  re\rep\t e => do
-    'Applied rep $ to $\n'.printf(self.forms, e)
+    #'Applied rep $ to $\n'.printf(self.forms, e)
     a = self.forms
 
     new_a = a.re\d e
@@ -412,19 +412,19 @@ re\d: .defcase! {
       .seq(
         [new_a self],
         self.meta)
-      .path(path)
+      .put(path: self.path)
   end
 }
 
 # Types that can match up these re need to implement the head/tail interface
 re\head: .defcase! {
-  'gab\\record' () => self.at! 0
-  'gab\\string' () => self.at 0
+  Records.t, () => self.at! 0
+  Strings.t, () => self.at 0
 }
 
 re\tail: .defcase! {
-  'gab\\record' () => self.slice(1 self.len)
-  'gab\\string' () => self.slice(1 self.len)
+  Records.t, () => self.slice(1 self.len)
+  Strings.t, () => self.slice(1 self.len)
 }
 
 # Matching fns

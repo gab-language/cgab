@@ -55,15 +55,13 @@ docond: .def! (fs*) => do
   args = self
   fs.reduce(
     nil:
-    (acc, f)
-      => acc.else ()
-        => f .cond\check(args*) .and f)
+    (acc, f) => acc.else () => f.cond\check(args*).and f)
 end
 
 cond: .def! (vs*, branches) => do
   args = [self, vs*]
 
-  k = args.docond(branches.keys)
+  k = args.docond(branches.?.*)
 
   branches .at! k
 end

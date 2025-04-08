@@ -565,12 +565,12 @@ union gab_value_pair gab_fmtlib_sprintf(struct gab_triple gab, uint64_t argc,
 
   const char *fmt = gab_strdata(&fmtstr);
 
-  char buf[1024];
+  char buf[2048];
   int len = gab_nsprintf(buf, sizeof(buf), fmt, argc - 1, argv + 1);
 
   if (len < 0)
     return gab_panicf(
-        gab, "Wrong number of format arguments to sprintf (expected $)",
+        gab, "sprintf buffer too small",
         gab_number(argc - 1));
 
   gab_vmpush(gab_thisvm(gab), gab_string(gab, buf));
