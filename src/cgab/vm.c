@@ -1389,9 +1389,13 @@ CASE_CODE(SEND_PRIMITIVE_USE) {
 
   STORE();
 
+  /*
+   * This pulling in of args/values to pass on to use'd module
+   * is a little scuffed. I'd rather do it a different way.
+   */
   gab_value shp = gab_prtshp(BLOCK()->p);
   gab_value svargs[32];
-  const char *sargs[32];
+  const char* sargs[32];
 
   size_t len = gab_shplen(shp);
   assert(len < 32);

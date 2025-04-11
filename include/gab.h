@@ -507,7 +507,6 @@ enum gab_flags {
    * strings as opposed to pretty errors.
    */
   fGAB_ERR_STRUCTURED = 1 << 5,
-  fGAB_JOB_RUNNERS = 1 << 7,
 };
 
 /**

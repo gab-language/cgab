@@ -113,7 +113,8 @@ gab_value *push_value(struct gab_triple gab, const char *json, gab_value *sp,
       *t = *t + 1;
       break;
     default:
-      assert(false && "unreachable");
+      // Format and push some nice error here
+      return nullptr;
     }
     break;
   }
@@ -132,8 +133,12 @@ gab_value *push_value(struct gab_triple gab, const char *json, gab_value *sp,
 
     *t = *t + 1;
 
-    for (int child = 0; child < tok.size * 2; child++)
+    for (int child = 0; child < tok.size * 2; child++) {
       sp = push_value(gab, json, sp, tokens, t);
+
+      if (sp == nullptr)
+        return nullptr;
+    }
 
     sp = save;
     *sp++ = gab_record(gab, 2, tok.size, save, save + 1);
@@ -144,8 +149,12 @@ gab_value *push_value(struct gab_triple gab, const char *json, gab_value *sp,
 
     *t = *t + 1;
 
-    for (int child = 0; child < tok.size; child++)
+    for (int child = 0; child < tok.size; child++) {
       sp = push_value(gab, json, sp, tokens, t);
+
+      if (sp == nullptr)
+        return nullptr;
+    }
 
     sp = save;
     *sp++ = gab_list(gab, tok.size, save);
@@ -198,6 +207,13 @@ union gab_value_pair gab_jsonlib_decode(struct gab_triple gab, uint64_t argc,
   gab_value stack[len];
 
   gab_value *sp = push_value(gab, cstr, stack, tokens, &token);
+
+  if (sp == nullptr) {
+    // Encountered an invalid token.
+    gab_vmpush(gab_thisvm(gab), gab_err,
+               gab_string(gab, "Invalid JSON value"));
+    return gab_union_cvalid(gab_nil);
+  }
 
   gab_value res = *(--sp);
 
