@@ -7,7 +7,7 @@ diag\jobs\in = Channels.make
 diag\job\t = Shapes.make(server: uri: text:)
 lsp\server\t = Shapes.make(server\in: server\out: server\open_ch: server\data:)
 
-diagnostics\queue_all:.def!(
+diagnostics\queue_all:.def(
   lsp\server\t
   () => do
     server = self
@@ -18,11 +18,11 @@ diagnostics\queue_all:.def!(
     end
   end)
 
-[diag\job\t] .defmodule! {
-  notify\diagnostics!: diagnostics => do
+[diag\job\t] .defmodule {
+  notify\diagnostics: diagnostics => do
     log.("Notifying", self.uri, diagnostics)
 
-    self.server.notify!(
+    self.server.notify(
         "textDocument/publishDiagnostics"
         {
           "uri" self.uri
@@ -38,12 +38,12 @@ diagnostics\queue_all:.def!(
 
     (ok == ok: !) .and err .or nil:
   end
-  complete!: () => do
+  complete: () => do
     self
       .server
       .server\open_ch
-      .closed?
-      .then () => diag\jobs\in.close! 
+      .is\closed
+      .then () => diag\jobs\in.close 
 
     job = self
     log.("Diagnostics for: " self.uri)
@@ -53,7 +53,7 @@ diagnostics\queue_all:.def!(
 
     diagnostic
       .then(() => do
-        job.notify\diagnostics! [
+        job.notify\diagnostics [
             {
               range: {
                 start: {
@@ -75,11 +75,11 @@ diagnostics\queue_all:.def!(
       end)
     .else(() => do
       log.("Clearing diagnostics: " diagnostic)
-      job.notify\diagnostics! []
+      job.notify\diagnostics []
     end)
   end
 }
 
-diag\worker = () => diag\jobs\in .each complete!:
+diag\worker = () => diag\jobs\in .each complete:
 
 Fibers.make diag\worker

@@ -1,21 +1,21 @@
 Ranges = range:
 
-t:.def!(
+t:.def(
   Ranges
   Shapes.make(from: to:))
 
-range\into: .defcase! {
+range\into: .defcase {
   nil: to => { from: 0, to: to }
   (Numbers.t) from => { from: from, to: self }
 }
 
-make:.def!(
+make:.def(
   Ranges
   (from to) => do
     (to from) .range\into
   end)
 
-[Ranges.t] .defmodule! {
+[Ranges.t] .defmodule {
   seq\init: _ => do
     (ok: self.from, self.from)
   end
@@ -25,6 +25,6 @@ make:.def!(
   end
 }
 
-Ranges.t .def\seq!
+Ranges.t .def\seq
 
 Ranges

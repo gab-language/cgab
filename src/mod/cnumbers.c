@@ -153,14 +153,14 @@ GAB_DYNLIB_MAIN_FN {
               gab_snative(gab, "floor", gab_numlib_floor),
           },
           {
-              gab_message(gab, "nan?"),
+              gab_message(gab, "is\\nan"),
               t,
-              gab_snative(gab, "nan?", gab_numlib_isnan),
+              gab_snative(gab, "is\\nan", gab_numlib_isnan),
           },
           {
-              gab_message(gab, "inf?"),
+              gab_message(gab, "is\\inf"),
               t,
-              gab_snative(gab, "inf?", gab_numlib_isinf),
+              gab_snative(gab, "is\\inf", gab_numlib_isinf),
           },
           {
               gab_message(gab, "float\\between"),

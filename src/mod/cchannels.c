@@ -46,24 +46,24 @@ GAB_DYNLIB_MAIN_FN {
               t,
           },
           {
-              gab_message(gab, "close!"),
+              gab_message(gab, "close"),
               t,
-              gab_snative(gab, "close!", gab_chnlib_close),
+              gab_snative(gab, "close", gab_chnlib_close),
           },
           {
-              gab_message(gab, "closed?"),
+              gab_message(gab, "is\\closed"),
               t,
-              gab_snative(gab, "closed?", gab_chnlib_is_closed),
+              gab_snative(gab, "is\\closed", gab_chnlib_is_closed),
           },
           {
-              gab_message(gab, "full?"),
+              gab_message(gab, "is\\full"),
               t,
-              gab_snative(gab, "full?", gab_chnlib_is_full),
+              gab_snative(gab, "is\\full", gab_chnlib_is_full),
           },
           {
-              gab_message(gab, "empty?"),
+              gab_message(gab, "is\\empty"),
               t,
-              gab_snative(gab, "empty?", gab_chnlib_is_empty),
+              gab_snative(gab, "is\\empty", gab_chnlib_is_empty),
           });
 
   gab_value res[] = {gab_ok, gab_strtomsg(t)};

@@ -106,7 +106,6 @@ int64_t osfgetc(struct gab_triple gab, qfd_t qfd, int *c) {
   while (!qd_status(qd))
     switch (gab_yield(gab)) {
     case sGAB_TERM:
-      qd_destroy(qd);
       return -1;
     case sGAB_COLL:
       gab_gcepochnext(gab);
@@ -145,7 +144,6 @@ int osnfread(struct gab_triple gab, qfd_t qfd, size_t n, uint8_t buf[n]) {
   while (!qd_status(qd))
     switch (gab_yield(gab)) {
     case sGAB_TERM:
-      qd_destroy(qd);
       return -1;
     case sGAB_COLL:
       gab_gcepochnext(gab);
@@ -318,7 +316,6 @@ union gab_value_pair gab_iolib_send(struct gab_triple gab, uint64_t argc,
   while (!qd_status(qd))
     switch (gab_yield(gab)) {
     case sGAB_TERM:
-      qd_destroy(qd);
       return gab_union_cvalid(gab_nil);
     case sGAB_COLL:
       gab_gcepochnext(gab);
@@ -354,7 +351,6 @@ union gab_value_pair gab_iolib_recv(struct gab_triple gab, uint64_t argc,
   while (!qd_status(qd))
     switch (gab_yield(gab)) {
     case sGAB_TERM:
-      qd_destroy(qd);
       return gab_union_cvalid(gab_nil);
     case sGAB_COLL:
       gab_gcepochnext(gab);
@@ -409,7 +405,6 @@ union gab_value_pair gab_iolib_write(struct gab_triple gab, uint64_t argc,
   while (!qd_status(qd))
     switch (gab_yield(gab)) {
     case sGAB_TERM:
-      qd_destroy(qd);
       return gab_union_cvalid(gab_nil);
     case sGAB_COLL:
       gab_gcepochnext(gab);

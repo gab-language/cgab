@@ -6,12 +6,11 @@ union gab_value_pair gab_gablib_build(struct gab_triple gab, uint64_t argc,
   gab_value source = gab_arg(0);
   const char *src = gab_strdata(&source);
 
-  union gab_value_pair mod =
-      gab_build(gab, (struct gab_parse_argt){
-                         .source = src,
-                         .name = src,
-                         .flags = fGAB_ERR_QUIET | fGAB_RUN_INCLUDEDEFAULTARGS,
-                     });
+  union gab_value_pair mod = gab_build(gab, (struct gab_parse_argt){
+                                                .source = src,
+                                                .name = src,
+                                                .flags = fGAB_ERR_QUIET,
+                                            });
 
   if (mod.status != gab_cinvalid) {
     gab_vmpush(gab_thisvm(gab), gab_ok, mod.vresult);
@@ -36,12 +35,11 @@ union gab_value_pair gab_gablib_parse(struct gab_triple gab, uint64_t argc,
   gab_value source = gab_arg(0);
   const char *src = gab_strdata(&source);
 
-  union gab_value_pair mod =
-      gab_parse(gab, (struct gab_parse_argt){
-                         .source = src,
-                         .name = src,
-                         .flags = fGAB_ERR_QUIET | fGAB_RUN_INCLUDEDEFAULTARGS,
-                     });
+  union gab_value_pair mod = gab_parse(gab, (struct gab_parse_argt){
+                                                .source = src,
+                                                .name = src,
+                                                .flags = fGAB_ERR_QUIET,
+                                            });
 
   if (mod.status != gab_cinvalid) {
     gab_vmpush(gab_thisvm(gab), gab_ok, mod.vresult);
@@ -74,12 +72,11 @@ union gab_value_pair gab_gablib_aeval(struct gab_triple gab, uint64_t argc,
   gab_value fib;
 
   if (env == gab_nil) {
-    union gab_value_pair res = gab_aexec(
-        gab, (struct gab_exec_argt){
-                 .source = src,
-                 .name = src,
-                 .flags = fGAB_ERR_QUIET | fGAB_RUN_INCLUDEDEFAULTARGS,
-             });
+    union gab_value_pair res = gab_aexec(gab, (struct gab_exec_argt){
+                                                  .source = src,
+                                                  .name = src,
+                                                  .flags = fGAB_ERR_QUIET,
+                                              });
     assert(res.status == gab_cvalid);
     fib = res.vresult;
 

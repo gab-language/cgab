@@ -1,5 +1,4 @@
 s = 'specs'.use
-Ranges = 'ranges'.use
 
 digit_spec = digit: .defspec! {
   help: "A digit"

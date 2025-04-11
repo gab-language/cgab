@@ -559,6 +559,20 @@ union gab_value_pair gab_strlib_numbers_into(struct gab_triple gab,
   return gab_union_cvalid(gab_nil);
 };
 
+union gab_value_pair gab_fmtlib_panicf(struct gab_triple gab, uint64_t argc,
+                                       gab_value argv[argc]) {
+  gab_value fmtstr = gab_arg(0);
+  const char *fmt = gab_strdata(&fmtstr);
+
+  char buf[4096];
+  int len = gab_nsprintf(buf, sizeof(buf), fmt, argc - 1, argv + 1);
+
+  if (len < 0)
+    return gab_panicf(gab, "sprintf buffer too small", gab_number(argc - 1));
+
+  return gab_panicf(gab, "$", gab_string(gab, buf));
+}
+
 union gab_value_pair gab_fmtlib_sprintf(struct gab_triple gab, uint64_t argc,
                                         gab_value argv[argc]) {
   gab_value fmtstr = gab_arg(0);
@@ -569,9 +583,7 @@ union gab_value_pair gab_fmtlib_sprintf(struct gab_triple gab, uint64_t argc,
   int len = gab_nsprintf(buf, sizeof(buf), fmt, argc - 1, argv + 1);
 
   if (len < 0)
-    return gab_panicf(
-        gab, "sprintf buffer too small",
-        gab_number(argc - 1));
+    return gab_panicf(gab, "sprintf buffer too small", gab_number(argc - 1));
 
   gab_vmpush(gab_thisvm(gab), gab_string(gab, buf));
   return gab_union_cvalid(gab_nil);
@@ -587,9 +599,9 @@ GAB_DYNLIB_MAIN_FN {
               t,
           },
           {
-              gab_message(gab, "blank?"),
+              gab_message(gab, "is\\blank"),
               t,
-              gab_snative(gab, "blank?", gab_strlib_blank),
+              gab_snative(gab, "is\\blank", gab_strlib_blank),
           },
           {
               gab_message(gab, "split"),
@@ -597,19 +609,19 @@ GAB_DYNLIB_MAIN_FN {
               gab_snative(gab, "split", gab_strlib_split),
           },
           {
-              gab_message(gab, "has?"),
+              gab_message(gab, "has\\sub"),
               t,
-              gab_snative(gab, "has?", gab_strlib_has),
+              gab_snative(gab, "has\\sub", gab_strlib_has),
           },
           {
-              gab_message(gab, "ends_with?"),
+              gab_message(gab, "has\\ending"),
               t,
-              gab_snative(gab, "ends_with?", gab_strlib_ends),
+              gab_snative(gab, "has\\ending", gab_strlib_ends),
           },
           {
-              gab_message(gab, "starts_with?"),
+              gab_message(gab, "has\\beginning"),
               t,
-              gab_snative(gab, "starts_with?", gab_strlib_begins),
+              gab_snative(gab, "has\\beginning", gab_strlib_begins),
           },
           {
               gab_message(gab, "seq\\init"),
@@ -680,6 +692,11 @@ GAB_DYNLIB_MAIN_FN {
               gab_message(gab, "sprintf"),
               t,
               gab_snative(gab, "sprintf", gab_fmtlib_sprintf),
+          },
+          {
+              gab_message(gab, "panicf"),
+              t,
+              gab_snative(gab, "panicf", gab_fmtlib_panicf),
           },
           {
               gab_message(gab, "trim"),

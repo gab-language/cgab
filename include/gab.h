@@ -132,8 +132,14 @@
  *
  */
 
+/*
+ * A compact nan-boxed representatino of a gab value.
+ */
 typedef uint64_t gab_value;
-typedef double gab_float;
+
+/*
+ * Number types for gab values
+ */
 
 /*
  * A double has 52 bits of mantissa, so the largest
@@ -147,6 +153,8 @@ typedef signed _BitInt(GAB_INTWIDTH) gab_int;
 typedef unsigned _BitInt(GAB_INTWIDTH) gab_uint;
 
 #define GAB_INTMAX (2e53 - 1.0)
+
+typedef double gab_float;
 
 enum gab_kind {
   kGAB_STRING = 0, // MUST_STAY_ZERO
@@ -396,8 +404,12 @@ struct gab_eg;
 struct gab_src;
 
 struct gab_triple {
+  /* Pointer to the engine itself */
   struct gab_eg *eg;
+  /* Flags specific to this triple */
   uint32_t flags;
+  /* An index into the engine's jobs array, determining which os-thread this
+   * triple is on. */
   int32_t wkid;
 };
 
@@ -464,18 +476,69 @@ GAB_API uint64_t gab_obj_size(struct gab_obj *obj);
 typedef a_gab_value *(*gab_osdynmod_load)(struct gab_triple, const char *path);
 typedef a_gab_value *(*gab_osdynmod)(struct gab_triple);
 
+/*
+ * @enum Gab Flags
+ *
+ * The 'flags' member of @see struct gab_triple may contain these flags.
+ */
+enum gab_flags {
+  /*
+   * Any AST's successfully parsed by @gab_parse will be dumped to stdout.
+   * */
+  fGAB_AST_DUMP = 1 << 0,
+  /*
+   * Any prototypes successfully compiled by @gab_cmpl will be dumped to stdout.
+   * */
+  fGAB_BUILD_DUMP = 1 << 1,
+  /*
+   * Any calls to execute code will be skipped.
+   * */
+  fGAB_BUILD_CHECK = 1 << 2,
+  /*
+   *
+   */
+  fGAB_ERR_QUIET = 1 << 3,
+  /*
+   *
+   */
+  fGAB_ERR_EXIT = 1 << 4,
+  /*
+   * @see gab_errtocs will convert errors into structured
+   * strings as opposed to pretty errors.
+   */
+  fGAB_ERR_STRUCTURED = 1 << 5,
+  fGAB_JOB_RUNNERS = 1 << 7,
+};
+
 /**
  * @class gab_create_argt
  */
 struct gab_create_argt {
-  uint64_t flags, jobs;
+  uint32_t flags, jobs;
+
+  /* A list of modules to load automatically into the engine.
+   * The name of the variable will match the name of the module.
+   *  NOTE: Slashes will be converted.
+   *
+   * EG:
+   * [ 'messages', 'ranges', 'os/io' ]
+   *  -> messages = 'messages'.use
+   *  -> ranges = 'ranges'.use
+   *  -> os\io = 'os/io'.use
+   * */
+  uint32_t len;
+  const char **modules;
 };
 
 /**
- * @brief Allocate data necessary for a runtime. This struct is lightweight and
- * should be passed by value.
+ * @brief Initialize a gab runtime.
+ *
+ * @param args Parameters for initialization.
+ * @param gab_out The struct to initialize.
+ * @return a result describing the outcome of initialization.
  */
-GAB_API struct gab_triple gab_create(struct gab_create_argt args);
+GAB_API union gab_value_pair gab_create(struct gab_create_argt args,
+                                        struct gab_triple gab_out[static 1]);
 
 /**
  * @brief Free the memory owned by this triple.
@@ -559,11 +622,9 @@ GAB_API int gab_nsprintf(char *dst, size_t n, const char *fmt, uint64_t argc,
  *
  * When in c-code, it can be useful to create gab_objects which should be global
  * (ie, always kept alive).
- * Since gab_objects are allocated with one reference, this function does not
- * increment the rc of the value. It instead gives the engine 'ownership',
- * implying that when the engine is freed it should *decrement* the rc of the
- * value. The object will then be freed in the final collection, if its rc is <=
- * 0.
+ * This function *does not* increment the rc of the value. It instead gives the
+ * engine 'ownership', implying that when the engine is freed it should
+ * *decrement* the rc of the value.
  *
  * @param eg The engine.
  * @param value The value to keep.
@@ -592,9 +653,9 @@ union gab_value_pair {
     gab_value status;
 
     union {
-      /* A single result value */
+      /* A single result value. */
       gab_value vresult;
-      /* An array of result values */
+      /* An array of result values. */
       a_gab_value *aresult;
     };
   };
@@ -724,7 +785,6 @@ GAB_API gab_value gab_vmframe(struct gab_triple gab, uint64_t depth);
  * @brief Arguments and options for executing a source string.
  */
 struct gab_use_argt {
-
   /**
    * The name of the module to search for, as a c-string.
    */
@@ -734,6 +794,18 @@ struct gab_use_argt {
    */
   gab_value vname;
   /* Only one of sname and vname is required. */
+  /**
+   * @brief The number of arguments to the main block.
+   */
+  uint64_t len;
+  /**
+   * @brief The names of the arguments to the main block.
+   */
+  const char **sargv;
+  /**
+   * @brief The values of the arguments to the main block.
+   */
+  gab_value *argv;
 
   /**
    * Optional flags for compilation AND execution.
@@ -2714,13 +2786,13 @@ enum {
  * needed for the gab environment.
  */
 struct gab_eg {
+  _Atomic int8_t njobs;
+
   uint64_t hash_seed;
 
   v_gab_value scratch;
 
   gab_value types[kGAB_NKINDS];
-
-  _Atomic int8_t njobs;
 
   struct gab_sig {
     int8_t schedule;
@@ -2840,6 +2912,18 @@ GAB_API_INLINE struct gab_vm *gab_thisvm(struct gab_triple gab) {
   return &GAB_VAL_TO_FIBER(fiber)->vm;
 }
 
+/**
+ *
+ * @brief Yield control of this thread briefly.
+ *
+ * When a thread needs to wait (for example, when taking from a channel), it
+ * should repeatedly call gab_yield as part of its loop. Each call may return a
+ * signal (for example, sGAB_COLL). Each kind of signal needs to be handled
+ * appropriately at each callsite of gab_yield.
+ *
+ * @param gab The engine.
+ * @return A signal to handle.
+ */
 [[nodiscard]] GAB_API enum gab_signal gab_yield(struct gab_triple gab);
 
 /**

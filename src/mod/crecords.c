@@ -300,14 +300,14 @@ GAB_DYNLIB_MAIN_FN {
               gab_snative(gab, "push", gab_reclib_push),
           },
           {
-              gab_message(gab, "empty?"),
+              gab_message(gab, "is\\empty"),
               t,
-              gab_snative(gab, "empty?", gab_reclib_is_empty),
+              gab_snative(gab, "is\\empty", gab_reclib_is_empty),
           },
           {
-              gab_message(gab, "list?"),
+              gab_message(gab, "is\\list"),
               t,
-              gab_snative(gab, "list?", gab_reclib_is_list),
+              gab_snative(gab, "is\\list", gab_reclib_is_list),
           },
           {
               gab_message(gab, "take"),

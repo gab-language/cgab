@@ -121,7 +121,7 @@ Messages are similar to strings (and interchangeable in some ways). However, the
 Because message's have a different type, you can define how an *individual message* responds to a message. Here is an example:
 ```gab
 # Define the message 'then' for the .true and .false message.
-then: .defcase! {
+then: .defcase {
     true: do callback
         # In the true path, we call the callback
         callback.()
@@ -143,13 +143,13 @@ Messages are the *only* mechanism for defining behavior or control flow in gab.
 ```
 The core library provides some messages for defining messages. This might feel a little lispy:
 ```gab
-say_hello: .def!('gab\string', 'gab\message', () => 'Hello, ' + self.to\s.println)
+say_hello: .def('gab\string', 'gab\message', () => 'Hello, ' + self.to\s.println)
 
 'Joe' .say_hello    # => Hello, Joe!
 
 Rich: .say_hello    # => Hello, Rich!
 
-meet: .defcase! {
+meet: .defcase {
     Joe:  () => 'Nice to meet you Joe!' .println
     Rich: () => 'Its a pleasure, Rich!' .println
 }
@@ -195,12 +195,12 @@ And the worker threads look something like this:
 This implementation has some problems, but it works well enough as an initial prototype.
 ```gab
 # Define a message for doing some work. This builds a list in a silly way.
-do_acc: .defcase! {
+do_acc: .defcase {
     true: (acc) => acc
     false: (acc n) => [n acc.acc(n - 1)**]
 }
 
-acc: .def!(
+acc: .def(
     'gab\\Record'
 # Note the choice to use the send syntax ':==' as opposed to the operator syntax '=='.
 # The send syntax has _higher precedence_ than operators. Here is the expression annotated with parentheses
@@ -210,7 +210,7 @@ acc: .def!(
 # Define a message for launching blocks in a fiber.
 # This just calls the gab\fiber constructer with
 #   a single argument - the block
-go: .def!(
+go: .def(
     'gab.block'
     () => Fiber.make self)
 

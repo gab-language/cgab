@@ -50,19 +50,19 @@ GAB_DYNLIB_MAIN_FN {
               t,
           },
           {
-              gab_message(gab, "await!"),
+              gab_message(gab, "await"),
               t,
-              gab_snative(gab, "await!", gab_fiblib_await),
+              gab_snative(gab, "await", gab_fiblib_await),
           },
           {
-              gab_message(gab, "sleep!"),
+              gab_message(gab, "sleep"),
               gab_strtomsg(t),
-              gab_snative(gab, "sleep!", gab_fiblib_sleep),
+              gab_snative(gab, "sleep", gab_fiblib_sleep),
           },
           {
-              gab_message(gab, "done?"),
+              gab_message(gab, "is\\done"),
               t,
-              gab_snative(gab, "done?", gab_fiblib_is_done),
+              gab_snative(gab, "is\\done", gab_fiblib_is_done),
           });
 
   gab_value res[] = {gab_ok, gab_strtomsg(t)};

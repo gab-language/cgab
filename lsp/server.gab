@@ -7,7 +7,7 @@ io = 'os.io'.use
 diag\job\t = Shapes.make(server: uri: text:)
 lsp\server\t = Shapes.make(server\in: server\out: server\open_ch: server\data:)
 
-make:.def!(
+make:.def(
   lsp\server:
   (in out) => lsp\server\t.make(
     in .or (io.stdin)
@@ -15,30 +15,32 @@ make:.def!(
     Channels.make
     {}))
 
-t:.def!(lsp\server: lsp\server\t)
+t:.def(lsp\server: lsp\server\t)
 
-logfile = io.open("/tmp/lsprpc.log" "w").unwrap!
+logfile = io
+  .file("/tmp/lsprpc.log" "w")
+  .unwrap
 
-_read_header:.defcase! {
+_read_header:.defcase {
   ok: (lsp m) => do
     next_header = lsp
       .server\in
       .until('\n'.to\b)
-      .unwrap!
+      .unwrap
       .trim '\n'
 
-    (blank? name value) = (next_header.blank?, next_header.split ':')
+    (blank name value) = (next_header.blank, next_header.split ':')
     
-    m = blank? .and m .or(m.put(name, value))
+    m = blank .and m .or(m.put(name, value))
 
     logfile.write(next_header + '\n')
 
-    option:.(blank?.!, lsp, m)._read_header
+    option:.(blank!, lsp, m)._read_header
   end
   none: (lsp m) => m
 }
 
-[lsp\server\t].defmodule! {
+[lsp\server\t].defmodule {
   _read_headers: () => do
     ok:._read_header(self, [])
   end
@@ -76,7 +78,7 @@ _read_header:.defcase! {
     option:.(self.server\open_ch.open?, nil: msg)
   end
   # Helpers for sending data to client
-  respond!: (id result) => do
+  respond: (id result) => do
     msg = { "id" id "result" result } .to\json
 
     content\length = msg.len
@@ -85,12 +87,12 @@ _read_header:.defcase! {
       'Content-Length:'content\length
       '\r\n\r\n'msg)
 
-    log.("Response" id result ?)
+    log.("Response" id result?)
 
     self.server\out.write res
   end
-  notify!: (method params) => do 
-    log.("Notification" method params ?)
+  notify: (method params) => do 
+    log.("Notification" method params?)
 
     msg = { "method" method "params" params } .to\json
 
@@ -105,7 +107,7 @@ _read_header:.defcase! {
     self.server\out.write notif
   end
   # Run the server
-  run!: () => do
+  run: () => do
     log."Server started!"
 
     self.reduce(self (lsp req) => do

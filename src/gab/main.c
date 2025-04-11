@@ -1,4 +1,5 @@
 #include "core.h"
+#include "engine.h"
 #include "gab.h"
 #include <locale.h>
 
@@ -17,82 +18,120 @@
 
 struct gab_triple gab;
 
+/*
+ * OS Signal handler for when SIGINT is caught
+ */
 void propagate_term(int) { gab_sigterm(gab); }
 
-void run_repl(int flags) {
-  gab = gab_create((struct gab_create_argt){
-      .flags = flags,
-  });
+bool check_and_printerr(union gab_value_pair res) {
+  if (res.status != gab_cvalid) {
+    const char *errstr = gab_errtocs(gab, res.vresult);
+    puts(errstr);
+    return false;
+  }
+
+  if (res.aresult->data[0] != gab_ok) {
+    const char *errstr = gab_errtocs(gab, res.aresult->data[1]);
+    puts(errstr);
+    a_gab_value_destroy(res.aresult);
+    return false;
+  }
+
+  return true;
+}
+
+static const char *default_modules[] = {
+    "Strings", "Binaries", "Messages", "Numbers", "Blocks", "Records",
+    "Shapes",  "Fibers",   "Channels", "__core",  "Ranges", "Streams",
+};
+static const size_t ndefault_modules = LEN_CARRAY(default_modules);
+
+int run_repl(int flags) {
+  union gab_value_pair res = gab_create(
+      (struct gab_create_argt){
+          .flags = flags,
+          .len = ndefault_modules,
+          .modules = default_modules,
+      },
+      &gab);
+
+  if (!check_and_printerr(res))
+    return gab_destroy(gab), 1;
 
   gab_repl(gab, (struct gab_repl_argt){
                     .name = MAIN_MODULE,
                     .flags = flags,
                     .welcome_message = "Gab version " GAB_VERSION_TAG "",
                     .prompt_prefix = " > ",
+                    .len = res.aresult->len - 1,
+                    .sargv = default_modules,
+                    .argv = res.aresult->data + 1,
                 });
 
-  gab_destroy(gab);
+  a_gab_value_destroy(res.aresult);
+
+  return gab_destroy(gab), 0;
 }
 
 int run_string(const char *string, int flags, size_t jobs) {
-  gab = gab_create((struct gab_create_argt){
-      .flags = flags,
-      .jobs = jobs,
-  });
+  union gab_value_pair res = gab_create(
+      (struct gab_create_argt){
+          .flags = flags,
+          .jobs = jobs,
+          .len = ndefault_modules,
+          .modules = default_modules,
+      },
+      &gab);
+
+  if (!check_and_printerr(res))
+    return gab_destroy(gab), 0;
 
   // This is a weird case where we actually want to include the null terminator
   s_char src = s_char_create(string, strlen(string) + 1);
 
-  union gab_value_pair res =
-      gab_exec(gab, (struct gab_exec_argt){
-                        .name = MAIN_MODULE,
-                        .source = (char *)src.data,
-                        .flags = flags | fGAB_RUN_INCLUDEDEFAULTARGS,
-                    });
+  res = gab_exec(gab, (struct gab_exec_argt){
+                          .name = MAIN_MODULE,
+                          .source = (char *)src.data,
+                          .flags = flags,
+                          .len = res.aresult->len - 1,
+                          .sargv = default_modules,
+                          .argv = res.aresult->data + 1,
+                      });
 
-  if (res.status == gab_cvalid) {
-    if (res.aresult->data[0] == gab_ok)
-      return free(res.aresult), gab_destroy(gab), 0;
-    //
-    // const char *errstr = gab_errtocs(gab, res.aresult->data[1]);
-    // puts(errstr);
-
-    return free(res.aresult), gab_destroy(gab), 1;
-  } else {
-    // const char *errstr = gab_errtocs(gab, res.vresult);
-    // puts(errstr);
+  if (!check_and_printerr(res))
     return gab_destroy(gab), 1;
-  }
+
+  a_gab_value_destroy(res.aresult);
+
+  return gab_destroy(gab), 0;
 }
 
 int run_file(const char *path, int flags, size_t jobs) {
-  gab = gab_create((struct gab_create_argt){
-      .flags = flags,
-      .jobs = jobs,
-  });
+  union gab_value_pair res = gab_create(
+      (struct gab_create_argt){
+          .flags = flags,
+          .jobs = jobs,
+          .len = ndefault_modules,
+          .modules = default_modules,
+      },
+      &gab);
 
-  union gab_value_pair res = gab_use(gab, (struct gab_use_argt){
-                                              .sname = path,
-                                          });
-
-  if (res.status == gab_cvalid) {
-    assert(res.aresult->len > 0);
-
-    if (res.aresult->data[0] == gab_ok)
-      return free(res.aresult), gab_destroy(gab), 0;
-
-    // const char *errstr = gab_errtocs(gab, res.aresult->data[1]);
-    // puts(errstr);
-
-    return free(res.aresult), gab_destroy(gab), 1;
-  } else {
-    if (res.vresult != gab_cinvalid) {
-      // const char *errstr = gab_errtocs(gab, res.vresult);
-      // puts(errstr);
-    }
-
+  if (!check_and_printerr(res))
     return gab_destroy(gab), 1;
-  }
+
+  res = gab_use(gab, (struct gab_use_argt){
+                         .sname = path,
+                         .len = res.aresult->len - 1,
+                         .sargv = default_modules,
+                         .argv = res.aresult->data + 1,
+                     });
+
+  if (!check_and_printerr(res))
+    return gab_destroy(gab), 1;
+
+  a_gab_value_destroy(res.aresult);
+
+  return gab_destroy(gab), 0;
 }
 
 struct option {
@@ -151,12 +190,11 @@ const struct option check_option = {
     'c',
     .flag = fGAB_BUILD_CHECK,
 };
-const struct option empty_env_option = {
-    "eenv",
-    "Don't use gab's core module - start with a mostly empty "
-    "environment",
-    'e',
-    .flag = fGAB_ENV_EMPTY,
+const struct option modules_option = {
+    "mods",
+    "Change the modules loaded as the gab is initializing"
+    "modules",
+    'm',
 };
 
 static struct command commands[] = {
@@ -207,7 +245,7 @@ static struct command commands[] = {
             quiet_option,
             check_option,
             structured_err_option,
-            empty_env_option,
+            modules_option,
             {
                 "jobs",
                 "Specify the number of os threads which should serve as "
@@ -229,7 +267,7 @@ static struct command commands[] = {
             quiet_option,
             check_option,
             structured_err_option,
-            empty_env_option,
+            modules_option,
         },
     },
     {
@@ -242,7 +280,7 @@ static struct command commands[] = {
         {
             dumpast_option,
             dumpbytecode_option,
-            empty_env_option,
+            modules_option,
         },
     },
 };
@@ -499,10 +537,7 @@ int exec(int argc, const char **argv, int flags) {
   return run_string(argv[0], flags, 8);
 }
 
-int repl(int argc, const char **argv, int flags) {
-  run_repl(flags);
-  return 0;
-}
+int repl(int argc, const char **argv, int flags) { return run_repl(flags); }
 
 void cmd_summary(int i) {
   struct command cmd = commands[i];

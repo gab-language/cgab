@@ -108,8 +108,10 @@ union gab_value_pair gab_msglib_def(struct gab_triple gab, uint64_t argc,
   if (gab_valkind(msg) != kGAB_MESSAGE)
     return gab_pktypemismatch(gab, msg, kGAB_MESSAGE);
 
-  assert(argc >= 2);
   uint64_t len = argc - 2;
+
+  if (argc < 2)
+    len = 0;
 
   if (len == 0) {
     gab_value t = gab_cundefined;
@@ -219,19 +221,19 @@ GAB_DYNLIB_MAIN_FN {
               gab_snative(gab, "specializations", gab_msglib_specs),
           },
           {
-              gab_message(gab, "def!"),
+              gab_message(gab, "def"),
               t,
-              gab_snative(gab, "def!", gab_msglib_def),
+              gab_snative(gab, "def", gab_msglib_def),
           },
           {
-              gab_message(gab, "defcase!"),
+              gab_message(gab, "defcase"),
               t,
-              gab_snative(gab, "defcase!", gab_msglib_case),
+              gab_snative(gab, "defcase", gab_msglib_case),
           },
           {
-              gab_message(gab, "defmodule!"),
+              gab_message(gab, "defmodule"),
               gab_type(gab, kGAB_RECORD),
-              gab_snative(gab, "defmodule!", gab_msglib_module),
+              gab_snative(gab, "defmodule", gab_msglib_module),
           },
           {
               gab_message(gab, "to\\s"),

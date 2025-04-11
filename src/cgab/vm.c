@@ -435,20 +435,27 @@ union gab_value_pair vm_yield(struct gab_triple gab) {
 gab_value sprint_stacktrace(struct gab_triple gab, struct gab_vm *vm,
                             gab_value *f, uint8_t *ip, int s, const char *fmt,
                             va_list va) {
+  // TODO: Place reasonable limit on number of frames to sprint.
+  // Also, skip middle ones sometimes.
   int nframes = 0;
-  struct gab_err_argt frames[cGAB_FRAMES_MAX] = {0};
+  gab_value vframes[1024] = {0};
 
-  frames[nframes++] = vm_frame_build_err(gab, frame_block(f), ip, s, fmt);
+  struct gab_err_argt frame =
+      vm_frame_build_err(gab, frame_block(f), ip, s, fmt);
+  vframes[nframes++] = gab_vspanicf(gab, va, frame);
 
-  while (frame_parent(f) > vm->sb) {
-    frames[nframes++] =
-        vm_frame_build_err(gab, frame_block(f), ip, GAB_NONE, "");
+  ip = frame_ip(f);
+  f = frame_parent(f);
+
+  while (f && frame_parent(f) > vm->sb) {
+    frame = vm_frame_build_err(gab, frame_block(f), ip, GAB_NONE, "");
+    vframes[nframes++] = gab_vspanicf(gab, va, frame);
 
     ip = frame_ip(f);
     f = frame_parent(f);
   }
 
-  return gab_vspanicf(gab, va, frames[0]);
+  return gab_list(gab, nframes, vframes);
 }
 
 union gab_value_pair vvm_terminate(struct gab_triple gab, const char *fmt,
@@ -1382,14 +1389,29 @@ CASE_CODE(SEND_PRIMITIVE_USE) {
 
   STORE();
 
-  union gab_value_pair mod = gab_use(GAB(), (struct gab_use_argt){
-                                                .vname = r,
-                                            });
+  gab_value shp = gab_prtshp(BLOCK()->p);
+  gab_value svargs[32];
+  const char *sargs[32];
+
+  size_t len = gab_shplen(shp);
+  assert(len < 32);
+  for (int i = 0; i < len; i++) {
+    svargs[i] = gab_ushpat(shp, i);
+    sargs[i] = gab_strdata(svargs + i);
+  }
+
+  union gab_value_pair mod =
+      gab_use(GAB(), (struct gab_use_argt){
+                         .vname = r,
+                         .len = BLOCK_PROTO()->narguments,
+                         .argv = FB() + 1, // To skip self local
+                         .sargv = sargs,
+                     });
 
   DROP_N(have);
 
   if (mod.status != gab_cvalid)
-    VM_PANIC(GAB_PANIC, "Couldn't locate module '$'.", r);
+    VM_GIVEN(mod);
 
   if (mod.aresult->data[0] != gab_ok)
     VM_GIVEN(mod);
@@ -1544,6 +1566,7 @@ CASE_CODE(SEND_PROPERTY) {
 
   gab_value r = PEEK_N(have);
 
+  SEND_GUARD_KIND(r, kGAB_RECORD);
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
 
   PROPERTY_RECORD(r, have);

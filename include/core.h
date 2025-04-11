@@ -55,7 +55,7 @@
 // New workers are spawned as needed up until a maximum is reached (specified at
 // runtime) Worker threads wait about half a second before spinning down.
 #ifndef cGAB_WORKER_IDLEWAIT_MS
-#define cGAB_WORKER_IDLEWAIT_MS ((size_t)2048)
+#define cGAB_WORKER_IDLEWAIT_MS ((size_t)512)
 #endif
 
 #ifndef cGAB_VM_CHANNEL_PUT_TIMEOUT_MS
@@ -63,7 +63,7 @@
 #endif
 
 #ifndef cGAB_VM_CHANNEL_TAKE_TIMEOUT_MS
-#define cGAB_VM_CHANNEL_TAKE_TIMEOUT_MS ((size_t)128)
+#define cGAB_VM_CHANNEL_TAKE_TIMEOUT_MS ((size_t)512)
 #endif
 
 // A worker (os thread) may need to yield at an arbitrary point.
@@ -217,19 +217,6 @@ enum gab_status {
 #undef STATUS
 };
 
-// GAB optional flags
-enum gab_flags {
-  fGAB_AST_DUMP = 1 << 0,
-  fGAB_BUILD_DUMP = 1 << 1,
-  fGAB_BUILD_CHECK = 1 << 2,
-  fGAB_ERR_QUIET = 1 << 3,
-  fGAB_ERR_EXIT = 1 << 4,
-  fGAB_ERR_STRUCTURED = 1 << 5,
-  fGAB_ENV_EMPTY = 1 << 6,
-  fGAB_JOB_RUNNERS = 1 << 7,
-  fGAB_RUN_INCLUDEDEFAULTARGS = 1 << 8,
-};
-
 // VERSION
 #define GAB_VERSION_MAJOR "0"
 #define GAB_VERSION_MINOR "0"
@@ -270,7 +257,6 @@ enum gab_flags {
 #define tGAB_STRING "gab\\string"
 #define tGAB_BINARY "gab\\binary"
 #define tGAB_MESSAGE "gab\\message"
-#define tGAB_SYMBOL "gab\\symbol"
 #define tGAB_PRIMITIVE "gab\\primitive"
 #define tGAB_NUMBER "gab\\number"
 #define tGAB_NATIVE "gab\\native"
@@ -286,8 +272,7 @@ enum gab_flags {
 #define tGAB_STRING_NAME "Strings"
 #define tGAB_BINARY_NAME "Binaries"
 #define tGAB_MESSAGE_NAME "Messages"
-#define tGAB_SYMBOL_NAME "Symbols"
-#define tGAB_PRIMITIVE_NAME "Primatives"
+#define tGAB_PRIMITIVE_NAME "Primitives"
 #define tGAB_NUMBER_NAME "Numbers"
 #define tGAB_NATIVE_NAME "Natives"
 #define tGAB_PROTOTYPE_NAME "Prototypes"
