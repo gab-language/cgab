@@ -686,9 +686,7 @@ list\predicate = spec => do
 
   [pred] .defmodule {
     spec\fits: value => value.spec\fits_each values:
-
     spec\gen: () => Lists.make.push(spec.spec\gen)
-
     spec\explain: () => Strings.make('list[' spec.spec\explain() ']')
   }
 

@@ -25,7 +25,7 @@ void propagate_term(int) { gab_sigterm(gab); }
 
 void print_err(struct gab_triple gab, gab_value err) {
   const char *str = gab_errtocs(gab, err);
-  printf("%s", str);
+  printf("%s\n", str);
 }
 
 bool check_and_printerr(union gab_value_pair res) {

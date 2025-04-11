@@ -340,7 +340,9 @@ static int parser_error(struct gab_triple gab, struct parser *parser,
 
 static int eat_token(struct gab_triple gab, struct parser *parser) {
   if (match_token(parser, TOKEN_EOF))
-    return parser->offset++, 0;
+    return parser->offset++,
+           parser_error(gab, parser, GAB_UNEXPECTED_EOF,
+                        "Unexpectedly reached the end of input.");
 
   parser->offset++;
 

@@ -820,6 +820,7 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
 
     if (fiber.status != gab_cvalid) {
       const char *errstr = gab_errtocs(gab, fiber.vresult);
+      assert(errstr != nullptr);
       puts(errstr);
       continue;
     }
@@ -1118,13 +1119,14 @@ int sprint_pretty_err(struct gab_triple gab, char **buf, size_t *len,
   const char *src_name = src ? gab_strdata(&src->name) : "C";
 
   if (snprintf_through(buf, len,
-                       "[" GAB_GREEN "%s" GAB_RESET
-                       "] panicked near " GAB_YELLOW "%s" GAB_RESET,
-                       src_name, tok_name) < 0)
+                       "[" GAB_GREEN "gab@%i" GAB_RESET
+                       "] panicked in " GAB_GREEN "%s" GAB_RESET
+                       " near " GAB_YELLOW "%s.\n\n" GAB_RESET,
+                       gab.wkid, src_name, tok_name) < 0)
     return -1;
 
   if (args->status_name)
-    if (snprintf_through(buf, len, ": " GAB_RED "%s" GAB_RESET ".",
+    if (snprintf_through(buf, len, "    " GAB_RED "%s" GAB_RESET "\n",
                          args->status_name) < 0)
       return -1;
 
@@ -1135,13 +1137,26 @@ int sprint_pretty_err(struct gab_triple gab, char **buf, size_t *len,
 
     s_char line_src = v_s_char_val_at(&src->lines, line_num - 1);
 
+    // Skip preceding whitespace for this line.
+    size_t whitespace_skipped = 0;
     while (*line_src.data == ' ' || *line_src.data == '\t') {
-      line_src.data++;
-      line_src.len--;
-      if (line_src.len == 0)
-        break;
+      whitespace_skipped++;
     }
-    assert(line_src.len != 0);
+
+    assert(line_src.len > whitespace_skipped);
+
+    line_src.data += whitespace_skipped;
+    line_src.len -= whitespace_skipped;
+
+    if (line_num > 1) {
+      size_t prev_line_num = line_num - 2;
+      s_char prev_line_src = v_s_char_val_at(&src->lines, prev_line_num);
+      if (snprintf_through(buf, len, "\n      %.*s",
+                           (int)(prev_line_src.len - whitespace_skipped),
+                           prev_line_src.data + whitespace_skipped) < 0) {
+        return -1;
+      }
+    }
 
     int leftpad = (int)(tok_src.data - line_src.data);
     // int tokpad = (int)tok_src.len - 2;
@@ -1151,11 +1166,21 @@ int sprint_pretty_err(struct gab_triple gab, char **buf, size_t *len,
     const char *rhs = "^^^^^^^^^^^^^^^^^^^^^^";
 
     if (snprintf_through(buf, len,
-                         "\n\n" GAB_RED "%.4" PRIu64 "" GAB_RESET "| %.*s"
+                         "\n" GAB_RED "%.4" PRIu64 "" GAB_RESET "| %.*s"
                          "\n      " GAB_YELLOW "%*s%s%.*s" GAB_RESET "",
                          line_num, (int)line_src.len, line_src.data, leftpad,
                          "", lhs, rhs_width, rhs) < 0) {
       return -1;
+    }
+
+    if (line_num < src->lines.len) {
+      size_t next_line_num = line_num;
+      s_char next_line_src = v_s_char_val_at(&src->lines, next_line_num);
+      if (snprintf_through(buf, len, "\n      %.*s",
+                           (int)(next_line_src.len - whitespace_skipped),
+                           next_line_src.data + whitespace_skipped) < 0) {
+        return -1;
+      }
     }
   }
 
