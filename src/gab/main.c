@@ -23,6 +23,11 @@ struct gab_triple gab;
  */
 void propagate_term(int) { gab_sigterm(gab); }
 
+void print_err(struct gab_triple gab, gab_value err) {
+  const char *str = gab_errtocs(gab, err);
+  printf("%s", str);
+}
+
 bool check_and_printerr(union gab_value_pair res) {
   if (res.status != gab_cvalid) {
     const char *errstr = gab_errtocs(gab, res.vresult);
@@ -50,6 +55,7 @@ int run_repl(int flags, size_t nmodules, const char **modules) {
   union gab_value_pair res = gab_create(
       (struct gab_create_argt){
           .flags = flags,
+          .joberr_handler = print_err,
           .len = nmodules,
           .modules = modules,
       },
@@ -78,6 +84,7 @@ int run_string(const char *string, int flags, size_t jobs, size_t nmodules,
   union gab_value_pair res = gab_create(
       (struct gab_create_argt){
           .flags = flags,
+          .joberr_handler = print_err,
           .jobs = jobs,
           .len = nmodules,
           .modules = modules,
@@ -113,6 +120,7 @@ int run_file(const char *path, int flags, size_t jobs, size_t nmodules,
   union gab_value_pair res = gab_create(
       (struct gab_create_argt){
           .flags = flags,
+          .joberr_handler = print_err,
           .jobs = jobs,
           .len = nmodules,
           .modules = modules,
@@ -131,7 +139,7 @@ int run_file(const char *path, int flags, size_t jobs, size_t nmodules,
 
   a_gab_value_destroy(res.aresult);
 
-  if (!check_and_printerr(res))
+  if (!check_and_printerr(run_res))
     return gab_destroy(gab), 1;
 
   return a_gab_value_destroy(run_res.aresult), gab_destroy(gab), 0;

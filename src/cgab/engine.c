@@ -418,17 +418,18 @@ int32_t worker_job(void *data) {
       break;
     case gab_cvalid: {
       // We completed the work. Continue.
-      if (res.aresult->data[0] != gab_ok) {
-        const char *errstr = gab_errtocs(gab, res.aresult->data[1]);
-        puts(errstr);
-      }
+      // However if we had an error, call our callback.
+      if (res.aresult->data[0] != gab_ok)
+        if (gab.eg->joberr_handler)
+          gab.eg->joberr_handler(gab, res.aresult->data[1]);
+
       break;
     }
     case gab_cinvalid: {
-      // Our work was interrupted. Print some info.
-      // Maybe call a registered handler here instead?
-      const char *errstr = gab_errtocs(gab, res.vresult);
-      puts(errstr);
+      // Call the registered err_handler if it exists.
+      if (gab.eg->joberr_handler)
+        gab.eg->joberr_handler(gab, res.vresult);
+
       break;
     }
     default:
@@ -523,6 +524,7 @@ union gab_value_pair gab_create(struct gab_create_argt args,
   eg->njobs = 0;
   eg->hash_seed = time(nullptr);
   eg->sig.schedule = -1;
+  eg->joberr_handler = args.joberr_handler;
 
   // The only non-zero initialization that jobs need is epoch = 1
   for (uint64_t i = 0; i < eg->len; i++)
@@ -839,8 +841,6 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
     }
 
     if (res.aresult->data[0] != gab_ok) {
-      const char *errstr = gab_errtocs(gab, fiber.aresult->data[1]);
-      puts(errstr);
       continue;
     }
 

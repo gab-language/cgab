@@ -431,6 +431,8 @@ typedef gab_value (*gab_atomswap_f)(struct gab_triple gab, gab_value current);
 typedef gab_value (*gab_atomvswap_f)(struct gab_triple gab, gab_value current,
                                      va_list va);
 
+typedef void (*gab_joberr_f)(struct gab_triple gab, gab_value err);
+
 /**
  * @class gab_obj
  * @brief This struct is the first member of all heap-allocated objects.
@@ -499,10 +501,6 @@ enum gab_flags {
    */
   fGAB_ERR_QUIET = 1 << 3,
   /*
-   *
-   */
-  fGAB_ERR_EXIT = 1 << 4,
-  /*
    * @see gab_errtocs will convert errors into structured
    * strings as opposed to pretty errors.
    */
@@ -517,16 +515,15 @@ struct gab_create_argt {
 
   /* A list of modules to load automatically into the engine.
    * The name of the variable will match the name of the module.
-   *  NOTE: Slashes will be converted.
    *
-   * EG:
-   * [ 'messages', 'ranges', 'os/io' ]
-   *  -> messages = 'messages'.use
-   *  -> ranges = 'ranges'.use
-   *  -> os\io = 'os/io'.use
+   * [ 'Messages', 'Ranges' ]
+   *  -> Messages = 'Messages'.use
+   *  -> Ranges = 'Ranges'.use
    * */
   uint32_t len;
   const char **modules;
+
+  gab_joberr_f joberr_handler;
 };
 
 /**
@@ -2788,6 +2785,7 @@ struct gab_eg {
   _Atomic int8_t njobs;
 
   uint64_t hash_seed;
+  gab_joberr_f joberr_handler;
 
   v_gab_value scratch;
 
