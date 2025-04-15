@@ -81,8 +81,6 @@ int run_repl(int flags, size_t nmodules, const char **modules) {
 
 int run_string(const char *string, int flags, size_t jobs, size_t nmodules,
                const char **modules) {
-  printf("RUNNING STRING %s\n", string);
-
   union gab_value_pair res = gab_create(
       (struct gab_create_argt){
           .flags = flags,
@@ -93,17 +91,12 @@ int run_string(const char *string, int flags, size_t jobs, size_t nmodules,
       },
       &gab);
 
-  printf("INITIALIZED\n");
-
   if (!check_and_printerr(res))
     return gab_destroy(gab), 0;
-
-  printf("VALID INITIALIZED\n");
 
   // This is a weird case where we actually want to include the null terminator
   s_char src = s_char_create(string, strlen(string) + 1);
 
-  printf("RUNNING");
   union gab_value_pair run_res =
       gab_exec(gab, (struct gab_exec_argt){
                         .name = MAIN_MODULE,
@@ -113,14 +106,12 @@ int run_string(const char *string, int flags, size_t jobs, size_t nmodules,
                         .sargv = modules,
                         .argv = res.aresult->data + 1,
                     });
-  printf("RAN");
 
   a_gab_value_destroy(res.aresult);
 
   if (!check_and_printerr(run_res))
     return gab_destroy(gab), 1;
 
-  printf("VALID RAN");
   return a_gab_value_destroy(run_res.aresult), gab_destroy(gab), 0;
 }
 
