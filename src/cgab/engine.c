@@ -1524,14 +1524,19 @@ union gab_value_pair gab_use(struct gab_triple gab, struct gab_use_argt args) {
 
   const char *name = gab_strdata(&path);
 
+  printf("[GAB_USE] Resolving module %s\n", name);
+
   for (int j = 0; j < sizeof(resources) / sizeof(resource); j++) {
     resource *res = resources + j;
     a_char *module_path = match_resource(res, name, strlen(name));
 
     if (module_path) {
+      printf("[GAB_USE] Found %.*s.\n", (int)module_path->len,
+             module_path->data);
       a_gab_value *cached = gab_segmodat(gab.eg, (char *)module_path->data);
 
       if (cached != nullptr) {
+        printf("[GAB_USE] Cache hit.\n");
         /* Skip the first argument, which is the module's data */
         a_char_destroy(module_path);
         return (union gab_value_pair){
@@ -1540,8 +1545,13 @@ union gab_value_pair gab_use(struct gab_triple gab, struct gab_use_argt args) {
         };
       }
 
+      printf("[GAB_USE] Cache miss. Running handler.\n");
       union gab_value_pair result =
           res->handler(gab, module_path->data, args.len, args.sargv, args.argv);
+
+      printf("[GAB_USE] Resolved: ");
+      gab_fvalinspect(stdout, result.status, -1);
+      printf("\n");
 
       return a_char_destroy(module_path), result;
     }
