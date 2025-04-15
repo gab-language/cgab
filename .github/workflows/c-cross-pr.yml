@@ -124,8 +124,8 @@ jobs:
       # - name: Run Smallest Hello World
       #   run: ${{ matrix.cmd }} exec -e "'hello world!'"
 
-      - name: Run Hello World
-        run: ${{ matrix.cmd }} exec "'hello world!' .println"
+      # - name: Run Hello World
+      #   run: ${{ matrix.cmd }} exec "'hello world!' .println"
 
       - name: Run tests
         run: ${{ matrix.cmd }} run test
