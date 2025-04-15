@@ -123,7 +123,7 @@ jobs:
       #     Get-Command ".\gab"
       
       - name: Debug Logging
-        run: ls -a
+        run: ls -la
 
       - name: Run Smallest Hello World
         run: ${{ matrix.cmd }} exec "'hello world!'"
