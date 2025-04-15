@@ -29,7 +29,7 @@ _read_header:.defcase {
       .unwrap
       .trim '\n'
 
-    (blank name value) = (next_header.blank, next_header.split ':')
+    (blank name value) = (next_header.is\blank, next_header.split ':')
     
     m = blank .and m .or(m.put(name, value))
 
@@ -51,31 +51,31 @@ _read_header:.defcase {
 
     len = headers
       .at "Content-Length"
-      .unwrap!
+      .unwrap
       .trim
       .as\n
 
     body = self
       .server\in
       .scan len
-      .unwrap!
+      .unwrap
 
     logfile.write(body)
 
     msg = body
       .as\json
-      .unwrap!
+      .unwrap
 
     msg
   end,
   # Implement the lazy-sequence protocol
   seq\init: () => do
     msg = self._read_request
-    option:.(self.server\open_ch.open?, nil: msg)
+    option:.(self.server\open_ch.is\open, nil: msg)
   end
   seq\next: () => do
     msg = self._read_request
-    option:.(self.server\open_ch.open?, nil: msg)
+    option:.(self.server\open_ch.is\open, nil: msg)
   end
   # Helpers for sending data to client
   respond: (id result) => do
@@ -121,7 +121,7 @@ _read_header:.defcase {
         log.("No handler found.")
       end
 
-      (new_lsp ? == lsp\server\t) .else () => do
+      (new_lsp? == lsp\server\t) .else () => do
         log.error("Invalid new_lsp", ok, new_lsp)
       end
 
