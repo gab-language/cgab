@@ -120,12 +120,9 @@ jobs:
       #     move gab gab.exe
       #     where.exe "gab"
       #     Get-Command ".\gab"
-      
-      - name: Debug Logging
-        run: ls -laR
-      
-      - name: Make executable
-        run: chmod +x ${{ matrix.cmd }}
+
+      - name: Run help
+        run: ${{ matrix.cmd }} help
 
       - name: Run Smallest Hello World
         run: ${{ matrix.cmd }} exec "'hello world!'"
