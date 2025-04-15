@@ -8,10 +8,11 @@
 #include "qio/qio.h"
 
 int io_loop_cb(void *initialized) {
-  if (qio_init(256) < 0)
-    return 1;
+  int res = qio_init(256);
+  if (res < 0)
+    return *(int *)initialized = res, 1;
 
-  *(bool *)initialized = true;
+  *(int *)initialized = 1;
 
   if (qio_loop() < 0)
     return qio_destroy(), 1;
@@ -426,7 +427,7 @@ union gab_value_pair gab_iolib_write(struct gab_triple gab, uint64_t argc,
 }
 
 GAB_DYNLIB_MAIN_FN {
-  bool initialized = false;
+  int initialized = 0;
 
   thrd_t io_t;
   if (thrd_create(&io_t, io_loop_cb, &initialized) != thrd_success)
@@ -434,6 +435,11 @@ GAB_DYNLIB_MAIN_FN {
 
   while (!initialized)
     ;
+
+  if (initialized < 0)
+    return gab_panicf(gab, "Failed to initialize QIO loop");
+
+  assert(initialized == 1);
 
   gab_value file_t = gab_string(gab, tGAB_IOFILE);
   gab_value sock_t = gab_string(gab, tGAB_IOSOCK);
