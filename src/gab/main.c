@@ -674,13 +674,11 @@ int main(int argc, const char **argv) {
   /**
    * Pull locale from ENV
    */
-  printf("SETLOCALE\n");
   setlocale(LC_ALL, "");
 
   if (argc < 2)
     goto fin;
 
-  printf("SETSIGNAL\n");
   gab_ossignal(SIGINT, propagate_term);
 
   for (int i = 0; i < N_COMMANDS; i++) {
@@ -688,7 +686,6 @@ int main(int argc, const char **argv) {
     assert(cmd.handler);
 
     if (!strcmp(argv[1], cmd.name)) {
-      printf("FOUND CMD %s\n", cmd.name);
       struct command_arguments o = parse_options(argc - 2, argv + 2, cmd);
 
       int res = cmd.handler(o);
@@ -696,8 +693,6 @@ int main(int argc, const char **argv) {
       return res;
     }
   }
-
-  printf("[gab] CLI Error: unrecognized subcommand '%s'\n", argv[1]);
 
 fin:
   struct command cmd = DEFAULT_COMMAND;

@@ -1,4 +1,5 @@
 #include "gab.h"
+#include <stdatomic.h>
 #include <stdint.h>
 
 #if GAB_PLATFORM_UNIX
@@ -8,11 +9,13 @@
 #include "qio/qio.h"
 
 int io_loop_cb(void *initialized) {
+  _Atomic int *init = initialized;
+
   int res = qio_init(256);
   if (res < 0)
-    return *(int *)initialized = res, 1;
+    return atomic_store(init, res), 1;
 
-  *(int *)initialized = 1;
+  atomic_store(init, 1);
 
   if (qio_loop() < 0)
     return qio_destroy(), 1;
@@ -427,16 +430,23 @@ union gab_value_pair gab_iolib_write(struct gab_triple gab, uint64_t argc,
 }
 
 GAB_DYNLIB_MAIN_FN {
-  int initialized = 0;
+  /*
+   * This variable needs to be atomic or volatile.
+   *
+   * Otherwise, the compiler will attempt to optimize it out in this
+   * call to thrd_create, and our initialze while loop will wait forever.
+   */
+  _Atomic int initialized;
+  atomic_init(&initialized, 1);
 
   thrd_t io_t;
   if (thrd_create(&io_t, io_loop_cb, &initialized) != thrd_success)
     return gab_panicf(gab, "Failed to initialize QIO loop");
 
-  while (!initialized)
+  while (!atomic_load(&initialized))
     ;
 
-  if (initialized < 0)
+  if (atomic_load(&initialized) < 0)
     return gab_panicf(gab, "Failed to initialize QIO loop");
 
   assert(initialized == 1);
