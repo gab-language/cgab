@@ -121,6 +121,9 @@ jobs:
       #     move gab gab.exe
       #     where.exe "gab"
       #     Get-Command ".\gab"
+      
+      - name: Debug Logging
+        run: ls -a
 
       - name: Run Smallest Hello World
         run: ${{ matrix.cmd }} exec "'hello world!'"
