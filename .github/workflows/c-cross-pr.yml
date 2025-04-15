@@ -122,7 +122,7 @@ jobs:
       #     Get-Command ".\gab"
       
       - name: Debug Logging
-        run: ls -la
+        run: ls -laR
       
       - name: Make executable
         run: chmod +x ${{ matrix.cmd }}
