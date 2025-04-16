@@ -7,7 +7,7 @@ term = Terminal.make
 
 (events, server) = (Channels.make, Channels.make)
 
-event\quit?:.def!(
+event\quit?:.def(
   Records.t,
   () => self.ch == 'q')
 
@@ -26,7 +26,7 @@ end
 
 HistoryElement = Shapes.make(source: result:)
 
-to\s:.defcase! {
+to\s:.defcase {
   Shapes.make(status: fiber:) () => do
    "=> $ $".sprintf(self.status, self.fiber)
   end
@@ -38,7 +38,7 @@ to\s:.defcase! {
 EvalCmd = Shapes.make(eval:)
 EnvCmd = Shapes.make(env:)
 
-tick\history_element\result:.defcase! {
+tick\history_element\result:.defcase {
   Shapes.make(status: fiber:) (he) => do
     result = he.result
     fib = result.fiber
@@ -63,11 +63,11 @@ tick\history_element\result:.defcase! {
   Shapes.make(status: res: env:) (he) => he
 }
 
-tick\history_element:.def!(
+tick\history_element:.def(
   HistoryElement
   () => self.result.tick\history_element\result self)
 
-cmd\handle:.defcase! {
+cmd\handle:.defcase {
   EvalCmd (state) => do
     (ok, fib) = self.eval.gab\eval(state.env)
 
@@ -82,11 +82,11 @@ cmd\handle:.defcase! {
 
 REPLServer = Shapes.make(env:)
 
-make:.def!(
+make:.def(
   REPLServer:
   () => REPLServer.make(nil:))
 
-run:.def!(
+run:.def(
   REPLServer:
   ()
     => Fibers.make ()
@@ -99,13 +99,13 @@ Server = REPLServer:.run
 
 REPLClient = Shapes.make(input: history_index: history:)
 
-make:.def!(
+make:.def(
   REPLClient:,
   () => REPLClient.make("" 0 []))
 
-event\ctrl\key\handle:.def! (state) => state
+event\ctrl\key\handle:.def (state) => state
 
-event\ctrl\key\handle:.defcase! {
+event\ctrl\key\handle:.defcase {
   backspace: (state, event) => do
     input = state.input.slice(0, state.input.len - 1)
     state.input input
@@ -126,7 +126,7 @@ event\ctrl\key\handle:.defcase! {
   end
 }
 
-event\key\key\handle:.defcase! {
+event\key\key\handle:.defcase {
   arrow\down: (state, event) => do
     state = state.history_index(state.history_index ++)
     (ok, hist) = state.history.at(state.history_index)
@@ -145,17 +145,17 @@ event\key\key\handle:.defcase! {
   end
 }
 
-event\key\key\handle:.def! (state event) =>  do
+event\key\key\handle:.def (state event) =>  do
   input = state.input + event.ch
   state.input input
 end
 
-event\key\handle:.defcase! {
+event\key\handle:.defcase {
   ctrl: (state, event) => event.key.event\ctrl\key\handle(state event),
   key: (state, event) => event.key.event\key\key\handle(state event)
 }
 
-event\handle:.defcase! {
+event\handle:.defcase {
   key: (state, event) => event.mod.event\key\handle(state event)
   tick: (state) => do
     state.history(state.history.map tick\history_element:)
@@ -171,7 +171,7 @@ box_chars = {
   tr: "╮"
 }
 
-doprintline:.defcase! {
+doprintline:.defcase {
   horizontal: (x y dx char)
     => x .-> (x + dx) .each i
       => term.cell\set(i y char)

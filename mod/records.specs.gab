@@ -1,6 +1,6 @@
 s = 'specs':use
 
-record.spec = s:def! {
+record.spec = s:def {
   name = .gab.record,
   help = "An ordered, constant array of key-value pairs.",
   spec = s:protocol {},
@@ -10,7 +10,7 @@ KEY   = s:unknown:spec.label "key"
 VALUE = s:unknown:spec.label "value"
 INDEX = s:int:spec.label "index"
 
-s:def! {
+s:def {
   name = .gab.record.len,
   help = "Return the number of key-value pairs in the record.",
   spec = s:message {
@@ -22,7 +22,7 @@ s:def! {
   },
 }
 
-s:def! {
+s:def {
   name = .gab.record.at,
   help = "Return the value at the given key, if it exists.",
   spec = s:message {
@@ -34,7 +34,7 @@ s:def! {
   },
 }
 
-s:def! {
+s:def {
   name = .gab.record.at!,
   help = "Return the value at each of the given keys. Panics if any are missing.",
   spec = s:message {
@@ -46,7 +46,7 @@ s:def! {
   },
 }
 
-s:def! {
+s:def {
   name = .gab.record.put,
   help = "Return a new record with the additional key-value pair, or an updated value for an existing key.",
   spec = s:message {
@@ -58,7 +58,7 @@ s:def! {
   }
 }
 
-s:def! {
+s:def {
   name = .gab.record.seq.next,
   help = "Return the key that appears after the given key in the record.",
   spec = s:message {
@@ -70,7 +70,7 @@ s:def! {
   }
 }
 
-s:def! {
+s:def {
   name = .gab.record.seq.init,
   help = "Return the first key in the record, if any.",
   spec = s:message {

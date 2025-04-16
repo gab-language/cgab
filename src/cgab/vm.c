@@ -15,10 +15,10 @@
   struct gab_triple __gab, uint8_t *__ip, gab_value *__kb, gab_value *__fb,    \
       gab_value *__sp
 
-typedef a_gab_value *(*handler)(OP_HANDLER_ARGS);
+typedef union gab_value_pair (*handler)(OP_HANDLER_ARGS);
 
 // Forward declare all our opcode handlers
-#define OP_CODE(name) a_gab_value *OP_##name##_HANDLER(OP_HANDLER_ARGS);
+#define OP_CODE(name) union gab_value_pair OP_##name##_HANDLER(OP_HANDLER_ARGS);
 #include "bytecode.h"
 #undef OP_CODE
 
@@ -38,7 +38,7 @@ static handler handlers[] = {
 #define ATTRIBUTES
 
 #define CASE_CODE(name)                                                        \
-  ATTRIBUTES a_gab_value *OP_##name##_HANDLER(OP_HANDLER_ARGS)
+  ATTRIBUTES union gab_value_pair OP_##name##_HANDLER(OP_HANDLER_ARGS)
 
 #define DISPATCH_ARGS() GAB(), IP(), KB(), FB(), SP()
 
@@ -52,8 +52,7 @@ static handler handlers[] = {
         gab_sigpropagate(GAB());                                               \
         break;                                                                 \
       case sGAB_TERM:                                                          \
-        STORE();                                                               \
-        return vm_terminate(GAB(), "$", gab_thisfiber(GAB()));                 \
+        VM_TERM();                                                             \
       default:                                                                 \
         break;                                                                 \
       }                                                                        \
@@ -75,6 +74,12 @@ static handler handlers[] = {
   ({                                                                           \
     STORE();                                                                   \
     return vm_error(GAB(), status, help __VA_OPT__(, ) __VA_ARGS__);           \
+  })
+
+#define VM_GIVEN(err)                                                          \
+  ({                                                                           \
+    STORE();                                                                   \
+    return vm_givenerr(GAB(), err);                                            \
   })
 
 /*
@@ -149,11 +154,17 @@ static handler handlers[] = {
     [[clang::musttail]] return OP_TRIM_HANDLER(DISPATCH_ARGS());               \
   })
 
-#define VM_YIELD(name)                                                         \
+#define VM_YIELD()                                                             \
   ({                                                                           \
     IP() -= SEND_CACHE_DIST;                                                   \
     STORE();                                                                   \
     return vm_yield(GAB());                                                    \
+  })
+
+#define VM_TERM()                                                              \
+  ({                                                                           \
+    STORE();                                                                   \
+    return vm_terminate(GAB(), "$", gab_thisfiber(GAB()));                     \
   })
 
 #define IMPL_SEND_UNARY_NUMERIC(CODE, value_type, operation_type, decoder,     \
@@ -394,11 +405,7 @@ static inline uint64_t compute_token_from_ip(struct gab_triple gab,
 
 struct gab_err_argt vm_frame_build_err(struct gab_triple gab,
                                        struct gab_oblock *b, uint8_t *ip,
-                                       bool has_parent, enum gab_status s,
-                                       const char *fmt) {
-
-  gab_value message = gab_nil;
-
+                                       enum gab_status s, const char *fmt) {
   if (b) {
     struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(b->p);
 
@@ -409,93 +416,123 @@ struct gab_err_argt vm_frame_build_err(struct gab_triple gab,
         .src = p->src,
         .note_fmt = fmt,
         .status = s,
-        .message = message,
     };
   }
 
   return (struct gab_err_argt){
       .note_fmt = fmt,
       .status = s,
-      .message = message,
   };
 }
 
-a_gab_value *vm_yield(struct gab_triple gab) {
+union gab_value_pair vm_yield(struct gab_triple gab) {
   gab_value fiber = gab_thisfiber(gab);
   assert(GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERRUNNING);
   GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBER;
-  return nullptr;
+  return (union gab_value_pair){{gab_ctimeout}};
 }
 
-a_gab_value *vvm_terminate(struct gab_triple gab, const char *fmt, va_list va) {
-  gab_value fiber = gab_thisfiber(gab);
+gab_value sprint_stacktrace(struct gab_triple gab, struct gab_vm *vm,
+                            gab_value *f, uint8_t *ip, int s, const char *fmt,
+                            va_list va) {
+  // TODO: Place reasonable limit on number of frames to sprint.
+  // Also, skip middle ones sometimes.
+  int nframes = 0;
+  gab_value vframes[1024] = {0};
 
-  struct gab_vm *vm = gab_thisvm(gab);
-  gab_value *f = vm->fp;
-  uint8_t *ip = vm->ip;
+  struct gab_err_argt frame =
+      vm_frame_build_err(gab, frame_block(f), ip, s, fmt);
+  vframes[nframes++] = gab_vspanicf(gab, va, frame);
 
-  while (frame_parent(f) > vm->sb) {
-    gab_vfpanic(gab, gab.eg->serr, va,
-                vm_frame_build_err(gab, frame_block(f), ip,
-                                   frame_parent(f) > vm->sb, GAB_NONE, ""));
+  ip = frame_ip(f);
+  f = frame_parent(f);
+
+  while (f && frame_parent(f) > vm->sb) {
+    frame = vm_frame_build_err(gab, frame_block(f), ip, GAB_NONE, "");
+    vframes[nframes++] = gab_vspanicf(gab, va, frame);
 
     ip = frame_ip(f);
     f = frame_parent(f);
   }
 
-  gab_vfpanic(
-      gab, gab.eg->serr, va,
-      vm_frame_build_err(gab, frame_block(f), ip, false, GAB_TERM, fmt));
-
-  assert(GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERRUNNING);
-  GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERDONE;
-
-  gab_value results[] = {
-      gab_message(gab, "err"),
-      gab_string(gab, gab_status_names[GAB_TERM]),
-      gab_thisfiber(gab),
-  };
-
-  a_gab_value *res =
-      a_gab_value_create(results, sizeof(results) / sizeof(gab_value));
-
-  gab_niref(gab, 1, res->len, res->data);
-  return res;
+  return gab_list(gab, nframes, vframes);
 }
 
-a_gab_value *vvm_error(struct gab_triple gab, enum gab_status s,
-                       const char *fmt, va_list va) {
+union gab_value_pair vvm_terminate(struct gab_triple gab, const char *fmt,
+                                   va_list va) {
   gab_value fiber = gab_thisfiber(gab);
+
   struct gab_vm *vm = gab_thisvm(gab);
+
   gab_value *f = vm->fp;
   uint8_t *ip = vm->ip;
 
-  while (frame_parent(f) > vm->sb) {
-    gab_vfpanic(gab, gab.eg->serr, va,
-                vm_frame_build_err(gab, frame_block(f), ip,
-                                   frame_parent(f) > vm->sb, GAB_NONE, ""));
+  gab_value err = sprint_stacktrace(gab, vm, f, ip, GAB_TERM, fmt, va);
 
-    ip = frame_ip(f);
-    f = frame_parent(f);
-  }
+  gab_iref(gab, err);
+  gab_egkeep(gab.eg, err);
 
-  gab_vfpanic(gab, gab.eg->serr, va,
-              vm_frame_build_err(gab, frame_block(f), ip, false, s, fmt));
-
-  gab_value results[] = {
-      gab_message(gab, "err"),
-      gab_string(gab, gab_status_names[s]),
-      gab_thisfiber(gab),
-  };
-
-  a_gab_value *res =
-      a_gab_value_create(results, sizeof(results) / sizeof(gab_value));
-
-  gab_niref(gab, 1, res->len, res->data);
+  union gab_value_pair res = {{gab_cinvalid, err}};
 
   gab_value p = frame_block(vm->fp)->p;
-  gab_value shape = GAB_VAL_TO_PROTOTYPE(p)->s;
-  gab_value env = gab_recordfrom(gab, shape, 1, vm->fp);
+  gab_value shape = gab_prtshp(p);
+  gab_value env =
+      gab_recordfrom(gab, shape, 1, gab_shplen(shape), vm->fp, nullptr);
+  gab_egkeep(gab.eg, gab_iref(gab, env));
+
+  assert(GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERRUNNING);
+  GAB_VAL_TO_FIBER(fiber)->res_values = res;
+  GAB_VAL_TO_FIBER(fiber)->res_env = env;
+  GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERDONE;
+
+  return res;
+}
+union gab_value_pair vm_givenerr(struct gab_triple gab,
+                                 union gab_value_pair given) {
+  gab_value fiber = gab_thisfiber(gab);
+
+  struct gab_vm *vm = gab_thisvm(gab);
+
+  gab_value p = frame_block(vm->fp)->p;
+  gab_value shape = gab_prtshp(p);
+  gab_value env =
+      gab_recordfrom(gab, shape, 1, gab_shplen(shape), vm->fp, nullptr);
+  gab_egkeep(gab.eg, gab_iref(gab, env));
+
+  assert(GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERRUNNING);
+  GAB_VAL_TO_FIBER(fiber)->res_values = given;
+  GAB_VAL_TO_FIBER(fiber)->res_env = env;
+  GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERDONE;
+  return given;
+}
+
+union gab_value_pair vvm_error(struct gab_triple gab, enum gab_status s,
+                               const char *fmt, va_list va) {
+  gab_value fiber = gab_thisfiber(gab);
+
+  struct gab_vm *vm = gab_thisvm(gab);
+
+  gab_value *f = vm->fp;
+  uint8_t *ip = vm->ip;
+
+  gab_value err = sprint_stacktrace(gab, vm, f, ip, s, fmt, va);
+
+  gab_iref(gab, err);
+  gab_egkeep(gab.eg, err);
+
+  gab_value vals[] = {gab_err, err};
+  a_gab_value *results =
+      a_gab_value_create(vals, sizeof(vals) / sizeof(gab_value));
+
+  gab_niref(gab, 1, results->len, results->data);
+  gab_negkeep(gab.eg, results->len, results->data);
+
+  union gab_value_pair res = {.status = gab_cvalid, .aresult = results};
+
+  gab_value p = frame_block(vm->fp)->p;
+  gab_value shape = gab_prtshp(p);
+  gab_value env =
+      gab_recordfrom(gab, shape, 1, gab_shplen(shape), vm->fp, nullptr);
   gab_egkeep(gab.eg, gab_iref(gab, env));
 
   assert(GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERRUNNING);
@@ -506,23 +543,23 @@ a_gab_value *vvm_error(struct gab_triple gab, enum gab_status s,
   return res;
 }
 
-a_gab_value *vm_terminate(struct gab_triple gab, const char *fmt, ...) {
+union gab_value_pair vm_terminate(struct gab_triple gab, const char *fmt, ...) {
   va_list va;
   va_start(va, fmt);
 
-  a_gab_value *res = vvm_terminate(gab, fmt, va);
+  union gab_value_pair res = vvm_terminate(gab, fmt, va);
 
   va_end(va);
 
   return res;
 }
 
-a_gab_value *vm_error(struct gab_triple gab, enum gab_status s, const char *fmt,
-                      ...) {
+union gab_value_pair vm_error(struct gab_triple gab, enum gab_status s,
+                              const char *fmt, ...) {
   va_list va;
   va_start(va, fmt);
 
-  a_gab_value *res = vvm_error(gab, s, fmt, va);
+  union gab_value_pair res = vvm_error(gab, s, fmt, va);
 
   va_end(va);
 
@@ -530,44 +567,60 @@ a_gab_value *vm_error(struct gab_triple gab, enum gab_status s, const char *fmt,
 }
 
 #define FMT_TYPEMISMATCH                                                       \
-  "found:\n\n >> $\n\nof type:\n\n >> $\n\nbut expected type:\n\n >> $"
+  "Sent message " GAB_CYAN "$" GAB_RESET                                       \
+  " found an invalid type.\n\n    | " GAB_GREEN "$" GAB_RESET                  \
+  "\n\nhas type\n\n    | " GAB_GREEN "$" GAB_RESET                             \
+  "\n\nbut expected type\n\n    | " GAB_GREEN "$" GAB_RESET "\n"
 
 #define FMT_MISSINGIMPL                                                        \
-  "$ does not specialize for:\n\n >> $\n\nof type:\n\n >> $"
+  "Sent message " GAB_CYAN "$" GAB_RESET                                       \
+  " does not specialize for this receiver.\n\n    | " GAB_CYAN "$" GAB_RESET   \
+  "\n\nof type\n\n    "                                                        \
+  "| " GAB_CYAN "$" GAB_RESET "\n"
 
-/*a_gab_value *gab_nfpanic(struct gab_triple gab, const char *fmt, uint64_t
- * argc, gab_value argv[static argc]) {*/
-/*  if (!gab_vm(gab)) {*/
-/*}*/
+union gab_value_pair gab_vpanicf(struct gab_triple gab, const char *fmt,
+                                 va_list va) {
+  if (!gab_thisvm(gab)) {
+    gab_value err = gab_vspanicf(gab, va,
+                                 (struct gab_err_argt){
+                                     .status = GAB_PANIC,
+                                     .note_fmt = fmt,
+                                 });
 
-a_gab_value *gab_fpanic(struct gab_triple gab, const char *fmt, ...) {
+    gab_iref(gab, err);
+    gab_egkeep(gab.eg, err);
+
+    gab_value res[] = {gab_err, err};
+    a_gab_value *results =
+        a_gab_value_create(res, sizeof(res) / sizeof(gab_value));
+
+    return (union gab_value_pair){
+        .status = gab_cvalid,
+        .aresult = results,
+    };
+  };
+
+  union gab_value_pair res = vvm_error(gab, GAB_PANIC, fmt, va);
+
+  return res;
+}
+
+union gab_value_pair gab_panicf(struct gab_triple gab, const char *fmt, ...) {
   va_list va;
   va_start(va, fmt);
 
-  if (!gab_thisvm(gab)) {
-    gab_vfpanic(gab, gab.eg->serr, va,
-                (struct gab_err_argt){
-                    .status = GAB_PANIC,
-                    .note_fmt = fmt,
-                    .message = gab_nil,
-                });
-
-    va_end(va);
-
-    return nullptr;
-  }
-
-  a_gab_value *res = vvm_error(gab, GAB_PANIC, fmt, va);
+  union gab_value_pair res = gab_vpanicf(gab, fmt, va);
 
   va_end(va);
 
   return res;
 }
 
-a_gab_value *gab_ptypemismatch(struct gab_triple gab, gab_value found,
-                               gab_value texpected) {
+union gab_value_pair gab_ptypemismatch(struct gab_triple gab, gab_value found,
+                                       gab_value texpected) {
 
-  return vm_error(gab, GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, found,
+  // TODO: Properly set message here.
+  return vm_error(gab, GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, gab_nil, found,
                   gab_valtype(gab, found), texpected);
 }
 
@@ -575,7 +628,7 @@ gab_value gab_vmframe(struct gab_triple gab, uint64_t depth) {
   // uint64_t frame_count = gab_vm(gab)->fp - gab_vm(gab)->sb;
   //
   // if (depth >= frame_count)
-  return gab_invalid;
+  return gab_cinvalid;
 
   // struct gab_vm_frame *f = gab_vm(gab)->fp - depth;
   //
@@ -650,8 +703,8 @@ static inline uint64_t compute_arity(uint64_t var, uint8_t have) {
   return var * (have & fHAVE_VAR) + (have >> 2);
 }
 
-static inline bool has_callspace(gab_value *sp, gab_value *sb,
-                                 uint64_t space_needed) {
+static inline bool has_stackspace(gab_value *sp, gab_value *sb,
+                                  uint64_t space_needed) {
   if ((sp - sb) + space_needed + 3 >= cGAB_STACK_MAX) {
     return false;
   }
@@ -661,7 +714,7 @@ static inline bool has_callspace(gab_value *sp, gab_value *sb,
 
 inline uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc,
                             gab_value argv[argc]) {
-  if (__gab_unlikely(argc == 0 || !has_callspace(vm->sp, vm->sb, argc))) {
+  if (__gab_unlikely(argc == 0 || !has_stackspace(vm->sp, vm->sb, argc))) {
     return 0;
   }
 
@@ -680,12 +733,14 @@ inline uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc,
     VAR() = n;                                                                 \
   })
 
+#define VM_PANIC_GUARD_STACKSPACE(space)                                       \
+  if (__gab_unlikely(!has_stackspace(SP(), SB(), space)))                      \
+    VM_PANIC(GAB_OVERFLOW, "");
+
 #define CALL_BLOCK(blk, have)                                                  \
   ({                                                                           \
     struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(blk->p);                   \
-                                                                               \
-    if (__gab_unlikely(!has_callspace(SP(), SB(), p->nslots - have)))          \
-      VM_PANIC(GAB_OVERFLOW, "");                                              \
+    VM_PANIC_GUARD_STACKSPACE(3 + p->nslots - have);                           \
                                                                                \
     PUSH_FRAME(blk, have);                                                     \
                                                                                \
@@ -701,9 +756,7 @@ inline uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc,
 #define LOCALCALL_BLOCK(blk, have)                                             \
   ({                                                                           \
     struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(blk->p);                   \
-                                                                               \
-    if (__gab_unlikely(!has_callspace(SP(), SB(), 3 + p->nslots - have)))      \
-      VM_PANIC(GAB_OVERFLOW, "");                                              \
+    VM_PANIC_GUARD_STACKSPACE(3 + p->nslots - have);                           \
                                                                                \
     PUSH_FRAME(blk, have);                                                     \
                                                                                \
@@ -717,13 +770,14 @@ inline uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc,
 
 #define TAILCALL_BLOCK(blk, have)                                              \
   ({                                                                           \
+    struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(blk->p);                   \
+    VM_PANIC_GUARD_STACKSPACE(p->nslots - have);                               \
+                                                                               \
     gab_value *from = SP() - have;                                             \
     gab_value *to = FB();                                                      \
                                                                                \
     memmove(to, from, have * sizeof(gab_value));                               \
     SP() = to + have;                                                          \
-                                                                               \
-    struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(blk->p);                   \
                                                                                \
     IP() = proto_ip(GAB(), p);                                                 \
     KB() = proto_ks(GAB(), p);                                                 \
@@ -736,6 +790,9 @@ inline uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc,
 
 #define LOCALTAILCALL_BLOCK(blk, have)                                         \
   ({                                                                           \
+    struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(blk->p);                   \
+    VM_PANIC_GUARD_STACKSPACE(p->nslots - have);                               \
+                                                                               \
     gab_value *from = SP() - have;                                             \
     gab_value *to = FB();                                                      \
                                                                                \
@@ -752,20 +809,8 @@ inline uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc,
 
 #define PROPERTY_RECORD(r, have)                                               \
   ({                                                                           \
-    switch (have) {                                                            \
-    case 1:                                                                    \
-      PEEK() = gab_uvrecat(r, ks[GAB_SEND_KSPEC]);                             \
-      break;                                                                   \
-    default:                                                                   \
-      DROP_N((have) - 1);                                                      \
-    case 2: {                                                                  \
-      STORE_SP();                                                              \
-      gab_value value = gab_urecput(GAB(), r, ks[GAB_SEND_KSPEC], PEEK());     \
-      DROP();                                                                  \
-      PEEK() = value;                                                          \
-      break;                                                                   \
-    }                                                                          \
-    }                                                                          \
+    DROP_N(have);                                                              \
+    PUSH(gab_uvrecat(r, ks[GAB_SEND_KSPEC]));                                  \
                                                                                \
     SET_VAR(1);                                                                \
                                                                                \
@@ -782,9 +827,9 @@ inline uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc,
                                                                                \
     uint64_t pass = message ? have : have - 1;                                 \
                                                                                \
-    a_gab_value *res = (*native->function)(GAB(), pass, SP() - pass);          \
+    union gab_value_pair res = (*native->function)(GAB(), pass, SP() - pass);  \
                                                                                \
-    if (__gab_unlikely(res))                                                   \
+    if (__gab_unlikely(res.status != gab_cundefined))                          \
       return res;                                                              \
                                                                                \
     SP() = VM()->sp;                                                           \
@@ -823,7 +868,7 @@ static inline gab_value block(struct gab_triple gab, gab_value p,
   return blk;
 }
 
-a_gab_value *vm_ok(OP_HANDLER_ARGS) {
+union gab_value_pair vm_ok(OP_HANDLER_ARGS) {
   uint64_t have = *VM()->sp;
   gab_value *from = VM()->sp - have;
 
@@ -834,23 +879,29 @@ a_gab_value *vm_ok(OP_HANDLER_ARGS) {
   gab_niref(GAB(), 1, results->len, results->data);
   gab_negkeep(EG(), results->len, results->data);
 
+  union gab_value_pair res = (union gab_value_pair){
+      .status = gab_cvalid,
+      .aresult = results,
+  };
+
   VM()->sp = VM()->sb;
 
   gab_value p = frame_block(VM()->fp)->p;
-  gab_value shape = GAB_VAL_TO_PROTOTYPE(p)->s;
+  gab_value shape = gab_prtshp(p);
 
-  gab_value env = gab_recordfrom(GAB(), shape, 1, VM()->fp);
+  gab_value env =
+      gab_recordfrom(GAB(), shape, 1, gab_shplen(shape), VM()->fp, nullptr);
   gab_egkeep(EG(), gab_iref(GAB(), env));
 
   assert(FIBER()->header.kind = kGAB_FIBERRUNNING);
-  FIBER()->res_values = results;
+  FIBER()->res_values = res;
   FIBER()->res_env = env;
   FIBER()->header.kind = kGAB_FIBERDONE;
 
-  return results;
+  return res;
 }
 
-a_gab_value *do_vmexecfiber(struct gab_triple gab, gab_value f) {
+union gab_value_pair do_vmexecfiber(struct gab_triple gab, gab_value f) {
   assert(gab_valkind(f) == kGAB_FIBER);
   struct gab_ofiber *fiber = GAB_VAL_TO_FIBER(f);
 
@@ -864,6 +915,10 @@ a_gab_value *do_vmexecfiber(struct gab_triple gab, gab_value f) {
   uint8_t *ip = fiber->vm.ip;
 
   uint8_t op = *ip++;
+  // We can't return *to* this frame because it has no block.
+  // But we *should* return here so that the environment returned
+  // to the fiber is as expected
+
   if (op == OP_SEND_PRIMITIVE_CALL_BLOCK)
     op = OP_TAILSEND_PRIMITIVE_CALL_BLOCK;
 
@@ -875,7 +930,7 @@ a_gab_value *do_vmexecfiber(struct gab_triple gab, gab_value f) {
   return handlers[op](gab, ip, fiber->vm.kb, fiber->vm.fp, fiber->vm.sp);
 };
 
-a_gab_value *gab_vmexec(struct gab_triple gab, gab_value f) {
+union gab_value_pair gab_vmexec(struct gab_triple gab, gab_value f) {
   assert(gab_valkind(f) == kGAB_FIBER);
   struct gab_ofiber *fiber = GAB_VAL_TO_FIBER(f);
 
@@ -887,30 +942,30 @@ a_gab_value *gab_vmexec(struct gab_triple gab, gab_value f) {
 #define VM_PANIC_GUARD_KIND(value, kind)                                       \
   if (__gab_unlikely(gab_valkind(value) != kind)) {                            \
     STORE_PRIMITIVE_VM_PANIC_FRAME(1);                                         \
-    VM_PANIC(GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, value,                       \
-             gab_valtype(GAB(), value), gab_type(GAB(), kind));                \
+    VM_PANIC(GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, ks[GAB_SEND_KMESSAGE],       \
+             value, gab_valtype(GAB(), value), gab_type(GAB(), kind));         \
   }
 
 #define VM_PANIC_GUARD_ISB(value)                                              \
   if (__gab_unlikely(!__gab_valisb(value))) {                                  \
     STORE_PRIMITIVE_VM_PANIC_FRAME(have);                                      \
-    VM_PANIC(GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, value,                       \
-             gab_valtype(GAB(), value), gab_type(GAB(), kGAB_MESSAGE));        \
+    VM_PANIC(GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, ks[GAB_SEND_KMESSAGE],       \
+             value, gab_valtype(GAB(), value), gab_type(GAB(), kGAB_MESSAGE)); \
   }
 
 #define VM_PANIC_GUARD_ISN(value)                                              \
   if (__gab_unlikely(!__gab_valisn(value))) {                                  \
     STORE_PRIMITIVE_VM_PANIC_FRAME(have);                                      \
-    VM_PANIC(GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, value,                       \
-             gab_valtype(GAB(), value), gab_type(GAB(), kGAB_NUMBER));         \
+    VM_PANIC(GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, ks[GAB_SEND_KMESSAGE],       \
+             value, gab_valtype(GAB(), value), gab_type(GAB(), kGAB_NUMBER));  \
   }
 
 #define VM_PANIC_GUARD_ISS(value)                                              \
   if (__gab_unlikely(gab_valkind(value) != kGAB_STRING &&                      \
                      gab_valkind(value) != kGAB_MESSAGE)) {                    \
     STORE_PRIMITIVE_VM_PANIC_FRAME(have);                                      \
-    VM_PANIC(GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, value,                       \
-             gab_valtype(GAB(), value), gab_type(GAB(), kGAB_STRING));         \
+    VM_PANIC(GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, ks[GAB_SEND_KMESSAGE],       \
+             value, gab_valtype(GAB(), value), gab_type(GAB(), kGAB_STRING));  \
   }
 
 #define SEND_GUARD(clause)                                                     \
@@ -920,8 +975,11 @@ a_gab_value *gab_vmexec(struct gab_triple gab, gab_value f) {
 #define SEND_GUARD_KIND(r, k) SEND_GUARD(gab_valkind(r) == k)
 
 #define SEND_GUARD_ISC(r)                                                      \
-  SEND_GUARD(gab_valkind(c) >= kGAB_CHANNEL &&                                 \
-             gab_valkind(c) <= kGAB_CHANNELCLOSED)
+  SEND_GUARD(gab_valkind(r) >= kGAB_CHANNEL &&                                 \
+             gab_valkind(r) <= kGAB_CHANNELCLOSED)
+
+#define SEND_GUARD_ISSHP(r)                                                    \
+  SEND_GUARD(gab_valkind(r) == kGAB_SHAPE || gab_valkind(r) == kGAB_SHAPELIST)
 
 #define SEND_GUARD_CACHED_MESSAGE_SPECS()                                      \
   SEND_GUARD(gab_valeq(gab_thisfibmsgrec(GAB(), ks[GAB_SEND_KMESSAGE]),        \
@@ -986,7 +1044,7 @@ CASE_CODE(MATCHSEND_BLOCK) {
 
   struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(blk->p);
 
-  if (__gab_unlikely(!has_callspace(SP(), SB(), p->nslots - have)))
+  if (__gab_unlikely(!has_stackspace(SP(), SB(), p->nslots - have)))
     VM_PANIC(GAB_OVERFLOW, "");
 
   IP() = (void *)ks[GAB_SEND_KOFFSET + idx];
@@ -1002,7 +1060,7 @@ static inline bool try_setup_localmatch(struct gab_triple gab, gab_value m,
                                         struct gab_oprototype *p) {
   gab_value specs = gab_thisfibmsgrec(gab, m);
 
-  if (specs == gab_invalid)
+  if (specs == gab_cundefined)
     return false;
 
   if (gab_reclen(specs) > 4 || gab_reclen(specs) < 2)
@@ -1027,7 +1085,7 @@ static inline bool try_setup_localmatch(struct gab_triple gab, gab_value m,
     uint8_t idx = GAB_SEND_HASH(t) * GAB_SEND_CACHE_SIZE;
 
     // We have a collision - no point in messing about with this.
-    if (ks[GAB_SEND_KSPEC + idx] != gab_invalid)
+    if (ks[GAB_SEND_KSPEC + idx] != gab_cinvalid)
       return false;
 
     uint8_t *ip = proto_ip(gab, spec_p);
@@ -1331,17 +1389,41 @@ CASE_CODE(SEND_PRIMITIVE_USE) {
 
   STORE();
 
-  a_gab_value *mod = gab_use(GAB(), r);
+  /*
+   * This pulling in of args/values to pass on to use'd module
+   * is a little scuffed. I'd rather do it a different way.
+   */
+  gab_value shp = gab_prtshp(BLOCK()->p);
+  gab_value svargs[32];
+  const char* sargs[32];
+
+  size_t len = gab_shplen(shp);
+  assert(len < 32);
+  for (int i = 0; i < len; i++) {
+    svargs[i] = gab_ushpat(shp, i);
+    sargs[i] = gab_strdata(svargs + i);
+  }
+
+  union gab_value_pair mod =
+      gab_use(GAB(), (struct gab_use_argt){
+                         .vname = r,
+                         .len = BLOCK_PROTO()->narguments,
+                         .argv = FB() + 1, // To skip self local
+                         .sargv = sargs,
+                     });
 
   DROP_N(have);
 
-  if (!mod)
-    VM_PANIC(GAB_PANIC, "Couldn't locate module $.", r);
+  if (mod.status != gab_cvalid)
+    VM_GIVEN(mod);
 
-  for (uint64_t i = 1; i < mod->len; i++)
-    PUSH(mod->data[i]);
+  if (mod.aresult->data[0] != gab_ok)
+    VM_GIVEN(mod);
 
-  SET_VAR(mod->len - 1);
+  for (uint64_t i = 1; i < mod.aresult->len; i++)
+    PUSH(mod.aresult->data[i]);
+
+  SET_VAR(mod.aresult->len - 1);
 
   NEXT();
 }
@@ -1396,15 +1478,35 @@ CASE_CODE(SEND_PRIMITIVE_CONS_RECORD) {
   NEXT();
 }
 
-CASE_CODE(SEND_PRIMITIVE_SPLAT) {
+CASE_CODE(SEND_PRIMITIVE_SPLATSHAPE) {
+  gab_value *ks = READ_CONSTANTS;
+  uint64_t have = compute_arity(VAR(), READ_BYTE);
+
+  gab_value s = PEEK_N(have);
+
+  SEND_GUARD_ISSHP(s);
+
+  DROP_N(have);
+
+  uint64_t len = gab_shplen(s);
+
+  assert(VM()->sp + len < VM()->sp + cGAB_STACK_MAX);
+
+  for (uint64_t i = 0; i < len; i++)
+    PUSH(gab_ushpat(s, i));
+
+  SET_VAR(len);
+
+  NEXT();
+}
+
+CASE_CODE(SEND_PRIMITIVE_SPLATLIST) {
   gab_value *ks = READ_CONSTANTS;
   uint64_t have = compute_arity(VAR(), READ_BYTE);
 
   gab_value r = PEEK_N(have);
 
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
-
-  SEND_GUARD_KIND(r, kGAB_RECORD);
 
   DROP_N(have);
 
@@ -1420,15 +1522,13 @@ CASE_CODE(SEND_PRIMITIVE_SPLAT) {
   NEXT();
 }
 
-CASE_CODE(SEND_PRIMITIVE_SPLATKEYS) {
+CASE_CODE(SEND_PRIMITIVE_SPLATDICT) {
   gab_value *ks = READ_CONSTANTS;
   uint64_t have = compute_arity(VAR(), READ_BYTE);
 
   gab_value r = PEEK_N(have);
 
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
-
-  SEND_GUARD_KIND(r, kGAB_RECORD);
 
   DROP_N(have);
 
@@ -1437,9 +1537,9 @@ CASE_CODE(SEND_PRIMITIVE_SPLATKEYS) {
   assert(VM()->sp + len < VM()->sp + cGAB_STACK_MAX);
 
   for (uint64_t i = 0; i < len; i++)
-    PUSH(gab_ukrecat(r, i));
+    PUSH(gab_ukrecat(r, i)), PUSH(gab_uvrecat(r, i));
 
-  SET_VAR(len);
+  SET_VAR(len * 2);
 
   NEXT();
 }
@@ -1470,6 +1570,7 @@ CASE_CODE(SEND_PROPERTY) {
 
   gab_value r = PEEK_N(have);
 
+  SEND_GUARD_KIND(r, kGAB_RECORD);
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
 
   PROPERTY_RECORD(r, have);
@@ -1701,11 +1802,9 @@ CASE_CODE(SEND) {
   /* Do the expensive lookup */
   struct gab_impl_rest res = gab_impl(GAB(), m, r);
 
-  if (__gab_unlikely(!res.status)) {
-    STORE();
-    VM_PANIC(GAB_IMPLEMENTATION_MISSING, FMT_MISSINGIMPL, m, r,
+  if (__gab_unlikely(!res.status))
+    VM_PANIC(GAB_SPECIALIZATION_MISSING, FMT_MISSINGIMPL, m, r,
              gab_valtype(GAB(), r));
-  }
 
   gab_value spec = res.status == kGAB_IMPL_PROPERTY
                        ? gab_primitive(OP_SEND_PROPERTY)
@@ -1899,7 +1998,7 @@ CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE) {
 
   if (__gab_unlikely(!res.status)) {
     STORE();
-    VM_PANIC(GAB_IMPLEMENTATION_MISSING, FMT_MISSINGIMPL, m, r,
+    VM_PANIC(GAB_SPECIALIZATION_MISSING, FMT_MISSINGIMPL, m, r,
              gab_valtype(GAB(), r));
   }
 
@@ -1960,22 +2059,23 @@ CASE_CODE(SEND_PRIMITIVE_TAKE) {
 
   gab_value v = gab_tchntake(GAB(), c, cGAB_VM_CHANNEL_TAKE_TIMEOUT_MS);
 
-  if (v == gab_timeout)
+  switch (v) {
+  case gab_ctimeout:
     VM_YIELD();
-
-  DROP_N(have);
-
-  if (__gab_unlikely(v == gab_invalid)) {
+  case gab_cinvalid:
+    VM_TERM();
+  case gab_cundefined:
+    DROP_N(have);
     PUSH(gab_none);
     SET_VAR(1);
     NEXT();
+  default:
+    DROP_N(have);
+    PUSH(gab_ok);
+    PUSH(v);
+    SET_VAR(2);
+    NEXT();
   }
-
-  PUSH(gab_ok);
-  PUSH(v);
-  SET_VAR(2);
-
-  NEXT();
 }
 
 CASE_CODE(SEND_PRIMITIVE_PUT) {
@@ -1993,14 +2093,20 @@ CASE_CODE(SEND_PRIMITIVE_PUT) {
 
   STORE_SP();
 
-  if (gab_tchnput(GAB(), c, v, cGAB_VM_CHANNEL_PUT_TIMEOUT_MS) == gab_timeout)
+  gab_value r = gab_tchnput(GAB(), c, v, cGAB_VM_CHANNEL_PUT_TIMEOUT_MS);
+
+  // TODO: Should this handle the case of channel closing underneath, and behave
+  // differently?
+  switch (r) {
+  case gab_ctimeout:
     VM_YIELD();
-
-  DROP_N(have - 1);
-
-  SET_VAR(1);
-
-  NEXT();
+  case gab_cinvalid:
+    VM_TERM();
+  default:
+    DROP_N(have - 1);
+    SET_VAR(1);
+    NEXT();
+  }
 }
 
 CASE_CODE(SEND_PRIMITIVE_FIBER) {
@@ -2016,21 +2122,21 @@ CASE_CODE(SEND_PRIMITIVE_FIBER) {
 
   VM_PANIC_GUARD_KIND(block, kGAB_BLOCK);
 
-  // TODO: This will still block because it calls `gab_chnput`
-  // Manually make, timeout and yield here instead.
   STORE_SP();
 
-  gab_value fb = gab_tarun(GAB(), cGAB_VM_CHANNEL_PUT_TIMEOUT_MS,
-                           (struct gab_run_argt){
-                               .flags = GAB().flags,
-                               .main = block,
-                           });
+  union gab_value_pair fb = gab_tarun(GAB(), cGAB_VM_CHANNEL_PUT_TIMEOUT_MS,
+                                      (struct gab_run_argt){
+                                          .flags = GAB().flags,
+                                          .main = block,
+                                      });
 
-  if (fb == gab_timeout)
+  if (fb.status == gab_ctimeout)
     VM_YIELD();
 
+  assert(fb.status == gab_cvalid);
+
   DROP_N(have);
-  PUSH(fb);
+  PUSH(fb.vresult);
 
   SET_VAR(1);
 
@@ -2088,7 +2194,7 @@ CASE_CODE(SEND_PRIMITIVE_MAKE_SHAPE) {
              gab_number(gab_shplen(shape)), gab_number(len));
 
   STORE_SP();
-  gab_value record = gab_recordfrom(GAB(), shape, 1, SP() - len);
+  gab_value record = gab_recordfrom(GAB(), shape, 1, len, SP() - len, nullptr);
 
   DROP_N(have);
   PUSH(record);
@@ -2106,7 +2212,7 @@ CASE_CODE(SEND_PRIMITIVE_SHAPE) {
   uint64_t len = have - 1;
 
   STORE_SP();
-  gab_value shape = gab_shape(GAB(), 1, len, SP() - len);
+  gab_value shape = gab_shape(GAB(), 1, len, SP() - len, nullptr);
 
   DROP_N(have);
   PUSH(shape);

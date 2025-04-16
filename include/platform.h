@@ -18,11 +18,7 @@
  * In the other cases, use our vendored, cthreads submodule as a cross platform
  * replacement until c11 threads is supported.
  */
-#if __has_include("threads.h")
-#include <threads.h>
-#else
-#include <cthreads.h>
-#endif
+#include "threads.h"
 
 /**
  * PLATFORM INTERFACE
@@ -86,7 +82,7 @@
 #define GAB_API extern
 #endif
 
-#define GAB_DYNLIB_MAIN_FN a_gab_value *gab_lib(struct gab_triple gab)
+#define GAB_DYNLIB_MAIN_FN union gab_value_pair gab_lib(struct gab_triple gab)
 
 #define gab_osproc(cmd, ...)                                                   \
   ({                                                                           \
@@ -104,6 +100,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#define gab_osfileno(f) (fileno(f))
 #define gab_osfisatty(f) isatty(fileno(f))
 
 #define gab_ossignal(sig, handler) signal(sig, handler)

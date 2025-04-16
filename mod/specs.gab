@@ -1,5 +1,3 @@
-xf = 'transducers'.use
-Ranges = 'ranges'.use
 spec\t = spec:
 
 explain_specs = (specs separator)
@@ -7,47 +5,47 @@ explain_specs = (specs separator)
       .transduce(
         ''
         +:
-        td:.map spec\name:
-        |> td:.interpose separator)
+        Streams.map spec\name:
+        |> Streams.interpose separator)
 
 explain_values = (strings separator)
   => strings
       .transduce(
         ''
         +:
-        td:.map ((v) => Strings.make("\" v))
-        |> td:.interpose separator)
+        Streams.map ((v) => Strings.make("\" v))
+        |> Streams.interpose separator)
 
-defspec!: .def! (
+defspec: .def (
   Messages.t,
   (opts) => do
-    spec\help:.def!(
+    spec\help:.def(
       opts.spec
       () => opts.at help:)
 
-    spec\name:.def!(
+    spec\name:.def(
       opts.spec
       self.to\s)
 
-    spec:.def!(
+    spec:.def(
       self
       opts.spec)
 
     opts.spec
   end)
 
-[Messages.t] .defmodule! {
-  spec\doc!:     () => (self.spec.help!, self.spec\explain!)
-  spec\help!:    () => self.spec.spec\help.unwrap!
-  spec\gen!:     () => self.spec.spec\gen
-  spec\explain!: () => self.spec.spec\explain
+[Messages.t] .defmodule {
+  spec\doc:     () => (self.spec.help, self.spec\explain)
+  spec\help:    () => self.spec.spec\help.unwrap
+  spec\gen:     () => self.spec.spec\gen
+  spec\explain: () => self.spec.spec\explain
   to\spec:     () => do
     spec = self
-    spec: .has? spec .then(() => spec.spec) .or spec
+    spec: .has spec .then(() => spec.spec) .or spec
   end
 }
 
-to\spec: .def! () => self
+to\spec: .def () => self
 
 ## PREDICATES
 # A spec predicate is a function which
@@ -64,23 +62,23 @@ to\spec: .def! () => self
 # NIL PREDICATE
 nil\predicate = predicate\nil:
 
-spec\fits?:.def!(
+spec\fits:.def(
   nil\predicate
   value => (value == nil: self value))
 
-spec\gen:.def!(
+spec\gen:.def(
   nil\predicate
   nil:)
 
-spec\explain:.def!(nil\predicate 'nil')
+spec\explain:.def(nil\predicate 'nil')
 
 # UNKNOWN PREDICATE
 unknown\predicate = predicate\unknown:
 
 unknown_values = [ nil: 0 1 'test' true: ]
 
-[unknown\predicate] .defmodule! {
-  spec\fits?: value => (true: self value)
+[unknown\predicate] .defmodule {
+  spec\fits: value => (true: self value)
 
   spec\gen: () => do
     idx = Numbers.int\between(0 unknown_values.len - 1)
@@ -93,15 +91,15 @@ unknown_values = [ nil: 0 1 'test' true: ]
 # INT PREDICATE
 int\predicate = predicate\int:
 
-spec\fits?:.def!(
+spec\fits:.def(
   int\predicate
-  value => (value.is_n?, self, value))
+  value => (value.is\n, self, value))
 
-spec\gen:.def!(
+spec\gen:.def(
   int\predicate
   () => Numbers.int\between(-10000 10000))
 
-spec\explain:.def!(int\predicate 'int')
+spec\explain:.def(int\predicate 'int')
 
 #
 # FLOAT PREDICATE
@@ -109,27 +107,27 @@ spec\explain:.def!(int\predicate 'int')
 
 float\predicate = predicate\float:
 
-spec\fits?:.def!(
+spec\fits:.def(
   float\predicate
-  (value) => (value.is_n?, self, value))
+  (value) => (value.is\n, self, value))
 
-spec\gen:.def!(
+spec\gen:.def(
   float\predicate
   () => Numbers.float\between(-10000, 10000))
 
-spec\explain:.def!(float\predicate 'float')
+spec\explain:.def(float\predicate 'float')
 
 #
 # STRING PREDICATE
 #
 string\predicate = predicate\string:
 
-is_s?:.def!(Strings.t, true:)
-is_s?:.def! false:
+is\s:.def(Strings.t, true:)
+is\s:.def false:
 
-spec\fits?:.def!(
+spec\fits:.def(
   string\predicate
-  (value) => (value.is_s?, self, value))
+  (value) => (value.is\s, self, value))
 
 random\strings = [
   'vim-users'
@@ -139,75 +137,75 @@ random\strings = [
   'c'
 ]
 
-spec\gen:.def!(
+spec\gen:.def(
   string\predicate
   () => do
     idx  = Numbers.int\between(0 ,random\strings.len)
     random\strings .at! idx
   end)
 
-spec\explain:.def!(string\predicate 'string')
+spec\explain:.def(string\predicate 'string')
 
 #
 # SHAPE PREDICATE
 #
 shape\predicate = predicate\shape:
 
-spec\fits?:.def!(
+spec\fits:.def(
   shape\predicate
-  (value) => (value.is_shape?, self, value))
+  (value) => (value.is\shp, self, value))
 
-spec\gen:.def!(
+spec\gen:.def(
   shape\predicate
   () => Shapes.make)
 
-spec\explain:.def!(shape\predicate 'shape')
+spec\explain:.def(shape\predicate 'shape')
 
 #
 # BOOL PREDICATE
 #
 boolean\predicate = predicate\boolean:
 
-spec\fits?:.def!(
+spec\fits:.def(
   boolean\predicate
- (value) =>(value.is_b?, self, value))
+ (value) =>(value.is\b, self, value))
 
-spec\gen:.def!(
+spec\gen:.def(
   boolean\predicate
   () => Numbers.float\between() > 0.5)
 
-spec\explain:.def!(boolean\predicate 'boolean')
+spec\explain:.def(boolean\predicate 'boolean')
 
 #
 # COMPOSING SPECS
 #
-and\predicate = (specs[]) => do
+and\predicate = (specs*) => do
   (specs.len > 0).assert! 'Must have at least one spec for the and predicate'
 
   pred = Strings.make('predicate:and:' specs).to\m
 
-  [pred] .defmodule! {
+  [pred] .defmodule {
     spec\explain: () => explain_specs.(specs ' & ')
 
-    spec\fits?: value => specs.reduce(
+    spec\fits: value => specs.reduce(
           []
-          (acc  spec  key) => [spec.spec\fits?(value) .or (false: spec value key)])**
+          (acc  spec  key) => [spec.spec\fits(value) .or (false: spec value key)])*
     
     spec\gen: () => do
         start = specs .at! 0
 
-        xf = td:.map(() => do
+        xf = Streams.map(() => do
               value = start.spec\gen
 
               fits = specs.reduce(
                 true:
-                (a _ s) => a.then () => s .spec\fits? value)
+                (a _ s) => a.then () => s .spec\fits value)
 
               (fits value)
             end)
-            |> td:.filter self:
-            |> td:.map first:
-            |> td:.take 1
+            |> Streams.filter self:
+            |> Streams.map first:
+            |> Streams.take 1
 
         range:
           .make 100
@@ -222,15 +220,15 @@ and\predicate = (specs[]) => do
   pred
 end
 
-or\predicate = (specs[]) => do
+or\predicate = (specs*) => do
   (specs.len > 0).assert! "The or predicate expects more than zero specs"
   
   pred = Strings.make('predicate:any:' specs).to\m
 
-  [pred] .defmodule! {
-    spec\fits?: value => do
+  [pred] .defmodule {
+    spec\fits: value => do
         valid = specs.reduce(false: (acc s) => do
-          acc .else () => s .spec\fits? value
+          acc .else () => s .spec\fits value
         end)
 
         (valid self value pred)
@@ -253,86 +251,86 @@ regex\null  = { re\null: nil: meta: { name: 're.null' } path: nil:}
 regex\blank  = { re\blank: nil: meta: { name: 're.blank' } path: nil:}
 regex\empty = true:
 
-re\null\t = regex\null ?
-re\blank\t = regex\blank ?
+re\null\t = regex\null?
+re\blank\t = regex\blank?
 
-re\null?: .def!(re\null\t, true:)
-re\null?: .def! false:
+re\null: .def(re\null\t, true:)
+re\null: .def false:
 
-re\blank?:.def!(re\blank\t, true:)
-re\blank?:.def! false:
+re\blank:.def(re\blank\t, true:)
+re\blank:.def false:
 
-re\empty?:.def!(regex\empty true:)
-re\empty?:.def!(re\blank\t, true:)
-re\empty?:.def! false:
+re\empty:.def(regex\empty true:)
+re\empty:.def(re\blank\t, true:)
+re\empty:.def false:
 
-re\either_null?: .def! (other) => self.re\null? | other.re\null?
+re\either_null: .def (other) => self.re\null | other.re\null
 
-re\first_empty?:.def! () => self.re\empty?
-re\second_empty?:.def! (other) => other.re\empty?
+re\first_empty:.def () => self.re\empty
+re\second_empty:.def (other) => other.re\empty
 
-re\first_blank?:.def! () => self.re\blank?
-re\second_blank?:.def! (other) => other.re\blank?
+re\first_blank:.def () => self.re\blank
+re\second_blank:.def (other) => other.re\blank
 
-re\both_empty?:.def! (other) => self.re\empty? & other.re\empty?
+re\both_empty:.def (other) => self.re\empty & other.re\empty
 
-re\first_null?:.def! () => self.re\null?
-re\second_null?:.def! (other) => other.re\null?
+re\first_null:.def () => self.re\null
+re\second_null:.def (other) => other.re\null
 
 re\fields = [forms: meta: path:]
 
-re\atom\t = Shapes.make(re\atom: re\fields**)
-re\seq\t = Shapes.make(re\seq: re\fields**)
-re\alt\t = Shapes.make(re\alt: re\fields**)
-re\rep\t = Shapes.make(re\rep: re\fields**)
+re\atom\t = Shapes.make(re\atom: re\fields*)
+re\seq\t = Shapes.make(re\seq: re\fields*)
+re\alt\t = Shapes.make(re\alt: re\fields*)
+re\rep\t = Shapes.make(re\rep: re\fields*)
 
-re\empty?:.def!(re\alt\t () => do
-  res = self.forms.collect(td:.filter re\empty?: |> td:.take 1)
-  res.empty?.!
+re\empty:.def(re\alt\t () => do
+  res = self.forms.collect(Streams.filter re\empty: |> Streams.take 1)
+  res.empty.!
 end)
 
 stringify_forms = (forms, sep)
   => Strings.make(
     "("
-    forms.map re\debug: .join (td:.interpose sep)
+    forms.map re\debug: .join (Streams.interpose sep)
     ")")
 
 # regex constructors
 
-[re:] .defmodule! {
+[re:] .defmodule {
   atom: (spec meta) => re\atom\t.make(nil: spec meta [])
 
   seq: (forms meta) => do
-    forms = forms.skip re\blank?:
+    forms = forms.skip re\blank:
 
     forms .cond {
-      f => f.any? re\null?: regex\null
-      empty?:               regex\blank
+      f => f.any re\null: regex\null
+      empty:               regex\blank
       f => f.len == 1       forms .at 0 .unwrap
       else:                 re\seq\t.make(nil: forms meta [])
     }
   end
 
   alt: (forms meta) => do
-    forms = forms.skip re\null?:
+    forms = forms.skip re\null:
 
     forms .cond {
-      #f => f :all? \re.empty? regex\blank
+      #f => f :all \re.empty regex\blank
       f => f .len == 1        forms .at 0 .unwrap
       else:                   re\alt\t.make(nil: forms meta [])
     }
   end
 
   rep: (form meta) => form .cond {
-        re\null?:  regex\blank
-        re\empty?: regex\blank
+        re\null:  regex\blank
+        re\empty: regex\blank
         else:      re\rep\t.make(nil: form meta [])
     }
 }
 
 # Derivatives
 
-re\debug: .defcase! {
+re\debug: .defcase {
   regex\empty "re.internal.empty"
   re\blank\t "re.internal.blank"
   re\null\t "re.internal.null"
@@ -341,45 +339,45 @@ re\debug: .defcase! {
   re\alt\t () => stringify_forms.(self.forms, " | ")
   re\rep\t () => Strings.make('*', self.form.re\name)
 }
-re\debug: .def! () => self.to\spec.spec\name
+re\debug: .def () => self.to\spec.spec\name
 
-re\name: .defcase! {
+re\name: .defcase {
   re\atom\t () => self.meta.name
   re\seq\t () =>  self.meta.name
   re\alt\t () => self.meta.name
   re\rep\t () => self.meta.name
 }
-re\name: .def! () => self.to\spec.spec\name
+re\name: .def () => self.to\spec.spec\name
 
-re\d: .defcase! {
+re\d: .defcase {
   re\blank\t  e => regex\null  
   re\null\t   e => regex\null
   regex\empty e => regex\null
 
   re\atom\t e => do
-    (ok, rest[]) = self.forms.to\spec.spec\fits? e
+    (ok, rest*) = self.forms.to\spec.spec\fits e
 
-    'Applied atom $ to $ -> $\n'.printf(self.forms.to\spec, e, ok)
+    #'Applied atom $ to $ -> $\n'.printf(self.forms.to\spec, e, ok)
 
     so_far = self.path
 
     path = so_far.push [self.re\name, e]
 
-    (ok .and regex\blank .or regex\null .path(path), rest)
+    (ok .and regex\blank .or regex\null .put(path: path), rest)
   end
 
  re\alt\t e => do
-    'Applied alt $ to $\n'.printf(self.forms, e)
+    #'Applied alt $ to $\n'.printf(self.forms, e)
 
     forms = self.forms.map f => f .re\d e
 
     re:
       .alt(forms, self.meta)
-      .path(self.path)
+      .put(path: self.path)
   end
 
   re\seq\t e => do
-    'Applied seq $ to $\n'.printf(self.forms, e)
+    #'Applied seq $ to $\n'.printf(self.forms, e)
     (a, rest) = (self.forms.at! 0, self.forms.slice(1, self.forms.len))
     b = self.forms.at! 1
 
@@ -390,18 +388,18 @@ re\d: .defcase! {
 
     so_far = self.path
 
-    left = re:.seq(self.forms.put(0, new_a), self.meta).path (so_far.push [a.re\name, e])
+    left = re:.seq(self.forms.put(0, new_a), self.meta).put(path: so_far.push [a.re\name, e])
 
-    right = re:.seq(rest.put(0, new_b), self.meta).path (so_far.push [b.re\name, e])
+    right = re:.seq(rest.put(0, new_b), self.meta).put(path: so_far.push [b.re\name, e])
 
     re:
       .alt(
-        [left no_a .re\empty? .and right .or regex\null]
+        [left no_a .re\empty .and right .or regex\null]
         self.meta)
   end
 
  re\rep\t e => do
-    'Applied rep $ to $\n'.printf(self.forms, e)
+    #'Applied rep $ to $\n'.printf(self.forms, e)
     a = self.forms
 
     new_a = a.re\d e
@@ -412,25 +410,25 @@ re\d: .defcase! {
       .seq(
         [new_a self],
         self.meta)
-      .path(path)
+      .put(path: self.path)
   end
 }
 
 # Types that can match up these re need to implement the head/tail interface
-re\head: .defcase! {
-  'gab\\record' () => self.at! 0
-  'gab\\string' () => self.at 0
+re\head: .defcase {
+  Records.t, () => self.at! 0
+  Strings.t, () => self.at 0
 }
 
-re\tail: .defcase! {
-  'gab\\record' () => self.slice(1 self.len)
-  'gab\\string' () => self.slice(1 self.len)
+re\tail: .defcase {
+  Records.t, () => self.slice(1 self.len)
+  Strings.t, () => self.slice(1 self.len)
 }
 
 # Matching fns
-re\empty: .def! () => (regex\null, [])
+re\empty: .def () => (regex\null, [])
 
-re\empty: .defcase! {
+re\empty: .defcase {
   re\null\t   () => (regex\null, self.path)
   re\blank\t  () => (regex\blank, self.path)
   regex\empty () => (regex\blank, [])
@@ -444,22 +442,22 @@ re\empty: .defcase! {
     forms = self.forms.map re\empty:
 
     p = self.forms.collect(
-      td:.map re\empty:
-      |> td:.filter re\empty?:
-      |> td:.map first:
-      |> td:.take 1)
+      Streams.map re\empty:
+      |> Streams.filter re\empty:
+      |> Streams.map first:
+      |> Streams.take 1)
 
     (re:.alt(forms, self.meta), p .at 0 .unwrap.or [])
   end
 }
 
-match: .defcase! {
+match: .defcase {
 # Naturally this only succeeds if the match is empty
-# But what if one of the alt paths is empty?
+# But what if one of the alt paths is empty
   []?, (re) => do
     (re, path) = re .re\empty
 
-    (re.re\empty?, path)
+    (re.re\empty, path)
   end
 
   Records.t, (re) => do
@@ -471,7 +469,7 @@ match: .defcase! {
   true: (tail ddc re) => do
     (re, path) = ddc .re\empty
 
-    (re.re\empty?, path)
+    (re.re\empty, path)
   end
 
   false: (tail dre re) => do
@@ -487,11 +485,11 @@ match: .defcase! {
   end
 }
 
-to\spec\re: .def! () => re:.atom(self { name: self.to\spec.spec\name })
+to\spec\re: .def () => re:.atom(self { name: self.to\spec.spec\name })
 
-pat: .def!(
+pat: .def(
   spec\t
-  (specs{}) => do
+  (specs**) => do
     pred = Strings.make('predicate:pat:' specs).to\m
 
     forms = specs
@@ -504,26 +502,26 @@ pat: .def!(
 
     re = re:.seq(forms {name: ""})
 
-    spec\fits?:.def!(
+    spec\fits:.def(
       pred
       (value) => value .match re)
 
-    generator = xf.map to\spec:
-             |> xf.map spec\gen:
-             |> xf.map((args[]) => Strings.make(args**))
+    generator = Streams.map to\spec:
+             |> Streams.map spec\gen:
+             |> Streams.map((args*) => Strings.make(args*))
 
-    spec\gen:.def!(
+    spec\gen:.def(
       pred
       () => specs.collect generator .join)
 
-    to\spec\re: .def!(pred re)
+    to\spec\re: .def(pred re)
 
     pred
   end)
 
-cat: .def!(
+cat: .def(
   spec\t
-  (specs{}) => do
+  (specs**) => do
     pred = Strings.make('predicate:cat:' specs).to\m
 
     forms = specs.map (v k)
@@ -531,28 +529,28 @@ cat: .def!(
 
     re = re:.seq(forms { name: "" })
 
-    spec\fits?: .def! (
+    spec\fits: .def (
       pred
-      (values[]) => do
+      (values*) => do
         values .match re
       end)
 
-    generator = xf.map to\spec:
-             |> xf.map spec\gen:
+    generator = Streams.map to\spec:
+             |> Streams.map spec\gen:
 
-    spec\gen:.def!(
+    spec\gen:.def(
       pred
-      () => specs.transduce([] push: generator).**)
+      () => specs.transduce([] push: generator).*)
 
-    to\spec\re: .def!(pred re)
+    to\spec\re: .def(pred re)
 
     pred
   end)
 
-alt: .def!(
+alt: .def(
   spec\t
-  (specs{}) => do
-    (first rest[]) = specs**
+  (specs**) => do
+    (first rest*) = specs*
     pred = Strings.make('predicate:alt:' specs).to\m
 
     forms = specs.map (v k)
@@ -560,49 +558,49 @@ alt: .def!(
 
     re = re:.alt(forms { name: "" })
 
-    spec\fits?:.def!(
+    spec\fits:.def(
       pred
-      (values[]) => do
+      (values*) => do
         values .match re
       end)
 
-    spec\gen:.def!(
+    spec\gen:.def(
       pred
       () => do
         specs.at!(Numbers.int\between(0 specs.len)).spec\gen
       end)
 
-    to\spec\re: .def!(pred re)
+    to\spec\re: .def(pred re)
 
     pred
   end)
 
-*: .def!(
+*: .def(
   spec\t
   (spec) => do
     pred = Strings.make('predicate:*:' {} ':' spec).to\m
 
     re = re:.rep(spec.to\spec.to\spec\re, { name: "" })
 
-    spec\fits?: .def!(
+    spec\fits: .def(
       pred
-      (values[]) => values .match re)
+      (values*) => values .match re)
 
-    generator = xf.map(_ => spec.to\spec.spec\gen)
+    generator = Streams.map(_ => spec.to\spec.spec\gen)
 
-    spec\gen:.def!(
+    spec\gen:.def(
       pred
       () => Ranges
               .make(0 Numbers.int\between(0 10))
               .collect generator
-              .**)
+              .*)
 
-    to\spec\re: .def!(pred re)
+    to\spec\re: .def(pred re)
 
     pred
   end)
 
-+: .def!(
++: .def(
   spec\t
   (spec) => do
     pred = Strings.make('predicate:+:' {} ':' spec).to\m
@@ -611,20 +609,20 @@ alt: .def!(
 
     re = re:.seq([re, re:.rep(re, { name: "" })], { name: "" })
 
-    spec\fits?:.def!(
+    spec\fits:.def(
       pred
-      (values[]) => values .match re)
+      (values*) => values .match re)
 
-    spec\gen:.def!(
+    spec\gen:.def(
       pred
       () => do
         Ranges
           .make(0 Numbers.int\between(1 10))
-          .collect(xf.map _ => spec.spec\gen
-          .**)
+          .collect(Streams.map _ => spec.spec\gen
+          .*)
       end)
 
-    to\spec\re: .def!(pred re)
+    to\spec\re: .def(pred re)
 
     pred
   end)
@@ -635,31 +633,31 @@ slice\predicate = (slice) => do
 
   pred = Strings.make('predicate:protocol:slice:' keys ':' slice).to\m
 
-  spec\fits?:.def!(
+  spec\fits:.def(
     pred
     value => do
       keys.reduce([true: self value] (acc m) => do
 # Check for a spec which corresponds to this message in the protocol
         acc.at! 0 .and acc .else () => do
-          m .has? value .then () => do
-            m.to\m.spec.ok?.then s => do
-              s.spec\fits?(value .at! m)
+          m .has value .then () => do
+            m.to\m.spec.ok.then s => do
+              s.spec\fits(value .at! m)
             end
           end .or [false:, self, value, m]
         end
-      end).**
+      end).*
     end)
 
-  genit = td:.map (v) => do
+  genit = Streams.map (v) => do
     found = v.to\m.spec
     (v found.spec\gen)
   end
 
-  spec\gen:.def!(
+  spec\gen:.def(
     pred
     () => keys.transduce(protocol put: genit))
 
-  spec\explain:.def!(
+  spec\explain:.def(
     pred
     () => protocol.spec\exlain)
 
@@ -670,12 +668,12 @@ end
 protocol\predicate = (protocol) => do
   pred = Strings.make('predicate:protocol:' protocol).to\m
 
-  [pred] .defmodule! {
+  [pred] .defmodule {
     spec\explain: () => (protocol.len == 0)
         .and "[]"
         .or ("[ " + explain_values.(protocol, ', ') + " ]")
 
-    spec\protocol\keys: [protocol**]
+    spec\protocol\keys: [protocol*]
 
     spec\slice: slice\predicate
   }
@@ -686,11 +684,9 @@ end
 list\predicate = spec => do
   pred = Strings.make('predicate:list:' spec).to\m
 
-  [pred] .defmodule! {
-    spec\fits?: value => value.spec\fits_each? values:
-
+  [pred] .defmodule {
+    spec\fits: value => value.spec\fits_each values:
     spec\gen: () => Lists.make.push(spec.spec\gen)
-
     spec\explain: () => Strings.make('list[' spec.spec\explain() ']')
   }
 
@@ -700,10 +696,10 @@ end
 record\predicate = (k_spec v_spec) => do
   pred = Strings.make('predicate:map:' k_spec ':' v_spec).to\m
 
-  spec\fits?:.def!(
+  spec\fits:.def(
     pred
     value => do
-      (value ? == 'gab\\record')
+      (value? == Records.t)
         .then(() => (false: self value))
         .else(() => do
           value .reduce(
@@ -716,35 +712,35 @@ record\predicate = (k_spec v_spec) => do
         end)
     end)
 
-  spec\gen:.def!(
+  spec\gen:.def(
     pred
     () => { k_spec.spec\gen,  v_spec.spec\gen })
 
-  spec\explain:.def!(
+  spec\explain:.def(
     pred
     () => Strings.make('Map[' k_spec.spec\explain ', ' v_spec.spec\explain ']'))
 
   pred
 end
 
-spec\recursively: .defcase! {
+spec\recursively: .defcase {
   # In the boolean cases, recurse if the spec matched
   # and bail early if it didn't
   true: (tail curr alt) => do
-    tail.spec\recursively(alt**)
+    tail.spec\recursively(alt*)
   end
   false: (tail curr alt) => do
-    (self curr**)
+    (self curr*)
   end
   # In the recursion cases, continue to check head 
   # until there is no tail
-  nil: (alt[]) => do
-    alt**
+  nil: (alt*) => do
+    alt*
   end
-  'gab\\record' (alt[]) => do
-    (spec value) = self.head**
+  'gab\\record' (alt*) => do
+    (spec value) = self.head*
 
-    (does_fit result[]) = spec.spec\fits? value
+    (does_fit result*) = spec.spec\fits value
 
     does_fit .spec\recursively (self.tail, result alt)
   end
@@ -754,28 +750,28 @@ spec\block\Args = Shapes.make(input: output: semantics:)
 
 spec\block\Application = Shapes.make(input: output: semantics: in: out:)
 
-spec\block\input_fits?:.def!(
+spec\block\input_fits:.def(
   spec\block\Application
-  () => self.input.spec\fits?(self.in**))
+  () => self.input.spec\fits(self.in*))
 
-spec\block\output_fits?:.def!(
+spec\block\output_fits:.def(
   spec\block\Application
-  () => self.output.spec\fits?(self.out**))
+  () => self.output.spec\fits(self.out*))
 
-spec\semantics_fits?:.def!(
+spec\semantics_fits:.def(
   nil:
   (input output) => (true: nil: [input output]))
 
-spec\semantics_fits?:.def!(
+spec\semantics_fits:.def(
   'gab\\block'
   (input output) => (self.(input output), self, [input output], semantics:))
 
 block\predicate = (args semantics) => do
-  args.assert\is? spec\block\Args
+  args.assert\is spec\block\Args
 
   pred = Strings.make('predicate:block:' args ':' semantics).to\m
 
-  spec\fits?:.def!(
+  spec\fits:.def(
     pred
     (input output) => do
       v = args
@@ -785,21 +781,21 @@ block\predicate = (args semantics) => do
       v.first(
         apply:,
         [
-          spec\block\input_fits?:,
-          spec\block\output_fits?:,
-          spec\semantic_fits?:,
+          spec\block\input_fits:,
+          spec\block\output_fits:,
+          spec\semantic_fits:,
         ],
         to\option:,
       )
     end)
 
-  spec\gen:.def!(
+  spec\gen:.def(
     pred
     () => do
-      block\gen = (input[]) => do
+      block\gen = input* => do
         range:.make 100 .transduce(0, () => do
           # Generate an output
-          (output[]) = args.output.spec\gen
+          output* = args.output.spec\gen
 
           v = args
             .put(input_value: input)
@@ -808,9 +804,9 @@ block\predicate = (args semantics) => do
           v.first(
             apply:,
             [
-              spec\block\input_fits?:,
-              spec\block\output_fits?:,
-              spec\semantic_fits?:,
+              spec\block\input_fits:,
+              spec\block\output_fits:,
+              spec\semantic_fits:,
             ],
             to\option:,
           )
@@ -818,14 +814,14 @@ block\predicate = (args semantics) => do
       end
     end)
 
-  spec\check:.def!(
+  spec\check:.def(
     pred
     (block) => do
       range:.make 100 .transduce(() => do
-        (input[]) = args.input.spec\gen
+        (input*) = args.input.spec\gen
 
-        args.input.spec\fits?(input**) .then do
-          (output[]) = block.(input**)
+        args.input.spec\fits(input*) .then do
+          output* = block.(input*)
           
           (some:, pred.(input, output))
         end
@@ -837,108 +833,108 @@ end
 
 general_message\predicate = 'predicate:message' .to\m
 
-spec\fits?:.def!(
+spec\fits:.def(
   general_message\predicate
-  (value) => (value.is_m?, self, value))
+  (value) => (value.is\m, self, value))
 
-spec\gen:.def!(
+spec\gen:.def(
   general_message\predicate
   +:)
 
-spec\explain:.def!(
+spec\explain:.def(
   general_message\predicate
   'message')
 
-spec\message\input_fits?:.def!(
+spec\message\input_fits:.def(
   'gab\\record'
-  () => self.input.spec\fits?(self.in**))
+  () => self.input.spec\fits(self.in*))
 
-spec\message\output_fits?:.def!(
+spec\message\output_fits:.def(
   'gab\\record'
-  () => self.output.spec\fits?(self.out**))
+  () => self.output.spec\fits(self.out*))
 
-spec\message\receiver_fits?:.def!(
+spec\message\receiver_fits:.def(
   'gab\\record'
-  () => self.receiver.spec\fits?(self.rec**))
+  () => self.receiver.spec\fits(self.rec*))
 
-spec\message\semantics_fits?:.def!(
+spec\message\semantics_fits:.def(
   'gab\\record'
   () => self
     .at semantics:
     .unwrap ()
-    .spec.semantics_fits?(self.in, self.out))
+    .spec.semantics_fits(self.in, self.out))
 
-dospec\apply: .defcase! {
+dospec\apply: .defcase {
   true: (v acc f) => [f . v]
   false: (v acc f) => acc
 }
 
--!>: .def! (fs[]) => do
+-!>: .def (fs*) => do
   me = self # I'd like doing this to be a little neater
   fs.reduce([true:]
     (so_far f) => so_far
       .at! 0
-      .dospec\apply(me so_far f))**
+      .dospec\apply(me so_far f))*
 end
 
-spec\message\define:.defcase! {
+spec\message\define:.defcase {
   nil: general_message\predicate
   'gab\\record' () => do
     args = self
     pred = Strings.make('predicate:message:' args).to\m
 
-    spec\fits?:.def!(
+    spec\fits:.def(
       pred
       (rec in out)
         => args
           .put(rec: rec)
           .put(in: in)
           .put(out: out)
-           -!>(spec\message\receiver_fits?:
-               spec\message\input_fits?:
-               spec\message\output_fits?:
-               spec\message\semantics_fits?:))
+           -!>(spec\message\receiver_fits:
+               spec\message\input_fits:
+               spec\message\output_fits:
+               spec\message\semantics_fits:))
 
-    spec\gen:.def!(
+    spec\gen:.def(
       pred
       receiver => do
-        args.message.def!(
+        args.message.def(
           receiver
-          (input[]) => do
-            (ok pred value path) = args.receiver.spec\fits? self
+          (input*) => do
+            (ok pred value path) = args.receiver.spec\fits self
 
             (ok pred value path) = ok
               .or (ok pred value path)
-              .then () => args.input.spec\fits?(input**)
+              .then () => args.input.spec\fits(input*)
 
             ok
               .or (ok pred value path)
               .then () => do
-                (ok pred value path) = args.input.spec\fits?(input**)
-                (output[]) = args.output.spec\gen
-                iter = td:.map(() => do
-                    (output[]) = args.output.spec\gen
+                (ok pred value path) = args.input.spec\fits(input*)
+                (output*) = args.output.spec\gen
+                iter = Streams.map(() => do
+                    (output*) = args.output.spec\gen
 
-                    args.output.spec\fits?(output**) .then () => do
+                    args.output.spec\fits(output*) .then () => do
                       # If there are no semantics to satisfy, just return this output
-                      (args.has? semantics: .else () => output**) .then () => do
+                      (args.has semantics: .else () => output*) .then () => do
                         rec = args.receiver.spec\gen
 
-                        args.receiver.spec\fits?(rec) .then () => do
+                        args.receiver.spec\fits(rec) .then () => do
 
                           # Otherwise, we need to continue generating until we
                           # find a receiver and output which satisfy the semantics.
                           args.semantics.(input, output) .then () => do
                             # Return the generated output
-                            (ok: output**)
+                            (ok: output*)
                           end
                         end
                       end
                     end
                   end)            
-                  |> td:.filter ok?:
-                  |> td:.map unwrap:
-                  |> td:.take 1
+                  |> Streams.filter ok:
+                  |> Streams.map unwrap:
+                  |> Streams.take 1
 
                 range: .make 100 .transduce (false: first: iter)
           end
@@ -947,40 +943,40 @@ spec\message\define:.defcase! {
         args.message
       end)
 
-    spec\check:.def!(
+    spec\check:.def(
       pred
       () => do
-        xf = td:.map(() => do
+        xf = Streams.map(() => do
             receiver = args.receiver.spec\gen
 
-            args.receiver.spec\fits?(receiver) .then () => do
-              (input[]) = args.input.spec\gen
+            args.receiver.spec\fits(receiver) .then () => do
+              (input*) = args.input.spec\gen
 
-              args.input.spec\fits?(input**) .then () => do
-                (output[]) = args.message.(receiver input**)
+              args.input.spec\fits(input*) .then () => do
+                (output*) = args.message.(receiver input*)
 
-                (ok res[]) = args.output.spec\fits?(output**)
+                (ok res*) = args.output.spec\fits(output*)
                 
                  ok.then () => do
-                  args.has? semantics:
-                    .or (ok, res**)
+                  args.has semantics:
+                    .or (ok, res*)
                     .then () => do
                       args.semantics.(input output)
-                        .and(ok, res**)
+                        .and(ok, res*)
                         .or(false:, args.semantics, [input output], 'semantics')
                     end
                 end
               end
             end
           end)
-          |> td:.filter((valid? spec value path) => valid? !)
-          |> td:.map((valid? spec value path) => option:.make(valid? !, spec value path))
-          |> td:.take 1
+          |> Streams.filter((valid spec value path) => valid!)
+          |> Streams.map((valid spec value path) => option:.make(valid!, spec value path))
+          |> Streams.take 1
 
-        range:.make 100 .transduce([none:] all: xf)**
+        range:.make 100 .transduce([none:] all: xf)*
       end)
 
-    spec\explain:.def!(
+    spec\explain:.def(
       pred
       () => Strings.make(
         args.receiver.spec\name
@@ -999,12 +995,12 @@ message\predicate = args => args.spec\message\define
 
 LabeledSpec = Shapes.make(spec\label: spec\spec:)
 
-spec\labeled: .def! label => {
+spec\labeled: .def label => {
   spec\label: label
   spec\spec: self
 }
 
-[LabeledSpec] .defmodule! {
+[LabeledSpec] .defmodule {
   spec\explain: () => Strings.make(
       self.spec\label
       ': '
@@ -1019,35 +1015,35 @@ spec\labeled: .def! label => {
 
   spec\gen:   () => self.spec\spec.spec\gen
 
-  spec\fits?: () => self.spec\spec.spec\fits?
+  spec\fits: () => self.spec\spec.spec\fits
 
   spec\check: () => self.spec\spec.spec\check
 }
 
-spec\name: .def! () => self.spec\explain
-spec\explain: .def! () => self
-spec\gen: .def! () => self
-spec\fits?: .def! value => (self == value self value)
+spec\name: .def () => self.spec\explain
+spec\explain: .def () => self
+spec\gen: .def () => self
+spec\fits: .def value => (self == value self value)
 
 # Since a spec is just a predicate, we can simply call it and return the result
-spec\fits?: .def!(
+spec\fits: .def(
   'gab\\block'
   (value) => self.(value))
 
-spec\fits?: .def!(
+spec\fits: .def(
   'gab\\message'
   (value) => do
     msg = self
-    msg .has? value .then () => msg.(value)
+    msg .has value .then () => msg.(value)
   end)
 
-to\spec\option:.defcase! {
+to\spec\option:.defcase {
   nil: err => do
     spec\t.any(ok:, err.or err:)    
   end
 }
 
-to\spec\option: .def! err => do
+to\spec\option: .def err => do
   value = self
   spec\t.any(
     spec\t.values(ok:, value),
@@ -1055,7 +1051,7 @@ to\spec\option: .def! err => do
   )
 end
 
-[spec\t] .defmodule! {
+[spec\t] .defmodule {
   nil:      nil\predicate,
   unknown:  unknown\predicate,
   int:      int\predicate,
@@ -1077,39 +1073,39 @@ end
   gt: (min) => do
     gt\predicate = Strings.make('predicate:gt:' min).to\m
 
-    spec\fits?:.def!(
+    spec\fits:.def(
       gt\predicate
       (value) => (value > min, self, value))
 
-    spec\explain:.def!(gt\predicate, '> {min}')
+    spec\explain:.def(gt\predicate, '> {min}')
 
     gt\predicate
   end
   lt: max => do
     lt\predicate = Strings.make('predicate:lt:' max).to\m
 
-    spec\fits?:.def!(
+    spec\fits:.def(
       lt\predicate
       (value) => (value < max, self, value))
 
-    spec\explain:.def!([lt\predicate] '< {max}')
+    spec\explain:.def([lt\predicate] '< {max}')
 
     lt\predicate
   end
 
   doc: (mod) => do
-    xf = td:.map ((v k) => (
+    xf = Streams.map ((v k) => (
           v
           k .to\s
             .split '\\'
             .to\m,
           k))
-      |> td:.filter ((_ k) => k == mod)
-      |> td:.map ((v m k) => do
+      |> Streams.filter ((_ k) => k == mod)
+      |> Streams.map ((v m k) => do
         (h e) = k.spec\doc!
         Strings.make(k '\n' h '\n\t' e)
       end)
-      |> td:.interpose '\n\n'
+      |> Streams.interpose '\n\n'
 
     Messages
       .specializations

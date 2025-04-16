@@ -1,14 +1,14 @@
-'transducers'.use
+io = 'os.io'.use
 
-test?:.def!(
+is\unittest:.def(
   Messages.t
-  () => self.to\s.ends_with? "\test")
+  () => self.to\s.has\ending "\test")
 
 implementations = Messages.specializations
 
-xf = td:.filter((_ m) => m .test?)
-  |> td:.map((impls m) => do
-      (path[] _) = m.to\s.split "\"
+xf = Streams.filter((_ m) => m.is\unittest)
+  |> Streams.map((impls m) => do
+      (path*, _) = m.to\s.split "\"
 
       (path { path: path, impls: impls })
   end)
@@ -16,7 +16,7 @@ xf = td:.filter((_ m) => m .test?)
 # Collect all the implementations into a giant, nested map.
 tests\all = implementations.transduce(
   {}
-  (t p i) => t.put_via(i p**)
+  (t p i) => t.put_via(i p*)
   xf
 )
 
@@ -25,7 +25,7 @@ suites\all = tests\all.reduce(
   (suites _ suite) => suites.put(suite Channels.make)
 )
 
-test\compare: .def! (
+test\compare: .def (
   Blocks.t, Messages.t
   (lhs rhs) => self.(lhs, rhs)
 )
@@ -34,31 +34,34 @@ test\result\t = { test\path: nil: test\receiver: nil: }?
 test\result\pass\t = { test\path: nil: test\receiver: nil: test\meta: nil:  true: nil: }?
 test\result\fail\t = { test\path: nil: test\receiver: nil: test\meta: nil: false: nil: }?
 
-[test\result\t] .defmodule! {
+[test\result\t] .defmodule {
   expect: (lhs cmp rhs) => do
     # Run the comparison of the expect
     test\outcome = cmp .test\compare (lhs, rhs)
     # Get the suite we're executing
-    suite = self.test\path .at! 0
+    suite = self.test\path .at 0 .unwrap
+    chan = suites\all .at suite .unwrap
     # Queue up the outcome of the comparison
-    suites\all .at! suite <! self .put (test\meta: { lhs: lhs, cmp: cmp, rhs: rhs }) .put test\outcome
+    chan <! self .put (test\meta: { lhs: lhs, cmp: cmp, rhs: rhs }) .put test\outcome
   end,
 }
 
-test\result\display: .defcase! {
+test\result\display: .defcase {
   test\result\pass\t _ => do
-    #" ✔ $ $ $\n" :printf (self:test.meta**)
+    #' ✔ $ $ $\n' .printf (self.test\meta*)
     nil:
   end
   test\result\fail\t  _ => do
-    (suite behavior) = self.test\path**
-    ' ❌$ should $\n\t$ $ $\n' .printf (suite, behavior, self.test\meta**)
+    (suite behavior) = self.test\path*
+    msg = ' ❌$ should $\n\t$ $ $\n'.sprintf(suite, behavior, self.test\meta*)
+    io.stdout.write msg
   end,
 }
 
-gab\fiber:.make () => do
+Fibers.make () => do
   suites\all .each (c s) => do
-    '✔ $\n' .printf (s)
+    msg = '✔ $\n'.sprintf(s)
+    io.stdout.write msg
     c .each test\result\display:
   end
 end
@@ -66,16 +69,17 @@ end
 () => do
   fibers = tests\all.map (behaviors suite) => do 
       Fibers.make () => do
-        behaviors.each (runnable) => do 
-          (path body) = runnable**
+        behaviors.each (runnable behavior) => do 
+          (path body) = runnable*
           body.each(t r) => do
-            t. { test\path: path, test\receiver: r }
+            t.{ test\path: path, test\receiver: r }
           end
         end
 
-        suites\all .at! suite .close!
+        chan = suites\all.at suite .unwrap
+        chan.close
       end
     end
 
-    fibers .each await!:
-  end
+  fibers.each await:
+end

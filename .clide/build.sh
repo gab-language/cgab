@@ -34,7 +34,7 @@ export GAB_CCFLAGS=
 export GAB_TARGETS=
 source configuration || exit 1
 
-export unixflags="-DGAB_PLATFORM_UNIX -D_POSIX_C_SOURCE=200809L"
+export unixflags="-DGAB_PLATFORM_UNIX -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE"
 export winflags="-DGAB_PLATFORM_WIN"
 
 function build {
@@ -45,20 +45,21 @@ function build {
   platform_bundle=""
 
   if [[ "$1" =~ "linux" ]]; then
-    platform="$unixflags"
+    platform="$unixflags -DQIO_LINUX"
     platform_bundle="-shared"
     dynlib_fileending=".so"
   elif [[ "$1" =~ "mac" ]]; then
-    platform="$unixflags"
+    platform="$unixflags -DQIO_MACOS"
     platform_bundle="-shared"
     dynlib_fileending=".so"
   elif [[ "$1" =~ "windows" ]]; then
-    platform="$winflags"
+    platform="$winflags -DQIO_WINDOWS"
     dynlib_fileending=".dll"
     platform_bundle="-shared"
   fi
 
-  flags="-std=c23 -fPIC -Wall --target=$1 -Iinclude -Ivendor -Lbuild-$1 -DGAB_TARGET_TRIPLE=\"$1\" -DGAB_DYNLIB_FILEENDING=\"$dynlib_fileending\" $GAB_CCFLAGS"
+  # -isystem is used for vendor so that c11 <threads.h> is used if it exists. Otherwise, local fallback in vendor.
+  flags="-std=c23 -fPIC -Wall --target=$1 -Iinclude -isystem vendor -Lbuild-$1 -DGAB_TARGET_TRIPLE=\"$1\" -DGAB_DYNLIB_FILEENDING=\"$dynlib_fileending\" $GAB_CCFLAGS"
 
   echo "   $flags $platform ($platform_bundle)"
 

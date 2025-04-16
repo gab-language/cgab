@@ -1,4 +1,5 @@
 #include "core.h"
+#include "engine.h"
 #include "gab.h"
 #include <locale.h>
 
@@ -17,77 +18,138 @@
 
 struct gab_triple gab;
 
+/*
+ * OS Signal handler for when SIGINT is caught
+ */
 void propagate_term(int) { gab_sigterm(gab); }
 
-void run_repl(int flags) {
-  gab = gab_create((struct gab_create_argt){
-      .flags = flags,
-  });
+void print_err(struct gab_triple gab, gab_value err) {
+  const char *str = gab_errtocs(gab, err);
+  printf("%s\n", str);
+}
+
+bool check_and_printerr(union gab_value_pair res) {
+  if (res.status != gab_cvalid) {
+    const char *errstr = gab_errtocs(gab, res.vresult);
+    puts(errstr);
+    return false;
+  }
+
+  if (res.aresult->data[0] != gab_ok) {
+    const char *errstr = gab_errtocs(gab, res.aresult->data[1]);
+    puts(errstr);
+    a_gab_value_destroy(res.aresult);
+    return false;
+  }
+
+  return true;
+}
+
+static const char *default_modules[] = {
+    "Strings", "Binaries", "Messages", "Numbers", "Blocks", "Records",
+    "Shapes",  "Fibers",   "Channels", "__core",  "Ranges", "Streams",
+};
+static const size_t ndefault_modules = LEN_CARRAY(default_modules);
+
+int run_repl(int flags, size_t nmodules, const char **modules) {
+  union gab_value_pair res = gab_create(
+      (struct gab_create_argt){
+          .flags = flags,
+          .joberr_handler = print_err,
+          .len = nmodules,
+          .modules = modules,
+      },
+      &gab);
+
+  if (!check_and_printerr(res))
+    return gab_destroy(gab), 1;
 
   gab_repl(gab, (struct gab_repl_argt){
                     .name = MAIN_MODULE,
                     .flags = flags,
                     .welcome_message = "Gab version " GAB_VERSION_TAG "",
                     .prompt_prefix = " > ",
+                    .len = nmodules,
+                    .sargv = modules,
+                    .argv = res.aresult->data + 1, // Skip initial ok:
                 });
 
-  gab_destroy(gab);
+  a_gab_value_destroy(res.aresult);
+
+  return gab_destroy(gab), 0;
 }
 
-int run_string(const char *string, int flags, size_t jobs) {
-  gab = gab_create((struct gab_create_argt){
-      .flags = flags,
-      .jobs = jobs,
-  });
+int run_string(const char *string, int flags, size_t jobs, size_t nmodules,
+               const char **modules) {
+  union gab_value_pair res = gab_create(
+      (struct gab_create_argt){
+          .flags = flags,
+          .joberr_handler = print_err,
+          .jobs = jobs,
+          .len = nmodules,
+          .modules = modules,
+      },
+      &gab);
+
+  if (!check_and_printerr(res))
+    return gab_destroy(gab), 0;
 
   // This is a weird case where we actually want to include the null terminator
   s_char src = s_char_create(string, strlen(string) + 1);
 
-  a_gab_value *result =
+  union gab_value_pair run_res =
       gab_exec(gab, (struct gab_exec_argt){
                         .name = MAIN_MODULE,
                         .source = (char *)src.data,
-                        .flags = flags | fGAB_RUN_INCLUDEDEFAULTARGS,
+                        .flags = flags,
+                        .len = nmodules,
+                        .sargv = modules,
+                        .argv = res.aresult->data + 1,
                     });
 
-  int exit_code = 1;
+  a_gab_value_destroy(res.aresult);
 
-  if (result) {
+  if (!check_and_printerr(run_res))
+    return gab_destroy(gab), 1;
 
-    if (result->len)
-      if (result->data[0] == gab_ok)
-        exit_code = 0;
-
-    free(result);
-  }
-
-  gab_destroy(gab);
-
-  return exit_code;
+  return a_gab_value_destroy(run_res.aresult), gab_destroy(gab), 0;
 }
 
-int run_file(const char *path, int flags, size_t jobs) {
-  gab = gab_create((struct gab_create_argt){
-      .flags = flags,
-      .jobs = jobs,
-  });
+int run_file(const char *path, int flags, size_t jobs, size_t nmodules,
+             const char **modules) {
+  union gab_value_pair res = gab_create(
+      (struct gab_create_argt){
+          .flags = flags,
+          .joberr_handler = print_err,
+          .jobs = jobs,
+          .len = nmodules,
+          .modules = modules,
+      },
+      &gab);
 
-  a_gab_value *result = gab_suse(gab, path);
+  if (!check_and_printerr(res))
+    return gab_destroy(gab), 1;
 
-  int exit_code = 1;
+  union gab_value_pair run_res = gab_use(gab, (struct gab_use_argt){
+                                                  .sname = path,
+                                                  .len = nmodules,
+                                                  .sargv = modules,
+                                                  .argv = res.aresult->data + 1,
+                                              });
 
-  if (result) {
-    if (result->len) {
-      if (result->data[0] == gab_ok)
-        exit_code = 0;
-    }
+  a_gab_value_destroy(res.aresult);
 
-    free(result);
-  }
+  if (!check_and_printerr(run_res))
+    return gab_destroy(gab), 1;
 
-  gab_destroy(gab);
-  return exit_code;
+  return a_gab_value_destroy(run_res.aresult), gab_destroy(gab), 0;
 }
+
+struct command_arguments {
+  int argc, flags;
+  const char **argv;
+  v_s_char modules;
+};
 
 struct option {
   const char *name;
@@ -95,6 +157,7 @@ struct option {
   char shorthand;
   bool takes_argument;
   int flag;
+  bool (*handler_f)(struct command_arguments *args);
 };
 
 #define MAX_OPTIONS 7
@@ -103,15 +166,15 @@ struct command {
   const char *name;
   const char *desc;
   const char *long_desc;
-  int (*handler)(int, const char **, int);
+  int (*handler)(struct command_arguments);
   struct option options[MAX_OPTIONS];
 };
 
-int get(int argc, const char **argv, int flags);
-int run(int argc, const char **argv, int flags);
-int exec(int argc, const char **argv, int flags);
-int repl(int argc, const char **argv, int flags);
-int help(int argc, const char **argv, int flags);
+int get(struct command_arguments args);
+int run(struct command_arguments args);
+int exec(struct command_arguments args);
+int repl(struct command_arguments args);
+int help(struct command_arguments args);
 
 #define DEFAULT_COMMAND commands[0]
 
@@ -145,12 +208,32 @@ const struct option check_option = {
     'c',
     .flag = fGAB_BUILD_CHECK,
 };
-const struct option empty_env_option = {
-    "eenv",
-    "Don't use gab's core module - start with a mostly empty "
-    "environment",
-    'e',
-    .flag = fGAB_ENV_EMPTY,
+
+bool module_handler(struct command_arguments *args) {
+  const char *flag = *args->argv;
+  args->argv++;
+  args->argc--;
+
+  if (args->argc <= 0) {
+    printf("[gab] CLI Error: no argument to flag '%s'\n", flag);
+    return false;
+  }
+
+  const char *mod = *args->argv;
+  args->argv++;
+  args->argc--;
+
+  v_s_char_push(&args->modules, s_char_cstr(mod));
+
+  return true;
+}
+
+const struct option modules_option = {
+    "mods",
+    "Change the modules loaded as the gab is initializing"
+    "modules",
+    'm',
+    .handler_f = module_handler,
 };
 
 static struct command commands[] = {
@@ -201,14 +284,13 @@ static struct command commands[] = {
             quiet_option,
             check_option,
             structured_err_option,
-            empty_env_option,
+            modules_option,
             {
                 "jobs",
                 "Specify the number of os threads which should serve as "
                 "workers for running fibers. Default is " STR(
                     cGAB_DEFAULT_NJOBS),
                 'j',
-                .flag = fGAB_JOB_RUNNERS,
             },
         },
     },
@@ -223,7 +305,7 @@ static struct command commands[] = {
             quiet_option,
             check_option,
             structured_err_option,
-            empty_env_option,
+            modules_option,
         },
     },
     {
@@ -236,56 +318,72 @@ static struct command commands[] = {
         {
             dumpast_option,
             dumpbytecode_option,
-            empty_env_option,
+            modules_option,
         },
     },
 };
 
 #define N_COMMANDS (LEN_CARRAY(commands))
 
-struct parse_options_result {
-  int remaining;
-  int flags;
-};
+struct command_arguments parse_options(int argc, const char **argv,
+                                       struct command command) {
+  struct command_arguments args = {
+      .argc = argc,
+      .argv = argv,
+  };
 
-struct parse_options_result parse_options(int argc, const char **argv,
-                                          struct command command) {
-  int flags = 0;
+  v_s_char_create(&args.modules, 16);
 
-  for (int i = 0; i < argc; i++) {
-    if (argv[i][0] != '-')
-      return (struct parse_options_result){argc - i, flags};
+  for (int i = 0; i < ndefault_modules; i++)
+    v_s_char_push(&args.modules, s_char_cstr(default_modules[i]));
 
-    if (argv[i][1] == '-') {
+  while (args.argc) {
+    const char *arg = *args.argv;
+    if (arg[0] != '-')
+      return args;
+
+    if (arg[1] == '-') {
       for (int j = 0; j < MAX_OPTIONS; j++) {
         struct option opt = command.options[j];
 
-        if (opt.name && !strcmp(argv[i] + 2, opt.name)) {
-          flags |= opt.flag;
+        if (opt.name && !strcmp(arg + 2, opt.name)) {
+          if (opt.handler_f) {
+            if (!opt.handler_f(&args))
+              exit(1);
+          } else {
+            args.flags |= opt.flag, args.argc--, args.argv++;
+          }
+
           goto next;
         }
       }
 
-      printf("[gab] CLI Error: unrecognized flag '%s'\n", argv[i]);
+      printf("[gab] CLI Error: unrecognized flag '%s'\n", arg);
       exit(1);
     } else {
       for (int j = 0; j < MAX_OPTIONS; j++) {
         struct option opt = command.options[j];
 
-        if (opt.name && argv[i][1] == opt.shorthand) {
-          flags |= opt.flag;
+        if (opt.name && arg[1] == opt.shorthand) {
+          if (opt.handler_f) {
+            if (!opt.handler_f(&args))
+              exit(1);
+          } else {
+            args.flags |= opt.flag, args.argc--, args.argv++;
+          }
+
           goto next;
         }
       }
 
-      printf("[gab] CLI Error: unrecognized flag '%s'\n", argv[i]);
+      printf("[gab] CLI Error: unrecognized flag '%s'\n", arg);
       exit(1);
     }
 
   next:
   }
 
-  return (struct parse_options_result){0, flags};
+  return args;
 }
 
 #define GAB_RELEASE_DOWNLOAD_URL                                               \
@@ -306,11 +404,11 @@ const char *split_pkg(char *pkg) {
   return ++cursor;
 }
 
-int get(int argc, const char **argv, int flags) {
-  if (argc < 1)
+int get(struct command_arguments args) {
+  if (args.argc < 1)
     printf("[gab] No package or tag found. Defaulting to '@'\n");
 
-  const char *pkg = argc ? argv[0] : "@";
+  const char *pkg = args.argc ? args.argv[0] : "@";
 
   const size_t pkglen = strlen(pkg);
   char pkgbuf[pkglen + 4];
@@ -441,7 +539,7 @@ int get(int argc, const char **argv, int flags) {
 
     if (res) {
       printf("[gab] CLI Error: failed to download release %s", tagbuf);
-      return 1;
+      return v_char_destroy(&location), v_char_destroy(&url), 1;
     }
 
     printf("[gab] Extracted modules.\n");
@@ -453,52 +551,54 @@ int get(int argc, const char **argv, int flags) {
         "some location in PATH already.\n\t\teg: " GAB_SYMLINK_RECOMMENDATION,
         pkgbuf, tagbuf, location_prefix, location_prefix, location_prefix);
 
-    v_char_destroy(&location);
-    v_char_destroy(&url);
-
-    return 0;
+    return v_char_destroy(&location), v_char_destroy(&url), 0;
   }
 
   printf("[gab] CLI Error: Installing packages not yet supported\n");
-  return 1;
+  return v_char_destroy(&location), 1;
 }
 
-int run(int argc, const char **argv, int flags) {
-  if (argc < 1) {
+int run(struct command_arguments args) {
+  if (args.argc < 1) {
     printf("[gab] CLI Error: not enough arguments\n");
     return 1;
   }
 
-  const char *path = argv[0];
+  const char *path = args.argv[0];
   size_t jobs = 8;
 
-  if (flags & fGAB_JOB_RUNNERS) {
-    const char *njobs = argv[0];
+  size_t nmodules = args.modules.len;
+  assert(nmodules > 0);
+  const char *modules[nmodules];
+  for (int i = 0; i < nmodules; i++)
+    modules[i] = v_s_char_ref_at(&args.modules, i)->data;
 
-    if (argc < 2) {
-      printf("[gab] CLI Error: not enough arguments\n");
-      return 1;
-    }
-
-    jobs = atoi(njobs);
-    path = argv[1];
-  }
-
-  return run_file(path, flags, jobs);
+  return run_file(path, args.flags, jobs, nmodules, modules);
 }
 
-int exec(int argc, const char **argv, int flags) {
-  if (argc < 1) {
+int exec(struct command_arguments args) {
+  if (args.argc < 1) {
     printf("[gab] CLI Error: not enough arguments\n");
     return 1;
   }
 
-  return run_string(argv[0], flags, 8);
+  size_t nmodules = args.modules.len;
+  assert(nmodules > 0);
+  const char *modules[nmodules];
+  for (int i = 0; i < nmodules; i++)
+    modules[i] = v_s_char_ref_at(&args.modules, i)->data;
+
+  return run_string(args.argv[0], args.flags, 8, nmodules, modules);
 }
 
-int repl(int argc, const char **argv, int flags) {
-  run_repl(flags);
-  return 0;
+int repl(struct command_arguments args) {
+  size_t nmodules = args.modules.len;
+  assert(nmodules > 0);
+  const char *modules[nmodules];
+  for (int i = 0; i < nmodules; i++)
+    modules[i] = v_s_char_ref_at(&args.modules, i)->data;
+
+  return run_repl(args.flags, nmodules, modules);
 }
 
 void cmd_summary(int i) {
@@ -533,8 +633,8 @@ void cmd_details(int i) {
   }
 }
 
-int help(int argc, const char **argv, int flags) {
-  if (argc < 1) {
+int help(struct command_arguments args) {
+  if (args.argc < 1) {
     printf("gab\\cli version %s\n", GAB_VERSION_TAG);
 
     // Print command summaries
@@ -544,7 +644,7 @@ int help(int argc, const char **argv, int flags) {
     return 0;
   }
 
-  const char *subcommand = argv[0];
+  const char *subcommand = args.argv[0];
 
   for (int i = 0; i < N_COMMANDS; i++) {
     struct command cmd = commands[i];
@@ -577,15 +677,15 @@ int main(int argc, const char **argv) {
     assert(cmd.handler);
 
     if (!strcmp(argv[1], cmd.name)) {
-      struct parse_options_result o = parse_options(argc - 2, argv + 2, cmd);
+      struct command_arguments o = parse_options(argc - 2, argv + 2, cmd);
 
-      return cmd.handler(o.remaining, argv + (argc - o.remaining), o.flags);
+      int res = cmd.handler(o);
+      v_s_char_destroy(&o.modules);
+      return res;
     }
   }
 
-  printf("[gab] CLI Error: unrecognized subcommand '%s'\n", argv[1]);
-
 fin:
   struct command cmd = DEFAULT_COMMAND;
-  return cmd.handler(0, argv, 0);
+  return cmd.handler((struct command_arguments){});
 }

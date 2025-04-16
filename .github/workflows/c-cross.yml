@@ -16,7 +16,7 @@ on:
     branches: [ "main" ]
 
 env:
-  version: 0.0.2
+  version: 0.0.3
   GH_TOKEN: ${{ github.token }}
 
 jobs:
@@ -122,8 +122,11 @@ jobs:
       #     where.exe "gab"
       #     Get-Command ".\gab"
 
+      - name: Run help
+        run: ${{ matrix.cmd }} help
+
       - name: Run Smallest Hello World
-        run: ${{ matrix.cmd }} exec -e "'hello world!'"
+        run: ${{ matrix.cmd }} exec "'hello world!'"
 
       - name: Run Hello World
         run: ${{ matrix.cmd }} exec "'hello world!' .println"

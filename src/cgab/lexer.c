@@ -1,20 +1,5 @@
 #include "gab.h"
-
-bool is_whitespace(uint8_t c) { return c == ' ' || c == '\t' || c == '\f'; }
-
-bool is_alpha_lower(uint8_t c) { return c >= 'a' && c <= 'z'; }
-
-bool is_alpha_upper(uint8_t c) { return c >= 'A' && c <= 'Z'; }
-
-bool is_alpha(uint8_t c) {
-  return is_alpha_lower(c) || is_alpha_upper(c) || c == '_';
-}
-
-bool can_start_symbol(uint8_t c) { return is_alpha(c) || c == '_'; }
-
-bool can_continue_symbol(uint8_t c) { return can_start_symbol(c) || c == '\\'; }
-
-bool can_end_symbol(uint8_t c) { return c == '?' || c == '!'; }
+#include <ctype.h>
 
 bool can_start_operator(uint8_t c) {
   switch (c) {
@@ -47,7 +32,11 @@ bool can_continue_operator(uint8_t c) {
   }
 }
 
-bool is_digit(uint8_t c) { return c >= '0' && c <= '9'; }
+bool can_start_symbol(uint8_t c) { return isalpha(c) || c == '_'; }
+
+bool can_continue_symbol(uint8_t c) {
+  return can_start_symbol(c) || isdigit(c) || c == '\\';
+}
 
 bool is_comment(uint8_t c) { return c == '#'; }
 
@@ -142,33 +131,6 @@ const keyword keywords[] = {
     },
 };
 
-gab_token end_symbol(gab_lx *self) {
-  switch (peek(self)) {
-  case '?':
-  case '!':
-    advance(self);
-    return TOKEN_SYMBOL;
-
-  case '[':
-    advance(self);
-
-    if (peek(self) == ']')
-      return advance(self), TOKEN_SYMBOL;
-
-    break;
-
-  case '{':
-    advance(self);
-
-    if (peek(self) == '}')
-      return advance(self), TOKEN_SYMBOL;
-
-    break;
-  }
-
-  return lexer_error(self, GAB_MALFORMED_TOKEN);
-}
-
 gab_token string(gab_lx *self) {
   uint8_t start = peek(self);
   uint8_t stop = start == '"' ? '"' : '\'';
@@ -213,9 +175,6 @@ gab_token symbol(gab_lx *self) {
   while (can_continue_symbol(peek(self)))
     advance(self);
 
-  if (can_end_symbol(peek(self)))
-    advance(self);
-
   if (peek(self) == ':')
     return advance(self), TOKEN_MESSAGE;
 
@@ -231,27 +190,21 @@ gab_token symbol(gab_lx *self) {
 }
 
 gab_token integer(gab_lx *self) {
-  if (!is_digit(peek(self)))
+  if (!isdigit(peek(self)))
     return lexer_error(self, GAB_MALFORMED_TOKEN);
 
-  while (is_digit(peek(self)))
+  while (isdigit(peek(self)))
     advance(self);
 
   return TOKEN_NUMBER;
 }
 
 gab_token floating(gab_lx *self) {
-
   if (integer(self) == TOKEN_ERROR)
     return TOKEN_ERROR;
 
-  if (peek(self) == '.' && is_digit(peek_next(self))) {
-    advance(self);
-
-    while (is_digit(peek(self))) {
-      advance(self);
-    }
-  }
+  if (peek(self) == '.' && isdigit(peek_next(self)))
+    return advance(self), integer(self);
 
   return TOKEN_NUMBER;
 }
@@ -276,21 +229,16 @@ gab_token other(gab_lx *self) {
   case ']':
     advance(self);
     return TOKEN_RBRACE;
-
   case '{':
     advance(self);
-
     return TOKEN_LBRACK;
-
   case '}':
     advance(self);
-
     return TOKEN_RBRACK;
-
   case ':':
+    // Empty message
     advance(self);
     return TOKEN_MESSAGE;
-
   case '.':
     advance(self);
 
@@ -316,6 +264,12 @@ gab_token other(gab_lx *self) {
       return lexer_error(self, GAB_MALFORMED_SEND);
     }
 
+    if (isdigit(peek(self))) {
+      advance(self);
+
+      return integer(self);
+    }
+
     return TOKEN_SEND;
 
   default:
@@ -337,15 +291,14 @@ static inline void parse_comment(gab_lx *self) {
 }
 
 gab_token gab_lexnext(gab_lx *self) {
-  while (is_whitespace(peek(self)) || is_comment(peek(self))) {
+  while (isblank(peek(self)) || is_comment(peek(self))) {
     if (is_comment(peek(self)))
       parse_comment(self);
 
-    if (is_whitespace(peek(self)))
+    if (isblank(peek(self)))
       advance(self);
   }
 
-  // Sanity check
   assert(self->cursor - self->source->source->data < self->source->source->len);
 
   gab_token tok;
@@ -353,31 +306,41 @@ gab_token gab_lexnext(gab_lx *self) {
 
   if (peek(self) == '\0' || peek(self) == EOF) {
     advance(self);
-    finish_row(self);
-    self->row--; // There is no next row
     tok = TOKEN_EOF;
-    goto fin;
+    v_gab_token_push(&self->source->tokens, tok);
+    v_s_char_push(&self->source->token_srcs, self->current_token_src);
+    v_uint64_t_push(&self->source->token_lines, self->row);
+
+    finish_row(self);
+
+    return tok;
   }
 
   if (peek(self) == '\n') {
     advance(self);
-    finish_row(self);
     tok = TOKEN_NEWLINE;
-    goto fin;
+
+    v_gab_token_push(&self->source->tokens, tok);
+    v_s_char_push(&self->source->token_srcs, self->current_token_src);
+    v_uint64_t_push(&self->source->token_lines, self->row);
+
+    finish_row(self);
+
+    return tok;
   }
 
-  if (is_alpha(peek(self))) {
+  if (can_start_symbol(peek(self))) {
     tok = symbol(self);
     goto fin;
   }
 
-  if (peek(self) == '-' && is_digit(peek_next(self))) {
+  if (peek(self) == '-' && isdigit(peek_next(self))) {
     advance(self);
     tok = floating(self);
     goto fin;
   }
 
-  if (is_digit(peek(self))) {
+  if (isdigit(peek(self))) {
     tok = floating(self);
     goto fin;
   }

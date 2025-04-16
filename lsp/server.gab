@@ -5,39 +5,42 @@ log = 'lsp/logs'.use
 io = 'os.io'.use
 
 diag\job\t = Shapes.make(server: uri: text:)
-lsp\server\t = Shapes.make(server\in: server\out: server\data:)
+lsp\server\t = Shapes.make(server\in: server\out: server\open_ch: server\data:)
 
-make:.def!(
+make:.def(
   lsp\server:
   (in out) => lsp\server\t.make(
     in .or (io.stdin)
     out .or (io.stdout)
+    Channels.make
     {}))
 
-t:.def!(lsp\server: lsp\server\t)
+t:.def(lsp\server: lsp\server\t)
 
-logfile = io.open("/tmp/lsprpclog.txt" "w").unwrap!
+logfile = io
+  .file("/tmp/lsprpc.log" "w")
+  .unwrap
 
-_read_header:.defcase! {
+_read_header:.defcase {
   ok: (lsp m) => do
     next_header = lsp
       .server\in
-      .until('\n'.binaries\into)
-      .unwrap!
+      .until('\n'.to\b)
+      .unwrap
       .trim '\n'
 
-    (blank? name value) = (next_header.blank?, next_header.split ':')
+    (blank name value) = (next_header.is\blank, next_header.split ':')
     
-    m = blank? .and m .or(m.put(name, value))
+    m = blank .and m .or(m.put(name, value))
 
     logfile.write(next_header + '\n')
 
-    option:.(blank?.!, lsp, m)._read_header
+    option:.(blank!, lsp, m)._read_header
   end
   none: (lsp m) => m
 }
 
-[lsp\server\t].defmodule! {
+[lsp\server\t].defmodule {
   _read_headers: () => do
     ok:._read_header(self, [])
   end
@@ -48,38 +51,35 @@ _read_header:.defcase! {
 
     len = headers
       .at "Content-Length"
-      .unwrap!
+      .unwrap
       .trim
-      .numbers\into
+      .as\n
 
     body = self
       .server\in
       .scan len
-      .unwrap!
+      .unwrap
 
     logfile.write(body)
 
     msg = body
-      .json\decode
-      .unwrap!
+      .as\json
+      .unwrap
 
     msg
   end,
   # Implement the lazy-sequence protocol
   seq\init: () => do
     msg = self._read_request
-    (ok: nil: msg)
+    option:.(self.server\open_ch.is\open, nil: msg)
   end
   seq\next: () => do
     msg = self._read_request
-    (ok: nil: msg)
+    option:.(self.server\open_ch.is\open, nil: msg)
   end
   # Helpers for sending data to client
-  respond!: (id result) => do
-    result.println
-    msg = { "id" id "result" result } .json\encode
-
-    msg.println
+  respond: (id result) => do
+    msg = { "id" id "result" result } .to\json
 
     content\length = msg.len
 
@@ -87,16 +87,14 @@ _read_header:.defcase! {
       'Content-Length:'content\length
       '\r\n\r\n'msg)
 
-    log.("Response" id result ?)
-
-    res.println
+    log.("Response" id result?)
 
     self.server\out.write res
   end
-  notify!: (method params) => do 
-    log.("Notification" method params ?)
+  notify: (method params) => do 
+    log.("Notification" method params?)
 
-    msg = { "method" method "params" params } .json\encode
+    msg = { "method" method "params" params } .to\json
 
     log.("Notification" msg)
 
@@ -109,8 +107,8 @@ _read_header:.defcase! {
     self.server\out.write notif
   end
   # Run the server
-  run!: () => do
-    log. "Server started!"
+  run: () => do
+    log."Server started!"
 
     self.reduce(self (lsp req) => do
       msg = req .lsp\messages\into
@@ -123,7 +121,7 @@ _read_header:.defcase! {
         log.("No handler found.")
       end
 
-      (new_lsp ? == lsp\server\t) .else () => do
+      (new_lsp? == lsp\server\t) .else () => do
         log.error("Invalid new_lsp", ok, new_lsp)
       end
 

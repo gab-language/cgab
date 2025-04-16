@@ -1,9 +1,9 @@
-\doacc :defcase! {
+\doacc :defcase {
   .true (acc n) => acc
   .false (acc n) => [n, acc:acc(n - 1)**]
 }
 
-\acc:def!(
+\acc:def(
   'gab.record'
   (n) => n :== 0 :doacc(self n))
 

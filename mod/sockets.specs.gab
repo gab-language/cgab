@@ -1,12 +1,12 @@
 s = 'specs':use
 
-socket.spec = s:def! {
+socket.spec = s:def {
   name = "gab.socket",
   help = "A wrapper type for an OS socket.",
   spec = .gab.socket, # TODO: Replace with some c-user-data spec
 }
 
-s:def! {
+s:def {
   name = "socket",
   help = "Construct a new gab.socket",
   spec = s:message {
@@ -21,7 +21,7 @@ s:def! {
   }
 }
 
-s:def! {
+s:def {
   name = "connect",
   help = "Connect a socket to a host and port",
   spec = s:message {
@@ -36,7 +36,7 @@ s:def! {
   }
 }
 
-s:def! {
+s:def {
   name = "send",
   help = "Send data on a socket",
   spec = s:message {
@@ -48,7 +48,7 @@ s:def! {
   }
 }
 
-s:def! {
+s:def {
   name = "recv",
   help = "Receive data on a socket",
   spec = s:message {
@@ -60,7 +60,7 @@ s:def! {
   }
 }
 
-s:def! {
+s:def {
   name = "bind",
   help = "Bind a socket to a port",
   spec = s:message {
@@ -78,7 +78,7 @@ s:def! {
   }
 }
 
-s:def! {
+s:def {
   name = "accept",
   help = "Block until a socket accepts a connection",
   spec = s:message {
@@ -90,7 +90,7 @@ s:def! {
   }
 }
 
-s:def! {
+s:def {
   name = "listen",
   help = "Prepare to accept connections",
   spec = s:message {
