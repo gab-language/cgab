@@ -105,7 +105,7 @@ union gab_value_pair gab_iolib_open(struct gab_triple gab, uint64_t argc,
 }
 
 int64_t osfgetc(struct gab_triple gab, qfd_t qfd, int *c) {
-  qd_t qd = qread(qfd, -1, 1, (uint8_t *)c);
+  qd_t qd = qread(qfd, 1, (uint8_t *)c);
 
   while (!qd_status(qd))
     switch (gab_yield(gab)) {
@@ -143,7 +143,7 @@ int osfread(struct gab_triple gab, qfd_t qfd, v_char *sb) {
 }
 
 int osnfread(struct gab_triple gab, qfd_t qfd, size_t n, uint8_t buf[n]) {
-  qd_t qd = qread(qfd, -1, n, buf);
+  qd_t qd = qread(qfd, n, buf);
 
   while (!qd_status(qd))
     switch (gab_yield(gab)) {
