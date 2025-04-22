@@ -82,23 +82,19 @@
  * They also store a tag in the 2 bits just below the NaN.
  * This tag differentiates how to interpret the remaining 48 bits.
  *
- *      kGAB_BINARY, kGAB_STRING, kGAB_MESSAGE, kGAB_INTERNAL
+ *      kGAB_BINARY, kGAB_STRING, kGAB_MESSAGE, kGAB_PRIMITIVE
  *                   |
  * [0][....NaN....11][--][------------------------------------------------]
  *
- * Internal contains yet *another* tag.
- *
- * [0][....NaN....11][11][------------------------------------------------]
- *
  * 'Primitives' are immediates which wrap further data in the lower 48 bits.
- *
  * In most cases, this value is a literal bytecode instruction. This allows
- * the vm to implement certain message specializations as bytecode ops, such
- * as adding integers.
+ * the vm to implement certain message specializations as bytecode instructions.
  *
- * There are two special cases which are not bytecode ops -
+ * There are some special cases which are not bytecode ops:
+ *  - gab_valid
  *  - gab_cinvalid
  *  - gab_ctimeout
+ *  - gab_cundefined
  *
  * These are constant values used throughout cgab.
  *
@@ -107,9 +103,11 @@
  * [0][....NaN....11][--][------------------------------------------------]
  *
  * Gab also employs a short string optimization. Lots of strings in a gab
- * program are incredibly small, and incredibly common. values like '.some',
- * '.none',
- * '.ok', and even messages like '+' store a small string.
+ * program are incredibly small, and incredibly common. values like
+ *
+ * none:
+ * ok:
+ * and even a send, like (1 + 1), stores a small string (for the message +:)
  *
  * We need to store the string's length, a null-terminator (for
  * c-compatibility), and the string's data.
@@ -128,7 +126,7 @@
  *                    |    |                                               |
  * [0][....NaN....11][--][--------][----------------------------------------]
  *                       [   0    ][   e       p       a       h       s    ]
- *                       [   2    ][----------------   0       k       o    ]
+ *                       [   3    ][----------------   0       k       o    ]
  *
  */
 

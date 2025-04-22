@@ -372,7 +372,6 @@ int32_t worker_job(void *data) {
 #endif
 
   while (!gab_chnisclosed(gab.eg->work_channel) ||
-         !gab_chnisempty(gab.eg->work_channel) ||
          !q_gab_value_is_empty(&job->queue)) {
 #if cGAB_LOG_EG
     gab_fprintf(stdout, "[WORKER $] TAKING WITH TIMEOUT $ms\n",
@@ -416,26 +415,17 @@ int32_t worker_job(void *data) {
       if (!q_gab_value_push(&job->queue, fiber))
         assert(false && "PUSH FAILED");
       break;
-    case gab_cvalid: {
-      // We completed the work. Continue.
-      // However if we had an error, call our callback.
-      if (res.aresult->data[0] != gab_ok)
-        if (gab.eg->joberr_handler)
-          gab.eg->joberr_handler(gab, res.aresult->data[1]);
-
+    // We completed the work. Nothing else to do.
+    case gab_cvalid:
       break;
-    }
-    case gab_cinvalid: {
-      // Call the registered err_handler if it exists.
-      if (gab.eg->joberr_handler)
-        gab.eg->joberr_handler(gab, res.vresult);
-
+    // We were interruppted by sGAB_TERM. Signal will be handled below.
+    case gab_cinvalid:
       break;
-    }
     default:
       assert(false && "UNREACHABLE");
     }
 
+    /* Yield for signals here before taking a new job */
     switch (gab_yield(gab)) {
     case sGAB_TERM:
       // Clear the work queue - we're terminated

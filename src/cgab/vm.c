@@ -480,6 +480,9 @@ union gab_value_pair vvm_terminate(struct gab_triple gab, const char *fmt,
       gab_recordfrom(gab, shape, 1, gab_shplen(shape), vm->fp, nullptr);
   gab_egkeep(gab.eg, gab_iref(gab, env));
 
+  if (gab.eg->joberr_handler)
+    gab.eg->joberr_handler(gab, res.aresult->data[1]);
+
   assert(GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERRUNNING);
   GAB_VAL_TO_FIBER(fiber)->res_values = res;
   GAB_VAL_TO_FIBER(fiber)->res_env = env;
@@ -534,6 +537,9 @@ union gab_value_pair vvm_error(struct gab_triple gab, enum gab_status s,
   gab_value env =
       gab_recordfrom(gab, shape, 1, gab_shplen(shape), vm->fp, nullptr);
   gab_egkeep(gab.eg, gab_iref(gab, env));
+
+  if (gab.eg->joberr_handler)
+    gab.eg->joberr_handler(gab, res.aresult->data[1]);
 
   assert(GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERRUNNING);
   GAB_VAL_TO_FIBER(fiber)->res_values = res;
@@ -1395,7 +1401,7 @@ CASE_CODE(SEND_PRIMITIVE_USE) {
    */
   gab_value shp = gab_prtshp(BLOCK()->p);
   gab_value svargs[32];
-  const char* sargs[32];
+  const char *sargs[32];
 
   size_t len = gab_shplen(shp);
   assert(len < 32);

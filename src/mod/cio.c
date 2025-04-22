@@ -1,10 +1,7 @@
+#include "core.h"
 #include "gab.h"
 #include <stdatomic.h>
 #include <stdint.h>
-
-#if GAB_PLATFORM_UNIX
-#include <sys/socket.h>
-#endif
 
 #include "qio/qio.h"
 
@@ -26,14 +23,14 @@ int io_loop_cb(void *initialized) {
 void file_cb(struct gab_triple, uint64_t len, char data[static len]) {
   qfd_t qfd = *(qfd_t *)data;
   // Block for the file to close
-  qd_result(qclose(qfd));
+  qd_destroy(qclose(qfd));
 }
 
 void sock_cb(struct gab_triple, uint64_t len, char data[static len]) {
   qfd_t qfd = *(qfd_t *)data;
   // Shutdown here
-  qd_result(qshutdown(qfd, 0));
-  qd_result(qclose(qfd));
+  qd_destroy(qshutdown(qfd));
+  qd_destroy(qclose(qfd));
 }
 
 enum io_t {
@@ -94,12 +91,10 @@ union gab_value_pair gab_iolib_open(struct gab_triple gab, uint64_t argc,
   qfd_t qfd = qd_result(qd);
   qd_destroy(qd);
 
-  if (qfd < 0) {
+  if (qfd < 0)
     gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, strerror(-qfd)));
-    return gab_union_cvalid(gab_nil);
-  }
-
-  gab_vmpush(gab_thisvm(gab), gab_ok, wrap_qfd(gab, qfd, IO_FILE, true));
+  else
+    gab_vmpush(gab_thisvm(gab), gab_ok, wrap_qfd(gab, qfd, IO_FILE, true));
 
   return gab_union_cvalid(gab_nil);
 }
@@ -268,10 +263,7 @@ union gab_value_pair gab_iolib_read(struct gab_triple gab, uint64_t argc,
 
 union gab_value_pair gab_iolib_sock(struct gab_triple gab, uint64_t argc,
                                     gab_value argv[argc]) {
-
-  // TODO: Add ways for user to config socket here.
-  // Probably look into windows sockets to be sure first.
-  qd_t qd = qsocket(PF_INET, SOCK_STREAM, 0);
+  qd_t qd = qsocket();
 
   while (!qd_status(qd))
     switch (gab_yield(gab)) {
@@ -375,17 +367,183 @@ union gab_value_pair gab_iolib_recv(struct gab_triple gab, uint64_t argc,
   return gab_union_cvalid(gab_nil);
 }
 
-// union gab_value_pair gab_iolib_connect(struct gab_triple gab, uint64_t argc,
-//                                      gab_value argv[argc]) {}
-//
-// union gab_value_pair gab_iolib_accept(struct gab_triple gab, uint64_t argc,
-//                                      gab_value argv[argc]) {}
-//
-// union gab_value_pair gab_iolib_listen(struct gab_triple gab, uint64_t argc,
-//                                      gab_value argv[argc]) {}
-//
-// union gab_value_pair gab_iolib_bind(struct gab_triple gab, uint64_t argc,
-//                                      gab_value argv[argc]) {}
+union gab_value_pair gab_iolib_connect(struct gab_triple gab, uint64_t argc,
+                                       gab_value argv[argc]) {
+  gab_value sock = gab_arg(0);
+  gab_value port = gab_arg(1);
+  gab_value ip = gab_arg(2);
+
+  if (gab_valkind(sock) != kGAB_BOX)
+    return gab_ptypemismatch(gab, sock, gab_string(gab, tGAB_IOSOCK));
+
+  if (gab_valkind(port) != kGAB_NUMBER)
+    return gab_pktypemismatch(gab, port, kGAB_NUMBER);
+
+  // Use ipv6 loopback address by default
+  if (ip == gab_nil)
+    ip = gab_string(gab, "::1");
+
+  if (gab_valkind(ip) != kGAB_STRING)
+    return gab_pktypemismatch(gab, ip, kGAB_STRING);
+
+  qfd_t fs = *(qfd_t *)gab_boxdata(sock);
+
+  struct qio_addr addr = {};
+  if (qio_addrfrom(gab_strdata(&ip), gab_valtou(port), &addr) < 0)
+    return gab_vmpush(gab_thisvm(gab), gab_err,
+                      gab_string(gab, "Invalid address")),
+           gab_union_cvalid(gab_nil);
+
+  qd_t qd = qconnect(fs, &addr);
+
+  while (!qd_status(qd))
+    switch (gab_yield(gab)) {
+    case sGAB_TERM:
+      return gab_union_cvalid(gab_nil);
+    case sGAB_COLL:
+      gab_gcepochnext(gab);
+      gab_sigpropagate(gab);
+      break;
+    default:
+      break;
+    }
+
+  int64_t result = qd_result(qd);
+  qd_destroy(qd);
+
+  if (result <= 0)
+    gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, strerror(-result)));
+  else
+    gab_vmpush(gab_thisvm(gab), gab_ok, );
+
+  return gab_union_cvalid(gab_nil);
+}
+
+union gab_value_pair gab_iolib_accept(struct gab_triple gab, uint64_t argc,
+                                      gab_value argv[argc]) {
+  gab_value sock = gab_arg(0);
+
+  if (gab_valkind(sock) != kGAB_BOX)
+    return gab_ptypemismatch(gab, sock, gab_string(gab, tGAB_IOSOCK));
+
+  qfd_t fs = *(qfd_t *)gab_boxdata(sock);
+
+  struct qio_addr addr = {};
+  qd_t qd = qaccept(fs, &addr);
+
+  while (!qd_status(qd))
+    switch (gab_yield(gab)) {
+    case sGAB_TERM:
+      return gab_union_cvalid(gab_nil);
+    case sGAB_COLL:
+      gab_gcepochnext(gab);
+      gab_sigpropagate(gab);
+      break;
+    default:
+      break;
+    }
+
+  int64_t result = qd_result(qd);
+  qd_destroy(qd);
+
+  // TODO: Do something with addr_out here - need a platform-agnostic and
+  // thread-safe function in qio for converting addr to string.
+
+  if (result <= 0)
+    gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, strerror(-result)));
+  else
+    gab_vmpush(gab_thisvm(gab), gab_ok, wrap_qfd(gab, result, IO_SOCK, true));
+
+  return gab_union_cvalid(gab_nil);
+}
+
+union gab_value_pair gab_iolib_listen(struct gab_triple gab, uint64_t argc,
+                                      gab_value argv[argc]) {
+  gab_value sock = gab_arg(0);
+  gab_value backlog = gab_arg(1);
+
+  if (gab_valkind(sock) != kGAB_BOX)
+    return gab_ptypemismatch(gab, sock, gab_string(gab, tGAB_IOSOCK));
+
+  if (gab_valkind(backlog) != kGAB_NUMBER)
+    return gab_pktypemismatch(gab, backlog, kGAB_NUMBER);
+
+  qfd_t fs = *(qfd_t *)gab_boxdata(sock);
+
+  qd_t qd = qlisten(fs, gab_valtou(backlog));
+
+  while (!qd_status(qd))
+    switch (gab_yield(gab)) {
+    case sGAB_TERM:
+      return gab_union_cvalid(gab_nil);
+    case sGAB_COLL:
+      gab_gcepochnext(gab);
+      gab_sigpropagate(gab);
+      break;
+    default:
+      break;
+    }
+
+  int64_t result = qd_destroy(qd);
+
+  if (result <= 0)
+    gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, strerror(-result)));
+  else
+    gab_vmpush(gab_thisvm(gab), gab_ok);
+
+  return gab_union_cvalid(gab_nil);
+}
+
+union gab_value_pair gab_iolib_bind(struct gab_triple gab, uint64_t argc,
+                                    gab_value argv[argc]) {
+  gab_value sock = gab_arg(0);
+  gab_value port = gab_arg(1);
+  gab_value ip = gab_arg(2);
+
+  if (gab_valkind(sock) != kGAB_BOX)
+    return gab_ptypemismatch(gab, sock, gab_string(gab, tGAB_IOSOCK));
+
+  if (gab_valkind(port) != kGAB_NUMBER)
+    return gab_pktypemismatch(gab, port, kGAB_NUMBER);
+
+  // Use ipv6 loopback address by default
+  if (ip == gab_nil)
+    ip = gab_string(gab, "::1");
+
+  if (gab_valkind(ip) != kGAB_STRING)
+    return gab_pktypemismatch(gab, ip, kGAB_STRING);
+
+  qfd_t fs = *(qfd_t *)gab_boxdata(sock);
+
+  struct qio_addr addr = {};
+  if (qio_addrfrom(gab_strdata(&ip), gab_valtou(port), &addr) < 0)
+    return gab_vmpush(gab_thisvm(gab), gab_err,
+                      gab_string(gab, "Invalid address")),
+           gab_union_cvalid(gab_nil);
+
+  qd_t qd = qbind(fs, &addr);
+
+  while (!qd_status(qd))
+    switch (gab_yield(gab)) {
+    case sGAB_TERM:
+      return gab_union_cvalid(gab_nil);
+    case sGAB_COLL:
+      gab_gcepochnext(gab);
+      gab_sigpropagate(gab);
+      break;
+    default:
+      break;
+    }
+
+  int64_t result = qd_destroy(qd);
+
+  if (result <= 0)
+    gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, strerror(-result)));
+  else
+    gab_vmpush(gab_thisvm(gab), gab_ok);
+
+  return gab_union_cvalid(gab_nil);
+}
 
 union gab_value_pair gab_iolib_write(struct gab_triple gab, uint64_t argc,
                                      gab_value argv[argc]) {
@@ -520,6 +678,26 @@ GAB_DYNLIB_MAIN_FN {
               gab_message(gab, "recv"),
               sock_t,
               gab_snative(gab, "recv", gab_iolib_recv),
+          },
+          {
+              gab_message(gab, "accept"),
+              sock_t,
+              gab_snative(gab, "accept", gab_iolib_accept),
+          },
+          {
+              gab_message(gab, "listen"),
+              sock_t,
+              gab_snative(gab, "listen", gab_iolib_listen),
+          },
+          {
+              gab_message(gab, "bind"),
+              sock_t,
+              gab_snative(gab, "bind", gab_iolib_bind),
+          },
+          {
+              gab_message(gab, "connect"),
+              sock_t,
+              gab_snative(gab, "connect", gab_iolib_connect),
           });
 
   gab_value res[] = {gab_ok, mod};

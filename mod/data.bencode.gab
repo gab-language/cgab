@@ -1,0 +1,23 @@
+'cbencode'.use
+
+array_xf = Streams.map to\bencode:
+
+# TODO: Bencode Dictionaries are supposed to store keys
+# In lexicographical order. We do *not* do that rn.
+object_xf = Streams.map (v k) => k.to\bencode + v.to\bencode
+
+bencode\do_encode_record: .defcase {
+  true: array => Strings.make("l", array.join array_xf, "e")
+  false: object => Strings.make("d", object.join object_xf, "e")
+}
+
+to\bencode: .defcase {
+  Numbers.t
+  () => Strings.make('i', self.floor, 'e')
+
+  Strings.t
+  () => Strings.make(self.len, ':', self)
+
+  Records.t
+  () => self.is\list.bencode\do_encode_record self
+}

@@ -19,6 +19,13 @@ Ranges
     .make(0 20000)
     .each spawn_task
 ```
+### Project Structure
+There are several sub-projects within this repository.
+- The first is `cgab`, a static c-library which provides the functionality of the Gab language itself. The source files for this library are in `src/cgab`.
+- The second is `gab`, the cli tool which *depends on* `cgab`, and provides an interface to the programmer for running and compiling Gab code. The source files are found in `src/gab`.
+- The third is a collection of builtin c-modules, the source files for which are found in `src/mod`. Each of these files is a unique Gab c-module, and are compiled independantly from one another.
+- The fourth is a collection of builtin Gab modules, the source files for which are found in `mod/`. These files are installed alongside the dynamic c-modules above when installing a version of Gab with `gab get`
+- There are two other Gab modules `repl` and `lsp`, which are likely to be broken out into their own repos in the future.
 #### TODO:
 - [ ] Instead of malloc/free, write a custom per-job allocator. This can function like a bump allocator, and can enable further optimizations:
     - allocate-as-dead. Objects that *survive* their first collection are *moved* out of the bump allocator, and into long term storage.
@@ -27,7 +34,7 @@ Ranges
         but will need to adjust how locking works (which right now, delays drefing objects until "unlock" is called)
     - Interestingly, it is known at object-creation time whether it is movable or not. Maybe this can be used to choose a specific allocation strategy.
 - [ ] Implement buffered channels. (come up with workaround)
-    - Channels actually *can't* be buffered because then they'd be mutable. There must always be a putter blocking on the channel until there is a taker.
+    - Channels actually *can't* be buffered because then they'd be mutable. There must always be a putter blocking on the channel until there is a taker. (In order for gc to be sound)
 - [X] Fix memory leak of fibers
     - Currently we intenionally leak fiber objects, this was just a temporary hack
 - [X] Refine module system and some ergonomic things for defining messages

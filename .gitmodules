@@ -16,3 +16,6 @@
 [submodule "vendor/qio"]
 	path = vendor/qio
 	url = https://github.com/TeddyRandby/qio.git
+[submodule "vendor/bencode-c"]
+	path = vendor/bencode-c
+	url = https://github.com/TeddyRandby/bencode-c-headeronly.git
