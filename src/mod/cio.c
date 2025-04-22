@@ -3,6 +3,8 @@
 #include <stdatomic.h>
 #include <stdint.h>
 
+#define QIO_LOOP_INTERVAL_NS 50000
+#define QIO_INTERNAL_QUEUE_INITIAL_LEN 2056
 #include "qio/qio.h"
 
 int io_loop_cb(void *initialized) {
@@ -307,41 +309,64 @@ union gab_value_pair gab_iolib_send(struct gab_triple gab, uint64_t argc,
   const char *data = gab_strdata(&str);
   size_t len = gab_strlen(str);
 
-  qd_t qd = qsend(fs, len, (uint8_t *)data);
+  /*
+   * See write for a description of retry-loop logic.
+   */
+  for (;;) {
+    qd_t qd = qsend(fs, len, (uint8_t *)data);
 
-  while (!qd_status(qd))
-    switch (gab_yield(gab)) {
-    case sGAB_TERM:
+    while (!qd_status(qd))
+      switch (gab_yield(gab)) {
+      case sGAB_TERM:
+        return gab_union_cvalid(gab_nil);
+      case sGAB_COLL:
+        gab_gcepochnext(gab);
+        gab_sigpropagate(gab);
+        break;
+      default:
+        break;
+      }
+
+    int64_t result = qd_destroy(qd);
+
+    if (result < 0) {
+      gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, strerror(-result)));
       return gab_union_cvalid(gab_nil);
-    case sGAB_COLL:
-      gab_gcepochnext(gab);
-      gab_sigpropagate(gab);
-      break;
-    default:
-      break;
     }
 
-  int64_t result = qd_result(qd);
-  qd_destroy(qd);
+    if (result >= len) {
+      gab_vmpush(gab_thisvm(gab), gab_ok);
+      return gab_union_cvalid(gab_nil);
+    }
 
-  if (result <= 0)
-    gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, strerror(-result)));
-  else
-    gab_vmpush(gab_thisvm(gab), gab_ok);
+    len -= result;
+    data += result;
+  }
 
-  return gab_union_cvalid(gab_nil);
+  return gab_panicf(gab, "Reached unreachable codepath");
 }
 
 union gab_value_pair gab_iolib_recv(struct gab_triple gab, uint64_t argc,
                                     gab_value argv[argc]) {
   gab_value sock = gab_arg(0);
+  gab_value msglen = gab_arg(1);
 
   if (gab_valkind(sock) != kGAB_BOX)
     return gab_ptypemismatch(gab, sock, gab_string(gab, tGAB_IOSOCK));
 
+  if (msglen == gab_nil)
+    msglen = gab_number(1024);
+
+  if (gab_valkind(msglen) != kGAB_NUMBER)
+    return gab_pktypemismatch(gab, sock, msglen);
+
+  if (gab_valtoi(msglen) <= 0)
+    return gab_panicf(gab, "Message length must be greater than 0. (not $)",
+                      msglen);
+
   qfd_t fs = *(qfd_t *)gab_boxdata(sock);
 
-  uint8_t buff[1024];
+  uint8_t buff[gab_valtou(msglen)];
   qd_t qd = qrecv(fs, sizeof(buff), buff);
 
   while (!qd_status(qd))
@@ -562,29 +587,48 @@ union gab_value_pair gab_iolib_write(struct gab_triple gab, uint64_t argc,
   const char *data = gab_strdata(&str);
   size_t len = gab_strlen(str);
 
-  qd_t qd = qwrite(fs, len, (uint8_t *)data);
+  /*
+   * For nonblocking IO, we need to wrap our writes in a retry-loop.
+   *
+   * Try to write *len* of *data* to *fs*.
+   *
+   * If we get result < 0, the write failed. Bubble up the error.
+   * If we got result < len, the write was incomplete. Bump our data ptr and
+   * drop the written bytes from len. If we got result >= len (really should
+   * just be =, but use >= for safety's sake), write was completed. return ok.
+   */
+  for (;;) {
+    qd_t qd = qwrite(fs, len, (uint8_t *)data);
 
-  while (!qd_status(qd))
-    switch (gab_yield(gab)) {
-    case sGAB_TERM:
+    while (!qd_status(qd))
+      switch (gab_yield(gab)) {
+      case sGAB_TERM:
+        return gab_union_cvalid(gab_nil);
+      case sGAB_COLL:
+        gab_gcepochnext(gab);
+        gab_sigpropagate(gab);
+        break;
+      default:
+        break;
+      }
+
+    int64_t result = qd_destroy(qd);
+
+    if (result < 0) {
+      gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, strerror(-result)));
       return gab_union_cvalid(gab_nil);
-    case sGAB_COLL:
-      gab_gcepochnext(gab);
-      gab_sigpropagate(gab);
-      break;
-    default:
-      break;
     }
 
-  int64_t result = qd_result(qd);
-  qd_destroy(qd);
+    if (result >= len) {
+      gab_vmpush(gab_thisvm(gab), gab_ok);
+      return gab_union_cvalid(gab_nil);
+    }
 
-  if (result <= 0)
-    gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, strerror(-result)));
-  else
-    gab_vmpush(gab_thisvm(gab), gab_ok);
+    len -= result;
+    data += result;
+  }
 
-  return gab_union_cvalid(gab_nil);
+  return gab_panicf(gab, "Reached unreachable codepath");
 }
 
 GAB_DYNLIB_MAIN_FN {

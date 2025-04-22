@@ -1,8 +1,6 @@
-'data.json' .use
+'Json'.use
 
 log = 'lsp/logs'.use
-
-io = 'os.io'.use
 
 diag\job\t = Shapes.make(server: uri: text:)
 lsp\server\t = Shapes.make(server\in: server\out: server\open_ch: server\data:)
@@ -10,14 +8,14 @@ lsp\server\t = Shapes.make(server\in: server\out: server\open_ch: server\data:)
 make:.def(
   lsp\server:
   (in out) => lsp\server\t.make(
-    in .or (io.stdin)
-    out .or (io.stdout)
+    in .or (IO.stdin)
+    out .or (IO.stdout)
     Channels.make
     {}))
 
 t:.def(lsp\server: lsp\server\t)
 
-logfile = io
+logfile = IO
   .file("/tmp/lsprpc.log" "w")
   .unwrap
 
@@ -87,9 +85,9 @@ _read_header:.defcase {
       'Content-Length:'content\length
       '\r\n\r\n'msg)
 
-    log.("Response" id result?)
+    log.("Response" id res)
 
-    self.server\out.write res
+    self.server\out.write res .unwrap
   end
   notify: (method params) => do 
     log.("Notification" method params?)
@@ -104,7 +102,7 @@ _read_header:.defcase {
       'Content-Length:'content\length
       '\r\n\r\n'msg)
 
-    self.server\out.write notif
+    self.server\out.write notif .unwrap
   end
   # Run the server
   run: () => do
@@ -127,7 +125,7 @@ _read_header:.defcase {
 
       ok .then () => log.("Successfully processed msg")
 
-      (ok, new_lsp) .unwrap.or lsp
+      ok.== ok: .and new_lsp .or lsp
     end)
   end,
 }

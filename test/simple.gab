@@ -5,6 +5,8 @@ digit_spec = digit: .defspec! {
   spec: s.any(Ranges.make(0 9).map to\s: .collect .*)
 }
 
+a + 1
+
 #digit_spec.spec\fits?("1").println
 
 status_spec = http\status: .defspec! {

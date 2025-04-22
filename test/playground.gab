@@ -10,6 +10,8 @@
 # Now there is no syntax for collecting extra values as a dict, instead of just a list.
 (a, b, {c}**) => c
 
+asdf.println
+
 # This syntax sugar is fine, but because everything is *messages*, you can destructure
 # Anything that implements these messages.
 # This is kinda good?

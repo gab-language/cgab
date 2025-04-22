@@ -17,14 +17,7 @@ union gab_value_pair gab_gablib_build(struct gab_triple gab, uint64_t argc,
     return gab_union_cvalid(gab_nil);
   }
 
-  gab_value rec = gab_recordof(gab);
-  // gab, gab_message(gab, "status"), gab_string(gab, err.status_name),
-  // gab_message(gab, "row"), gab_number(err.row),
-  // gab_message(gab, "col\\begin"), gab_number(err.col_begin),
-  // gab_message(gab, "col\\end"), gab_number(err.col_end),
-  // gab_message(gab, "byte\\begin"), gab_number(err.byte_begin),
-  // gab_message(gab, "byte\\end"), gab_number(err.byte_end),
-  // );
+  gab_value rec = mod.vresult;
 
   gab_vmpush(gab_thisvm(gab), gab_err, rec);
   return gab_union_cvalid(gab_nil);

@@ -7,7 +7,7 @@ term = Terminal.make
 
 (events, server) = (Channels.make, Channels.make)
 
-event\quit?:.def(
+event\quit:.def(
   Records.t,
   () => self.ch == 'q')
 

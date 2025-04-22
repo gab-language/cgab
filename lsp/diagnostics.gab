@@ -12,10 +12,18 @@ diagnostics\queue_all:.def(
   () => do
     server = self
 
-    server.server\data.each (text uri) => do
+    server
+      .server\data
+      .each (text uri) => do
+        server.diagnostics\queue(text uri)
+      end
+  end)
+
+diagnostics\queue:.def(
+  lsp\server\t
+  (text uri) => do
       log.("Queueing Diagnostics" uri)
-      diag\jobs\in <! diag\job\t.make(server uri text)
-    end
+      diag\jobs\in <! diag\job\t.make(self uri text)
   end)
 
 [diag\job\t] .defmodule {
@@ -36,7 +44,7 @@ diagnostics\queue_all:.def(
 
     (ok, err) = text.as\gab\block
 
-    (ok == ok: !) .and err .or nil:
+    (ok == ok:!) .and err .or nil:
   end
   complete: () => do
     self
@@ -55,21 +63,21 @@ diagnostics\queue_all:.def(
       .then(() => do
         job.notify\diagnostics [
             {
-              range: {
-                start: {
-                  line: diagnostic.row - 1
-                  character: diagnostic.col\begin
+              'range' {
+                'start' {
+                  'line' diagnostic.row - 1
+                  'character' diagnostic.col\begin
                 }
-                end: {
-                  line: diagnostic.row - 1
-                  character: diagnostic.col\end
+                'end' {
+                  'line' diagnostic.row - 1
+                  'character' diagnostic.col\end
                 }
               }
-              severity: 1
-              code: "test"
-              codeDescription: "This is a test"
-              source: "gablsp"
-              message: diagnostic.status
+              'severity' 1
+              'code' "test"
+              'codeDescription' "This is a test"
+              'source' "gablsp"
+              'message' diagnostic.status
             }
           ]
       end)

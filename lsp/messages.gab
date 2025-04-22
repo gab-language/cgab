@@ -14,7 +14,9 @@ lsp\messages\into:.def(
 
     method = method.or "" .to\m
     params = params.or {}
-    id     = self .at 'id' .unwrap.or 1
+    (ok, id) = self .at 'id'
+
+    id = ok.== ok: .and id .or 1
 
     {
       method nil:,
@@ -54,10 +56,7 @@ TEXTDOCUMENTSYNCKIND\FULL = 1
         "capabilities" {
           "textDocumentSync" {
             "openClose" true:,
-            #"change": TEXTDOCUMENTSYNCKIND\FULL,
-            "save" {
-              "includeText" true:,
-            },
+            "change" TEXTDOCUMENTSYNCKIND\FULL,
           },
         },
         "serverInfo" {
@@ -93,9 +92,9 @@ end
 
   data = server.server\data.put(uri, text)
 
-  server = server.server\data data
+  server = server.put(server\data: data)
 
-  server.diagnostics\queue_all
+  server.diagnostics\queue(text, uri)
 
   server
 end
@@ -110,7 +109,7 @@ end
 
   updated_server = server.put(server\data: data)
 
-  updated_server.diagnostics\queue_all
+  updated_server.diagnostics\queue(text uri)
 
   (ok, updated_server) .unwrap.or (server)
 end
@@ -121,8 +120,22 @@ end
 end
 
 "textDocument/didChange" .def\lsp\handler server => do
+  uri = self.params.at 'textDocument' .unwrap.at 'uri' .unwrap
+  (ok, changes) = self.params.at 'contentChanges'
+
+  log.("Changed", uri)
+  text = changes.at 0 .unwrap .at "text" .unwrap
+
+  data = server.server\data.put(uri, text)
+
+  updated_server = server.put(server\data: data)
+
+  updated_server.diagnostics\queue(text uri)
+
+  (ok, updated_server) .unwrap.or (server)
+
   # TODO: Handle incremental changes in documents
-  server
+  updated_server
 end
 
 

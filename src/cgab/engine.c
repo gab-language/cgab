@@ -1129,11 +1129,11 @@ int sprint_pretty_err(struct gab_triple gab, char **buf, size_t *len,
 
     // Skip preceding whitespace for this line.
     size_t whitespace_skipped = 0;
-    while (*line_src.data == ' ' || *line_src.data == '\t') {
+    while (line_src.data[whitespace_skipped] == ' ' ||
+           line_src.data[whitespace_skipped] == '\t') {
       whitespace_skipped++;
+      assert(line_src.len > whitespace_skipped);
     }
-
-    assert(line_src.len > whitespace_skipped);
 
     line_src.data += whitespace_skipped;
     line_src.len -= whitespace_skipped;
@@ -1141,11 +1141,12 @@ int sprint_pretty_err(struct gab_triple gab, char **buf, size_t *len,
     if (line_num > 1) {
       size_t prev_line_num = line_num - 2;
       s_char prev_line_src = v_s_char_val_at(&src->lines, prev_line_num);
-      if (snprintf_through(buf, len, "\n      %.*s",
-                           (int)(prev_line_src.len - whitespace_skipped),
-                           prev_line_src.data + whitespace_skipped) < 0) {
-        return -1;
-      }
+      if (prev_line_src.len > whitespace_skipped)
+        if (snprintf_through(buf, len, "\n      %.*s",
+                             (int)(prev_line_src.len - whitespace_skipped),
+                             prev_line_src.data + whitespace_skipped) < 0) {
+          return -1;
+        }
     }
 
     int leftpad = (int)(tok_src.data - line_src.data);
@@ -1166,11 +1167,13 @@ int sprint_pretty_err(struct gab_triple gab, char **buf, size_t *len,
     if (line_num < src->lines.len) {
       size_t next_line_num = line_num;
       s_char next_line_src = v_s_char_val_at(&src->lines, next_line_num);
-      if (snprintf_through(buf, len, "\n      %.*s",
-                           (int)(next_line_src.len - whitespace_skipped),
-                           next_line_src.data + whitespace_skipped) < 0) {
-        return -1;
-      }
+
+      if (next_line_src.len > whitespace_skipped)
+        if (snprintf_through(buf, len, "\n      %.*s",
+                             (int)(next_line_src.len - whitespace_skipped),
+                             next_line_src.data + whitespace_skipped) < 0) {
+          return -1;
+        }
     }
   }
 

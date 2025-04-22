@@ -1,5 +1,3 @@
-'os.io'.use
-
 int\between: .def (
   gab\number:,
   (floor, ceil) => self.float\between(floor, ceil).floor)
