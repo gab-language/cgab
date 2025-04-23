@@ -2,33 +2,11 @@ log = 'lsp/logs'.use
 
 'cgab'.use
 
-diag\jobs\in = Channels.make
-
 diag\job\t = Shapes.make(server: uri: text:)
-lsp\server\t = Shapes.make(server\in: server\out: server\open_ch: server\data:)
-
-diagnostics\queue_all:.def(
-  lsp\server\t
-  () => do
-    server = self
-
-    server
-      .server\data
-      .each (text uri) => do
-        server.diagnostics\queue(text uri)
-      end
-  end)
-
-diagnostics\queue:.def(
-  lsp\server\t
-  (text uri) => do
-      log.("Queueing Diagnostics" uri)
-      diag\jobs\in <! diag\job\t.make(self uri text)
-  end)
 
 [diag\job\t] .defmodule {
   notify\diagnostics: diagnostics => do
-    log.("Notifying", self.uri, diagnostics)
+    self.server.log("Notifying", self.uri, diagnostics)
 
     self.server.notify(
         "textDocument/publishDiagnostics"
@@ -46,18 +24,10 @@ diagnostics\queue:.def(
 
     (ok == ok:!) .and err .or nil:
   end
-  complete: () => do
-    self
-      .server
-      .server\open_ch
-      .is\closed
-      .then () => diag\jobs\in.close 
-
+  diag\complete: () => do
     job = self
-    log.("Diagnostics for: " self.uri)
+    self.server.log("Diagnostics for: " self.uri)
     diagnostic = self.diag\check
-
-    log.("Diagnostics: " diagnostic)
 
     diagnostic
       .then(() => do
@@ -82,12 +52,8 @@ diagnostics\queue:.def(
           ]
       end)
     .else(() => do
-      log.("Clearing diagnostics: " diagnostic)
+      job.server.log("Clearing diagnostics: " diagnostic)
       job.notify\diagnostics []
     end)
   end
 }
-
-diag\worker = () => diag\jobs\in .each complete:
-
-Fibers.make diag\worker

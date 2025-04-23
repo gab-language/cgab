@@ -86,7 +86,6 @@ take:.deftransducer(
       end
   0)
 
-
 take_while:.deftransducer(
   f => (r, acc, xs) => f.(xs*).td\stop_conditionally(r, acc, xs))
 
@@ -94,7 +93,11 @@ take_until:.deftransducer(
   f => (r, acc, xs) => f.(xs*).!.td\stop_conditionally(r, acc, xs))
 
 drop:.deftransducer(
-  n => (r, acc, xs, nth) => (nth >= n).td\conditionally(r, acc, xs, nth + 1)
+  n
+    => (r, acc, xs, nth)
+      => do
+        (nth >= n).td\conditionally(r, acc, xs, nth + 1)
+      end
   0)
 
 td\do_dropwhile: .defcase {
@@ -116,11 +119,32 @@ td\do_interpose:.defcase {
     (cmd, r, acc) = r.reduce\step(acc, sep)
     cmd.td\do_interpose(r, acc, xs)
   end
-  false: (r, acc, xs) => (true: ,r.reduce\step(acc, xs*))
+  false: (r acc xs) => (true: r.reduce\step(acc, xs*))
 }
 
 interpose:.deftransducer(
-  sep => (r, acc, xs, started) => started.td\do_interpose(r, acc, xs, sep)
+  sep
+    => (r, acc, xs, started)
+      => started.td\do_interpose(r, acc, xs, sep)
   false:)
+
+td\do_split:.defcase {
+  true: (r acc xs split) => do
+    ([] r.reduce\step(acc split))
+  end
+  false: (r acc xs split) => do
+    (split.push(xs*) next: r acc)
+  end
+}
+
+split:.deftransducer(
+  sep
+    => (r acc xs split)
+      => do
+        x = xs.at 0 .unwrap
+        (sep == x).td\do_split(r acc xs split)
+      end
+  [])
+
 
 module

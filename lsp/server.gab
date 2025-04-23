@@ -1,9 +1,89 @@
 'Json'.use
 
-log = 'lsp/logs'.use
+log\row\t = 'lsp/logs'.use
 
-diag\job\t = Shapes.make(server: uri: text:)
-lsp\server\t = Shapes.make(server\in: server\out: server\open_ch: server\data:)
+diag\job\t = Shapes.make(
+  server:
+  uri:
+  text:)
+
+lsp\server\t = Shapes.make(
+  server\in:
+  server\out:
+  server\open_ch:
+  server\data:
+  server\diagnostics:
+  server\logs:)
+
+position:.def(
+  Strings.t
+  (row col) => do
+    xf = Streams.map self:
+      |> Streams.split '\n'
+      |> Streams.drop row
+      |> Streams.take 1
+      |> Streams.map join:
+
+    line = self.collect xf .at 0 .unwrap
+
+    line
+  end)
+
+# TODO: Some code for computing Position -> Byte Offset.
+[lsp\server\t].defmodule {
+  document\sync\full: (uri text) => do
+    lines = [text.split '\n']
+    self.put_via(lines server\data: uri)
+  end
+  document\sync\inc: (uri changes) => do
+    (ok, lines) = self.server\data.at 'uri'
+    lines = ok .and lines .or []
+
+    lines = changes.reduce(lines (sofar change) => do
+      str = change.at 'text' .unwrap
+      range = change.at 'range' .unwrap
+      (start, end) = (range.at 'start' .unwrap, range.at 'end' .unwrap)
+
+      
+    end)
+
+    self.put_via(lines server\data: uri)
+  end
+}
+
+diagnostics\queue_all:.def(
+  lsp\server\t
+  () => do
+    server = self
+
+    server
+      .server\data
+      .each (text uri) => do
+        server.diagnostics\queue(text uri)
+      end
+  end)
+
+diagnostics\queue:.def(
+  lsp\server\t
+  (text uri) => do
+      self.log("Queueing Diagnostics" uri)
+      self.server\diagnostics <! diag\job\t.make(self uri text)
+  end)
+
+[lsp\server\t].defmodule {
+  log: data* => do
+    self.info data
+  end
+  info: (data*) => do
+    self.server\logs <! log\row\t.make(info: data)
+  end
+  warn: (data*) => do
+    self.server\logs <! log\row\t.make(warn: data)
+  end
+  error: (data*) => do
+    self.server\logs <! log\row\t.make(err: data)
+  end
+}
 
 make:.def(
   lsp\server:
@@ -11,7 +91,9 @@ make:.def(
     in .or (IO.stdin)
     out .or (IO.stdout)
     Channels.make
-    {}))
+    {}
+    Channels.make
+    Channels.make))
 
 t:.def(lsp\server: lsp\server\t)
 
@@ -45,7 +127,7 @@ _read_header:.defcase {
   _read_request: () => do
     headers = self._read_headers
 
-    log.(headers: headers)
+    self.log(headers: headers)
 
     len = headers
       .at "Content-Length"
@@ -68,12 +150,26 @@ _read_header:.defcase {
   end,
   # Implement the lazy-sequence protocol
   seq\init: () => do
-    msg = self._read_request
-    option:.(self.server\open_ch.is\open, nil: msg)
+    server = self
+
+    self
+      .server\open_ch
+      .cond {
+        is\open: () => (ok: nil: server._read_request)
+        is\closed: () => none:
+      }
+      .
   end
   seq\next: () => do
-    msg = self._read_request
-    option:.(self.server\open_ch.is\open, nil: msg)
+    server = self
+
+    self
+      .server\open_ch
+      .cond {
+        is\open: () => (ok: nil: server._read_request)
+        is\closed: () => none:
+      }
+      .
   end
   # Helpers for sending data to client
   respond: (id result) => do
@@ -85,16 +181,16 @@ _read_header:.defcase {
       'Content-Length:'content\length
       '\r\n\r\n'msg)
 
-    log.("Response" id res)
+    self.log("Response" id res)
 
     self.server\out.write res .unwrap
   end
   notify: (method params) => do 
-    log.("Notification" method params?)
+    self.log("Notification" method params?)
 
     msg = { "method" method "params" params } .to\json
 
-    log.("Notification" msg)
+    self.log("Notification" msg)
 
     content\length = msg.len
 
@@ -106,27 +202,43 @@ _read_header:.defcase {
   end
   # Run the server
   run: () => do
-    log."Server started!"
+    server = self
+
+# Service for completing and publishing diagnostics
+    Fibers
+      .make () => server
+        .server\diagnostics
+        .each diag\complete:
+
+# Service for logging to file (/tmp/gablsp.log)
+    Fibers
+      .make () => server
+        .server\logs
+        .each log\tofile:
+
+    self.log "Server started!"
 
     self.reduce(self (lsp req) => do
       msg = req .lsp\messages\into
 
-      log.("Received Msg", msg)
+      lsp.log("Received Msg", msg)
 
       (ok new_lsp) = msg .lsp\dispatch lsp
 
       ok .else () => do
-        log.("No handler found.")
+        lsp.log("No handler found.")
       end
 
       (new_lsp? == lsp\server\t) .else () => do
-        log.error("Invalid new_lsp", ok, new_lsp)
+        lsp.error("Invalid new_lsp", ok, new_lsp)
       end
 
-      ok .then () => log.("Successfully processed msg")
+      ok .then () => lsp.log("Successfully processed msg")
 
       ok.== ok: .and new_lsp .or lsp
     end)
+
+    self.log "Server shutdown!"
   end,
 }
 

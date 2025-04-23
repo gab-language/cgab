@@ -1,6 +1,13 @@
 #include "core.h"
 #include "gab.h"
 
+const char *modules[] = {
+    "Strings", "Binaries", "Messages", "Numbers",  "Blocks",
+    "Records", "Shapes",   "Fibers",   "Channels", "__core",
+    "Ranges",  "Streams",  "IO",
+};
+const size_t nmodules = sizeof(modules) / sizeof(modules[0]);
+
 union gab_value_pair gab_gablib_build(struct gab_triple gab, uint64_t argc,
                                       gab_value argv[static argc]) {
   gab_value source = gab_arg(0);
@@ -10,6 +17,8 @@ union gab_value_pair gab_gablib_build(struct gab_triple gab, uint64_t argc,
                                                 .source = src,
                                                 .name = src,
                                                 .flags = fGAB_ERR_QUIET,
+                                                .len = nmodules,
+                                                .argv = modules,
                                             });
 
   if (mod.status != gab_cinvalid) {

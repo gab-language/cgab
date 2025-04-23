@@ -1,56 +1,30 @@
+position:.def(
+  Strings.t
+  (row col) => do
+    xf = Streams.map self:
+      |> Streams.split '\n'
+      |> Streams.drop row
+      |> Streams.take 1
+      |> Streams.map join:
 
-# Rethinking current tuple destructuring
+    (ok line) = self.collect xf .at 0
 
-(a, b, c[]) = (1, 2, 3) # => Now invalid, as a newline is expected between 'c' and '[]'
-(a, b, c{}) = (1, 2, 3) # => Now invalid, as a newline is expected between 'c' and '{}'
+    (ok line) .cond {
+      ok: () => (ok: line.slice(col))
+      else: () => (none: nil:)
+    }.
+  end)
 
-(a, b, [c]**) = (1, 2, 3) # -> Valid, as '**' is in the operator send position here.
-# It is consistent with the '**' splat syntax, which is nice.
+text = 'hello world\nthis is a test\nmore test\n'
 
-# Now there is no syntax for collecting extra values as a dict, instead of just a list.
-(a, b, {c}**) => c
+(ok, line) =  text.position(0 1)
+'$ $\n'.printf(ok line)
 
-asdf.println
+(ok, line) =  text.position(1 10)
+'$ $\n'.printf(ok line)
 
-# This syntax sugar is fine, but because everything is *messages*, you can destructure
-# Anything that implements these messages.
-# This is kinda good?
+(ok, line) =  text.position(2 3)
+'$ $\n'.printf(ok line)
 
-# Associative Bindings ---
-# Send the message in each key position to the value. 
-# Apply that result to the binding in the value position.
-# Desugar eg:
-{ name: n self: rec keys: [first] } = { name: 2 }
-  n = (...) .name
-  rec = (...) .self # => rec
-  first = (...) .keys .at! 0
-
-# Sequential Bindings ---
-# As lists have an implicit-ascending-integer in each of their key positions,
-# The same principle from associative bindings can be applied.
-# However, since numbers are not valid messages, the at!: and slice:
-#   messages are used.
-#
-# NOTE: *any* type which implements this protocol may be destructured
-#  sequentially. (By default, this includes records and strings)
-#
-# Desugar eg:
-[f, s, rest*] = ['hello', 'world']
-  f = (...) .at! 0
-  s = (...) .at! 1
-  rest = (...) .slice(2, -1)
-
-# Uh Oh - sequential destructuring is trivial (pretty much already in the language)
-# Via this - unpack a tuple and just splat the record.
-# This does use the VM Stack, but it is *so* efficient on instructions.
-# - PACK_LIST => 'slice' the on-stack tuple
-# - NPOPSTORE_STORELOCAL => pop the now-appropriate number of values into locals
-# Alternative desugar ex:
-[f, s, rest*, l] = ['hello', 'world']
-  (f, s, rest[], l) = ['hello', 'world']**
-
-# Is this worth it? We can sort of destructure manually
-# Just by using multiple return values.
-rec = (...)
-first = rec.keys.at! 0
-name = rec.at! name:
+(ok, line) =  text.position(3 6)
+'$ $\n'.printf(ok line)

@@ -1450,7 +1450,7 @@ CASE_CODE(SEND_PRIMITIVE_CONS) {
   gab_value b = PEEK_N(have - 1);
 
   STORE_SP();
-  gab_value res = (gab_listof(GAB(), a, b));
+  gab_value res = gab_listof(GAB(), a, b);
 
   DROP_N(have);
   PUSH(res);
@@ -1474,7 +1474,7 @@ CASE_CODE(SEND_PRIMITIVE_CONS_RECORD) {
   gab_value arg = PEEK_N(have - 1);
 
   STORE_SP();
-  gab_value res = (gab_lstpush(GAB(), r, arg));
+  gab_value res = gab_lstpush(GAB(), r, arg);
 
   DROP_N(have);
   PUSH(res);

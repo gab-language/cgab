@@ -51,9 +51,9 @@ end
 cond: .def (vs*, branches) => do
   args = [self, vs*]
 
-  k = args.docond(branches.?.*)
+  k = args.docond(branches ? *)
 
-  branches .at k
+  branches .at k .unwrap
 end
 
 put_by: .def (
@@ -167,7 +167,7 @@ end
     (ok, v) = self >!
     (ok, v, v)
   end
-  is\open: _ => self.is\closed.!
+  is\open: _ => self.is\closed!
 }
 
 Channels.t.def\seq
