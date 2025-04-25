@@ -1398,7 +1398,7 @@ gab_value setup_fibersend(struct gab_triple gab, struct gab_ofiber *self,
                op,
                0,
                0,
-               3,
+               2,
                OP_RETURN,
                1,
            },
@@ -1428,7 +1428,7 @@ gab_value setup_fibersend(struct gab_triple gab, struct gab_ofiber *self,
                op,
                0,
                0,
-               3,
+               2,
                OP_RETURN,
                1,
            },
@@ -1458,7 +1458,7 @@ gab_value setup_fibersend(struct gab_triple gab, struct gab_ofiber *self,
                op,
                0,
                0,
-               3,
+               2,
                OP_RETURN,
                1,
            },
@@ -1845,15 +1845,14 @@ static uint64_t dumpSendInstruction(FILE *stream, struct gab_oprototype *self,
 
   gab_value msg = v_gab_value_val_at(&self->src->constants, constant);
 
-  uint8_t have = v_uint8_t_val_at(&self->src->bytecode, offset + 3);
+  uint8_t arg = v_uint8_t_val_at(&self->src->bytecode, offset + 3);
 
-  uint8_t var = have & fHAVE_VAR;
-  uint8_t tail = have & fHAVE_TAIL;
-  have = have >> 2;
+  uint8_t explicit = arg & fHAVE_VAR;
+  uint8_t tail = arg & fHAVE_TAIL;
 
   fprintf(stream, "%-25s" GAB_BLUE, name);
   gab_fvalinspect(stream, msg, 0);
-  fprintf(stream, GAB_RESET " (%d%s)%s\n", have, var ? " & more" : "",
+  fprintf(stream, GAB_RESET " (%s)%s\n", explicit ? "explicit" : "implicit",
           tail ? " [TAILCALL]" : "");
 
   return offset + 4;
@@ -1879,10 +1878,9 @@ static uint64_t dumpTrimInstruction(FILE *stream, struct gab_oprototype *self,
 
 static uint64_t dumpReturnInstruction(FILE *stream, struct gab_oprototype *self,
                                       uint64_t offset) {
-  uint8_t havebyte = v_uint8_t_val_at(&self->src->bytecode, offset + 1);
-  uint8_t have = havebyte >> 2;
-  fprintf(stream, "%-25s%hhx%s\n", "RETURN", have,
-          havebyte & fHAVE_VAR ? " & more" : "");
+  uint8_t arg = v_uint8_t_val_at(&self->src->bytecode, offset + 1);
+  fprintf(stream, "%-25s%s\n", "RETURN",
+          arg ? "explicit" : "implicit");
   return offset + 2;
 }
 
@@ -1945,6 +1943,8 @@ static uint64_t dumpInstruction(FILE *stream, struct gab_oprototype *self,
   uint8_t op = v_uint8_t_val_at(&self->src->bytecode, offset);
   switch (op) {
   case OP_POP:
+  case OP_TUPLE:
+  case OP_CONS:
   case OP_NOP:
     return dumpSimpleInstruction(stream, self, offset);
   case OP_PACK_RECORD:

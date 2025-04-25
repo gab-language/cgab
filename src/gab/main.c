@@ -583,13 +583,14 @@ int exec(struct command_arguments args) {
     return 1;
   }
 
-  size_t nmodules = args.modules.len;
-  assert(nmodules > 0);
-  const char *modules[nmodules];
-  for (int i = 0; i < nmodules; i++)
-    modules[i] = v_s_char_ref_at(&args.modules, i)->data;
-
-  return run_string(args.argv[0], args.flags, 8, nmodules, modules);
+  // size_t nmodules = args.modules.len;
+  // assert(nmodules > 0);
+  // const char *modules[nmodules];
+  // for (int i = 0; i < nmodules; i++)
+  //   modules[i] = v_s_char_ref_at(&args.modules, i)->data;
+  //
+  // return run_string(args.argv[0], args.flags, 8, nmodules, modules);
+  return run_string(args.argv[0], args.flags, 8, 0, nullptr);
 }
 
 int repl(struct command_arguments args) {

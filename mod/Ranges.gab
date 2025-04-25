@@ -21,7 +21,7 @@ make:.def(
   end
   seq\next: n => do
     nx = n + 1
-    option:.(n < self.to, nx, nx)
+    (n .< (self.to) .and ok: .or none:, nx, nx)
   end
 }
 

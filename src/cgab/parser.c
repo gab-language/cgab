@@ -417,16 +417,25 @@ bool node_isempty(gab_value node) {
   return gab_valkind(node) == kGAB_RECORD && gab_reclen(node) == 0;
 }
 
+bool node_issend(struct gab_triple gab, gab_value node) {
+  if (gab_valkind(node) != kGAB_RECORD)
+    return false;
+
+  if (gab_recisl(node))
+    return false;
+
+  return !msg_is_specialform(gab,
+                             gab_mrecat(gab, node, mGAB_AST_NODE_SEND_MSG));
+}
+
 bool node_ismulti(struct gab_triple gab, gab_value node) {
   if (gab_valkind(node) != kGAB_RECORD)
     return false;
 
   switch (gab_valkind(gab_recshp(node))) {
   case kGAB_SHAPE:
-    if (msg_is_specialform(gab, gab_mrecat(gab, node, mGAB_AST_NODE_SEND_MSG)))
-      return false;
-    else
-      return true;
+    return !msg_is_specialform(gab,
+                               gab_mrecat(gab, node, mGAB_AST_NODE_SEND_MSG));
   case kGAB_SHAPELIST: {
     size_t len = gab_reclen(node);
 
@@ -1135,49 +1144,16 @@ static inline void push_storel(struct bc *bc, uint8_t local, gab_value node) {
 
 static inline uint8_t encode_arity(struct gab_triple gab, struct bc *bc,
                                    gab_value lhs, gab_value rhs,
-                                   gab_value *vout) {
+                                   gab_value *vout, bool explicit) {
   *vout = gab_cvalid;
 
-  if (rhs == gab_cinvalid && lhs == gab_cinvalid)
-    return 1;
-
-  if (rhs == gab_cinvalid || node_isempty(rhs)) {
-    bool is_multi = node_ismulti(gab, lhs);
-    size_t len = node_len(gab, lhs);
-
-    if (len && is_multi)
-      len--;
-
-    if (len >= 64)
-      return bc_error(gab, bc, lhs, GAB_TOO_MANY_EXPRESSIONS,
-                      FMT_TOO_MANY_EXPRESSIONS_IN_TUPLE),
-             *vout = gab_cinvalid, 0;
-
-    assert(len < 64);
-    return ((uint8_t)len << 2) | is_multi;
-  }
-
-  // LHS node should have been trimmed in this case.
-
-  bool is_multi = node_ismulti(gab, rhs);
-  size_t len = node_len(gab, rhs) + 1;
-
-  if (len && is_multi)
-    len--;
-
-  if (len >= 64)
-    return bc_error(gab, bc, rhs, GAB_TOO_MANY_EXPRESSIONS,
-                    FMT_TOO_MANY_EXPRESSIONS_IN_TUPLE),
-           *vout = gab_cinvalid, 0;
-
-  assert(len < 64);
-  return ((uint8_t)len << 2) | is_multi;
+  return explicit;
 }
 
 [[nodiscard]]
 static inline gab_value push_send(struct gab_triple gab, struct bc *bc,
                                   gab_value m, gab_value lhs, gab_value rhs,
-                                  gab_value node) {
+                                  gab_value node, bool explicit) {
   if (gab_valkind(m) == kGAB_STRING)
     m = gab_strtomsg(m);
 
@@ -1196,7 +1172,7 @@ static inline gab_value push_send(struct gab_triple gab, struct bc *bc,
   push_short(bc, ks, node);
 
   gab_value res;
-  push_byte(bc, encode_arity(gab, bc, lhs, rhs, &res), node);
+  push_byte(bc, encode_arity(gab, bc, lhs, rhs, &res, explicit), node);
 
   if (res != gab_cvalid)
     return res;
@@ -1232,6 +1208,7 @@ static inline void push_pop(struct bc *bc, uint8_t n, gab_value node) {
   push_op(bc, OP_POP, node);
 }
 
+// fix this to work with sends in the middle of tuples, doesn't trim properly now
 static inline bool push_trim_node(struct gab_triple gab, struct bc *bc,
                                   uint8_t want, gab_value values,
                                   gab_value node) {
@@ -1280,13 +1257,13 @@ static inline bool push_trim_node(struct gab_triple gab, struct bc *bc,
 }
 
 [[nodiscard]]
-static inline gab_value push_listpack(struct gab_triple gab, struct bc *bc,
-                                      gab_value rhs, uint8_t below,
-                                      uint8_t above, gab_value node) {
+static inline gab_value
+push_listpack(struct gab_triple gab, struct bc *bc, gab_value rhs,
+              uint8_t below, uint8_t above, bool explicit, gab_value node) {
   gab_value res;
 
   push_op(bc, OP_PACK_LIST, node);
-  push_byte(bc, encode_arity(gab, bc, rhs, gab_cinvalid, &res), node);
+  push_byte(bc, encode_arity(gab, bc, rhs, gab_cinvalid, &res, explicit), node);
   push_byte(bc, below, node);
   push_byte(bc, above, node);
 
@@ -1294,13 +1271,13 @@ static inline gab_value push_listpack(struct gab_triple gab, struct bc *bc,
 }
 
 [[nodiscard]]
-static inline gab_value push_recordpack(struct gab_triple gab, struct bc *bc,
-                                        gab_value rhs, uint8_t below,
-                                        uint8_t above, gab_value node) {
+static inline gab_value
+push_recordpack(struct gab_triple gab, struct bc *bc, gab_value rhs,
+                uint8_t below, uint8_t above, bool explicit, gab_value node) {
   gab_value res;
 
   push_op(bc, OP_PACK_RECORD, node);
-  push_byte(bc, encode_arity(gab, bc, rhs, gab_cinvalid, &res), node);
+  push_byte(bc, encode_arity(gab, bc, rhs, gab_cinvalid, &res, explicit), node);
   push_byte(bc, below, node);
   push_byte(bc, above, node);
 
@@ -1309,7 +1286,7 @@ static inline gab_value push_recordpack(struct gab_triple gab, struct bc *bc,
 
 [[nodiscard]]
 static inline gab_value push_ret(struct gab_triple gab, struct bc *bc,
-                                 gab_value tup, gab_value node) {
+                                 gab_value tup, gab_value node, bool explicit) {
   assert(node_len(gab, tup) < 16);
 
   bool is_multi = node_ismulti(gab, tup);
@@ -1327,7 +1304,8 @@ static inline gab_value push_ret(struct gab_triple gab, struct bc *bc,
       uint8_t have_byte = v_uint8_t_val_at(&bc->bc, bc->bc.len - 1);
       v_uint8_t_set(&bc->bc, bc->bc.len - 1, have_byte | fHAVE_TAIL);
       push_op(bc, OP_RETURN, node);
-      push_byte(bc, encode_arity(gab, bc, tup, gab_cinvalid, &res), node);
+      push_byte(bc, encode_arity(gab, bc, tup, gab_cinvalid, &res, explicit),
+                node);
 
       return res;
     }
@@ -1342,7 +1320,8 @@ static inline gab_value push_ret(struct gab_triple gab, struct bc *bc,
       bc->bc.len -= 2;
       bc->bc_toks.len -= 2;
       push_op(bc, OP_RETURN, node);
-      push_byte(bc, encode_arity(gab, bc, tup, gab_cinvalid, &res), node);
+      push_byte(bc, encode_arity(gab, bc, tup, gab_cinvalid, &res, explicit),
+                node);
 
       return res;
     }
@@ -1352,7 +1331,7 @@ static inline gab_value push_ret(struct gab_triple gab, struct bc *bc,
   gab_value res;
 
   push_op(bc, OP_RETURN, node);
-  push_byte(bc, encode_arity(gab, bc, tup, gab_cinvalid, &res), node);
+  push_byte(bc, encode_arity(gab, bc, tup, gab_cinvalid, &res, explicit), node);
 
   return res;
 }
@@ -1545,7 +1524,7 @@ gab_value compile_symbol(struct gab_triple gab, struct bc *bc, gab_value tuple,
 };
 
 gab_value compile_tuple(struct gab_triple gab, struct bc *bc, gab_value node,
-                        gab_value env);
+                        gab_value env, bool *explicit_tuple);
 
 gab_value compile_record(struct gab_triple gab, struct bc *bc, gab_value tuple,
                          gab_value node, gab_value env);
@@ -1677,14 +1656,15 @@ gab_value unpack_bindings_into_env(struct gab_triple gab, struct bc *bc,
   size_t actual_targets = targets.len;
 
   if (listpack_at_n >= 0) {
-    gab_value res = push_listpack(gab, bc, values, listpack_at_n,
-                                  actual_targets - listpack_at_n - 1, bindings);
+    gab_value res =
+        push_listpack(gab, bc, values, listpack_at_n,
+                      actual_targets - listpack_at_n - 1, false, bindings);
     if (res != gab_cvalid)
       return v_gab_value_destroy(&targets), res;
   } else if (recpack_at_n >= 0) {
     gab_value res =
         push_recordpack(gab, bc, values, recpack_at_n,
-                        actual_targets - recpack_at_n - 1, bindings);
+                        actual_targets - recpack_at_n - 1, false, bindings);
     if (res != gab_cvalid)
       return v_gab_value_destroy(&targets), res;
   } else if (!push_trim_node(gab, bc, actual_targets, values, bindings)) {
@@ -1773,7 +1753,8 @@ gab_value compile_assign(struct gab_triple gab, struct bc *bc, gab_value node,
   gab_value lhs_node = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_LHS);
   gab_value rhs_node = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_RHS);
 
-  env = compile_tuple(gab, bc, rhs_node, env);
+  bool explicit = false;
+  env = compile_tuple(gab, bc, rhs_node, env, &explicit);
 
   if (env == gab_cinvalid)
     return gab_cinvalid;
@@ -1816,24 +1797,26 @@ gab_value compile_record(struct gab_triple gab, struct bc *bc, gab_value tuple,
     if (msg_is_specialform(gab, msg))
       return compile_specialform(gab, bc, tuple, node, env);
 
-    env = compile_tuple(gab, bc, lhs_node, env);
+    push_op(bc, OP_TUPLE, node);
+
+    bool explicit = false;
+    env = compile_tuple(gab, bc, lhs_node, env, &explicit);
 
     if (env == gab_cinvalid)
       return gab_cinvalid;
 
-    if (!node_isempty(rhs_node))
-      if (!push_trim_node(gab, bc, 1, lhs_node, lhs_node))
-        return gab_cinvalid;
-
-    env = compile_tuple(gab, bc, rhs_node, env);
+    // If the lhs was multi,
+    env = compile_tuple(gab, bc, rhs_node, env, &explicit);
 
     if (env == gab_cinvalid)
       return gab_cinvalid;
 
-    gab_value res = push_send(gab, bc, msg, lhs_node, rhs_node, node);
+    gab_value res = push_send(gab, bc, msg, lhs_node, rhs_node, node, explicit);
 
     if (res != gab_cvalid)
       return res;
+
+    // push_op(bc, OP_CONS, node);
 
     break;
   }
@@ -1844,7 +1827,8 @@ gab_value compile_record(struct gab_triple gab, struct bc *bc, gab_value tuple,
     for (size_t i = 0; i < len; i++) {
       gab_value child_node = gab_uvrecat(node, i);
 
-      env = compile_tuple(gab, bc, child_node, env);
+      bool explicit = false;
+      env = compile_tuple(gab, bc, child_node, env, &explicit);
 
       if (env == gab_cinvalid)
         return gab_cinvalid;
@@ -1862,22 +1846,21 @@ gab_value compile_record(struct gab_triple gab, struct bc *bc, gab_value tuple,
   return env;
 }
 
+// Explicit tuple passed in here? Because of sends, where the lhs and rhs are
+// each compiled as tuples, but really they are part of one tuple (which may or
+// may not need to be cons'd)
 gab_value compile_tuple(struct gab_triple gab, struct bc *bc, gab_value node,
-                        gab_value env) {
+                        gab_value env, bool *explicit_tuple) {
   size_t len = gab_reclen(node);
   size_t last_node = len - 1;
 
   for (size_t i = 0; i < len; i++) {
     gab_value child_node = gab_uvrecat(node, i);
+
     env = compile_value(gab, bc, node, i, env);
 
     if (env == gab_cinvalid)
       return gab_cinvalid;
-
-    if (node_ismulti(gab, child_node) && i != last_node) {
-      push_op(bc, OP_TRIM, node);
-      push_byte(bc, 1, node);
-    }
   }
 
   return env;
@@ -1985,7 +1968,10 @@ union gab_value_pair gab_compile(struct gab_triple gab,
            (union gab_value_pair){{gab_cinvalid, bc.err}};
 
   assert(bc.bc.len == bc.bc_toks.len);
-  args.env = compile_tuple(gab, &bc, args.ast, args.env);
+
+  bool explicit = false;
+  args.env = compile_tuple(gab, &bc, args.ast, args.env, &explicit);
+
   assert(bc.bc.len == bc.bc_toks.len);
 
   if (args.env == gab_cinvalid)
@@ -1997,7 +1983,7 @@ union gab_value_pair gab_compile(struct gab_triple gab,
   gab_value local_env = gab_uvrecat(args.env, nenvs - 1);
   assert(bc.bc.len == bc.bc_toks.len);
 
-  gab_value res = push_ret(gab, &bc, args.ast, args.ast);
+  gab_value res = push_ret(gab, &bc, args.ast, args.ast, explicit);
   if (res != gab_cvalid)
     return assert(bc.err != gab_cinvalid), bc_destroy(&bc),
            (union gab_value_pair){{gab_cinvalid, bc.err}};
