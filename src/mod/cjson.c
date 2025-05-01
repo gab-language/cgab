@@ -1,5 +1,5 @@
 #define JSMN_STATIC
-#include "../vendor/jsmn/jsmn.h"
+#include "jsmn/jsmn.h"
 
 #include "gab.h"
 

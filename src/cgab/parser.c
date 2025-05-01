@@ -442,8 +442,13 @@ bool node_ismulti(struct gab_triple gab, gab_value node) {
     if (len == 0)
       return false;
 
-    gab_value last_node = gab_uvrecat(node, len - 1);
-    return node_ismulti(gab, last_node);
+    for (size_t i = 0; i < len; i++) {
+      gab_value child_node = gab_uvrecat(node, i);
+      if (node_ismulti(gab, child_node))
+        return true;
+    }
+
+    return false;
   }
   default:
     assert(false && "UNREACHABLE");
@@ -1208,7 +1213,8 @@ static inline void push_pop(struct bc *bc, uint8_t n, gab_value node) {
   push_op(bc, OP_POP, node);
 }
 
-// fix this to work with sends in the middle of tuples, doesn't trim properly now
+// fix this to work with sends in the middle of tuples, doesn't trim properly
+// now
 static inline bool push_trim_node(struct gab_triple gab, struct bc *bc,
                                   uint8_t want, gab_value values,
                                   gab_value node) {
@@ -1232,13 +1238,8 @@ static inline bool push_trim_node(struct gab_triple gab, struct bc *bc,
       return true;
     }
 
-    if (len > want)
-      return bc_error(gab, bc, values, GAB_TOO_MANY_EXPRESSIONS, ""), false;
-
-    assert(want >= len);
-
     push_op(bc, OP_TRIM, node);
-    push_byte(bc, want - len + 1, node);
+    push_byte(bc, want, node);
     return true;
   }
 
@@ -1852,11 +1853,8 @@ gab_value compile_record(struct gab_triple gab, struct bc *bc, gab_value tuple,
 gab_value compile_tuple(struct gab_triple gab, struct bc *bc, gab_value node,
                         gab_value env, bool *explicit_tuple) {
   size_t len = gab_reclen(node);
-  size_t last_node = len - 1;
 
   for (size_t i = 0; i < len; i++) {
-    gab_value child_node = gab_uvrecat(node, i);
-
     env = compile_value(gab, bc, node, i, env);
 
     if (env == gab_cinvalid)

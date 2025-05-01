@@ -1,5 +1,5 @@
 #define BENCODE_IMPL
-#include "../vendor/bencode-c/bencode.h"
+#include "bencode-c/bencode.h"
 
 #include "gab.h"
 

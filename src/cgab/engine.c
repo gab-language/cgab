@@ -1,5 +1,3 @@
-#include <stdint.h>
-#include <stdio.h>
 #define GAB_STATUS_NAMES_IMPL
 #define GAB_TOKEN_NAMES_IMPL
 #include "engine.h"
@@ -378,12 +376,13 @@ int32_t worker_job(void *data) {
                 gab_number(gab.wkid), gab_number(cGAB_WORKER_IDLEWAIT_MS));
 #endif
 
+    gab_value fiber =
+        gab_tchntake(gab, gab.eg->work_channel, cGAB_WORKER_IDLEWAIT_MS);
+
 #if cGAB_LOG_EG
     gab_fprintf(stdout, "[WORKER $] chntake succeeded: $\n",
                 gab_number(gab.wkid), fiber);
 #endif
-    gab_value fiber =
-        gab_tchntake(gab, gab.eg->work_channel, cGAB_WORKER_IDLEWAIT_MS);
 
     if (fiber == gab_cinvalid || fiber == gab_ctimeout ||
         fiber == gab_cundefined) {
@@ -405,6 +404,8 @@ int32_t worker_job(void *data) {
 
     // Run our job.
     union gab_value_pair res = gab_vmexec(gab, fiber);
+
+    assert(q_gab_value_peek(&job->queue) == fiber);
 
     // We did work - pop it off the queue now.
     q_gab_value_pop(&job->queue);

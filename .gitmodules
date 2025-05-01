@@ -19,3 +19,30 @@
 [submodule "vendor/bencode-c"]
 	path = vendor/bencode-c
 	url = https://github.com/TeddyRandby/bencode-c-headeronly.git
+[submodule "vendor/sdl"]
+	path = vendor/sdl
+	url = https://github.com/libsdl-org/SDL
+[submodule "vendor/nuklear"]
+	path = vendor/nuklear
+	url = https://github.com/Immediate-Mode-UI/Nuklear.git
+[submodule "vendor/sdl3"]
+	path = vendor/sdl3
+	url = https://github.com/libsdl-org/SDL.git
+[submodule "vendor/RGFW"]
+	path = vendor/RGFW
+	url = https://github.com/ColleagueRiley/RGFW.git
+[submodule "vendor/xcode-frameworks"]
+	path = vendor/xcode-frameworks
+	url = https://github.com/hexops/xcode-frameworks.git
+[submodule "vendor/vendor/opengl-headers"]
+	path = vendor/vendor/opengl-headers
+	url = https://github.com/hexops/opengl-headers.git
+[submodule "vendor/opengl-headers"]
+	path = vendor/opengl-headers
+	url = https://github.com/hexops/opengl-headers.git
+[submodule "vendor/wayland-headers"]
+	path = vendor/wayland-headers
+	url = https://github.com/hexops/wayland-headers.git
+[submodule "vendor/x11-headers"]
+	path = vendor/x11-headers
+	url = https://github.com/hexops/x11-headers.git

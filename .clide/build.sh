@@ -3,7 +3,7 @@
 cd "$CLIDE_PATH/../" || exit 1
 
 function gen-libgrapheme() {
-  cd vendor/libgrapheme || exit 1
+  cd "$CLIDE_PATH/../vendor/libgrapheme" || exit 1
 
   # Compile natively to run the generators.
   make CC="zig cc" libgrapheme.a
@@ -16,11 +16,14 @@ function gen-libgrapheme() {
 }
 
 function build-libgrapheme() {
-  cd vendor/libgrapheme || exit 1
+  cd "$CLIDE_PATH/../vendor/libgrapheme" || exit 1
 
   make CC="zig cc --target=$1" libgrapheme.a
-  mv libgrapheme.a "$CLIDE_PATH/../$2"
+  mv libgrapheme.a "$CLIDE_PATH/../build-$1/libgrapheme.a"
   rm src/*.o
+
+  echo "Built static library."
+  file "$CLIDE_PATH/../build-$1/libgrapheme.a"
 
   cd "$CLIDE_PATH/../" || exit 1
 }
@@ -45,11 +48,11 @@ function build {
   platform_bundle=""
 
   if [[ "$1" =~ "linux" ]]; then
-    platform="$unixflags -DQIO_LINUX"
+    platform="$unixflags -DQIO_LINUX -DRGFW_USE_XDL -isystem vendor/x11-headers"
     platform_bundle="-shared"
     dynlib_fileending=".so"
   elif [[ "$1" =~ "mac" ]]; then
-    platform="$unixflags -DQIO_MACOS"
+    platform="$unixflags -DQIO_MACOS -DRGFW_NO_IOKIT -isystem vendor/xcode-frameworks/include"
     platform_bundle="-shared"
     dynlib_fileending=".so"
   elif [[ "$1" =~ "windows" ]]; then
@@ -89,9 +92,6 @@ function build {
 
   mkdir -p "build-$1/mod"
 
-  echo "   Building static shared library dependencies"
-  build-libgrapheme "$1" "build-$1/libgrapheme.a"
-
   # Compile all src/mod c files into shared objects / dlls
   # These modules link *dynamically* to libcgab - they are loaded only at runtime by a process which is *already* exporting libcgab's symbols.
   # There *could* be some versioning issues but we're ignoring that for now.
@@ -116,7 +116,6 @@ function build {
 }
 
 export -f build
-export -f build-libgrapheme
 
 echo "Building dependency"
 gen-libgrapheme
@@ -124,4 +123,13 @@ gen-libgrapheme
 echo "Beginning compilation."
 echo "$GAB_TARGETS"
 
-echo "$GAB_TARGETS" | tr ' ' '\n' | parallel mkdir -p "build-{}" '&&' build "{}" '||' exit 1 '&&' echo "Built {}"
+targets=$(echo "$GAB_TARGETS" | tr " " "\n")
+
+for target in $targets; do
+  mkdir -p "build-$target"
+
+  echo "   Building static shared library dependencies for $target"
+  build-libgrapheme $target
+done
+
+echo "$targets" | parallel build "{}" '||' exit 1 '&&' echo "Built {}"

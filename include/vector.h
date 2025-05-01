@@ -44,8 +44,8 @@
 typedef struct TYPENAME TYPENAME;
 struct TYPENAME {
   T *data;
-  size_t len;
-  size_t cap;
+  uint64_t len;
+  uint64_t cap;
 #ifdef V_CONCURRENT
   mtx_t mtx;
 #endif
@@ -96,7 +96,7 @@ LINKAGE void METHOD(destroy)(TYPENAME *self) {
   DESTROY_LOCK(self);
 }
 
-LINKAGE size_t METHOD(set)(TYPENAME *self, size_t index, T value) {
+LINKAGE uint64_t METHOD(set)(TYPENAME *self, size_t index, T value) {
   AQUIRE_LOCK(self);
 
   assert(index < self->len);
@@ -106,7 +106,7 @@ LINKAGE size_t METHOD(set)(TYPENAME *self, size_t index, T value) {
   return index;
 }
 
-LINKAGE size_t METHOD(push)(TYPENAME *self, T value) {
+LINKAGE uint64_t METHOD(push)(TYPENAME *self, T value) {
   AQUIRE_LOCK(self);
 
   if (self->len >= self->cap) {
@@ -114,7 +114,7 @@ LINKAGE size_t METHOD(push)(TYPENAME *self, T value) {
     self->data = GROW(T, self->data, self->cap);
   }
 
-  size_t idx = self->len++;
+  uint64_t idx = self->len++;
   self->data[idx] = value;
 
   RELEASE_LOCK(self);
@@ -132,7 +132,7 @@ LINKAGE T METHOD(pop)(TYPENAME *self) {
 }
 
 #ifndef V_CONCURRENT
-LINKAGE T *METHOD(ref_at)(TYPENAME *self, size_t index) {
+LINKAGE T *METHOD(ref_at)(TYPENAME *self, uint64_t index) {
   assert(index < self->len);
   T *ref = self->data + index;
 
@@ -151,7 +151,7 @@ LINKAGE T *METHOD(emplace)(TYPENAME *self) {
 }
 #endif
 
-LINKAGE T METHOD(val_at)(TYPENAME *self, size_t index) {
+LINKAGE T METHOD(val_at)(TYPENAME *self, uint64_t index) {
   AQUIRE_LOCK(self);
 
   assert(index < self->len);
@@ -162,7 +162,7 @@ LINKAGE T METHOD(val_at)(TYPENAME *self, size_t index) {
   return v;
 }
 
-LINKAGE void METHOD(cap)(TYPENAME *self, size_t cap) {
+LINKAGE void METHOD(cap)(TYPENAME *self, uint64_t cap) {
   AQUIRE_LOCK(self);
 
   if (self->cap < cap) {
@@ -173,7 +173,7 @@ LINKAGE void METHOD(cap)(TYPENAME *self, size_t cap) {
   RELEASE_LOCK(self);
 }
 
-LINKAGE T METHOD(del)(TYPENAME *self, size_t index) {
+LINKAGE T METHOD(del)(TYPENAME *self, uint64_t index) {
   assert(index < self->len);
 
   AQUIRE_LOCK(self);
@@ -201,7 +201,10 @@ LINKAGE T METHOD(del)(TYPENAME *self, size_t index) {
 #undef METHOD
 #undef CONCAT
 #undef CONCAT_
+#ifdef V_CONCURRENT
 #undef INIT_LOCK
 #undef DESTROY_LOCK
 #undef AQUIRE_LOCK
 #undef RELEASE_LOCK
+#undef V_CONCURRENT
+#endif

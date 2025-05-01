@@ -2823,7 +2823,7 @@ struct gab_eg {
   struct gab_job {
     thrd_t td;
 
-    bool alive;
+    uint8_t alive;
 
     uint32_t epoch;
     int32_t locked;
@@ -2837,6 +2837,9 @@ struct gab_eg {
     } buffers[kGAB_NBUF][GAB_GCNEPOCHS];
   } jobs[];
 };
+
+static_assert(sizeof(thrd_t) == 8);
+static_assert(sizeof(struct gab_job) == 2359696);
 
 typedef enum gab_token {
 #define TOKEN(name) TOKEN##_##name,
@@ -2888,6 +2891,8 @@ GAB_API_INLINE struct gab_gc *gab_gc(struct gab_triple gab) {
   return &gab.eg->gc;
 }
 
+GAB_API_INLINE gab_value gab_valintos(struct gab_triple gab, gab_value value);
+
 /**
  * @brief Get the running fiber of the current job.
  *
@@ -2900,9 +2905,7 @@ GAB_API_INLINE gab_value gab_thisfiber(struct gab_triple gab) {
 
 GAB_API_INLINE struct gab_vm *gab_thisvm(struct gab_triple gab) {
   gab_value fiber = gab_thisfiber(gab);
-
-  if (fiber == gab_cinvalid)
-    return nullptr;
+  assert(fiber != gab_cinvalid);
 
   return &GAB_VAL_TO_FIBER(fiber)->vm;
 }
