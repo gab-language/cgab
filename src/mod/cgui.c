@@ -12,20 +12,638 @@
 
 #include "gab.h"
 
+/* nuklear - v1.05 - public domain */
+#include <assert.h>
+#include <dirent.h>
+#include <limits.h>
+#include <math.h>
+#include <stdarg.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+#include <unistd.h>
+
+#define NK_INCLUDE_FIXED_TYPES
+#define NK_INCLUDE_STANDARD_IO
+#define NK_INCLUDE_DEFAULT_ALLOCATOR
+#define NK_INCLUDE_VERTEX_BUFFER_OUTPUT
+#define NK_INCLUDE_FONT_BAKING
+#define NK_INCLUDE_DEFAULT_FONT
+#define NK_IMPLEMENTATION
+#include "nuklear/nuklear.h"
+
+/* macros */
+#define WINDOW_WIDTH 1200
+#define WINDOW_HEIGHT 800
+
+#define MAX_VERTEX_MEMORY 512 * 1024
+#define MAX_ELEMENT_MEMORY 128 * 1024
+
+#define UNUSED(a) (void)a
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#define MAX(a, b) ((a) < (b) ? (b) : (a))
+#define LEN(a) (sizeof(a) / sizeof(a)[0])
+
+#ifdef __APPLE__
+#define NK_SHADER_VERSION "#version 150\n"
+#else
+#define NK_SHADER_VERSION "#version 300 es\n"
+#endif
+
+/* ===============================================================
+ *
+ *                          GUI
+ *
+ * ===============================================================*/
+// static int file_browser_run(struct file_browser *browser,
+//                             struct nk_context *ctx) {
+//   int ret = 0;
+//   struct media *media = browser->media;
+//   struct nk_rect total_space;
+//
+//   if (nk_begin(ctx, "File Browser", nk_rect(50, 50, 800, 600),
+//                NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR |
+//                NK_WINDOW_MOVABLE)) {
+//     static float ratio[] = {0.25f, NK_UNDEFINED};
+//     float spacing_x = ctx->style.window.spacing.x;
+//
+//     /* output path directory selector in the menubar */
+//     ctx->style.window.spacing.x = 0;
+//     nk_menubar_begin(ctx);
+//     {
+//       char *d = browser->directory;
+//       char *begin = d + 1;
+//       nk_layout_row_dynamic(ctx, 25, 6);
+//       while (*d++) {
+//         if (*d == '/') {
+//           *d = '\0';
+//           if (nk_button_label(ctx, begin)) {
+//             *d++ = '/';
+//             *d = '\0';
+//             file_browser_reload_directory_content(browser,
+//             browser->directory); break;
+//           }
+//           *d = '/';
+//           begin = d + 1;
+//         }
+//       }
+//     }
+//     nk_menubar_end(ctx);
+//     ctx->style.window.spacing.x = spacing_x;
+//
+//     /* window layout */
+//     total_space = nk_window_get_content_region(ctx);
+//     nk_layout_row(ctx, NK_DYNAMIC, total_space.h, 2, ratio);
+//     nk_group_begin(ctx, "Special", NK_WINDOW_NO_SCROLLBAR);
+//     {
+//       struct nk_image home = media->icons.home;
+//       struct nk_image desktop = media->icons.desktop;
+//       struct nk_image computer = media->icons.computer;
+//
+//       nk_layout_row_dynamic(ctx, 40, 1);
+//       if (nk_button_image_label(ctx, home, "home", NK_TEXT_CENTERED))
+//         file_browser_reload_directory_content(browser, browser->home);
+//       if (nk_button_image_label(ctx, desktop, "desktop", NK_TEXT_CENTERED))
+//         file_browser_reload_directory_content(browser, browser->desktop);
+//       if (nk_button_image_label(ctx, computer, "computer", NK_TEXT_CENTERED))
+//         file_browser_reload_directory_content(browser, "/");
+//       nk_group_end(ctx);
+//     }
+//
+//     /* output directory content window */
+//     nk_group_begin(ctx, "Content", 0);
+//     {
+//       int index = -1;
+//       size_t i = 0, j = 0, k = 0;
+//       size_t rows = 0, cols = 0;
+//       size_t count = browser->dir_count + browser->file_count;
+//
+//       cols = 4;
+//       rows = count / cols;
+//       for (i = 0; i <= rows; i += 1) {
+//         {
+//           size_t n = j + cols;
+//           nk_layout_row_dynamic(ctx, 135, (int)cols);
+//           for (; j < count && j < n; ++j) {
+//             /* draw one row of icons */
+//             if (j < browser->dir_count) {
+//               /* draw and execute directory buttons */
+//               if (nk_button_image(ctx, media->icons.directory))
+//                 index = (int)j;
+//             } else {
+//               /* draw and execute files buttons */
+//               struct nk_image *icon;
+//               size_t fileIndex = ((size_t)j - browser->dir_count);
+//               icon = media_icon_for_file(media, browser->files[fileIndex]);
+//               if (nk_button_image(ctx, *icon)) {
+//                 strncpy(browser->file, browser->directory, MAX_PATH_LEN);
+//                 n = strlen(browser->file);
+//                 strncpy(browser->file + n, browser->files[fileIndex],
+//                         MAX_PATH_LEN - n);
+//                 ret = 1;
+//               }
+//             }
+//           }
+//         }
+//         {
+//           size_t n = k + cols;
+//           nk_layout_row_dynamic(ctx, 20, (int)cols);
+//           for (; k < count && k < n; k++) {
+//             /* draw one row of labels */
+//             if (k < browser->dir_count) {
+//               nk_label(ctx, browser->directories[k], NK_TEXT_CENTERED);
+//             } else {
+//               size_t t = k - browser->dir_count;
+//               nk_label(ctx, browser->files[t], NK_TEXT_CENTERED);
+//             }
+//           }
+//         }
+//       }
+//
+//       if (index != -1) {
+//         size_t n = strlen(browser->directory);
+//         strncpy(browser->directory + n, browser->directories[index],
+//                 MAX_PATH_LEN - n);
+//         n = strlen(browser->directory);
+//         if (n < MAX_PATH_LEN - 1) {
+//           browser->directory[n] = '/';
+//           browser->directory[n + 1] = '\0';
+//         }
+//         file_browser_reload_directory_content(browser, browser->directory);
+//       }
+//       nk_group_end(ctx);
+//     }
+//   }
+//   nk_end(ctx);
+//   return ret;
+// }
+
+/* ===============================================================
+ *
+ *                          DEVICE
+ *
+ * ===============================================================*/
+struct nk_glfw_vertex {
+  float position[2];
+  float uv[2];
+  nk_byte col[4];
+};
+
+struct device {
+  struct nk_buffer cmds;
+  struct nk_draw_null_texture tex_null;
+  GLuint vbo, vao, ebo;
+  GLuint prog;
+  GLuint vert_shdr;
+  GLuint frag_shdr;
+  GLint attrib_pos;
+  GLint attrib_uv;
+  GLint attrib_col;
+  GLint uniform_tex;
+  GLint uniform_proj;
+  GLuint font_tex;
+};
+// static struct nk_image
+// icon_load(const char *filename)
+// {
+//     int x,y,n;
+//     GLuint tex;
+//     unsigned char *data = stbi_load(filename, &x, &y, &n, 0);
+//     if (!data) die("[SDL]: failed to load image: %s", filename);
+//
+//     glGenTextures(1, &tex);
+//     glBindTexture(GL_TEXTURE_2D, tex);
+//     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
+//     GL_LINEAR_MIPMAP_NEAREST); glTexParameterf(GL_TEXTURE_2D,
+//     GL_TEXTURE_MAG_FILTER, GL_LINEAR_MIPMAP_NEAREST);
+//     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+//     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+//     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, x, y, 0, GL_RGBA,
+//     GL_UNSIGNED_BYTE, data); glGenerateMipmap(GL_TEXTURE_2D);
+//     stbi_image_free(data);
+//     return nk_image_id((int)tex);
+// }
+
+static void device_init(struct device *dev) {
+  GLint status;
+  static const GLchar *vertex_shader =
+      NK_SHADER_VERSION "uniform mat4 ProjMtx;\n"
+                        "in vec2 Position;\n"
+                        "in vec2 TexCoord;\n"
+                        "in vec4 Color;\n"
+                        "out vec2 Frag_UV;\n"
+                        "out vec4 Frag_Color;\n"
+                        "void main() {\n"
+                        "   Frag_UV = TexCoord;\n"
+                        "   Frag_Color = Color;\n"
+                        "   gl_Position = ProjMtx * vec4(Position.xy, 0, 1);\n"
+                        "}\n";
+  static const GLchar *fragment_shader = NK_SHADER_VERSION
+      "precision mediump float;\n"
+      "uniform sampler2D Texture;\n"
+      "in vec2 Frag_UV;\n"
+      "in vec4 Frag_Color;\n"
+      "out vec4 Out_Color;\n"
+      "void main(){\n"
+      "   Out_Color = Frag_Color * texture(Texture, Frag_UV.st);\n"
+      "}\n";
+
+  nk_buffer_init_default(&dev->cmds);
+  dev->prog = glCreateProgram();
+  dev->vert_shdr = glCreateShader(GL_VERTEX_SHADER);
+  dev->frag_shdr = glCreateShader(GL_FRAGMENT_SHADER);
+  glShaderSource(dev->vert_shdr, 1, &vertex_shader, 0);
+  glShaderSource(dev->frag_shdr, 1, &fragment_shader, 0);
+  glCompileShader(dev->vert_shdr);
+  glCompileShader(dev->frag_shdr);
+  glGetShaderiv(dev->vert_shdr, GL_COMPILE_STATUS, &status);
+  assert(status == GL_TRUE);
+  glGetShaderiv(dev->frag_shdr, GL_COMPILE_STATUS, &status);
+  assert(status == GL_TRUE);
+  glAttachShader(dev->prog, dev->vert_shdr);
+  glAttachShader(dev->prog, dev->frag_shdr);
+  glLinkProgram(dev->prog);
+  glGetProgramiv(dev->prog, GL_LINK_STATUS, &status);
+  assert(status == GL_TRUE);
+
+  dev->uniform_tex = glGetUniformLocation(dev->prog, "Texture");
+  dev->uniform_proj = glGetUniformLocation(dev->prog, "ProjMtx");
+  dev->attrib_pos = glGetAttribLocation(dev->prog, "Position");
+  dev->attrib_uv = glGetAttribLocation(dev->prog, "TexCoord");
+  dev->attrib_col = glGetAttribLocation(dev->prog, "Color");
+
+  {
+    /* buffer setup */
+    GLsizei vs = sizeof(struct nk_glfw_vertex);
+    size_t vp = offsetof(struct nk_glfw_vertex, position);
+    size_t vt = offsetof(struct nk_glfw_vertex, uv);
+    size_t vc = offsetof(struct nk_glfw_vertex, col);
+
+    glGenBuffers(1, &dev->vbo);
+    glGenBuffers(1, &dev->ebo);
+    glGenVertexArrays(1, &dev->vao);
+
+    glBindVertexArray(dev->vao);
+    glBindBuffer(GL_ARRAY_BUFFER, dev->vbo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, dev->ebo);
+
+    glEnableVertexAttribArray((GLuint)dev->attrib_pos);
+    glEnableVertexAttribArray((GLuint)dev->attrib_uv);
+    glEnableVertexAttribArray((GLuint)dev->attrib_col);
+
+    glVertexAttribPointer((GLuint)dev->attrib_pos, 2, GL_FLOAT, GL_FALSE, vs,
+                          (void *)vp);
+    glVertexAttribPointer((GLuint)dev->attrib_uv, 2, GL_FLOAT, GL_FALSE, vs,
+                          (void *)vt);
+    glVertexAttribPointer((GLuint)dev->attrib_col, 4, GL_UNSIGNED_BYTE, GL_TRUE,
+                          vs, (void *)vc);
+  }
+
+  glBindTexture(GL_TEXTURE_2D, 0);
+  glBindBuffer(GL_ARRAY_BUFFER, 0);
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+  glBindVertexArray(0);
+}
+
+static void device_upload_atlas(struct device *dev, const void *image,
+                                int width, int height) {
+  glGenTextures(1, &dev->font_tex);
+  glBindTexture(GL_TEXTURE_2D, dev->font_tex);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (GLsizei)width, (GLsizei)height, 0,
+               GL_RGBA, GL_UNSIGNED_BYTE, image);
+}
+
+static void device_shutdown(struct device *dev) {
+  glDetachShader(dev->prog, dev->vert_shdr);
+  glDetachShader(dev->prog, dev->frag_shdr);
+  glDeleteShader(dev->vert_shdr);
+  glDeleteShader(dev->frag_shdr);
+  glDeleteProgram(dev->prog);
+  glDeleteTextures(1, &dev->font_tex);
+  glDeleteBuffers(1, &dev->vbo);
+  glDeleteBuffers(1, &dev->ebo);
+  nk_buffer_free(&dev->cmds);
+}
+
+static void device_draw(struct device *dev, struct nk_context *ctx, int width,
+                        int height, struct nk_vec2 scale,
+                        enum nk_anti_aliasing AA) {
+  GLfloat ortho[4][4] = {
+      {2.0f, 0.0f, 0.0f, 0.0f},
+      {0.0f, -2.0f, 0.0f, 0.0f},
+      {0.0f, 0.0f, -1.0f, 0.0f},
+      {-1.0f, 1.0f, 0.0f, 1.0f},
+  };
+  ortho[0][0] /= (GLfloat)width;
+  ortho[1][1] /= (GLfloat)height;
+
+  /* setup global state */
+  glEnable(GL_BLEND);
+  glBlendEquation(GL_FUNC_ADD);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  glDisable(GL_CULL_FACE);
+  glDisable(GL_DEPTH_TEST);
+  glEnable(GL_SCISSOR_TEST);
+  glActiveTexture(GL_TEXTURE0);
+
+  /* setup program */
+  glUseProgram(dev->prog);
+  glUniform1i(dev->uniform_tex, 0);
+  glUniformMatrix4fv(dev->uniform_proj, 1, GL_FALSE, &ortho[0][0]);
+  {
+    /* convert from command queue into draw list and draw to screen */
+    const struct nk_draw_command *cmd;
+    void *vertices, *elements;
+    const nk_draw_index *offset = NULL;
+
+    /* allocate vertex and element buffer */
+    glBindVertexArray(dev->vao);
+    glBindBuffer(GL_ARRAY_BUFFER, dev->vbo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, dev->ebo);
+
+    glBufferData(GL_ARRAY_BUFFER, MAX_VERTEX_MEMORY, NULL, GL_STREAM_DRAW);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, MAX_ELEMENT_MEMORY, NULL,
+                 GL_STREAM_DRAW);
+
+    /* load draw vertices & elements directly into vertex + element buffer */
+    vertices = glMapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY);
+    elements = glMapBuffer(GL_ELEMENT_ARRAY_BUFFER, GL_WRITE_ONLY);
+    {
+      /* fill convert configuration */
+      struct nk_convert_config config;
+      static const struct nk_draw_vertex_layout_element vertex_layout[] = {
+          {NK_VERTEX_POSITION, NK_FORMAT_FLOAT,
+           NK_OFFSETOF(struct nk_glfw_vertex, position)},
+          {NK_VERTEX_TEXCOORD, NK_FORMAT_FLOAT,
+           NK_OFFSETOF(struct nk_glfw_vertex, uv)},
+          {NK_VERTEX_COLOR, NK_FORMAT_R8G8B8A8,
+           NK_OFFSETOF(struct nk_glfw_vertex, col)},
+          {NK_VERTEX_LAYOUT_END}};
+      NK_MEMSET(&config, 0, sizeof(config));
+      config.vertex_layout = vertex_layout;
+      config.vertex_size = sizeof(struct nk_glfw_vertex);
+      config.vertex_alignment = NK_ALIGNOF(struct nk_glfw_vertex);
+      config.tex_null = dev->tex_null;
+      config.circle_segment_count = 22;
+      config.curve_segment_count = 22;
+      config.arc_segment_count = 22;
+      config.global_alpha = 1.0f;
+      config.shape_AA = AA;
+      config.line_AA = AA;
+
+      /* setup buffers to load vertices and elements */
+      {
+        struct nk_buffer vbuf, ebuf;
+        nk_buffer_init_fixed(&vbuf, vertices, MAX_VERTEX_MEMORY);
+        nk_buffer_init_fixed(&ebuf, elements, MAX_ELEMENT_MEMORY);
+        nk_convert(ctx, &dev->cmds, &vbuf, &ebuf, &config);
+      }
+    }
+    glUnmapBuffer(GL_ARRAY_BUFFER);
+    glUnmapBuffer(GL_ELEMENT_ARRAY_BUFFER);
+
+    /* iterate over and execute each draw command */
+    nk_draw_foreach(cmd, ctx, &dev->cmds) {
+      if (!cmd->elem_count)
+        continue;
+      glBindTexture(GL_TEXTURE_2D, (GLuint)cmd->texture.id);
+      glScissor(
+          (GLint)(cmd->clip_rect.x * scale.x),
+          (GLint)((height - (GLint)(cmd->clip_rect.y + cmd->clip_rect.h)) *
+                  scale.y),
+          (GLint)(cmd->clip_rect.w * scale.x),
+          (GLint)(cmd->clip_rect.h * scale.y));
+      glDrawElements(GL_TRIANGLES, (GLsizei)cmd->elem_count, GL_UNSIGNED_SHORT,
+                     offset);
+      offset += cmd->elem_count;
+    }
+    nk_clear(ctx);
+    nk_buffer_clear(&dev->cmds);
+  }
+
+  /* default OpenGL state */
+  glUseProgram(0);
+  glBindBuffer(GL_ARRAY_BUFFER, 0);
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+  glBindVertexArray(0);
+  glDisable(GL_BLEND);
+  glDisable(GL_SCISSOR_TEST);
+}
+
+// int main(int argc, char *argv[]) {
+//   /* Platform */
+//   // static GLFWwindow *win;
+//   int width = 0, height = 0;
+//   int display_width = 0, display_height = 0;
+//
+//   /* GUI */
+//
+//   /* GLFW */
+//   // glfwSetErrorCallback(error_callback);
+//   // if (!glfwInit()) {
+//   //   fprintf(stdout, "[GFLW] failed to init!\n");
+//   //   exit(1);
+//   // }
+// #ifdef __APPLE__
+//   glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
+// #endif
+//   // glfwSetWindowUserPointer(win, &ctx);
+//   // glfwSetCharCallback(win, text_input);
+//   // glfwSetScrollCallback(win, scroll_input);
+//
+//   /* OpenGL */
+//   glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
+//   // glewExperimental = 1;
+//   // if (glewInit() != GLEW_OK) {
+//   //   fprintf(stderr, "Failed to setup GLEW\n");
+//   //   exit(1);
+//   // }
+//
+//   { /* GUI */
+//     device_init(&device);
+//     {
+//       const void *image;
+//       int w, h;
+//       const char *font_path = (argc > 1) ? argv[1] : 0;
+//       nk_font_atlas_init_default(&atlas);
+//       nk_font_atlas_begin(&atlas);
+//       if (font_path)
+//         font = nk_font_atlas_add_from_file(&atlas, font_path, 13.0f, NULL);
+//       else
+//         font = nk_font_atlas_add_default(&atlas, 13.0f, NULL);
+//       image = nk_font_atlas_bake(&atlas, &w, &h, NK_FONT_ATLAS_RGBA32);
+//       device_upload_atlas(&device, image, w, h);
+//       nk_font_atlas_end(&atlas, nk_handle_id((int)device.font_tex),
+//                         &device.tex_null);
+//     }
+//     nk_init_default(&ctx, &font->handle);
+//   }
+//
+//   /* icons */
+//   glEnable(GL_TEXTURE_2D);
+//   media.icons.home = icon_load("../icon/home.png");
+//   media.icons.directory = icon_load("../icon/directory.png");
+//   media.icons.computer = icon_load("../icon/computer.png");
+//   media.icons.desktop = icon_load("../icon/desktop.png");
+//   media.icons.default_file = icon_load("../icon/default.png");
+//   media.icons.text_file = icon_load("../icon/text.png");
+//   media.icons.music_file = icon_load("../icon/music.png");
+//   media.icons.font_file = icon_load("../icon/font.png");
+//   media.icons.img_file = icon_load("../icon/img.png");
+//   media.icons.movie_file = icon_load("../icon/movie.png");
+//   media_init(&media);
+//
+//   file_browser_init(&browser, &media);
+//   while (!glfwWindowShouldClose(win)) {
+//     /* High DPI displays */
+//     struct nk_vec2 scale;
+//     glfwGetWindowSize(win, &width, &height);
+//     glfwGetFramebufferSize(win, &display_width, &display_height);
+//     scale.x = (float)display_width / (float)width;
+//     scale.y = (float)display_height / (float)height;
+//
+//     /* Input */
+//     {
+//       double x, y;
+//       nk_input_begin(&ctx);
+//       glfwPollEvents();
+//       nk_input_key(&ctx, NK_KEY_DEL,
+//                    glfwGetKey(win, GLFW_KEY_DELETE) == GLFW_PRESS);
+//       nk_input_key(&ctx, NK_KEY_ENTER,
+//                    glfwGetKey(win, GLFW_KEY_ENTER) == GLFW_PRESS);
+//       nk_input_key(&ctx, NK_KEY_TAB,
+//                    glfwGetKey(win, GLFW_KEY_TAB) == GLFW_PRESS);
+//       nk_input_key(&ctx, NK_KEY_BACKSPACE,
+//                    glfwGetKey(win, GLFW_KEY_BACKSPACE) == GLFW_PRESS);
+//       nk_input_key(&ctx, NK_KEY_LEFT,
+//                    glfwGetKey(win, GLFW_KEY_LEFT) == GLFW_PRESS);
+//       nk_input_key(&ctx, NK_KEY_RIGHT,
+//                    glfwGetKey(win, GLFW_KEY_RIGHT) == GLFW_PRESS);
+//       nk_input_key(&ctx, NK_KEY_UP, glfwGetKey(win, GLFW_KEY_UP) ==
+//       GLFW_PRESS); nk_input_key(&ctx, NK_KEY_DOWN,
+//                    glfwGetKey(win, GLFW_KEY_DOWN) == GLFW_PRESS);
+//       if (glfwGetKey(win, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
+//           glfwGetKey(win, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS) {
+//         nk_input_key(&ctx, NK_KEY_COPY,
+//                      glfwGetKey(win, GLFW_KEY_C) == GLFW_PRESS);
+//         nk_input_key(&ctx, NK_KEY_PASTE,
+//                      glfwGetKey(win, GLFW_KEY_P) == GLFW_PRESS);
+//         nk_input_key(&ctx, NK_KEY_CUT,
+//                      glfwGetKey(win, GLFW_KEY_X) == GLFW_PRESS);
+//         nk_input_key(&ctx, NK_KEY_CUT,
+//                      glfwGetKey(win, GLFW_KEY_E) == GLFW_PRESS);
+//         nk_input_key(&ctx, NK_KEY_SHIFT, 1);
+//       } else {
+//         nk_input_key(&ctx, NK_KEY_COPY, 0);
+//         nk_input_key(&ctx, NK_KEY_PASTE, 0);
+//         nk_input_key(&ctx, NK_KEY_CUT, 0);
+//         nk_input_key(&ctx, NK_KEY_SHIFT, 0);
+//       }
+//       glfwGetCursorPos(win, &x, &y);
+//       nk_input_motion(&ctx, (int)x, (int)y);
+//       nk_input_button(&ctx, NK_BUTTON_LEFT, (int)x, (int)y,
+//                       glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_LEFT) ==
+//                           GLFW_PRESS);
+//       nk_input_button(&ctx, NK_BUTTON_MIDDLE, (int)x, (int)y,
+//                       glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_MIDDLE) ==
+//                           GLFW_PRESS);
+//       nk_input_button(&ctx, NK_BUTTON_RIGHT, (int)x, (int)y,
+//                       glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_RIGHT) ==
+//                           GLFW_PRESS);
+//       nk_input_end(&ctx);
+//     }
+//
+//     /* GUI */
+//     file_browser_run(&browser, &ctx);
+//
+//     /* Draw */
+//     glViewport(0, 0, display_width, display_height);
+//     glClear(GL_COLOR_BUFFER_BIT);
+//     glClearColor(0.2f, 0.2f, 0.2f, 1.0f);
+//     device_draw(&device, &ctx, width, height, scale, NK_ANTI_ALIASING_ON);
+//     glfwSwapBuffers(win);
+//   }
+//
+//   glDeleteTextures(1, (const GLuint *)&media.icons.home.handle.id);
+//   glDeleteTextures(1, (const GLuint *)&media.icons.directory.handle.id);
+//   glDeleteTextures(1, (const GLuint *)&media.icons.computer.handle.id);
+//   glDeleteTextures(1, (const GLuint *)&media.icons.desktop.handle.id);
+//   glDeleteTextures(1, (const GLuint *)&media.icons.default_file.handle.id);
+//   glDeleteTextures(1, (const GLuint *)&media.icons.text_file.handle.id);
+//   glDeleteTextures(1, (const GLuint *)&media.icons.music_file.handle.id);
+//   glDeleteTextures(1, (const GLuint *)&media.icons.font_file.handle.id);
+//   glDeleteTextures(1, (const GLuint *)&media.icons.img_file.handle.id);
+//   glDeleteTextures(1, (const GLuint *)&media.icons.movie_file.handle.id);
+//
+//   file_browser_free(&browser);
+//   nk_font_atlas_clear(&atlas);
+//   nk_free(&ctx);
+//   device_shutdown(&device);
+//   glfwTerminate();
+//   return 0;
+// }
+//
+struct gui {
+  struct RGFW_window win;
+  struct device device;
+  struct nk_context ctx;
+  struct nk_font *font;
+  struct nk_font_atlas atlas;
+};
+
+void onkey(RGFW_window *win, RGFW_key key, unsigned char keyChar,
+           RGFW_keymod keyMod, RGFW_bool down) {
+  struct gui *gui = win->userPtr;
+
+  nk_input_char(&gui->ctx, down);
+
+  if (key == RGFW_escape && down)
+    RGFW_window_setShouldClose(win, true);
+}
+
+void onmousebutton(RGFW_window *win, unsigned char b, double dbl,
+                   unsigned char down) {
+  struct gui *gui = win->userPtr;
+  switch (b) {
+  case RGFW_mouseLeft:
+    nk_input_button(&gui->ctx, NK_BUTTON_LEFT, gui->win._lastMousePoint.x,
+                    gui->win._lastMousePoint.y, down);
+    break;
+  case RGFW_mouseRight:
+    nk_input_button(&gui->ctx, NK_BUTTON_RIGHT, gui->win._lastMousePoint.x,
+                    gui->win._lastMousePoint.y, down);
+    break;
+  };
+}
+
+void onmousepos(RGFW_window *win, RGFW_point dst, RGFW_point) {
+  struct gui *gui = win->userPtr;
+  nk_input_motion(&gui->ctx, dst.x, dst.y);
+}
+
 union gab_value_pair gab_uilib_open(struct gab_triple gab, uint64_t argc,
                                     gab_value argv[argc]) {
   gab_value vwin = gab_box(gab, (struct gab_box_argt){
-                                    .size = sizeof(struct RGFW_window),
-                                    .type = gab_string(gab, "gab\\window"),
+                                    .size = sizeof(struct gui),
+                                    .type = gab_string(gab, "gab\\gui"),
                                 });
-  struct RGFW_window *win = gab_boxdata(vwin);
+  struct gui *gui = gab_boxdata(vwin);
 
   if (!RGFW_createWindowPtr("window", RGFW_RECT(0, 0, 800, 800),
-                            RGFW_windowCenter | RGFW_windowNoResize, win)) {
+                            RGFW_windowCenter | RGFW_windowNoResize,
+                            &gui->win)) {
     gab_vmpush(gab_thisvm(gab), gab_err,
                gab_string(gab, "Failed to create window"));
     return gab_union_cvalid(gab_nil);
   }
+  gui->win.userPtr = gui;
+  RGFW_setKeyCallback(onkey);
+  RGFW_setMouseButtonCallback(onmousebutton);
+  RGFW_setMousePosCallback(onmousepos);
 
   if (!gladLoadGL(RGFW_getProcAddress)) {
     gab_vmpush(gab_thisvm(gab), gab_err,
@@ -33,44 +651,69 @@ union gab_value_pair gab_uilib_open(struct gab_triple gab, uint64_t argc,
     return gab_union_cvalid(gab_nil);
   }
 
-  while (RGFW_window_shouldClose(win) == RGFW_FALSE) {
-    while (RGFW_window_checkEvent(
-        win)) { // or RGFW_window_checkEvents(); if you only want callbacks
-      // you can either check the current event yourself
-      if (win->event.type == RGFW_quit)
-        break;
+  device_init(&gui->device);
+  nk_font_atlas_init_default(&gui->atlas);
+  nk_font_atlas_begin(&gui->atlas);
+  gui->font = nk_font_atlas_add_default(&gui->atlas, 13.0f, NULL);
 
-      if (win->event.type == RGFW_mouseButtonPressed &&
-          win->event.button == RGFW_mouseLeft) {
-        printf("You clicked at x: %d, y: %d\n", win->event.point.x,
-               win->event.point.y);
-      }
+  int w, h;
+  const void *image =
+      nk_font_atlas_bake(&gui->atlas, &w, &h, NK_FONT_ATLAS_RGBA32);
 
-      // or use the existing functions
-      if (RGFW_isMousePressed(win, RGFW_mouseRight)) {
-        printf("The right mouse button was clicked at x: %d, y: %d\n",
-               win->event.point.x, win->event.point.y);
+  device_upload_atlas(&gui->device, image, w, h);
+
+  nk_font_atlas_end(&gui->atlas, nk_handle_id((int)gui->device.font_tex),
+                    &gui->device.tex_null);
+
+  nk_init_default(&gui->ctx, &gui->font->handle);
+
+  while (RGFW_window_shouldClose(&gui->win) == RGFW_FALSE) {
+    RGFW_window_checkEvents(&gui->win, 10);
+
+    struct nk_vec2 scale = {1, 1};
+    // scale.x = (float)display_width / (float)gui->win.r.w;
+    // scale.y = (float)display_height / (float)gui->win.r.h;
+    if (nk_begin(&gui->ctx, "Show", nk_rect(50, 50, 220, 220),
+                 NK_WINDOW_BORDER | NK_WINDOW_MOVABLE | NK_WINDOW_CLOSABLE)) {
+      /* fixed widget pixel width */
+      nk_layout_row_static(&gui->ctx, 30, 80, 1);
+      if (nk_button_label(&gui->ctx, "button")) {
+        /* event handling */
+        printf("PRESSED!\n");
       }
+      // init gui state
+      enum { EASY, HARD };
+      static int op = EASY;
+      static float value = 0.6f;
+
+      /* fixed widget window ratio width */
+      nk_layout_row_dynamic(&gui->ctx, 30, 2);
+      if (nk_option_label(&gui->ctx, "easy", op == EASY))
+        op = EASY;
+      if (nk_option_label(&gui->ctx, "hard", op == HARD))
+        op = HARD;
+
+      /* custom widget pixel width */
+      nk_layout_row_begin(&gui->ctx, NK_STATIC, 30, 2);
+      {
+        nk_layout_row_push(&gui->ctx, 50);
+        nk_label(&gui->ctx, "Volume:", NK_TEXT_LEFT);
+        nk_layout_row_push(&gui->ctx, 110);
+        nk_slider_float(&gui->ctx, 0, &value, 1.0f, 0.1f);
+      }
+      nk_layout_row_end(&gui->ctx);
     }
+    nk_end(&gui->ctx);
 
-    glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+    glViewport(0, 0, gui->win.r.w, gui->win.r.h);
     glClear(GL_COLOR_BUFFER_BIT);
+    glClearColor(0.2f, 0.2f, 0.2f, 1.0f);
 
-    // You can use modern OpenGL techniques, but this method is more
-    // straightforward for drawing just one triangle.
-    glBegin(GL_TRIANGLES);
-    glColor3f(1, 0, 0);
-    glVertex2f(-0.6, -0.75);
-    glColor3f(0, 1, 0);
-    glVertex2f(0.6, -0.75);
-    glColor3f(0, 0, 1);
-    glVertex2f(0, 0.75);
-    glEnd();
-
-    RGFW_window_swapBuffers(win);
+    device_draw(&gui->device, &gui->ctx, gui->win.r.w, gui->win.r.h, scale, NK_ANTI_ALIASING_ON);
+    RGFW_window_swapBuffers(&gui->win);
   }
 
-  RGFW_window_close(win);
+  RGFW_window_close(&gui->win);
 
   gab_vmpush(gab_thisvm(gab), gab_ok);
   return gab_union_cvalid(gab_nil);
