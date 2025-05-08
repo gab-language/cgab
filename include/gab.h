@@ -1777,7 +1777,7 @@ struct gab_oblock {
  */
 GAB_API gab_value gab_block(struct gab_triple gab, gab_value prototype);
 
-struct gab_obj_shape {
+struct gab_oshape {
   struct gab_obj header;
 
   uint64_t len;
@@ -1787,7 +1787,7 @@ struct gab_obj_shape {
   gab_value keys[];
 };
 
-#define GAB_VAL_TO_SHAPE(value) ((struct gab_obj_shape *)gab_valtoo(value))
+#define GAB_VAL_TO_SHAPE(value) ((struct gab_oshape *)gab_valtoo(value))
 
 #define gab_shapeof(gab, ...)                                                  \
   ({                                                                           \
@@ -1815,19 +1815,19 @@ GAB_API_INLINE uint64_t gab_shpislist(gab_value shp) {
 
 GAB_API_INLINE uint64_t gab_shplen(gab_value shp) {
   assert(gab_valkind(shp) == kGAB_SHAPE || gab_valkind(shp) == kGAB_SHAPELIST);
-  struct gab_obj_shape *s = GAB_VAL_TO_SHAPE(shp);
+  struct gab_oshape *s = GAB_VAL_TO_SHAPE(shp);
   return s->len;
 }
 
 GAB_API_INLINE gab_value gab_ushpat(gab_value shp, uint64_t idx) {
   assert(gab_valkind(shp) == kGAB_SHAPE || gab_valkind(shp) == kGAB_SHAPELIST);
-  struct gab_obj_shape *s = GAB_VAL_TO_SHAPE(shp);
+  struct gab_oshape *s = GAB_VAL_TO_SHAPE(shp);
   return s->keys[idx];
 }
 
 GAB_API_INLINE uint64_t gab_shpfind(gab_value shp, gab_value key) {
   assert(gab_valkind(shp) == kGAB_SHAPE || gab_valkind(shp) == kGAB_SHAPELIST);
-  struct gab_obj_shape *s = GAB_VAL_TO_SHAPE(shp);
+  struct gab_oshape *s = GAB_VAL_TO_SHAPE(shp);
 
   switch (gab_valkind(shp)) {
   case kGAB_SHAPELIST:
@@ -1865,7 +1865,7 @@ GAB_API_INLINE bool gab_shphas(gab_value shape, gab_value key) {
 
 GAB_API_INLINE uint64_t gab_shptfind(gab_value shp, gab_value key) {
   assert(gab_valkind(shp) == kGAB_SHAPE || gab_valkind(shp) == kGAB_SHAPELIST);
-  struct gab_obj_shape *s = GAB_VAL_TO_SHAPE(shp);
+  struct gab_oshape *s = GAB_VAL_TO_SHAPE(shp);
 
   uint64_t len = s->transitions.len / 2;
 
@@ -1901,7 +1901,7 @@ GAB_API gab_value gab_shpwithout(struct gab_triple gab, gab_value shp,
 /**
  * @brief A record node.
  */
-struct gab_obj_recnode {
+struct gab_orecnode {
   struct gab_obj header;
 
   /**
@@ -1938,7 +1938,7 @@ struct gab_obj_recnode {
  *  - Key -> Index lookup can be cached, so lookup is simple bit masking and
  * indexing.
  */
-struct gab_obj_rec {
+struct gab_orec {
   struct gab_obj header;
 
   /**
@@ -1965,8 +1965,8 @@ struct gab_obj_rec {
   gab_value data[];
 };
 
-#define GAB_VAL_TO_REC(value) ((struct gab_obj_rec *)gab_valtoo(value))
-#define GAB_VAL_TO_RECNODE(value) ((struct gab_obj_recnode *)gab_valtoo(value))
+#define GAB_VAL_TO_REC(value) ((struct gab_orec *)gab_valtoo(value))
+#define GAB_VAL_TO_RECNODE(value) ((struct gab_orecnode *)gab_valtoo(value))
 
 #define gab_recordof(gab, ...)                                                 \
   ({                                                                           \
@@ -2078,7 +2078,7 @@ GAB_API_INLINE gab_value gab_recshp(gab_value record) {
  */
 GAB_API_INLINE uint64_t gab_reclen(gab_value record) {
   assert(gab_valkind(record) == kGAB_RECORD);
-  struct gab_obj_rec *r = GAB_VAL_TO_REC(record);
+  struct gab_orec *r = GAB_VAL_TO_REC(record);
   return gab_shplen(r->shape);
 }
 
@@ -2113,7 +2113,7 @@ GAB_API_INLINE bool gab_rechas(gab_value record, gab_value key) {
  */
 GAB_API_INLINE bool gab_urechas(gab_value record, uint64_t index) {
   assert(gab_valkind(record) == kGAB_RECORD);
-  struct gab_obj_rec *m = GAB_VAL_TO_REC(record);
+  struct gab_orec *m = GAB_VAL_TO_REC(record);
   return index < gab_shplen(m->shape);
 }
 
@@ -2275,7 +2275,7 @@ GAB_API gab_value gab_lstpop(struct gab_triple gab, gab_value list,
 GAB_API_INLINE uint64_t gab_recisl(gab_value rec) {
   gab_value shp = gab_recshp(rec);
   assert(gab_valkind(shp) == kGAB_SHAPE || gab_valkind(shp) == kGAB_SHAPELIST);
-  struct gab_obj_shape *s = GAB_VAL_TO_SHAPE(shp);
+  struct gab_oshape *s = GAB_VAL_TO_SHAPE(shp);
   return s->header.kind == kGAB_SHAPELIST;
 }
 
@@ -2393,21 +2393,22 @@ GAB_API_INLINE gab_value gab_thisfibmsgrec(struct gab_triple gab,
 
 /**
  * @brief A primitive for sending data between fibers.
+ *
+ * A channel *does not own* these values. They are usually on the c-stack or gab-stack somewhere,
+ * and the thread/fiber blocks until a put/take completes.
  */
 struct gab_ochannel {
   struct gab_obj header;
-
-  /**
-   * The atomic channel for communicating data betwixt fibers
-   */
-  _Atomic gab_value data;
+  /* Number of values held at member *data* */
+  uint64_t len;
+  /* Values held */
+  _Atomic(gab_value *) data;
 };
 
 /**
- * @brief Create a channel with the given buffer capacity.
+ * @brief Create a gab\channel.
  *
  * @param gab The engine
- * @param len The length of the channel's buffer
  * @return The channel
  */
 GAB_API gab_value gab_channel(struct gab_triple gab);
@@ -2427,6 +2428,12 @@ GAB_API gab_value gab_chnput(struct gab_triple gab, gab_value channel,
 GAB_API gab_value gab_tchnput(struct gab_triple gab, gab_value channel,
                               gab_value value, uint64_t nms);
 
+GAB_API gab_value gab_nchnput(struct gab_triple gab, gab_value channel,
+                              uint64_t len, gab_value *value);
+
+GAB_API gab_value gab_ntchnput(struct gab_triple gab, gab_value channel,
+                               uint64_t len, gab_value *value, uint64_t nms);
+
 /**
  * @brief Take a value from the given channel. This will block the caller until
  * a value is available to take.
@@ -2437,16 +2444,14 @@ GAB_API gab_value gab_tchnput(struct gab_triple gab, gab_value channel,
  */
 GAB_API gab_value gab_chntake(struct gab_triple gab, gab_value channel);
 
-/**
- * @brief Take a value from the given channel, with a timeout.
- *
- * @param gab The engine
- * @param channel The channel
- * @param nms The number of milliseconds to wait before closing
- * @return The value taken
- */
+GAB_API gab_value gab_nchntake(struct gab_triple gab, gab_value channel,
+                               uint64_t len, gab_value *data);
+
 GAB_API gab_value gab_tchntake(struct gab_triple gab, gab_value channel,
                                uint64_t nms);
+
+GAB_API gab_value gab_ntchntake(struct gab_triple gab, gab_value channel,
+                                uint64_t len, gab_value *data, uint64_t nms);
 
 /**
  * @brief Close the given channel. A closed channel cannot receive new values.

@@ -652,7 +652,7 @@ union gab_value_pair gab_create(struct gab_create_argt args,
 
 void dec_child_shapes(struct gab_triple gab, gab_value shp) {
   assert(gab_valkind(shp) == kGAB_SHAPE || gab_valkind(shp) == kGAB_SHAPELIST);
-  struct gab_obj_shape *shape = GAB_VAL_TO_SHAPE(shp);
+  struct gab_oshape *shape = GAB_VAL_TO_SHAPE(shp);
 
   uint64_t len = shape->transitions.len / 2;
 

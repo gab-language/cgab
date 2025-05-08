@@ -284,7 +284,7 @@ static inline void for_child_do(struct gab_obj *obj, gab_gc_visitor fnc,
 
   case kGAB_SHAPE:
   case kGAB_SHAPELIST: {
-    struct gab_obj_shape *s = (struct gab_obj_shape *)obj;
+    struct gab_oshape *s = (struct gab_oshape *)obj;
 
     for (uint64_t i = 0; i < s->len; i++) {
       gab_value v = s->keys[i];
@@ -302,7 +302,7 @@ static inline void for_child_do(struct gab_obj *obj, gab_gc_visitor fnc,
   }
 
   case kGAB_RECORD: {
-    struct gab_obj_rec *rec = (struct gab_obj_rec *)obj;
+    struct gab_orec *rec = (struct gab_orec *)obj;
     uint64_t len = (rec->len);
 
     for (uint64_t i = 0; i < len; i++)
@@ -313,7 +313,7 @@ static inline void for_child_do(struct gab_obj *obj, gab_gc_visitor fnc,
   }
 
   case kGAB_RECORDNODE: {
-    struct gab_obj_recnode *rec = (struct gab_obj_recnode *)obj;
+    struct gab_orecnode *rec = (struct gab_orecnode *)obj;
     uint64_t len = rec->len;
 
     for (uint64_t i = 0; i < len; i++)

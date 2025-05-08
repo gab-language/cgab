@@ -1,5 +1,6 @@
 #include "colors.h"
 #include "core.h"
+#include <stdatomic.h>
 #include <stdint.h>
 #define GAB_COLORS_IMPL
 #include "colors.h"
@@ -52,12 +53,12 @@ uint64_t gab_obj_size(struct gab_obj *obj) {
     return sizeof(struct gab_obox) + o->len * sizeof(char);
   }
   case kGAB_RECORDNODE: {
-    struct gab_obj_recnode *o = (struct gab_obj_recnode *)obj;
-    return sizeof(struct gab_obj_recnode) + o->len * sizeof(gab_value);
+    struct gab_orecnode *o = (struct gab_orecnode *)obj;
+    return sizeof(struct gab_orecnode) + o->len * sizeof(gab_value);
   }
   case kGAB_RECORD: {
-    struct gab_obj_rec *o = (struct gab_obj_rec *)obj;
-    return sizeof(struct gab_obj_rec) + o->len * sizeof(gab_value);
+    struct gab_orec *o = (struct gab_orec *)obj;
+    return sizeof(struct gab_orec) + o->len * sizeof(gab_value);
   }
   case kGAB_BLOCK: {
     struct gab_oblock *o = (struct gab_oblock *)obj;
@@ -69,8 +70,8 @@ uint64_t gab_obj_size(struct gab_obj *obj) {
   }
   case kGAB_SHAPE:
   case kGAB_SHAPELIST: {
-    struct gab_obj_shape *o = (struct gab_obj_shape *)obj;
-    return sizeof(struct gab_obj_shape) + o->len * sizeof(gab_value);
+    struct gab_oshape *o = (struct gab_oshape *)obj;
+    return sizeof(struct gab_oshape) + o->len * sizeof(gab_value);
   }
   case kGAB_STRING: {
     struct gab_ostring *o = (struct gab_ostring *)obj;
@@ -88,7 +89,7 @@ uint64_t gab_obj_size(struct gab_obj *obj) {
 }
 
 int sshape_dumpkeys(char **dest, size_t *n, gab_value shape, int depth) {
-  struct gab_obj_shape *shp = GAB_VAL_TO_SHAPE(shape);
+  struct gab_oshape *shp = GAB_VAL_TO_SHAPE(shape);
   uint64_t len = shp->len;
 
   if (len == 0)
@@ -168,7 +169,7 @@ int srec_dumpproperties(char **dest, size_t *n, gab_value rec, int depth) {
     return snprintf_through(dest, n, " ");
   }
   case kGAB_RECORDNODE: {
-    struct gab_obj_recnode *m = GAB_VAL_TO_RECNODE(rec);
+    struct gab_orecnode *m = GAB_VAL_TO_RECNODE(rec);
     uint64_t len = m->len;
 
     if (len == 0)
@@ -339,7 +340,7 @@ void gab_objdestroy(struct gab_triple gab, struct gab_obj *self) {
   };
   case kGAB_SHAPE:
   case kGAB_SHAPELIST: {
-    struct gab_obj_shape *shp = (struct gab_obj_shape *)self;
+    struct gab_oshape *shp = (struct gab_oshape *)self;
     v_gab_value_destroy(&shp->transitions);
     break;
   }
@@ -597,8 +598,8 @@ gab_value gab_box(struct gab_triple gab, struct gab_box_argt args) {
 
 gab_value __gab_record(struct gab_triple gab, uint64_t len, uint64_t space,
                        gab_value *data) {
-  struct gab_obj_rec *self =
-      GAB_CREATE_FLEX_OBJ(gab_obj_rec, gab_value, space + len, kGAB_RECORD);
+  struct gab_orec *self =
+      GAB_CREATE_FLEX_OBJ(gab_orec, gab_value, space + len, kGAB_RECORD);
 
   self->len = len + space;
   self->shape = gab_cinvalid;
@@ -618,8 +619,8 @@ gab_value __gab_record(struct gab_triple gab, uint64_t len, uint64_t space,
 gab_value __gab_recordnode(struct gab_triple gab, uint64_t len, uint64_t adjust,
                            gab_value *data) {
   assert(adjust + len > 0);
-  struct gab_obj_recnode *self = GAB_CREATE_FLEX_OBJ(
-      gab_obj_recnode, gab_value, adjust + len, kGAB_RECORDNODE);
+  struct gab_orecnode *self = GAB_CREATE_FLEX_OBJ(
+      gab_orecnode, gab_value, adjust + len, kGAB_RECORDNODE);
 
   self->len = len + adjust;
 
@@ -637,9 +638,9 @@ gab_value __gab_recordnode(struct gab_triple gab, uint64_t len, uint64_t adjust,
 gab_value reccpy(struct gab_triple gab, gab_value r, int64_t adjust) {
   switch (gab_valkind(r)) {
   case kGAB_RECORD: {
-    struct gab_obj_rec *n = GAB_VAL_TO_REC(r);
+    struct gab_orec *n = GAB_VAL_TO_REC(r);
 
-    struct gab_obj_rec *nm =
+    struct gab_orec *nm =
         GAB_VAL_TO_REC(__gab_record(gab, n->len, adjust, n->data));
 
     nm->shift = n->shift;
@@ -648,7 +649,7 @@ gab_value reccpy(struct gab_triple gab, gab_value r, int64_t adjust) {
     return __gab_obj(nm);
   }
   case kGAB_RECORDNODE: {
-    struct gab_obj_recnode *n = GAB_VAL_TO_RECNODE(r);
+    struct gab_orecnode *n = GAB_VAL_TO_RECNODE(r);
     return __gab_recordnode(gab, n->len, adjust, n->data);
   }
     // Saw invalid
@@ -665,13 +666,13 @@ gab_value reccpy(struct gab_triple gab, gab_value r, int64_t adjust) {
 void recpop(gab_value rec) {
   switch (gab_valkind(rec)) {
   case kGAB_RECORDNODE: {
-    struct gab_obj_recnode *r = GAB_VAL_TO_RECNODE(rec);
+    struct gab_orecnode *r = GAB_VAL_TO_RECNODE(rec);
     assert(r->len > 0);
     r->len--;
     return;
   }
   case kGAB_RECORD: {
-    struct gab_obj_rec *r = GAB_VAL_TO_REC(rec);
+    struct gab_orec *r = GAB_VAL_TO_REC(rec);
     assert(r->len > 0);
     r->len--;
     return;
@@ -685,13 +686,13 @@ void recpop(gab_value rec) {
 void recassoc(gab_value rec, gab_value v, uint64_t i) {
   switch (gab_valkind(rec)) {
   case kGAB_RECORDNODE: {
-    struct gab_obj_recnode *r = GAB_VAL_TO_RECNODE(rec);
+    struct gab_orecnode *r = GAB_VAL_TO_RECNODE(rec);
     assert(i < r->len);
     r->data[i] = v;
     return;
   }
   case kGAB_RECORD: {
-    struct gab_obj_rec *r = GAB_VAL_TO_REC(rec);
+    struct gab_orec *r = GAB_VAL_TO_REC(rec);
     assert(i < r->len);
     r->data[i] = v;
     return;
@@ -705,12 +706,12 @@ void recassoc(gab_value rec, gab_value v, uint64_t i) {
 gab_value recnth(gab_value rec, uint64_t n) {
   switch (gab_valkind(rec)) {
   case kGAB_RECORDNODE: {
-    struct gab_obj_recnode *r = GAB_VAL_TO_RECNODE(rec);
+    struct gab_orecnode *r = GAB_VAL_TO_RECNODE(rec);
     assert(n < r->len);
     return r->data[n];
   }
   case kGAB_RECORD: {
-    struct gab_obj_rec *r = GAB_VAL_TO_REC(rec);
+    struct gab_orec *r = GAB_VAL_TO_REC(rec);
     assert(n < r->len);
     return r->data[n];
   }
@@ -740,7 +741,7 @@ uint64_t reclen(gab_value rec) {
 gab_value gab_uvrecat(gab_value rec, uint64_t i) {
   assert(gab_valkind(rec) == kGAB_RECORD);
 
-  struct gab_obj_rec *r = GAB_VAL_TO_REC(rec);
+  struct gab_orec *r = GAB_VAL_TO_REC(rec);
 
   gab_value node = rec;
 
@@ -764,14 +765,14 @@ gab_value gab_uvrecat(gab_value rec, uint64_t i) {
 
 bool recneedsspace(gab_value rec, uint64_t i) {
   assert(gab_valkind(rec) == kGAB_RECORD);
-  struct gab_obj_rec *r = GAB_VAL_TO_REC(rec);
+  struct gab_orec *r = GAB_VAL_TO_REC(rec);
   uint64_t idx = (i >> r->shift) & GAB_PVEC_MASK;
   return idx >= r->len;
 }
 
 gab_value recsetshp(gab_value rec, gab_value shp) {
   assert(gab_valkind(rec) == kGAB_RECORD);
-  struct gab_obj_rec *r = GAB_VAL_TO_REC(rec);
+  struct gab_orec *r = GAB_VAL_TO_REC(rec);
   r->shape = shp;
   return rec;
 }
@@ -799,7 +800,7 @@ gab_value recsetshp(gab_value rec, gab_value shp) {
  */
 gab_value dissoc(struct gab_triple gab, gab_value rec, uint64_t i) {
   assert(gab_valkind(rec) == kGAB_RECORD);
-  struct gab_obj_rec *r = GAB_VAL_TO_REC(rec);
+  struct gab_orec *r = GAB_VAL_TO_REC(rec);
 
   gab_value chosen_node = rec;
   gab_value root = chosen_node;
@@ -858,7 +859,7 @@ gab_value dissoc(struct gab_triple gab, gab_value rec, uint64_t i) {
 
 gab_value assoc(struct gab_triple gab, gab_value rec, gab_value v, uint64_t i) {
   assert(gab_valkind(rec) == kGAB_RECORD);
-  struct gab_obj_rec *r = GAB_VAL_TO_REC(rec);
+  struct gab_orec *r = GAB_VAL_TO_REC(rec);
 
   gab_value node = rec;
   gab_value root = node;
@@ -884,7 +885,7 @@ gab_value assoc(struct gab_triple gab, gab_value rec, gab_value v, uint64_t i) {
 
 void massoc(struct gab_triple gab, gab_value rec, gab_value v, uint64_t i) {
   assert(gab_valkind(rec) == kGAB_RECORD);
-  struct gab_obj_rec *r = GAB_VAL_TO_REC(rec);
+  struct gab_orec *r = GAB_VAL_TO_REC(rec);
 
   assert(i < gab_reclen(rec));
 
@@ -906,7 +907,7 @@ void massoc(struct gab_triple gab, gab_value rec, gab_value v, uint64_t i) {
 gab_value cons(struct gab_triple gab, gab_value rec, gab_value v,
                gab_value shp) {
   assert(gab_valkind(rec) == kGAB_RECORD);
-  struct gab_obj_rec *r = GAB_VAL_TO_REC(rec);
+  struct gab_orec *r = GAB_VAL_TO_REC(rec);
 
   uint64_t i = gab_reclen(rec);
 
@@ -914,7 +915,7 @@ gab_value cons(struct gab_triple gab, gab_value rec, gab_value v,
   if ((i >> GAB_PVEC_BITS) >= ((uint64_t)1 << r->shift)) {
     gab_value new_root = __gab_record(gab, 1, 1, &rec);
 
-    struct gab_obj_rec *new_r = GAB_VAL_TO_REC(new_root);
+    struct gab_orec *new_r = GAB_VAL_TO_REC(new_root);
 
     new_r->shape = shp;
     new_r->shift = r->shift + 5;
@@ -1077,8 +1078,8 @@ gab_value gab_shptorec(struct gab_triple gab, gab_value shp) {
 
   uint64_t rootlen = getlen(len, shift);
 
-  struct gab_obj_rec *self =
-      GAB_CREATE_FLEX_OBJ(gab_obj_rec, gab_value, rootlen, kGAB_RECORD);
+  struct gab_orec *self =
+      GAB_CREATE_FLEX_OBJ(gab_orec, gab_value, rootlen, kGAB_RECORD);
 
   self->shape = shp;
   self->shift = shift;
@@ -1108,8 +1109,8 @@ gab_value gab_recordfrom(struct gab_triple gab, gab_value shape,
 
   uint64_t rootlen = getlen(real_len, shift);
 
-  struct gab_obj_rec *self =
-      GAB_CREATE_FLEX_OBJ(gab_obj_rec, gab_value, rootlen, kGAB_RECORD);
+  struct gab_orec *self =
+      GAB_CREATE_FLEX_OBJ(gab_orec, gab_value, rootlen, kGAB_RECORD);
 
   self->shape = shape;
   self->shift = shift;
@@ -1183,8 +1184,8 @@ gab_value gab_nlstcat(struct gab_triple gab, uint64_t len,
 
   uint64_t rootlen = getlen(total_len, shift);
 
-  struct gab_obj_rec *self =
-      GAB_CREATE_FLEX_OBJ(gab_obj_rec, gab_value, rootlen, kGAB_RECORD);
+  struct gab_orec *self =
+      GAB_CREATE_FLEX_OBJ(gab_orec, gab_value, rootlen, kGAB_RECORD);
 
   self->shape = gab_shape(gab, 1, total_len, total_keys, nullptr);
   self->shift = shift;
@@ -1220,8 +1221,8 @@ gab_value gab_nreccat(struct gab_triple gab, uint64_t len, gab_value *records) {
   uint64_t shift = getshift(total_len);
   uint64_t rootlen = getlen(total_len, shift);
 
-  struct gab_obj_rec *self =
-      GAB_CREATE_FLEX_OBJ(gab_obj_rec, gab_value, rootlen, kGAB_RECORD);
+  struct gab_orec *self =
+      GAB_CREATE_FLEX_OBJ(gab_orec, gab_value, rootlen, kGAB_RECORD);
 
   self->shape = new_shp;
   self->shift = shift;
@@ -1299,8 +1300,8 @@ gab_value gab_nshpcat(struct gab_triple gab, uint64_t len,
 }
 
 gab_value __gab_shape(struct gab_triple gab, uint64_t len) {
-  struct gab_obj_shape *self =
-      GAB_CREATE_FLEX_OBJ(gab_obj_shape, gab_value, len, kGAB_SHAPELIST);
+  struct gab_oshape *self =
+      GAB_CREATE_FLEX_OBJ(gab_oshape, gab_value, len, kGAB_SHAPELIST);
 
   self->len = len;
 
@@ -1342,7 +1343,7 @@ gab_value gab_shpwith(struct gab_triple gab, gab_value shp, gab_value key) {
   mtx_lock(&gab.eg->shapes_mtx);
 
   assert(gab_valkind(shp) == kGAB_SHAPE || gab_valkind(shp) == kGAB_SHAPELIST);
-  struct gab_obj_shape *s = GAB_VAL_TO_SHAPE(shp);
+  struct gab_oshape *s = GAB_VAL_TO_SHAPE(shp);
 
   uint64_t idx = gab_shpfind(shp, key);
   if (idx != -1) {
@@ -1357,7 +1358,7 @@ gab_value gab_shpwith(struct gab_triple gab, gab_value shp, gab_value key) {
   }
 
   gab_value new_shape = __gab_shape(gab, s->len + 1);
-  struct gab_obj_shape *self = GAB_VAL_TO_SHAPE(new_shape);
+  struct gab_oshape *self = GAB_VAL_TO_SHAPE(new_shape);
 
   if (gab_valkind(shp) != kGAB_SHAPELIST || key != gab_number(s->len))
     self->header.kind = kGAB_SHAPE;
@@ -1581,8 +1582,7 @@ gab_value gab_fibawaite(struct gab_triple gab, gab_value f) {
 gab_value gab_channel(struct gab_triple gab) {
   struct gab_ochannel *self = GAB_CREATE_OBJ(gab_ochannel, kGAB_CHANNEL);
 
-  atomic_init(&self->data, gab_cundefined);
-
+  atomic_init(&self->data, nullptr);
   return __gab_obj(self);
 }
 
@@ -1609,8 +1609,13 @@ bool gab_chnisempty(gab_value c) {
          gab_valkind(c) <= kGAB_CHANNELCLOSED);
 
   struct gab_ochannel *channel = GAB_VAL_TO_CHANNEL(c);
-
-  return atomic_load(&channel->data) == gab_cundefined;
+  switch (channel->header.kind) {
+  case kGAB_CHANNELCLOSED:
+    return true;
+  case kGAB_CHANNEL:
+    return atomic_load(&channel->data) == nullptr;
+  }
+  assert(false && "unreachable");
 };
 
 bool gab_chnisfull(gab_value c) {
@@ -1618,19 +1623,70 @@ bool gab_chnisfull(gab_value c) {
          gab_valkind(c) <= kGAB_CHANNELCLOSED);
 
   struct gab_ochannel *channel = GAB_VAL_TO_CHANNEL(c);
-
-  return atomic_load(&channel->data) != gab_cundefined;
+  switch (channel->header.kind) {
+  case kGAB_CHANNELCLOSED:
+    return false;
+  case kGAB_CHANNEL:
+    return atomic_load(&channel->data) != nullptr;
+  }
+  assert(false && "unreachable");
 };
 
-bool channel_put(struct gab_ochannel *channel, gab_value value) {
-  static gab_value undef = gab_cundefined;
-  return atomic_compare_exchange_weak(&channel->data, &undef, value);
+/*
+ * Try to put a slice into a channel. Uses weak atomic exchange, so
+ *  must be used in loops.
+ *
+ * If the compare-exchange succeeds, also writes the len into the channel.
+ */
+bool channel_put(struct gab_ochannel *channel, uint64_t len, gab_value *vs) {
+  static gab_value *null = nullptr;
+
+  if (atomic_compare_exchange_weak(&channel->data, &null, vs))
+    return channel->len = len, true;
+
+  return false;
 }
 
-gab_value channel_take(struct gab_ochannel *channel) {
-  return atomic_exchange(&channel->data, gab_cundefined);
+/*
+ * Abandon a put by storing nullptr into data.
+ */
+void channel_abandon(struct gab_ochannel *channel) {
+  atomic_store(&channel->data, nullptr);
 }
 
+/*
+ * Try to load up to n values from the channel into dest.
+ * If successful, return a gab_number of the number of values actually loaded.
+ * Else return gab_cundefined.
+ */
+gab_value channel_take(struct gab_ochannel *channel, uint64_t n,
+                       gab_value *dest) {
+  // This load of the len scares me. However, we only ever write to channel->len
+  // when we have succeeded with our atomic exchange against nullptr. So I think
+  // it should be fine.
+  uint64_t avail = channel->len;
+  gab_value *src = atomic_load(&channel->data);
+
+  if (!src)
+    return gab_cundefined;
+
+  // Try the take - perform our copy.
+  uint64_t len = n < avail ? n : avail;
+  memcpy(dest, src, sizeof(gab_value) * len);
+
+  // If this exchange fails:
+  //  The data ptr in the channel no longer matches the src ptr
+  //  that we just memcpy'd from. That means someone got to the data first
+  //  (and either the channel is now empty, or a new src ptr is there).
+  //  In either case, we should return 0 (failure) on a mismatch.
+  if (atomic_compare_exchange_weak(&channel->data, &src, nullptr)) {
+    return gab_number(len);
+  } else {
+    return gab_cundefined;
+  }
+}
+
+/* Identical to put, except the memcpy goes the other way. */
 gab_value channel_block_while_full(struct gab_triple gab,
                                    struct gab_ochannel *channel, gab_value c,
                                    uint64_t timeout_ns, uint64_t *timer_ns) {
@@ -1694,7 +1750,7 @@ gab_value channel_block_while_empty(struct gab_triple gab,
  */
 gab_value channel_blocking_put(struct gab_triple gab,
                                struct gab_ochannel *channel, gab_value c,
-                               gab_value v, size_t nms) {
+                               uint64_t len, gab_value *vs, size_t nms) {
   gab_value res = gab_cundefined;
 
   const uint64_t timeout_ns = nms * 1000000;
@@ -1706,7 +1762,7 @@ gab_value channel_blocking_put(struct gab_triple gab,
     if (res != gab_cvalid)
       return res;
 
-    if (channel_put(channel, v))
+    if (channel_put(channel, len, vs))
       break;
   }
 
@@ -1720,7 +1776,7 @@ gab_value channel_blocking_put(struct gab_triple gab,
   case gab_ctimeout:
   case gab_cinvalid:
   case gab_cundefined:
-    return channel_take(channel), res;
+    return channel_abandon(channel), res;
   // A taker arrived.
   default:
     return gab_cvalid;
@@ -1732,11 +1788,11 @@ gab_value channel_blocking_put(struct gab_triple gab,
  * gab_ctimeout on timeout
  * gab_cundefined on close!
  * gab_cinvalid on terminate
- * taken value on success.
+ * gab_cvalid on a success
  */
 gab_value channel_blocking_take(struct gab_triple gab,
                                 struct gab_ochannel *channel, gab_value c,
-                                size_t nms) {
+                                uint64_t len, gab_value *vs, size_t nms) {
   gab_value res = gab_cundefined;
 
   const uint64_t timeout_ns = nms * 1000000;
@@ -1748,7 +1804,7 @@ gab_value channel_blocking_take(struct gab_triple gab,
     if (res != gab_cvalid)
       return res;
 
-    res = channel_take(channel);
+    res = channel_take(channel, len, vs);
   }
 
   return res;
@@ -1761,8 +1817,8 @@ gab_value channel_blocking_take(struct gab_triple gab,
  * gab_cinvalid on terminate
  * gab_cvalid on success
  */
-gab_value gab_tchnput(struct gab_triple gab, gab_value c, gab_value value,
-                      uint64_t nms) {
+gab_value gab_ntchnput(struct gab_triple gab, gab_value c, uint64_t len,
+                       gab_value *vs, uint64_t nms) {
   assert(gab_valkind(c) >= kGAB_CHANNEL &&
          gab_valkind(c) <= kGAB_CHANNELCLOSED);
 
@@ -1770,7 +1826,7 @@ gab_value gab_tchnput(struct gab_triple gab, gab_value c, gab_value value,
 
   switch (channel->header.kind) {
   case kGAB_CHANNEL:
-    return channel_blocking_put(gab, channel, c, value, nms);
+    return channel_blocking_put(gab, channel, c, len, vs, nms);
   case kGAB_CHANNELCLOSED:
     return gab_cundefined;
   default:
@@ -1779,24 +1835,22 @@ gab_value gab_tchnput(struct gab_triple gab, gab_value c, gab_value value,
   }
 }
 
+gab_value gab_tchnput(struct gab_triple gab, gab_value c, gab_value value,
+                      uint64_t nms) {
+  return gab_ntchnput(gab, c, 1, &value, nms);
+}
+
+gab_value gab_nchnput(struct gab_triple gab, gab_value channel, uint64_t len,
+                      gab_value *vs) {
+  gab_value v = gab_ntchnput(gab, channel, len, vs, -1);
+  assert(v != gab_ctimeout);
+  return v;
+}
+
 gab_value gab_chnput(struct gab_triple gab, gab_value c, gab_value value) {
   gab_value v = gab_tchnput(gab, c, value, -1);
   assert(v != gab_ctimeout);
   return v;
-}
-
-gab_value gab_chntake(struct gab_triple gab, gab_value c) {
-  gab_value v = gab_tchntake(gab, c, -1);
-  assert(v != gab_ctimeout);
-  return v;
-}
-
-gab_value gab_chnat(gab_value c) {
-  assert(gab_valkind(c) >= kGAB_CHANNEL &&
-         gab_valkind(c) <= kGAB_CHANNELCLOSED);
-
-  struct gab_ochannel *channel = GAB_VAL_TO_CHANNEL(c);
-  return atomic_load(&channel->data);
 }
 
 /*
@@ -1804,9 +1858,10 @@ gab_value gab_chnat(gab_value c) {
  * gab_ctimeout on timeout
  * gab_cundefined on close!
  * gab_cinvalid on terminate
- * taken value on success.
+ * gab_number corresponding to number of taken values on success.
  */
-gab_value gab_tchntake(struct gab_triple gab, gab_value c, uint64_t nms) {
+gab_value gab_ntchntake(struct gab_triple gab, gab_value c, uint64_t len,
+                        gab_value *data, uint64_t nms) {
   assert(gab_valkind(c) >= kGAB_CHANNEL &&
          gab_valkind(c) <= kGAB_CHANNELCLOSED);
 
@@ -1814,13 +1869,36 @@ gab_value gab_tchntake(struct gab_triple gab, gab_value c, uint64_t nms) {
 
   switch (channel->header.kind) {
   case kGAB_CHANNEL:
-    return channel_blocking_take(gab, channel, c, nms);
+    return channel_blocking_take(gab, channel, c, len, data, nms);
   case kGAB_CHANNELCLOSED:
     return gab_cundefined;
   default:
     assert(false && "Unreachable");
     return gab_cinvalid;
   }
+};
+
+gab_value gab_tchntake(struct gab_triple gab, gab_value channel, uint64_t nms) {
+  gab_value out;
+  gab_value res = gab_ntchntake(gab, channel, 1, &out, nms);
+
+  if (gab_valkind(res) != kGAB_NUMBER)
+    return res;
+
+  // We should have one written value.
+  assert(gab_valtou(res) == 1);
+  return out;
+};
+
+gab_value gab_nchntake(struct gab_triple gab, gab_value channel, uint64_t len,
+                       gab_value *data) {
+  return gab_ntchntake(gab, channel, len, data, -1);
+}
+
+gab_value gab_chntake(struct gab_triple gab, gab_value c) {
+  gab_value v = gab_tchntake(gab, c, -1);
+  assert(v != gab_ctimeout);
+  return v;
 }
 
 static uint64_t dumpInstruction(FILE *stream, struct gab_oprototype *self,
@@ -1879,8 +1957,7 @@ static uint64_t dumpTrimInstruction(FILE *stream, struct gab_oprototype *self,
 static uint64_t dumpReturnInstruction(FILE *stream, struct gab_oprototype *self,
                                       uint64_t offset) {
   uint8_t arg = v_uint8_t_val_at(&self->src->bytecode, offset + 1);
-  fprintf(stream, "%-25s%s\n", "RETURN",
-          arg ? "explicit" : "implicit");
+  fprintf(stream, "%-25s%s\n", "RETURN", arg ? "explicit" : "implicit");
   return offset + 2;
 }
 

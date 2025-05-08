@@ -2141,7 +2141,10 @@ CASE_CODE(SEND_PRIMITIVE_TAKE) {
 
   STORE_SP();
 
-  gab_value v = gab_tchntake(GAB(), c, cGAB_VM_CHANNEL_TAKE_TIMEOUT_MS);
+  // TODO: Fix the hardcoding of len here
+  assert(has_stackspace(SP(), SB(), cGAB_FRAMES_MAX));
+  gab_value v = gab_ntchntake(GAB(), c, cGAB_FRAMES_MAX, SP() - have,
+                              cGAB_VM_CHANNEL_TAKE_TIMEOUT_MS);
 
   switch (v) {
   case gab_ctimeout:
@@ -2151,13 +2154,13 @@ CASE_CODE(SEND_PRIMITIVE_TAKE) {
   case gab_cundefined:
     DROP_N(have + 1);
     PUSH(gab_none);
+
     SET_VAR(below_have + 1);
     NEXT();
   default:
-    DROP_N(have + 1);
-    PUSH(gab_ok);
-    PUSH(v);
-    SET_VAR(below_have + 2);
+    PEEK_N(have + 1) = gab_ok;
+    SP() += (gab_valtoi(v) - (int64_t)have);
+    SET_VAR(below_have + gab_valtou(v) + 1);
     NEXT();
   }
 }
@@ -2171,23 +2174,19 @@ CASE_CODE(SEND_PRIMITIVE_PUT) {
 
   SEND_GUARD_ISC(c);
 
-  gab_value v = gab_nil;
-
-  if (__gab_likely(have >= 2))
-    v = PEEK_N(have - 1);
-
   STORE_SP();
 
-  gab_value r = gab_tchnput(GAB(), c, v, cGAB_VM_CHANNEL_PUT_TIMEOUT_MS);
+  // All values *but* the channel are put into the channel.
+  gab_value r = gab_ntchnput(GAB(), c, have - 1, SP() - (have - 1),
+                             cGAB_VM_CHANNEL_PUT_TIMEOUT_MS);
 
-  // TODO: Should this handle the case of channel closing underneath, and behave
-  // differently?
   switch (r) {
   case gab_ctimeout:
     VM_YIELD();
   case gab_cinvalid:
     VM_TERM();
   default:
+    // Return the channel
     DROP_N(have + 1);
     SET_VAR(below_have + 1);
     NEXT();

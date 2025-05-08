@@ -605,142 +605,56 @@ messages\send_dynamically\test: .def (t => do
   t.expect(result.hi, ==: 4)
 end)
 
-#channels\basic\test: .def t => do
-#  ch = gab\channel:.make
-#
-#  fib = gab\fiber:.make () => ch <! 'test'
-#
-#  (ok v) = ch >!
-#
-#  t.expect(ok ==: ok:)
-#  t.expect(v ==: 'test')
-#
-#  ch.close
-#
-#  ok = ch >!
-#
-#  t.expect(ok ==: none:)
-#end
+channels\basic\test: .def t => do
+  ch = Channels.make
 
-#channels\handle_multiple_blocking_puts: .def t => do
-#  ch = channel:.make
-#
-#  blocking_put = (v) => fiber:make() => ch <! v
-#
-#  blocking_put:(1)
-#  blocking_put:(2)
-#  blocking_put:(3)
-#
-#  took_lessthan_four = () => t:expect(ch:>!:unwrap!, \< 4)
-#
-#  took_lessthan_four:()
-#  took_lessthan_four:()
-#  took_lessthan_four:()
-#end
-#
-#\channels.be_buffered :def t => do
-#  ch = .channel:make 3
-#
-#  put_hi = () => ch <! 'hi'
-#
-#  .fiber:make put_hi
-#  .fiber:make put_hi
-#  .fiber:make put_hi
-#
-#  take_hi = () => do
-#    (ok v) = ch >!
-#
-#    t:expect(ok \== .ok)
-#    t:expect(v \== 'hi')
-#  end
-#
-#  take_hi:()
-#  take_hi:()
-#
-#  ch:close!
-#
-## Take last hi
-#  take_hi:()
-#
-## Now we get none
-#  ok = ch >!
-#
-#  t:expect(ok \== .none)
-#end
-#
-#\channels.be_dropping.test :def t => do
-#  ch = .channel:make(2 .dropping)
-#
-#  put_val = (val) => ch <! val
-#
-#  take_val = (val) => do
-#    (ok v) = ch >!
-#
-#    t:expect(ok \== .ok)
-#    t:expect(v \== val)
-#  end
-#
-#  put_val:('hello')
-#  put_val:('world')
-#
-#  take_val:('hello')
-#  take_val:'world'
-#
-#  put_val: 1
-#  put_val: 2
-#  put_val: 3
-#  put_val: 4
-#
-#  take_val: 1
-#  take_val: 2
-#
-#  put_val: 'again'
-#
-#  ch:close!
-#  take_val: 'again'
-#
-#  ok = ch >!
-#
-#  t:expect(ok \== .none)
-#end
-#
-#\channels.be_sliding.test :def t => do
-#  ch = .channel:make(2 .sliding)
-#
-#  put_val = (val) => ch <! val
-#
-#  took_lessthan_four = () => t:expect(ch:>!:unwrap!, \< 4)
-#
-#  take_val = (val) => do
-#    (ok v) = ch >!
-#
-#    t:expect(ok \== .ok)
-#    t:expect(v \== val)
-#  end
-#
-#  put_val:('hello')
-#  put_val:('world')
-#
-#  take_val:('hello')
-#  take_val:'world'
-#
-#  put_val: 1
-#  put_val: 2
-#  put_val: 3
-#  put_val: 4
-#
-#  take_val: 3
-#  take_val: 4
-#
-#  put_val: 'again'
-#
-#  ch:close!
-#
-#  take_val:'again'
-#
-#  ok = ch >!
-#
-#  t:expect(ok \== .none)
-#end
+  fib = Fibers.make () => ch <! 'test'
+
+  (ok v) = ch >!
+
+  t.expect(ok ==: ok:)
+  t.expect(v ==: 'test')
+
+  ch.close
+
+  ok = ch >!
+
+  t.expect(ok ==: none:)
+end
+
+channels\handle_multiple_blocking_puts\test: .def t => do
+  ch = Channels.make
+
+  blocking_put = (v) => (Fibers.make () => ch <! v)
+
+  blocking_put.(1)
+  blocking_put.(2)
+  blocking_put.(3)
+
+  took_lessthan_four = () => t.expect(ch.>!.unwrap, <:, 4)
+
+  took_lessthan_four.()
+  took_lessthan_four.()
+  took_lessthan_four.()
+end
+
+channels\handle_multiple_values\test: .def t => do
+  ch = Channels.make
+
+  Fibers.make () => ch <! (ok: 2)
+
+  (ok, s, v) = ch >!
+  t.expect(ok ==: ok:)
+  t.expect(s ==: ok:)
+  t.expect(v ==: 2)
+
+  Fibers.make () => ch <! ([1 2 3]*)
+
+  (ok, one, two, three) = ch >!
+  t.expect(ok ==: ok:)
+  t.expect(one ==: 1)
+  t.expect(two ==: 2)
+  t.expect(three ==: 3)
+end
 
 'tests'.use.()
