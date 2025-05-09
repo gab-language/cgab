@@ -160,12 +160,12 @@ end
 # Forget about their values as soon as they're taken
 [Channels.t] .defmodule {
   seq\init: _ => do
-    (ok, v) = self >!
-    (ok, v, v)
+    (ok, xs*) = self >!
+    (ok, nil:, xs*)
   end
   seq\next: _ => do
-    (ok, v) = self >!
-    (ok, v, v)
+    (ok, xs*) = self >!
+    (ok, nil:, xs*)
   end
   is\open: _ => self.is\closed!
 }

@@ -1,4 +1,5 @@
 
+#include <threads.h>
 #define GLAD_GL
 #define GLAD_GL_IMPLEMENTATION
 #include "GL/gl.h"
@@ -205,7 +206,7 @@ static void device_draw(struct device *dev, struct nk_context *ctx, int width,
     /* convert from command queue into draw list and draw to screen */
     const struct nk_draw_command *cmd;
     void *vertices, *elements;
-    const nk_draw_index *offset = NULL;
+    nk_draw_index offset = 0;
 
     /* allocate vertex and element buffer */
     glBindVertexArray(dev->vao);
@@ -278,7 +279,7 @@ static void device_draw(struct device *dev, struct nk_context *ctx, int width,
           (GLint)(cmd->clip_rect.w * scale.x),
           (GLint)(cmd->clip_rect.h * scale.y));
       glDrawElements(GL_TRIANGLES, (GLsizei)cmd->elem_count, GL_UNSIGNED_SHORT,
-                     offset);
+                     (void *)(uintptr_t)offset);
       offset += cmd->elem_count;
     }
     nk_clear(ctx);
@@ -306,37 +307,104 @@ struct gui {
 gab_value evch = gab_cundefined;
 struct gui gui;
 
-void onkey(RGFW_window *win, RGFW_key key, unsigned char keyChar,
-           RGFW_keymod keyMod, RGFW_bool down) {
+void onkey(RGFW_window *win, RGFW_key key, unsigned char key_char,
+           RGFW_keymod key_mod, RGFW_bool down) {
   nk_input_char(&gui.ctx, down);
 
-  gab_chnput(gui.gab, evch, gab_nstring(gui.gab, 1, (const char *)&keyChar));
+  if (evch != gab_cundefined) {
+    gab_value ev[] = {
+        gab_message(gui.gab, "key"),
+        gab_nstring(gui.gab, 1, (const char *)&key_char),
+        gab_number(key_mod),
+        gab_bool(down),
+    };
+
+    gab_nchnput(gui.gab, evch, sizeof(ev) / sizeof(gab_value), ev);
+  }
 }
 
 void onmousebutton(RGFW_window *win, unsigned char b, double dbl,
                    unsigned char down) {
-  struct gui *gui = win->userPtr;
   switch (b) {
   case RGFW_mouseLeft:
-    nk_input_button(&gui->ctx, NK_BUTTON_LEFT, gui->win._lastMousePoint.x,
-                    gui->win._lastMousePoint.y, down);
+    nk_input_button(&gui.ctx, NK_BUTTON_LEFT, gui.win._lastMousePoint.x,
+                    gui.win._lastMousePoint.y, down);
+
+    if (evch != gab_cundefined) {
+      gab_value ev[] = {
+          gab_message(gui.gab, "mouse"),
+          gab_message(gui.gab, "left"),
+          gab_number(dbl),
+          gab_bool(down),
+      };
+
+      gab_nchnput(gui.gab, evch, sizeof(ev) / sizeof(gab_value), ev);
+    }
+    break;
+  case RGFW_mouseScrollDown:
+    nk_input_key(&gui.ctx, NK_KEY_SCROLL_DOWN, down);
+
+    if (evch != gab_cundefined) {
+      gab_value ev[] = {
+          gab_message(gui.gab, "mouse"),
+          gab_message(gui.gab, "scroll\\down"),
+          gab_number(dbl),
+          gab_bool(down),
+      };
+
+      gab_nchnput(gui.gab, evch, sizeof(ev) / sizeof(gab_value), ev);
+    }
+    break;
+  case RGFW_mouseScrollUp:
+    nk_input_key(&gui.ctx, NK_KEY_SCROLL_UP, down);
+
+    if (evch != gab_cundefined) {
+      gab_value ev[] = {
+          gab_message(gui.gab, "mouse"),
+          gab_message(gui.gab, "scroll\\up"),
+          gab_number(dbl),
+          gab_bool(down),
+      };
+
+      gab_nchnput(gui.gab, evch, sizeof(ev) / sizeof(gab_value), ev);
+    }
     break;
   case RGFW_mouseRight:
-    nk_input_button(&gui->ctx, NK_BUTTON_RIGHT, gui->win._lastMousePoint.x,
-                    gui->win._lastMousePoint.y, down);
+    nk_input_button(&gui.ctx, NK_BUTTON_RIGHT, gui.win._lastMousePoint.x,
+                    gui.win._lastMousePoint.y, down);
+
+    if (evch != gab_cundefined) {
+      gab_value ev[] = {
+          gab_message(gui.gab, "mouse"),
+          gab_message(gui.gab, "right"),
+          gab_number(dbl),
+          gab_bool(down),
+      };
+
+      gab_nchnput(gui.gab, evch, sizeof(ev) / sizeof(gab_value), ev);
+    }
     break;
   };
 }
 
 void onmousepos(RGFW_window *win, RGFW_point dst, RGFW_point) {
-  struct gui *gui = win->userPtr;
-  nk_input_motion(&gui->ctx, dst.x, dst.y);
+  nk_input_motion(&gui.ctx, dst.x, dst.y);
+  // Mouse position events flood the event channel too much
+  // if (evch != gab_cundefined) {
+  //   gab_value ev[] = {
+  //       gab_message(gui.gab, "mouse"),
+  //       gab_message(gui.gab, "pos"),
+  //       gab_number(dst.x),
+  //       gab_number(dst.y),
+  //   };
+  //
+  //   gab_nchnput(gui.gab, evch, sizeof(ev) / sizeof(gab_value), ev);
+  // }
 }
 
 union gab_value_pair gab_uilib_draw(struct gab_triple gab, uint64_t argc,
                                     gab_value argv[argc]) {
-  // scale.x = (float)display_width / (float)gui->win.r.w;
-  // scale.y = (float)display_height / (float)gui->win.r.h;
+
   if (nk_begin(&gui.ctx, "Show", nk_rect(0, 0, gui.win.r.w, gui.win.r.h), 0)) {
     /* fixed widget pixel width */
     nk_layout_row_static(&gui.ctx, 30, 80, 1);
@@ -367,7 +435,31 @@ union gab_value_pair gab_uilib_draw(struct gab_triple gab, uint64_t argc,
     nk_layout_row_end(&gui.ctx);
   }
   nk_end(&gui.ctx);
+
+  glViewport(0, 0, gui.win.r.w, gui.win.r.h);
+  glClear(GL_COLOR_BUFFER_BIT);
+  glClearColor(0.2f, 0.2f, 0.2f, 1.0f);
+
+  struct nk_vec2 scale = {1, 1};
+  device_draw(&gui.device, &gui.ctx, gui.win.r.w, gui.win.r.h, scale,
+              NK_ANTI_ALIASING_ON);
+  RGFW_window_swapBuffers(&gui.win);
+
   return gab_union_cvalid(gab_nil);
+}
+
+int ev_thrd(void *) {
+  while (RGFW_window_shouldClose(&gui.win) == RGFW_FALSE) {
+    while (RGFW_window_checkEvent(&gui.win) != nullptr)
+      ;
+
+    gab_chnput(gui.gab, evch, gab_message(gui.gab, "tick"));
+  }
+
+  if (evch != gab_cundefined)
+    gab_chnclose(evch);
+
+  return 0;
 }
 
 union gab_value_pair gab_uilib_open(struct gab_triple gab, uint64_t argc,
@@ -381,6 +473,7 @@ union gab_value_pair gab_uilib_open(struct gab_triple gab, uint64_t argc,
                       gab_string(gab, "Failed to create window")),
            gab_union_cvalid(gab_nil);
 
+  gui.gab = gab;
   gui.win.userPtr = &gui;
   RGFW_setKeyCallback(onkey);
   RGFW_setMouseButtonCallback(onmousebutton);
@@ -407,21 +500,14 @@ union gab_value_pair gab_uilib_open(struct gab_triple gab, uint64_t argc,
 
   nk_init_default(&gui.ctx, &gui.font->handle);
 
-  while (RGFW_window_shouldClose(&gui.win) == RGFW_FALSE) {
-    RGFW_window_checkEvents(&gui.win, 10);
-
-    glViewport(0, 0, gui.win.r.w, gui.win.r.h);
-    glClear(GL_COLOR_BUFFER_BIT);
-    glClearColor(0.2f, 0.2f, 0.2f, 1.0f);
-
-    struct nk_vec2 scale = {1, 1};
-    device_draw(&gui.device, &gui.ctx, gui.win.r.w, gui.win.r.h, scale,
-                NK_ANTI_ALIASING_ON);
-    RGFW_window_swapBuffers(&gui.win);
-  }
-
   evch = gab_channel(gab);
   gab_egkeep(gab.eg, gab_iref(gab, evch));
+
+  thrd_t ev_t;
+  if (thrd_create(&ev_t, ev_thrd, nullptr) != thrd_success)
+    return gab_vmpush(gab_thisvm(gab), gab_err,
+                      gab_string(gab, "Failed to initialize event thread")),
+           gab_union_cvalid(gab_nil);
 
   return gab_vmpush(gab_thisvm(gab), gab_ok, evch), gab_union_cvalid(gab_nil);
 }
