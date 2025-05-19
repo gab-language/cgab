@@ -73,7 +73,7 @@
 // A sleeptime of 0ms will result in *a lot* of context switching,
 // which is undesirable for the OS Scheduler. To help this, a small
 // amount of sleeping in the yield function is useful
-#define GAB_YIELD_SLEEPTIME_NS ((size_t)1 << 10)
+#define GAB_YIELD_SLEEPTIME_NS ((size_t)1 << 6)
 
 // Collect as frequently as possible (on every RC push)
 #ifndef cGAB_DEBUG_GC

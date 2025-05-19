@@ -46,3 +46,21 @@
 [submodule "vendor/x11-headers"]
 	path = vendor/x11-headers
 	url = https://github.com/hexops/x11-headers.git
+[submodule "RSGL"]
+	path = RSGL
+	url = https://github.com/ColleagueRiley/RSGL.git
+[submodule "vend"]
+	path = vend
+	url = https://github.com/ColleagueRiley/RSGL.git
+[submodule "vendor/RSGL"]
+	path = vendor/RSGL
+	url = https://github.com/ColleagueRiley/RSGL.git
+[submodule "vendor/Clay"]
+	path = vendor/Clay
+	url = https://github.com/nicbarker/clay.git
+[submodule "vendor/sokol"]
+	path = vendor/sokol
+	url = https://github.com/floooh/sokol.git
+[submodule "vendor/fontstash"]
+	path = vendor/fontstash
+	url = https://github.com/memononen/fontstash.git

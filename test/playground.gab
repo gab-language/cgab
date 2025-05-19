@@ -1,8 +1,46 @@
 ui = 'cgui'.use
 
-events = ui.open.unwrap
+(events, app) = ui.open.unwrap
 
-events.each (ev*) => do
-  ev.println
-  ui.draw
-end
+Fibers.make () => ui.run
+
+red = '0xff0000ff'.as\n
+blue = '0x0000ffff'.as\n
+green = '0x00ff00ff'.as\n
+
+model = { pos: { x: 200 y: 200 } }
+
+handle\key: .defcase {
+  h: (ev model) => model.put_via(model.pos.x - 10, pos: x:)
+  j: (ev model) => model.put_via(model.pos.y + 10, pos: y:)
+  k: (ev model) => model.put_via(model.pos.y - 10, pos: y:)
+  l: (ev model) => model.put_via(model.pos.x + 10, pos: x:)
+
+  Messages.t
+  (ev model) => do
+    'Unhandled key: $\n'.printf(self)
+    model
+  end
+}
+
+handle\type: .defcase {
+  tick:  (ev model) => model
+  mouse: (ev model) => model
+  key:   (ev model) => do
+    ev
+      .at 0
+      .unwrap
+      .to\m
+      .handle\key(ev model)
+  end
+}
+
+controller: .def (
+  model?
+  (type, ev*) => type.handle\type(ev, self))
+
+view: .def (
+  model?
+  () => [[rect: { x: self.pos.x, y: self.pos.y, w: 10, h: 10 }]])
+
+events.pipe(app, Streams.reduce(model controller:) |> Streams.map view:)

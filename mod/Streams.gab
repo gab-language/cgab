@@ -44,7 +44,10 @@ deftransducer: .def (
 
 td\conditionally: .defcase {
   true: (r, acc, xs, s) => (s, r.reduce\step(acc, xs*))
+  next: (r, acc, xs, s) => (s, r.reduce\step(acc, xs*))
+
   false: (r, acc, xs, s) => (s, next:, r, acc)
+  stop: (r, acc, xs, s) => (s, next:, r, acc)
 }
 
 td\stop_conditionally_inclusive: .defcase {
@@ -60,8 +63,29 @@ td\stop_conditionally: .defcase {
   false: (r, acc, xs, s) => (s, stop:, r, acc)
 }
 
+
 map:.deftransducer(
   f => (r, acc, xs) => (nil:, r.reduce\step(acc, f.(xs*))))
+
+filter:.deftransducer(
+  f => (r, acc, xs) => f.(xs*).td\conditionally(r, acc, xs))
+
+reduce:.deftransducer(
+  (inner_acc inner_r)
+    => (outer_r, outer_acc, xs, state)
+      => do
+        # Get the recent reduce and accumulator out of the state
+        r = state.r.or inner_r
+        acc = state.acc.or inner_acc
+
+        # Step these by the xs
+        (cmd, r, acc) = r.reduce\step(acc, xs*) 
+
+        # Apply the new inner accumulator to our outer reducer
+        # If our command tells us to
+        cmd.td\conditionally(outer_r, outer_acc, [acc], { r: r acc: acc })
+      end
+  { r: nil: acc: nil: })
 
 tap:.deftransducer(
   f
@@ -70,9 +94,6 @@ tap:.deftransducer(
           f.(xs*)
           (nil:, r.reduce\step(acc, xs*))
         end)
-
-filter:.deftransducer(
-  f => (r, acc, xs) => f.(xs*).td\conditionally(r, acc, xs))
 
 skip:.deftransducer(
   f => (r, acc, xs) => f.(xs*).!.td\conditionally(r, acc, xs))

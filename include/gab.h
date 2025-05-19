@@ -1792,7 +1792,17 @@ struct gab_oshape {
 #define gab_shapeof(gab, ...)                                                  \
   ({                                                                           \
     gab_value keys[] = {__VA_ARGS__};                                          \
-    gab_shape(gab, 1, sizeof(keys) / sizeof(gab_value), keys);                 \
+    gab_shape(gab, 1, sizeof(keys) / sizeof(gab_value), keys, nullptr);        \
+  })
+
+#define gab_mshapeof(gab, ...)                                                 \
+  ({                                                                           \
+    const char *keys[] = {__VA_ARGS__};                                        \
+    const uint64_t len = sizeof(keys) / sizeof(char *);                        \
+    gab_value mkeys[len];                                                      \
+    for (uint64_t i = 0; i < len; i++)                                         \
+      mkeys[i] = gab_message(gab, keys[i]);                                    \
+    gab_shape(gab, 1, sizeof(keys) / sizeof(gab_value), mkeys, nullptr);       \
   })
 
 /*
@@ -2280,6 +2290,20 @@ GAB_API_INLINE uint64_t gab_recisl(gab_value rec) {
 }
 
 /**
+ * @brief Get the nth value in a list.
+ *
+ * Assumes that 'rec' is a gab_record list. Bound-checks n.
+ */
+GAB_API_INLINE gab_value gab_lstat(gab_value lst, uint64_t n) {
+  assert(gab_recisl(lst));
+
+  if (n > gab_reclen(lst))
+    return gab_cundefined;
+
+  return gab_uvrecat(lst, n);
+}
+
+/**
  * @brief Return a new record without key. TODO: Not Implemented
  *
  * @param gab The engine
@@ -2394,8 +2418,8 @@ GAB_API_INLINE gab_value gab_thisfibmsgrec(struct gab_triple gab,
 /**
  * @brief A primitive for sending data between fibers.
  *
- * A channel *does not own* these values. They are usually on the c-stack or gab-stack somewhere,
- * and the thread/fiber blocks until a put/take completes.
+ * A channel *does not own* these values. They are usually on the c-stack or
+ * gab-stack somewhere, and the thread/fiber blocks until a put/take completes.
  */
 struct gab_ochannel {
   struct gab_obj header;
@@ -2415,8 +2439,6 @@ GAB_API gab_value gab_channel(struct gab_triple gab);
 
 /**
  * @brief Put a value on the given channel.
- *  In unbuffered channels, this will block the caller until the value is taken
- * by another fiber.
  *
  * @param gab The engine
  * @param channel The channel

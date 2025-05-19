@@ -2186,9 +2186,14 @@ CASE_CODE(SEND_PRIMITIVE_PUT) {
   case gab_cinvalid:
     VM_TERM();
   default:
+    gab_value ch = PEEK_N(have);
     // Return the channel
+
     DROP_N(have + 1);
+    PUSH(ch);
+
     SET_VAR(below_have + 1);
+
     NEXT();
   }
 }

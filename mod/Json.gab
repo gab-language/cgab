@@ -12,7 +12,7 @@ json\do_encode_record: .defcase {
 }
 
 to\json: .defcase {
-  nil:          'nil'
+  nil:          'null'
   true:         'true'
   false:        'false'
   Numbers.t
