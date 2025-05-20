@@ -69,6 +69,12 @@ jobs:
         name: 'gab-${{ matrix.build_type }}-${{ matrix.target }}'
         path: 'build-${{ matrix.target }}/gab'
 
+    - name: Upload Static Library
+      uses: pyTooling/upload-artifact@v4
+      with:
+        name: 'gab-${{ matrix.build_type }}-${{ matrix.target }}-lib'
+        path: 'build-${{ matrix.target }}/libcgab.a'
+
     - name: Collect modules
       run: cp build-${{ matrix.target }}/mod/* mod
 
@@ -183,16 +189,24 @@ jobs:
       - name: Download Modules
         uses: pyTooling/download-artifact@v4
         with:
+          name: 'gab-${{ matrix.build_type }}-${{ matrix.target }}-lib'
+
+      - name: Download Modules
+        uses: pyTooling/download-artifact@v4
+        with:
           name: 'gab-${{ matrix.build_type }}-${{ matrix.target }}-modules'
 
       - name: Create Module Archive
         run: tar -cvzf 'gab-${{ matrix.build_type }}-${{ matrix.target }}-modules' mod/*
+
+      - name: Create Dev Archive
+        run: tar -cvzf 'gab-${{ matrix.build_type }}-${{ matrix.target }}-dev' 'build-${{ matrix.target }}/libcgab.a' include/*
       
-      - name: Rename binary
+      - name: Rename Binary
         run: mv build-${{ matrix.target }}/gab 'gab-${{ matrix.build_type }}-${{ matrix.target }}'
 
-      - name: Attach binary to release
+      - name: Attach Binary to Release
         run: gh release upload -R '${{ github.repository }}' '${{ env.version }}' 'gab-${{ matrix.build_type }}-${{ matrix.target }}' || exit 0
 
-      - name: Attach modules to release
+      - name: Attach Modules to Release
         run: gh release upload -R '${{ github.repository }}' '${{ env.version }}' 'gab-${{ matrix.build_type }}-${{ matrix.target }}-modules' || exit 0

@@ -79,15 +79,14 @@ bool clay_RGFW_update(RGFW_window *win, double deltaTime) {
 struct gui {
   struct RGFW_window win;
   struct gab_triple gab;
+  gab_value appch, evch;
 };
 
-gab_value evch = gab_cundefined;
-gab_value appch = gab_cundefined;
 struct gui gui;
 
 void onkey(RGFW_window *win, RGFW_key key, unsigned char key_char,
            RGFW_keymod key_mod, RGFW_bool down) {
-  if (evch != gab_cundefined) {
+  if (gui.evch != gab_cundefined) {
     gab_value ev[] = {
         gab_message(gui.gab, "key"),
         gab_nstring(gui.gab, 1, (const char *)&key_char),
@@ -97,7 +96,7 @@ void onkey(RGFW_window *win, RGFW_key key, unsigned char key_char,
 
     gab_niref(gui.gab, 1, LEN_CARRAY(ev), ev);
 
-    gab_nchnput(gui.gab, evch, LEN_CARRAY(ev), ev);
+    gab_nchnput(gui.gab, gui.evch, LEN_CARRAY(ev), ev);
 
     gab_ndref(gui.gab, 1, LEN_CARRAY(ev), ev);
   }
@@ -108,7 +107,7 @@ void onmousebutton(RGFW_window *win, unsigned char b, double dbl,
   switch (b) {
   case RGFW_mouseLeft:
 
-    if (evch != gab_cundefined) {
+    if (gui.evch != gab_cundefined) {
       gab_value ev[] = {
           gab_message(gui.gab, "mouse"),
           gab_message(gui.gab, "left"),
@@ -118,13 +117,13 @@ void onmousebutton(RGFW_window *win, unsigned char b, double dbl,
 
       gab_niref(gui.gab, 1, LEN_CARRAY(ev), ev);
 
-      gab_nchnput(gui.gab, evch, sizeof(ev) / sizeof(gab_value), ev);
+      gab_nchnput(gui.gab, gui.evch, sizeof(ev) / sizeof(gab_value), ev);
 
       gab_ndref(gui.gab, 1, LEN_CARRAY(ev), ev);
     }
     break;
   case RGFW_mouseScrollDown:
-    if (evch != gab_cundefined) {
+    if (gui.evch != gab_cundefined) {
       gab_value ev[] = {
           gab_message(gui.gab, "mouse"),
           gab_message(gui.gab, "scroll\\down"),
@@ -133,12 +132,12 @@ void onmousebutton(RGFW_window *win, unsigned char b, double dbl,
       };
 
       gab_niref(gui.gab, 1, LEN_CARRAY(ev), ev);
-      gab_nchnput(gui.gab, evch, sizeof(ev) / sizeof(gab_value), ev);
+      gab_nchnput(gui.gab, gui.evch, sizeof(ev) / sizeof(gab_value), ev);
       gab_ndref(gui.gab, 1, LEN_CARRAY(ev), ev);
     }
     break;
   case RGFW_mouseScrollUp:
-    if (evch != gab_cundefined) {
+    if (gui.evch != gab_cundefined) {
       gab_value ev[] = {
           gab_message(gui.gab, "mouse"),
           gab_message(gui.gab, "scroll\\up"),
@@ -147,12 +146,12 @@ void onmousebutton(RGFW_window *win, unsigned char b, double dbl,
       };
 
       gab_niref(gui.gab, 1, LEN_CARRAY(ev), ev);
-      gab_nchnput(gui.gab, evch, sizeof(ev) / sizeof(gab_value), ev);
+      gab_nchnput(gui.gab, gui.evch, sizeof(ev) / sizeof(gab_value), ev);
       gab_ndref(gui.gab, 1, LEN_CARRAY(ev), ev);
     }
     break;
   case RGFW_mouseRight:
-    if (evch != gab_cundefined) {
+    if (gui.evch != gab_cundefined) {
       gab_value ev[] = {
           gab_message(gui.gab, "mouse"),
           gab_message(gui.gab, "right"),
@@ -161,7 +160,7 @@ void onmousebutton(RGFW_window *win, unsigned char b, double dbl,
       };
 
       gab_niref(gui.gab, 1, LEN_CARRAY(ev), ev);
-      gab_nchnput(gui.gab, evch, sizeof(ev) / sizeof(gab_value), ev);
+      gab_nchnput(gui.gab, gui.evch, sizeof(ev) / sizeof(gab_value), ev);
       gab_ndref(gui.gab, 1, LEN_CARRAY(ev), ev);
     }
     break;
@@ -354,7 +353,7 @@ union gab_value_pair render_app(struct gab_triple gab, gab_value app) {
 sclay_font_t fonts[1];
 
 bool dorender() {
-  gab_value app = gab_chntake(gui.gab, appch);
+  gab_value app = gab_chntake(gui.gab, gui.appch);
 
   if (app == gab_cundefined)
     return false;
@@ -404,7 +403,7 @@ void renderloop() {
           return;
     }
 
-    gab_chnput(gui.gab, evch, gab_message(gui.gab, "tick"));
+    gab_chnput(gui.gab, gui.evch, gab_message(gui.gab, "tick"));
     if (!dorender())
       return;
 
@@ -420,11 +419,11 @@ void renderloop() {
     }
   }
 
-  if (evch != gab_cundefined)
-    gab_chnclose(evch);
+  if (gui.evch != gab_cundefined)
+    gab_chnclose(gui.evch);
 
-  if (appch != gab_cundefined)
-    gab_chnclose(appch);
+  if (gui.appch != gab_cundefined)
+    gab_chnclose(gui.appch);
 }
 
 union gab_value_pair gab_uilib_run(struct gab_triple gab, uint64_t argc,
@@ -435,7 +434,18 @@ union gab_value_pair gab_uilib_run(struct gab_triple gab, uint64_t argc,
                       gab_string(gab, "Failed to create window")),
            gab_union_cvalid(gab_nil);
 
+  gab_value evch = gab_arg(1);
+  gab_value appch = gab_arg(2);
+
+  if (gab_valkind(appch) != kGAB_CHANNEL)
+    return gab_pktypemismatch(gab, appch, kGAB_CHANNEL);
+
+  if (gab_valkind(evch) != kGAB_CHANNEL)
+    return gab_pktypemismatch(gab, evch, kGAB_CHANNEL);
+
   gui.gab = gab;
+  gui.appch = appch;
+  gui.evch = evch;
   gui.win.userPtr = &gui;
   RGFW_setKeyCallback(onkey);
   RGFW_setMouseButtonCallback(onmousebutton);
@@ -474,30 +484,9 @@ union gab_value_pair gab_uilib_run(struct gab_triple gab, uint64_t argc,
   return gab_vmpush(gab_thisvm(gab), gab_ok), gab_union_cvalid(gab_nil);
 }
 
-union gab_value_pair gab_uilib_open(struct gab_triple gab, uint64_t argc,
-                                    gab_value argv[argc]) {
-  if (evch != gab_cundefined && appch != gab_cundefined)
-    return gab_vmpush(gab_thisvm(gab), gab_ok, evch, appch),
-           gab_union_cvalid(gab_nil);
-
-  evch = gab_channel(gab);
-  gab_egkeep(gab.eg, gab_iref(gab, evch));
-
-  appch = gab_channel(gab);
-  gab_egkeep(gab.eg, gab_iref(gab, appch));
-
-  return gab_vmpush(gab_thisvm(gab), gab_ok, evch, appch),
-         gab_union_cvalid(gab_nil);
-}
-
 GAB_DYNLIB_MAIN_FN {
   gab_value mod = gab_message(gab, "ui");
   gab_def(gab,
-          {
-              gab_message(gab, "open"),
-              mod,
-              gab_snative(gab, "open", gab_uilib_open),
-          },
           {
               gab_message(gab, "run"),
               mod,

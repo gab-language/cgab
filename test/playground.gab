@@ -1,8 +1,8 @@
 ui = 'cgui'.use
 
-(events, app) = ui.open.unwrap
+(events, app) = (Channels.make, Channels.make)
 
-Fibers.make () => ui.run
+Fibers.make () => ui.run(events, app)
 
 red = '0xff0000ff'.as\n
 blue = '0x0000ffff'.as\n

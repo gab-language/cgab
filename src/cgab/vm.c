@@ -601,7 +601,7 @@ union gab_value_pair vm_error(struct gab_triple gab, enum gab_status s,
 
 union gab_value_pair gab_vpanicf(struct gab_triple gab, const char *fmt,
                                  va_list va) {
-  if (!gab_thisvm(gab)) {
+  if (gab_thisfiber(gab) == gab_cinvalid) {
     gab_value err = gab_vspanicf(gab, va,
                                  (struct gab_err_argt){
                                      .status = GAB_PANIC,
@@ -1131,6 +1131,8 @@ CASE_CODE(LOAD_UPVALUE) {
 CASE_CODE(NLOAD_UPVALUE) {
   uint8_t n = READ_BYTE;
 
+  VM_PANIC_GUARD_STACKSPACE(n);
+
   uint64_t have = VAR();
 
   SP()[n] = have + n;
@@ -1153,6 +1155,8 @@ CASE_CODE(LOAD_LOCAL) {
 
 CASE_CODE(NLOAD_LOCAL) {
   uint8_t n = READ_BYTE;
+
+  VM_PANIC_GUARD_STACKSPACE(n);
 
   uint64_t have = VAR();
   SP()[n] = have + n;
@@ -1525,7 +1529,7 @@ CASE_CODE(SEND_PRIMITIVE_CONS_RECORD) {
 }
 
 CASE_CODE(SEND_PRIMITIVE_SPLATSHAPE) {
-  gab_value *ks = READ_CONSTANTS;
+  SKIP_SHORT; // Constants
   uint64_t have = COMPUTE_TUPLE(READ_BYTE);
   uint64_t below_have = PEEK_N(have + 1);
 
@@ -1537,7 +1541,7 @@ CASE_CODE(SEND_PRIMITIVE_SPLATSHAPE) {
 
   uint64_t len = gab_shplen(s);
 
-  assert(VM()->sp + len < VM()->sp + cGAB_STACK_MAX);
+  VM_PANIC_GUARD_STACKSPACE(len);
 
   for (uint64_t i = 0; i < len; i++)
     PUSH(gab_ushpat(s, i));
@@ -1560,7 +1564,7 @@ CASE_CODE(SEND_PRIMITIVE_SPLATLIST) {
 
   uint64_t len = gab_reclen(r);
 
-  assert(VM()->sp + len < VM()->sp + cGAB_STACK_MAX);
+  VM_PANIC_GUARD_STACKSPACE(len);
 
   for (uint64_t i = 0; i < len; i++)
     PUSH(gab_uvrecat(r, i));
@@ -1583,7 +1587,7 @@ CASE_CODE(SEND_PRIMITIVE_SPLATDICT) {
 
   uint64_t len = gab_reclen(r);
 
-  assert(VM()->sp + len < VM()->sp + cGAB_STACK_MAX);
+  VM_PANIC_GUARD_STACKSPACE(len * 2);
 
   for (uint64_t i = 0; i < len; i++)
     PUSH(gab_ukrecat(r, i)), PUSH(gab_uvrecat(r, i));
@@ -1666,6 +1670,8 @@ CASE_CODE(CONSTANT) {
 
 CASE_CODE(NCONSTANT) {
   uint8_t n = READ_BYTE;
+
+  VM_PANIC_GUARD_STACKSPACE(n);
 
   uint64_t have = VAR();
 
@@ -2158,8 +2164,14 @@ CASE_CODE(SEND_PRIMITIVE_TAKE) {
     SET_VAR(below_have + 1);
     NEXT();
   default:
+    gab_int i = gab_valtoi(v);
+
+    if (i < 0)
+      VM_PANIC(GAB_PANIC, "Channel take failed, insufficient stack space.");
+
     PEEK_N(have + 1) = gab_ok;
     SP() += (gab_valtoi(v) - (int64_t)have);
+
     SET_VAR(below_have + gab_valtou(v) + 1);
     NEXT();
   }

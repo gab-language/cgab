@@ -141,7 +141,6 @@
 #define cGAB_ERR_SPRINTF_BUF_MAX 2048
 #endif
 
-// Size of the vm's stack
 #ifndef cGAB_STACK_MAX
 #define cGAB_STACK_MAX (cGAB_FRAMES_MAX * 32)
 #endif
@@ -333,7 +332,6 @@ enum gab_status {
 #define EQUAL(a, b) (a == b)
 #define LOAD cGAB_DICT_MAX_LOAD
 #include "dict.h"
-#define nullptr NULL
 
 static inline s_char s_char_cstr(const char *str) {
   return (s_char){.data = str, .len = strlen(str)};

@@ -159,9 +159,7 @@ union gab_value_pair gab_reclib_is_list(struct gab_triple gab, uint64_t argc,
   if (gab_valkind(rec) != kGAB_RECORD)
     return gab_pktypemismatch(gab, rec, kGAB_RECORD);
 
-  gab_value shp = gab_recshp(rec);
-
-  gab_vmpush(gab_thisvm(gab), gab_bool(gab_shpislist(shp)));
+  gab_vmpush(gab_thisvm(gab), gab_bool(gab_recisl(rec)));
 
   return gab_union_cvalid(gab_nil);
 }

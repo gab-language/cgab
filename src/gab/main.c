@@ -540,6 +540,46 @@ int get(struct command_arguments args) {
 
     if (res) {
       printf("[gab] CLI Error: failed to download release %s", tagbuf);
+      return 1;
+    }
+
+    v_char_destroy(&location);
+    v_char_destroy(&url);
+
+    // Fetch dev files (libcgab.a, headers)
+    v_char_spush(&url, s_char_cstr(GAB_RELEASE_DOWNLOAD_URL));
+    v_char_spush(&url, s_char_cstr(tagbuf));
+    v_char_spush(&url,
+                 s_char_cstr("/gab-release-" GAB_TARGET_TRIPLE "-dev"));
+    v_char_push(&url, '\0');
+
+    v_char_spush(&location, s_char_cstr(location_prefix));
+    v_char_spush(&location, s_char_cstr("/dev"));
+    v_char_push(&location, '\0');
+
+    res = gab_osproc("curl", "-L", "-#", "-o", location.data, url.data);
+    printf("[gab] Downloaded development files for release: %s.\n", tagbuf);
+
+    v_char_destroy(&location);
+    v_char_destroy(&url);
+
+    if (res) {
+      printf("[gab] CLI Error: failed to download release %s", tagbuf);
+      return 1;
+    }
+
+    v_char_spush(&location, s_char_cstr(location_prefix));
+    v_char_spush(&location, s_char_cstr("/dev"));
+    v_char_push(&location, '\0');
+
+    v_char_spush(&url, s_char_cstr(location_prefix));
+    v_char_push(&url, '/');
+    v_char_push(&url, '\0');
+
+    res = gab_osproc("tar", "xzf", location.data, "-C", url.data);
+
+    if (res) {
+      printf("[gab] CLI Error: failed to download release %s", tagbuf);
       return v_char_destroy(&location), v_char_destroy(&url), 1;
     }
 

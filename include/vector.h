@@ -54,7 +54,7 @@ struct TYPENAME {
 LINKAGE void METHOD(create)(TYPENAME *self, uint64_t cap) {
   self->cap = cap;
   self->len = 0;
-  self->data = malloc(sizeof(T) * cap);
+  self->data = (T*)malloc(sizeof(T) * cap);
   INIT_LOCK(self);
 }
 
@@ -63,7 +63,7 @@ LINKAGE void METHOD(copy)(TYPENAME *self, TYPENAME *other) {
 
   self->cap = other->cap;
   self->len = other->len;
-  self->data = malloc(sizeof(T) * other->cap);
+  self->data = (T*)malloc(sizeof(T) * other->cap);
   memcpy(self->data, other->data, other->len * sizeof(T));
   INIT_LOCK(other);
 
@@ -77,7 +77,6 @@ LINKAGE void METHOD(drain)(TYPENAME *self, TYPENAME *other) {
   other->cap = self->cap;
   other->len = self->len;
   other->data = self->data;
-  ;
 
   self->len = 0;
   self->cap = 0;

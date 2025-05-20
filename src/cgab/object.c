@@ -4,6 +4,7 @@
 #include <stdint.h>
 #define GAB_COLORS_IMPL
 #include "colors.h"
+#define GAB_OPCODE_NAMES_IMPL
 #include "engine.h"
 #include "gab.h"
 #include "lexer.h"
@@ -455,6 +456,60 @@ gab_value gab_nstring(struct gab_triple gab, uint64_t len, const char *data) {
   return mtx_unlock(&gab.eg->strings_mtx), s;
 };
 
+GAB_API inline const char *gab_strdata(gab_value *str) {
+  assert(gab_valkind(*str) == kGAB_STRING ||
+         gab_valkind(*str) == kGAB_MESSAGE || gab_valkind(*str) == kGAB_BINARY);
+
+  if (gab_valiso(*str))
+    return GAB_VAL_TO_STRING(*str)->data;
+
+  return ((const char *)str);
+}
+
+GAB_API inline uint64_t gab_strlen(gab_value str) {
+  assert(gab_valkind(str) == kGAB_STRING || gab_valkind(str) == kGAB_MESSAGE ||
+         gab_valkind(str) == kGAB_BINARY);
+
+  if (gab_valiso(str))
+    return GAB_VAL_TO_STRING(str)->len;
+
+  return 5 - ((str >> 40) & 0xFF);
+};
+
+GAB_API inline uint64_t gab_strmblen(gab_value str) {
+  assert(gab_valkind(str) == kGAB_STRING || gab_valkind(str) == kGAB_BINARY ||
+         gab_valkind(str) == kGAB_MESSAGE);
+
+  if (gab_valiso(str))
+    return GAB_VAL_TO_STRING(str)->mb_len;
+
+  // This is a small string. No space to store mb_len, so just recompute.
+  mbstate_t state = {0};
+  const char *cursor = gab_strdata(&str);
+  return mbsrtowcs(NULL, &cursor, 0, &state);
+};
+
+GAB_API inline uint64_t gab_strhash(gab_value str) {
+  assert(gab_valkind(str) == kGAB_STRING);
+
+  if (gab_valiso(str))
+    return GAB_VAL_TO_STRING(str)->hash;
+
+  // TODO: Propertly hash the contents of short strings.
+  return str;
+}
+
+GAB_API inline int gab_binat(gab_value str, size_t idx) {
+  assert(gab_valkind(str) == kGAB_BINARY);
+
+  size_t len = gab_strlen(str);
+
+  if (idx >= len)
+    return -1;
+
+  return gab_strdata(&str)[idx];
+}
+
 /*
   Given two strings, create a third which is the concatenation a+b
 */
@@ -546,6 +601,11 @@ gab_value gab_prototype(struct gab_triple gab, struct gab_src *src,
   return __gab_obj(self);
 }
 
+gab_value gab_prtenv(gab_value prt) {
+  assert(gab_valkind(prt) == kGAB_PROTOTYPE);
+  return GAB_VAL_TO_PROTOTYPE(prt)->env;
+}
+
 gab_value gab_native(struct gab_triple gab, gab_value name, gab_native_f f) {
   assert(gab_valkind(name) == kGAB_STRING || gab_valkind(name) == kGAB_MESSAGE);
 
@@ -594,6 +654,21 @@ gab_value gab_box(struct gab_triple gab, struct gab_box_argt args) {
   }
 
   return __gab_obj(self);
+}
+
+GAB_API uint64_t gab_boxlen(gab_value box) {
+  assert(gab_valkind(box) == kGAB_BOX);
+  return GAB_VAL_TO_BOX(box)->len;
+}
+
+GAB_API void *gab_boxdata(gab_value box) {
+  assert(gab_valkind(box) == kGAB_BOX);
+  return GAB_VAL_TO_BOX(box)->data;
+}
+
+GAB_API gab_value gab_boxtype(gab_value value) {
+  assert(gab_valkind(value) == kGAB_BOX);
+  return GAB_VAL_TO_BOX(value)->type;
 }
 
 gab_value __gab_record(struct gab_triple gab, uint64_t len, uint64_t space,
@@ -1149,6 +1224,11 @@ gab_value gab_record(struct gab_triple gab, uint64_t stride, uint64_t len,
   return gab_gcunlock(gab), rec;
 }
 
+gab_value gab_recshp(gab_value record) {
+  assert(gab_valkind(record) == kGAB_RECORD);
+  return GAB_VAL_TO_REC(record)->shape;
+};
+
 gab_value nth_amongst(uint64_t n, uint64_t len, gab_value records[static len]) {
   assert(len > 0);
 
@@ -1287,6 +1367,32 @@ gab_value gab_shape(struct gab_triple gab, uint64_t stride, uint64_t len,
   return shp;
 }
 
+uint64_t gab_shplen(gab_value shp) {
+  assert(gab_valkind(shp) == kGAB_SHAPE || gab_valkind(shp) == kGAB_SHAPELIST);
+  struct gab_oshape *s = GAB_VAL_TO_SHAPE(shp);
+  return s->len;
+}
+
+gab_value *gab_shpdata(gab_value shp) {
+  assert(gab_valkind(shp) == kGAB_SHAPE || gab_valkind(shp) == kGAB_SHAPELIST);
+  struct gab_oshape *s = GAB_VAL_TO_SHAPE(shp);
+  return s->keys;
+};
+
+uint64_t gab_shptfind(gab_value shp, gab_value key) {
+  assert(gab_valkind(shp) == kGAB_SHAPE || gab_valkind(shp) == kGAB_SHAPELIST);
+  struct gab_oshape *s = GAB_VAL_TO_SHAPE(shp);
+
+  uint64_t len = s->transitions.len / 2;
+
+  for (uint64_t i = 0; i < len; i++) {
+    if (gab_valeq(key, v_gab_value_val_at(&s->transitions, i * 2)))
+      return i;
+  }
+
+  return -1;
+};
+
 gab_value gab_nshpcat(struct gab_triple gab, uint64_t len,
                       gab_value shapes[static len]) {
   assert(len > 0);
@@ -1377,123 +1483,34 @@ gab_value gab_shpwith(struct gab_triple gab, gab_value shp, gab_value key) {
 
 gab_value gab_shpwithout(struct gab_triple gab, gab_value shp, gab_value key);
 
-gab_value setup_fibersend(struct gab_triple gab, struct gab_ofiber *self,
-                          struct gab_impl_rest *res) {
+gab_value setup_fibersend(struct gab_triple gab, struct gab_ofiber *self) {
   struct gab_vm *vm = &self->vm;
 
-  if (res->status == kGAB_IMPL_NONE)
-    return __gab_obj(self);
+  memcpy(self->virtual_frame_bc,
+         &(uint8_t[]){
+             OP_SEND,
+             0,
+             0,
+             2,
+             OP_RETURN,
+             1,
+         },
+         sizeof(self->virtual_frame_bc));
 
-  if (res->status == kGAB_IMPL_PROPERTY)
-    return __gab_obj(self);
+  memcpy(self->virtual_frame_ks,
+         &(gab_value[]){
+             self->data[0],
+             gab_cundefined,
+             gab_cundefined,
+             gab_cundefined,
+             gab_cundefined,
+             gab_cundefined,
+             gab_cundefined,
+         },
+         sizeof(self->virtual_frame_ks));
 
-  switch (gab_valkind(res->as.spec)) {
-  case kGAB_PRIMITIVE: {
-    assert(res->as.spec != gab_cinvalid);
-    assert(res->as.spec != gab_ctimeout);
-
-    uint8_t op = gab_valtop(res->as.spec);
-
-    memcpy(self->virtual_frame_bc,
-           &(uint8_t[]){
-               op,
-               0,
-               0,
-               2,
-               OP_RETURN,
-               1,
-           },
-           sizeof(self->virtual_frame_bc));
-
-    memcpy(self->virtual_frame_ks,
-           &(gab_value[]){
-               self->data[0],
-               gab.eg->messages,
-               gab_valtype(gab, self->data[1]),
-               res->as.spec,
-               0,
-               0,
-               0,
-           },
-           sizeof(self->virtual_frame_ks));
-
-    vm->ip = self->virtual_frame_bc;
-    vm->kb = self->virtual_frame_ks;
-    break;
-  }
-  case kGAB_NATIVE: {
-    uint8_t op = OP_SEND_NATIVE;
-
-    memcpy(self->virtual_frame_bc,
-           &(uint8_t[]){
-               op,
-               0,
-               0,
-               2,
-               OP_RETURN,
-               1,
-           },
-           sizeof(self->virtual_frame_bc));
-
-    memcpy(self->virtual_frame_ks,
-           &(gab_value[]){
-               self->data[0],
-               gab.eg->messages,
-               gab_valtype(gab, self->data[1]),
-               (uintptr_t)GAB_VAL_TO_NATIVE(res->as.spec),
-               0,
-               0,
-               0,
-           },
-           sizeof(self->virtual_frame_ks));
-
-    vm->ip = self->virtual_frame_bc;
-    vm->kb = self->virtual_frame_ks;
-    break;
-  }
-  case kGAB_BLOCK: {
-    uint8_t op = OP_SEND_BLOCK;
-
-    memcpy(self->virtual_frame_bc,
-           &(uint8_t[]){
-               op,
-               0,
-               0,
-               2,
-               OP_RETURN,
-               1,
-           },
-           sizeof(self->virtual_frame_bc));
-
-    memcpy(self->virtual_frame_ks,
-           &(gab_value[]){
-               self->data[0],
-               gab.eg->messages,
-               gab_valtype(gab, self->data[1]),
-               (uintptr_t)GAB_VAL_TO_BLOCK(res->as.spec),
-               0,
-               0,
-               0,
-           },
-           sizeof(self->virtual_frame_ks));
-
-    vm->ip = self->virtual_frame_bc;
-    vm->kb = self->virtual_frame_ks;
-    break;
-  }
-  default:
-    a_gab_value *results =
-        a_gab_value_create((gab_value[]){gab_ok, res->as.spec}, 2);
-
-    self->res_values = (union gab_value_pair){
-        .status = gab_cvalid,
-        .aresult = results,
-    };
-
-    assert(self->header.kind != kGAB_FIBERDONE);
-    self->header.kind = kGAB_FIBERDONE;
-    break;
-  }
+  vm->ip = self->virtual_frame_bc;
+  vm->kb = self->virtual_frame_ks;
 
   return __gab_obj(self);
 }
@@ -1514,6 +1531,7 @@ gab_value gab_fiber(struct gab_triple gab, struct gab_fiber_argt args) {
   self->data[0] = args.message;
   self->data[1] = args.receiver;
 
+  // self->vm.sb = self->vm.stk;
   self->vm.fp = self->vm.sb + 3;
   self->vm.sp = self->vm.sb + 3;
   self->flags = gab.flags | args.flags;
@@ -1531,12 +1549,15 @@ gab_value gab_fiber(struct gab_triple gab, struct gab_fiber_argt args) {
   self->vm.fp[-3] = 0;
 
   self->vm.ip = nullptr;
-
   self->res_env = gab_cinvalid;
 
-  struct gab_impl_rest res = gab_impl(gab, args.message, args.receiver);
+  return setup_fibersend(gab, self);
+}
 
-  return setup_fibersend(gab, self, &res);
+GAB_API inline struct gab_vm *gab_fibvm(gab_value fiber) {
+  assert(gab_valkind(fiber) >= kGAB_FIBER &&
+         gab_valkind(fiber) <= kGAB_FIBERDONE);
+  return &GAB_VAL_TO_FIBER(fiber)->vm;
 }
 
 union gab_value_pair gab_fibawait(struct gab_triple gab, gab_value f) {
@@ -1616,6 +1637,7 @@ bool gab_chnisempty(gab_value c) {
     return atomic_load(&channel->data) == nullptr;
   }
   assert(false && "unreachable");
+  return false;
 };
 
 bool gab_chnisfull(gab_value c) {
@@ -1630,6 +1652,7 @@ bool gab_chnisfull(gab_value c) {
     return atomic_load(&channel->data) != nullptr;
   }
   assert(false && "unreachable");
+  return false;
 };
 
 /*
@@ -1664,14 +1687,19 @@ gab_value channel_take(struct gab_ochannel *channel, uint64_t n,
   // This load of the len scares me. However, we only ever write to channel->len
   // when we have succeeded with our atomic exchange against nullptr. So I think
   // it should be fine.
-  uint64_t avail = channel->len;
   gab_value *src = atomic_load(&channel->data);
+  uint64_t avail = channel->len;
 
   if (!src)
     return gab_cundefined;
 
-  // Try the take - perform our copy.
+  // No space to complete this take.
+  // if (n < avail)
+  //   // return gab_cundefined;
+  //   return gab_number(-avail);
   uint64_t len = n < avail ? n : avail;
+
+  // Try the take - perform our copy.
   memcpy(dest, src, sizeof(gab_value) * len);
 
   // If this exchange fails:
@@ -1679,11 +1707,10 @@ gab_value channel_take(struct gab_ochannel *channel, uint64_t n,
   //  that we just memcpy'd from. That means someone got to the data first
   //  (and either the channel is now empty, or a new src ptr is there).
   //  In either case, we should return 0 (failure) on a mismatch.
-  if (atomic_compare_exchange_weak(&channel->data, &src, nullptr)) {
+  if (atomic_compare_exchange_weak(&channel->data, &src, nullptr))
     return gab_number(len);
-  } else {
+  else
     return gab_cundefined;
-  }
 }
 
 /* Identical to put, except the memcpy goes the other way. */
@@ -1788,7 +1815,9 @@ gab_value channel_blocking_put(struct gab_triple gab,
  * gab_ctimeout on timeout
  * gab_cundefined on close!
  * gab_cinvalid on terminate
- * gab_cvalid on a success
+ * positive gab_number containing number of values written on success
+ * negative gab_number containing number of values *would* have written, but
+ * didn't have space. (failure).
  */
 gab_value channel_blocking_take(struct gab_triple gab,
                                 struct gab_ochannel *channel, gab_value c,
@@ -1858,7 +1887,8 @@ gab_value gab_chnput(struct gab_triple gab, gab_value c, gab_value value) {
  * gab_ctimeout on timeout
  * gab_cundefined on close!
  * gab_cinvalid on terminate
- * gab_number corresponding to number of taken values on success.
+ * gab_number corresponding to number of taken values on success, or negative
+ * number if space wasn't available.
  */
 gab_value gab_ntchntake(struct gab_triple gab, gab_value c, uint64_t len,
                         gab_value *data, uint64_t nms) {
@@ -1885,8 +1915,12 @@ gab_value gab_tchntake(struct gab_triple gab, gab_value channel, uint64_t nms) {
   if (gab_valkind(res) != kGAB_NUMBER)
     return res;
 
+  gab_int n = gab_valtoi(res);
+  if (n < 0)
+    return gab_cundefined;
+
   // We should have one written value.
-  assert(gab_valtou(res) == 1);
+  assert(n == 1);
   return out;
 };
 
