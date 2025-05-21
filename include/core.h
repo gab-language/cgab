@@ -219,7 +219,7 @@ enum gab_status {
 // VERSION
 #define GAB_VERSION_MAJOR "0"
 #define GAB_VERSION_MINOR "0"
-#define GAB_VERSION_PATCH "3"
+#define GAB_VERSION_PATCH "4"
 #define GAB_VERSION_TAG GAB_VERSION_MAJOR "." GAB_VERSION_MINOR "." GAB_VERSION_PATCH
 
 // Message constants
