@@ -543,6 +543,8 @@ int get(struct command_arguments args) {
       return 1;
     }
 
+    printf("[gab] Extracted modules.\n");
+
     v_char_destroy(&location);
     v_char_destroy(&url);
 
@@ -583,7 +585,7 @@ int get(struct command_arguments args) {
       return v_char_destroy(&location), v_char_destroy(&url), 1;
     }
 
-    printf("[gab] Extracted modules.\n");
+    printf("[gab] Extracted development files.\n");
     printf(
         "\nCongratulations! %s@%s successfully installed.\n\n"
         "However, the binary is likely not available in your PATH yet.\n"
