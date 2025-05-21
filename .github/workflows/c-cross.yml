@@ -210,7 +210,7 @@ jobs:
       - name: Rename Binary
         run: mv build-${{ matrix.target }}/gab 'gab-${{ matrix.build_type }}-${{ matrix.target }}'
 
-        -name: Rename Library
+      - name: Rename Library
         run: mv build-${{ matrix.target }}/gab 'libcgab.a'
 
       - name: Create Module Archive
