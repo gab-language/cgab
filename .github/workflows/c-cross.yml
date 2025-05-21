@@ -211,7 +211,7 @@ jobs:
         run: mv build-${{ matrix.target }}/gab 'gab-${{ matrix.build_type }}-${{ matrix.target }}'
 
       - name: Rename Library
-        run: mv build-${{ matrix.target }}/gab 'libcgab.a'
+        run: mv build-${{ matrix.target }}/libcgab.a 'libcgab.a'
 
       - name: Create Module Archive
         run: tar -cvzf 'gab-${{ matrix.build_type }}-${{ matrix.target }}-modules' mod/*
