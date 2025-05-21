@@ -221,3 +221,6 @@ jobs:
 
       - name: Attach Modules to Release
         run: gh release upload -R '${{ github.repository }}' '${{ env.version }}' 'gab-${{ matrix.build_type }}-${{ matrix.target }}-modules' || exit 0
+
+      - name: Attach Dev to Release
+        run: gh release upload -R '${{ github.repository }}' '${{ env.version }}' 'gab-${{ matrix.build_type }}-${{ matrix.target }}-dev' || exit 0
