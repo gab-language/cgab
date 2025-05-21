@@ -75,6 +75,12 @@ jobs:
         name: 'gab-${{ matrix.build_type }}-${{ matrix.target }}-lib'
         path: 'build-${{ matrix.target }}/libcgab.a'
 
+    - name: Upload Headers
+      uses: pyTooling/upload-artifact@v4
+      with:
+        name: 'gab-${{ matrix.build_type }}-${{ matrix.target }}-h' 
+        path: include
+
     - name: Collect modules
       run: cp build-${{ matrix.target }}/mod/* mod
 
@@ -186,10 +192,15 @@ jobs:
         with:
           name: 'gab-${{ matrix.build_type }}-${{ matrix.target }}'
 
-      - name: Download Modules
+      - name: Download Library
         uses: pyTooling/download-artifact@v4
         with:
           name: 'gab-${{ matrix.build_type }}-${{ matrix.target }}-lib'
+
+      - name: Download Headers
+        uses: pyTooling/download-artifact@v4
+        with:
+          name: 'gab-${{ matrix.build_type }}-${{ matrix.target }}-h'
 
       - name: Download Modules
         uses: pyTooling/download-artifact@v4
