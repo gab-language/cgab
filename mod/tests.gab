@@ -1,5 +1,3 @@
-io = 'os.io'.use
-
 is\unittest:.def(
   Messages.t
   () => self.to\s.has\ending "\test")
@@ -53,15 +51,15 @@ test\result\display: .defcase {
   end
   test\result\fail\t  _ => do
     (suite behavior) = self.test\path*
-    msg = ' ❌$ should $\n\t$ $ $\n'.sprintf(suite, behavior, self.test\meta*)
-    io.stdout.write msg
+    msg = ' ❌$ should $\n\t$ $ $'.sprintf(suite, behavior, self.test\meta*)
+    msg.println
   end,
 }
 
 Fibers.make () => do
   suites\all .each (c s) => do
-    msg = '✔ $\n'.sprintf(s)
-    io.stdout.write msg
+    msg = '✔ $'.sprintf(s)
+    msg.println
     c .each test\result\display:
   end
 end
