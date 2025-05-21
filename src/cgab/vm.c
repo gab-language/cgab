@@ -30,7 +30,7 @@ static handler handlers[] = {
 };
 
 #if cGAB_LOG_VM
-#define LOG(op) printf("OP_%s: %p\n", gab_opcode_names[op], handlers[op]);
+#define LOG(op) printf("OP_%s (%lu)\n", gab_opcode_names[op], VAR());
 #else
 #define LOG(op)
 #endif
@@ -171,17 +171,18 @@ static handler handlers[] = {
                                 operation)                                     \
   CASE_CODE(SEND_##CODE) {                                                     \
     gab_value *ks = READ_CONSTANTS;                                            \
-    uint64_t have = compute_arity(VAR(), READ_BYTE);                           \
+    uint64_t have = COMPUTE_TUPLE(READ_BYTE);                                  \
+    uint64_t below_have = PEEK_N(have + 1);                                    \
                                                                                \
     SEND_GUARD_CACHED_RECEIVER_TYPE(PEEK_N(have));                             \
     VM_PANIC_GUARD_ISN(PEEK_N(have));                                          \
                                                                                \
     operation_type val = decoder(PEEK_N(have));                                \
                                                                                \
-    DROP_N(have);                                                              \
+    DROP_N(have + 1);                                                          \
     PUSH(value_type(operation val));                                           \
                                                                                \
-    SET_VAR(1);                                                                \
+    SET_VAR(below_have + 1);                                                   \
                                                                                \
     NEXT();                                                                    \
   }
@@ -190,7 +191,8 @@ static handler handlers[] = {
                                  operation)                                    \
   CASE_CODE(SEND_##CODE) {                                                     \
     gab_value *ks = READ_CONSTANTS;                                            \
-    uint64_t have = compute_arity(VAR(), READ_BYTE);                           \
+    uint64_t have = COMPUTE_TUPLE(READ_BYTE);                                  \
+    uint64_t below_have = PEEK_N(have + 1);                                    \
                                                                                \
     SEND_GUARD_CACHED_RECEIVER_TYPE(PEEK_N(have));                             \
                                                                                \
@@ -203,10 +205,10 @@ static handler handlers[] = {
     operation_type val_b = decoder(PEEK_N(have - 1));                          \
     operation_type val_a = decoder(PEEK_N(have));                              \
                                                                                \
-    DROP_N(have);                                                              \
+    DROP_N(have + 1);                                                          \
     PUSH(value_type(val_a operation val_b));                                   \
                                                                                \
-    SET_VAR(1);                                                                \
+    SET_VAR(below_have + 1);                                                   \
                                                                                \
     NEXT();                                                                    \
   }
@@ -214,7 +216,8 @@ static handler handlers[] = {
 #define IMPL_SEND_BINARY_SHIFT_NUMERIC(CODE, operation, opposite_operation)    \
   CASE_CODE(SEND_##CODE) {                                                     \
     gab_value *ks = READ_CONSTANTS;                                            \
-    uint64_t have = compute_arity(VAR(), READ_BYTE);                           \
+    uint64_t have = COMPUTE_TUPLE(READ_BYTE);                                  \
+    uint64_t below_have = PEEK_N(have + 1);                                    \
                                                                                \
     SEND_GUARD_CACHED_RECEIVER_TYPE(PEEK_N(have));                             \
                                                                                \
@@ -227,7 +230,7 @@ static handler handlers[] = {
     gab_int amount = gab_valtoi(PEEK_N(have - 1));                             \
     gab_uint val_a = gab_valtou(PEEK_N(have));                                 \
                                                                                \
-    DROP_N(have);                                                              \
+    DROP_N(have + 1);                                                          \
                                                                                \
     if (__gab_unlikely(amount >= GAB_INTWIDTH)) {                              \
       PUSH(gab_number(0));                                                     \
@@ -241,7 +244,7 @@ static handler handlers[] = {
       PUSH(gab_number(res));                                                   \
     }                                                                          \
                                                                                \
-    SET_VAR(1);                                                                \
+    SET_VAR(below_have + 1);                                                   \
                                                                                \
     NEXT();                                                                    \
   }
@@ -252,7 +255,8 @@ static handler handlers[] = {
 #define IMPL_SEND_UNARY_BOOLEAN(CODE, value_type, operation_type, operation)   \
   CASE_CODE(SEND_##CODE) {                                                     \
     gab_value *ks = READ_CONSTANTS;                                            \
-    uint64_t have = compute_arity(VAR(), READ_BYTE);                           \
+    uint64_t have = COMPUTE_TUPLE(READ_BYTE);                                  \
+    uint64_t below_have = PEEK_N(have + 1);                                    \
                                                                                \
     SEND_GUARD_CACHED_RECEIVER_TYPE(PEEK_N(have));                             \
                                                                                \
@@ -260,10 +264,10 @@ static handler handlers[] = {
                                                                                \
     operation_type val = gab_valintob(PEEK_N(have));                           \
                                                                                \
-    DROP_N(have);                                                              \
+    DROP_N(have + 1);                                                          \
     PUSH(value_type(operation val));                                           \
                                                                                \
-    SET_VAR(1);                                                                \
+    SET_VAR(below_have + 1);                                                   \
                                                                                \
     NEXT();                                                                    \
   }
@@ -271,7 +275,8 @@ static handler handlers[] = {
 #define IMPL_SEND_BINARY_BOOLEAN(CODE, value_type, operation_type, operation)  \
   CASE_CODE(SEND_##CODE) {                                                     \
     gab_value *ks = READ_CONSTANTS;                                            \
-    uint64_t have = compute_arity(VAR(), READ_BYTE);                           \
+    uint64_t have = COMPUTE_TUPLE(READ_BYTE);                                  \
+    uint64_t below_have = PEEK_N(have + 1);                                    \
                                                                                \
     SEND_GUARD_CACHED_RECEIVER_TYPE(PEEK_N(have));                             \
                                                                                \
@@ -284,10 +289,10 @@ static handler handlers[] = {
     operation_type val_b = gab_valintob(PEEK_N(have));                         \
     operation_type val_a = gab_valintob(PEEK_N(have - 1));                     \
                                                                                \
-    DROP_N(have);                                                              \
+    DROP_N(have + 1);                                                          \
     PUSH(value_type(val_a operation val_b));                                   \
                                                                                \
-    SET_VAR(1);                                                                \
+    SET_VAR(below_have + 1);                                                   \
                                                                                \
     NEXT();                                                                    \
   }
@@ -300,6 +305,7 @@ static handler handlers[] = {
       MISS_CACHED_TRIM();                                                      \
                                                                                \
     DROP_N(n);                                                                 \
+    VAR() = 0;                                                                 \
                                                                                \
     NEXT();                                                                    \
   }                                                                            \
@@ -309,6 +315,7 @@ static handler handlers[] = {
     if (__gab_unlikely(VAR() != n))                                            \
       MISS_CACHED_TRIM();                                                      \
                                                                                \
+    VAR() = 0;                                                                 \
     NEXT();                                                                    \
   }                                                                            \
   CASE_CODE(TRIM_UP##n) {                                                      \
@@ -320,6 +327,7 @@ static handler handlers[] = {
     for (int i = 0; i < n; i++)                                                \
       PUSH(gab_nil);                                                           \
                                                                                \
+    VAR() = 0;                                                                 \
     NEXT();                                                                    \
   }
 
@@ -335,6 +343,13 @@ static handler handlers[] = {
     STORE_IP();                                                                \
     STORE_KB();                                                                \
   })
+
+uint64_t encode_fb(struct gab_vm *vm, gab_value *fb, uint64_t have) {
+  uint64_t offset = fb - vm->sb;
+  assert(offset < UINT32_MAX);
+  assert(have < UINT32_MAX);
+  return offset << 32 | have;
+}
 
 #define PUSH_FRAME(b, have)                                                    \
   ({                                                                           \
@@ -480,6 +495,9 @@ union gab_value_pair vvm_terminate(struct gab_triple gab, const char *fmt,
       gab_recordfrom(gab, shape, 1, gab_shplen(shape), vm->fp, nullptr);
   gab_egkeep(gab.eg, gab_iref(gab, env));
 
+  if (gab.eg->joberr_handler)
+    gab.eg->joberr_handler(gab, res.vresult);
+
   assert(GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERRUNNING);
   GAB_VAL_TO_FIBER(fiber)->res_values = res;
   GAB_VAL_TO_FIBER(fiber)->res_env = env;
@@ -535,6 +553,9 @@ union gab_value_pair vvm_error(struct gab_triple gab, enum gab_status s,
       gab_recordfrom(gab, shape, 1, gab_shplen(shape), vm->fp, nullptr);
   gab_egkeep(gab.eg, gab_iref(gab, env));
 
+  if (gab.eg->joberr_handler)
+    gab.eg->joberr_handler(gab, res.aresult->data[1]);
+
   assert(GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERRUNNING);
   GAB_VAL_TO_FIBER(fiber)->res_values = res;
   GAB_VAL_TO_FIBER(fiber)->res_env = env;
@@ -580,7 +601,7 @@ union gab_value_pair vm_error(struct gab_triple gab, enum gab_status s,
 
 union gab_value_pair gab_vpanicf(struct gab_triple gab, const char *fmt,
                                  va_list va) {
-  if (!gab_thisvm(gab)) {
+  if (gab_thisfiber(gab) == gab_cinvalid) {
     gab_value err = gab_vspanicf(gab, va,
                                  (struct gab_err_argt){
                                      .status = GAB_PANIC,
@@ -699,9 +720,7 @@ void gab_fvminspectall(FILE *stream, struct gab_vm *vm) {
   }
 }
 
-static inline uint64_t compute_arity(uint64_t var, uint8_t have) {
-  return var * (have & fHAVE_VAR) + (have >> 2);
-}
+#define COMPUTE_TUPLE(flags) (((flags) & fHAVE_VAR) ? POP() : VAR());
 
 static inline bool has_stackspace(gab_value *sp, gab_value *sb,
                                   uint64_t space_needed) {
@@ -807,21 +826,21 @@ inline uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc,
     NEXT();                                                                    \
   })
 
-#define PROPERTY_RECORD(r, have)                                               \
+#define PROPERTY_RECORD(r, have, below_have)                                   \
   ({                                                                           \
-    DROP_N(have);                                                              \
+    DROP_N(have + 1);                                                          \
     PUSH(gab_uvrecat(r, ks[GAB_SEND_KSPEC]));                                  \
                                                                                \
-    SET_VAR(1);                                                                \
+    SET_VAR(below_have + 1);                                                   \
                                                                                \
     NEXT();                                                                    \
   })
 
-#define CALL_NATIVE(native, have, message)                                     \
+#define CALL_NATIVE(native, have, below_have, message)                         \
   ({                                                                           \
     STORE();                                                                   \
                                                                                \
-    gab_value *to = SP() - have;                                               \
+    gab_value *to = SP() - (have + 1);                                         \
                                                                                \
     gab_value *before = SP();                                                  \
                                                                                \
@@ -843,7 +862,7 @@ inline uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc,
     memmove(to, before, have * sizeof(gab_value));                             \
     SP() = to + have;                                                          \
                                                                                \
-    SET_VAR(have);                                                             \
+    SET_VAR(below_have + have);                                                \
                                                                                \
     NEXT();                                                                    \
   })
@@ -994,7 +1013,7 @@ union gab_value_pair gab_vmexec(struct gab_triple gab, gab_value f) {
 
 CASE_CODE(MATCHTAILSEND_BLOCK) {
   gab_value *ks = READ_CONSTANTS;
-  uint64_t have = compute_arity(VAR(), READ_BYTE);
+  uint64_t have = COMPUTE_TUPLE(READ_BYTE);
 
   gab_value r = PEEK_N(have);
   gab_value t = gab_valtype(GAB(), r);
@@ -1025,7 +1044,7 @@ CASE_CODE(MATCHTAILSEND_BLOCK) {
 
 CASE_CODE(MATCHSEND_BLOCK) {
   gab_value *ks = READ_CONSTANTS;
-  uint64_t have = compute_arity(VAR(), READ_BYTE);
+  uint64_t have = COMPUTE_TUPLE(READ_BYTE);
 
   gab_value r = PEEK_N(have);
   gab_value t = gab_valtype(GAB(), r);
@@ -1100,13 +1119,23 @@ static inline bool try_setup_localmatch(struct gab_triple gab, gab_value m,
 }
 
 CASE_CODE(LOAD_UPVALUE) {
+  uint64_t have = VAR();
+
   PUSH(UPVALUE(READ_BYTE));
+
+  VAR() = have + 1;
 
   NEXT();
 }
 
 CASE_CODE(NLOAD_UPVALUE) {
   uint8_t n = READ_BYTE;
+
+  VM_PANIC_GUARD_STACKSPACE(n);
+
+  uint64_t have = VAR();
+
+  SP()[n] = have + n;
 
   while (n--)
     PUSH(UPVALUE(READ_BYTE));
@@ -1115,13 +1144,22 @@ CASE_CODE(NLOAD_UPVALUE) {
 }
 
 CASE_CODE(LOAD_LOCAL) {
+  uint64_t have = VAR();
+
   PUSH(LOCAL(READ_BYTE));
+
+  VAR() = have + 1;
 
   NEXT();
 }
 
 CASE_CODE(NLOAD_LOCAL) {
   uint8_t n = READ_BYTE;
+
+  VM_PANIC_GUARD_STACKSPACE(n);
+
+  uint64_t have = VAR();
+  SP()[n] = have + n;
 
   while (n--)
     PUSH(LOCAL(READ_BYTE));
@@ -1142,12 +1180,14 @@ CASE_CODE(NPOPSTORE_STORE_LOCAL) {
     LOCAL(READ_BYTE) = POP();
 
   LOCAL(READ_BYTE) = PEEK();
+  VAR() = 1;
 
   NEXT();
 }
 
 CASE_CODE(POPSTORE_LOCAL) {
   LOCAL(READ_BYTE) = POP();
+  VAR() = 0;
 
   NEXT();
 }
@@ -1158,12 +1198,15 @@ CASE_CODE(NPOPSTORE_LOCAL) {
   while (n--)
     LOCAL(READ_BYTE) = POP();
 
+  VAR() = 0;
+
   NEXT();
 }
 
 CASE_CODE(SEND_NATIVE) {
   gab_value *ks = READ_CONSTANTS;
-  uint64_t have = compute_arity(VAR(), READ_BYTE);
+  uint64_t have = COMPUTE_TUPLE(READ_BYTE);
+  uint64_t below_have = PEEK_N(have + 1);
 
   gab_value r = PEEK_N(have);
 
@@ -1172,12 +1215,12 @@ CASE_CODE(SEND_NATIVE) {
 
   struct gab_onative *n = (void *)ks[GAB_SEND_KSPEC];
 
-  CALL_NATIVE(n, have, true);
+  CALL_NATIVE(n, have, below_have, true);
 }
 
 CASE_CODE(SEND_BLOCK) {
   gab_value *ks = READ_CONSTANTS;
-  uint64_t have = compute_arity(VAR(), READ_BYTE);
+  uint64_t have = COMPUTE_TUPLE(READ_BYTE);
 
   gab_value r = PEEK_N(have);
 
@@ -1191,7 +1234,7 @@ CASE_CODE(SEND_BLOCK) {
 
 CASE_CODE(TAILSEND_BLOCK) {
   gab_value *ks = READ_CONSTANTS;
-  uint64_t have = compute_arity(VAR(), READ_BYTE);
+  uint64_t have = COMPUTE_TUPLE(READ_BYTE);
 
   gab_value r = PEEK_N(have);
 
@@ -1205,7 +1248,7 @@ CASE_CODE(TAILSEND_BLOCK) {
 
 CASE_CODE(LOCALSEND_BLOCK) {
   gab_value *ks = READ_CONSTANTS;
-  uint64_t have = compute_arity(VAR(), READ_BYTE);
+  uint64_t have = COMPUTE_TUPLE(READ_BYTE);
 
   gab_value r = PEEK_N(have);
 
@@ -1219,7 +1262,7 @@ CASE_CODE(LOCALSEND_BLOCK) {
 
 CASE_CODE(LOCALTAILSEND_BLOCK) {
   gab_value *ks = READ_CONSTANTS;
-  uint64_t have = compute_arity(VAR(), READ_BYTE);
+  uint64_t have = COMPUTE_TUPLE(READ_BYTE);
 
   gab_value r = PEEK_N(have);
 
@@ -1233,7 +1276,7 @@ CASE_CODE(LOCALTAILSEND_BLOCK) {
 
 CASE_CODE(SEND_PRIMITIVE_CALL_BLOCK) {
   gab_value *ks = READ_CONSTANTS;
-  uint64_t have = compute_arity(VAR(), READ_BYTE);
+  uint64_t have = COMPUTE_TUPLE(READ_BYTE);
 
   gab_value r = PEEK_N(have);
 
@@ -1248,7 +1291,7 @@ CASE_CODE(SEND_PRIMITIVE_CALL_BLOCK) {
 
 CASE_CODE(TAILSEND_PRIMITIVE_CALL_BLOCK) {
   gab_value *ks = READ_CONSTANTS;
-  uint64_t have = compute_arity(VAR(), READ_BYTE);
+  uint64_t have = COMPUTE_TUPLE(READ_BYTE);
 
   gab_value r = PEEK_N(have);
 
@@ -1263,7 +1306,8 @@ CASE_CODE(TAILSEND_PRIMITIVE_CALL_BLOCK) {
 
 CASE_CODE(SEND_PRIMITIVE_CALL_NATIVE) {
   gab_value *ks = READ_CONSTANTS;
-  uint64_t have = compute_arity(VAR(), READ_BYTE);
+  uint64_t have = COMPUTE_TUPLE(READ_BYTE);
+  uint64_t below_have = PEEK_N(have + 1);
 
   gab_value r = PEEK_N(have);
 
@@ -1273,7 +1317,7 @@ CASE_CODE(SEND_PRIMITIVE_CALL_NATIVE) {
 
   struct gab_onative *n = GAB_VAL_TO_NATIVE(r);
 
-  CALL_NATIVE(n, have, false);
+  CALL_NATIVE(n, have, below_have, false);
 }
 
 IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_ADD, gab_number, gab_float, gab_valtof, +);
@@ -1303,7 +1347,8 @@ IMPL_SEND_BINARY_BOOLEAN(PRIMITIVE_LND, gab_bool, bool, &);
 
 CASE_CODE(SEND_PRIMITIVE_MOD) {
   gab_value *ks = READ_CONSTANTS;
-  uint64_t have = compute_arity(VAR(), READ_BYTE);
+  uint64_t have = COMPUTE_TUPLE(READ_BYTE);
+  uint64_t below_have = PEEK_N(have + 1);
 
   SEND_GUARD_CACHED_RECEIVER_TYPE(PEEK_N(have));
 
@@ -1316,21 +1361,22 @@ CASE_CODE(SEND_PRIMITIVE_MOD) {
   gab_int val_b = gab_valtoi(PEEK_N(have - 1));
   gab_int val_a = gab_valtoi(PEEK_N(have));
 
-  DROP_N(have);
+  DROP_N(have + 1);
 
   if (__gab_unlikely(val_b == 0))
     PUSH(gab_number(0.0 / 0.0));
   else
     PUSH(gab_number(val_a % val_b));
 
-  SET_VAR(1);
+  SET_VAR(below_have + 1);
 
   NEXT();
 }
 
 CASE_CODE(SEND_PRIMITIVE_EQ) {
   gab_value *ks = READ_CONSTANTS;
-  uint64_t have = compute_arity(VAR(), READ_BYTE);
+  uint64_t have = COMPUTE_TUPLE(READ_BYTE);
+  uint64_t below_have = PEEK_N(have + 1);
 
   gab_value r = PEEK_N(have);
 
@@ -1343,17 +1389,18 @@ CASE_CODE(SEND_PRIMITIVE_EQ) {
   gab_value a = PEEK_N(have);
   gab_value b = PEEK_N(have - 1);
 
-  DROP_N(have);
+  DROP_N(have + 1);
   PUSH(gab_bool(gab_valeq(a, b)));
 
-  SET_VAR(1);
+  SET_VAR(below_have + 1);
 
   NEXT();
 }
 
 CASE_CODE(SEND_PRIMITIVE_CONCAT) {
   gab_value *ks = READ_CONSTANTS;
-  uint64_t have = compute_arity(VAR(), READ_BYTE);
+  uint64_t have = COMPUTE_TUPLE(READ_BYTE);
+  uint64_t below_have = PEEK_N(have + 1);
 
   SEND_GUARD_CACHED_RECEIVER_TYPE(PEEK_N(have));
 
@@ -1369,17 +1416,18 @@ CASE_CODE(SEND_PRIMITIVE_CONCAT) {
   STORE_SP();
   gab_value val_ab = gab_strcat(GAB(), val_a, val_b);
 
-  DROP_N(have);
+  DROP_N(have + 1);
   PUSH(val_ab);
 
-  SET_VAR(1);
+  SET_VAR(below_have + 1);
 
   NEXT();
 }
 
 CASE_CODE(SEND_PRIMITIVE_USE) {
   gab_value *ks = READ_CONSTANTS;
-  uint64_t have = compute_arity(VAR(), READ_BYTE);
+  uint64_t have = COMPUTE_TUPLE(READ_BYTE);
+  uint64_t below_have = PEEK_N(have + 1);
 
   gab_value r = PEEK_N(have);
 
@@ -1395,7 +1443,7 @@ CASE_CODE(SEND_PRIMITIVE_USE) {
    */
   gab_value shp = gab_prtshp(BLOCK()->p);
   gab_value svargs[32];
-  const char* sargs[32];
+  const char *sargs[32];
 
   size_t len = gab_shplen(shp);
   assert(len < 32);
@@ -1412,7 +1460,7 @@ CASE_CODE(SEND_PRIMITIVE_USE) {
                          .sargv = sargs,
                      });
 
-  DROP_N(have);
+  DROP_N(have + 1);
 
   if (mod.status != gab_cvalid)
     VM_GIVEN(mod);
@@ -1423,14 +1471,15 @@ CASE_CODE(SEND_PRIMITIVE_USE) {
   for (uint64_t i = 1; i < mod.aresult->len; i++)
     PUSH(mod.aresult->data[i]);
 
-  SET_VAR(mod.aresult->len - 1);
+  SET_VAR(below_have + mod.aresult->len - 1);
 
   NEXT();
 }
 
 CASE_CODE(SEND_PRIMITIVE_CONS) {
   gab_value *ks = READ_CONSTANTS;
-  uint64_t have = compute_arity(VAR(), READ_BYTE);
+  uint64_t have = COMPUTE_TUPLE(READ_BYTE);
+  uint64_t below_have = PEEK_N(have + 1);
 
   gab_value r = PEEK_N(have);
 
@@ -1438,115 +1487,120 @@ CASE_CODE(SEND_PRIMITIVE_CONS) {
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
 
   if (__gab_unlikely(have < 2))
-    SET_VAR(1), NEXT();
+    SET_VAR(below_have + 1), NEXT();
 
   gab_value a = PEEK_N(have);
   gab_value b = PEEK_N(have - 1);
 
   STORE_SP();
-  gab_value res = (gab_listof(GAB(), a, b));
+  gab_value res = gab_listof(GAB(), a, b);
 
-  DROP_N(have);
+  DROP_N(have + 1);
   PUSH(res);
 
-  SET_VAR(1);
+  SET_VAR(below_have + 1);
 
   NEXT();
 }
 
 CASE_CODE(SEND_PRIMITIVE_CONS_RECORD) {
   SKIP_SHORT;
-  uint64_t have = compute_arity(VAR(), READ_BYTE);
+  uint64_t have = COMPUTE_TUPLE(READ_BYTE);
+  uint64_t below_have = PEEK_N(have + 1);
 
   gab_value r = PEEK_N(have);
 
   SEND_GUARD_KIND(r, kGAB_RECORD);
 
   if (__gab_unlikely(have < 2))
-    SET_VAR(1), NEXT();
+    SET_VAR(below_have + 1), NEXT();
 
   gab_value arg = PEEK_N(have - 1);
 
   STORE_SP();
-  gab_value res = (gab_lstpush(GAB(), r, arg));
+  gab_value res = gab_lstpush(GAB(), r, arg);
 
-  DROP_N(have);
+  DROP_N(have + 1);
   PUSH(res);
 
-  SET_VAR(1);
+  SET_VAR(below_have + 1);
 
   NEXT();
 }
 
 CASE_CODE(SEND_PRIMITIVE_SPLATSHAPE) {
-  gab_value *ks = READ_CONSTANTS;
-  uint64_t have = compute_arity(VAR(), READ_BYTE);
+  SKIP_SHORT; // Constants
+  uint64_t have = COMPUTE_TUPLE(READ_BYTE);
+  uint64_t below_have = PEEK_N(have + 1);
 
   gab_value s = PEEK_N(have);
 
   SEND_GUARD_ISSHP(s);
 
-  DROP_N(have);
+  DROP_N(have + 1);
 
   uint64_t len = gab_shplen(s);
 
-  assert(VM()->sp + len < VM()->sp + cGAB_STACK_MAX);
+  VM_PANIC_GUARD_STACKSPACE(len);
 
   for (uint64_t i = 0; i < len; i++)
     PUSH(gab_ushpat(s, i));
 
-  SET_VAR(len);
+  SET_VAR(below_have + len);
 
   NEXT();
 }
 
 CASE_CODE(SEND_PRIMITIVE_SPLATLIST) {
   gab_value *ks = READ_CONSTANTS;
-  uint64_t have = compute_arity(VAR(), READ_BYTE);
+  uint64_t have = COMPUTE_TUPLE(READ_BYTE);
+  uint64_t below_have = PEEK_N(have + 1);
 
   gab_value r = PEEK_N(have);
 
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
 
-  DROP_N(have);
+  DROP_N(have + 1);
 
   uint64_t len = gab_reclen(r);
 
-  assert(VM()->sp + len < VM()->sp + cGAB_STACK_MAX);
+  VM_PANIC_GUARD_STACKSPACE(len);
 
   for (uint64_t i = 0; i < len; i++)
     PUSH(gab_uvrecat(r, i));
 
-  SET_VAR(len);
+  SET_VAR(below_have + len);
 
   NEXT();
 }
 
 CASE_CODE(SEND_PRIMITIVE_SPLATDICT) {
   gab_value *ks = READ_CONSTANTS;
-  uint64_t have = compute_arity(VAR(), READ_BYTE);
+  uint64_t have = COMPUTE_TUPLE(READ_BYTE);
+  uint64_t below_have = PEEK_N(have + 1);
 
   gab_value r = PEEK_N(have);
 
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
 
-  DROP_N(have);
+  DROP_N(have + 1);
 
   uint64_t len = gab_reclen(r);
 
-  assert(VM()->sp + len < VM()->sp + cGAB_STACK_MAX);
+  VM_PANIC_GUARD_STACKSPACE(len * 2);
 
   for (uint64_t i = 0; i < len; i++)
     PUSH(gab_ukrecat(r, i)), PUSH(gab_uvrecat(r, i));
 
-  SET_VAR(len * 2);
+  SET_VAR(below_have + len * 2);
 
   NEXT();
 }
 
 CASE_CODE(SEND_CONSTANT) {
   gab_value *ks = READ_CONSTANTS;
-  uint64_t have = compute_arity(VAR(), READ_BYTE);
+  uint64_t have = COMPUTE_TUPLE(READ_BYTE);
+  uint64_t below_have = PEEK_N(have + 1);
 
   gab_value r = PEEK_N(have);
 
@@ -1555,32 +1609,35 @@ CASE_CODE(SEND_CONSTANT) {
 
   gab_value spec = ks[GAB_SEND_KSPEC];
 
-  DROP_N(have);
-
+  DROP_N(have + 1);
   PUSH(spec);
 
-  SET_VAR(1);
+  SET_VAR(below_have + 1);
 
   NEXT();
 }
 
 CASE_CODE(SEND_PROPERTY) {
   gab_value *ks = READ_CONSTANTS;
-  uint64_t have = compute_arity(VAR(), READ_BYTE);
+  uint64_t have = COMPUTE_TUPLE(READ_BYTE);
+  uint64_t below_have = PEEK_N(have + 1);
 
   gab_value r = PEEK_N(have);
 
   SEND_GUARD_KIND(r, kGAB_RECORD);
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
 
-  PROPERTY_RECORD(r, have);
+  PROPERTY_RECORD(r, have, below_have);
 }
 
 CASE_CODE(RETURN) {
-  uint64_t have = compute_arity(VAR(), READ_BYTE);
+  uint64_t have = COMPUTE_TUPLE(READ_BYTE);
+  uint64_t below_have = FB()[-4];
 
   gab_value *from = SP() - have;
-  gab_value *to = FB() - 3;
+  gab_value *to = FB() - 4;
+  // The target 'to' ptr should be the len of our consing tuple (below_have)
+  assert(*to == below_have);
 
   if (__gab_unlikely(RETURN_FB() == nullptr))
     return STORE(), SET_VAR(have), vm_ok(DISPATCH_ARGS());
@@ -1590,7 +1647,7 @@ CASE_CODE(RETURN) {
   LOAD_FRAME();
   memmove(to, from, have * sizeof(gab_value));
   SP() = to + have;
-  SET_VAR(have);
+  SET_VAR(have + below_have);
 
   assert(FB() >= VM()->sb + 3);
   assert(BLOCK()->header.kind == kGAB_BLOCK);
@@ -1602,7 +1659,11 @@ CASE_CODE(RETURN) {
 CASE_CODE(NOP) { NEXT(); }
 
 CASE_CODE(CONSTANT) {
+  uint64_t have = VAR();
+
   PUSH(READ_CONSTANT);
+
+  VAR() = have + 1;
 
   NEXT();
 }
@@ -1610,57 +1671,82 @@ CASE_CODE(CONSTANT) {
 CASE_CODE(NCONSTANT) {
   uint8_t n = READ_BYTE;
 
+  VM_PANIC_GUARD_STACKSPACE(n);
+
+  uint64_t have = VAR();
+
+  SP()[n] = have + n;
+
   while (n--)
     PUSH(READ_CONSTANT);
 
   NEXT();
 }
 
-CASE_CODE(SHIFT) {
-  uint8_t n = READ_BYTE;
-
-  gab_value tmp = PEEK();
-
-  memmove(SP() - (n - 1), SP() - n, (n - 1) * sizeof(gab_value));
-
-  PEEK_N(n) = tmp;
-
-  NEXT();
-}
-
 CASE_CODE(POP) {
   DROP();
-
+  VAR() = 0;
   NEXT();
 }
 
 CASE_CODE(POP_N) {
   DROP_N(READ_BYTE);
-
+  VAR() = 0;
   NEXT();
 }
 
 CASE_CODE(SEND_PRIMITIVE_TYPE) {
   SKIP_SHORT;
-  uint64_t have = compute_arity(VAR(), READ_BYTE);
+  uint64_t have = COMPUTE_TUPLE(READ_BYTE);
+  uint64_t below_have = PEEK_N(have + 1);
 
-  PEEK_N(have) = gab_valtype(GAB(), PEEK_N(have));
+  gab_value type = gab_valtype(GAB(), PEEK_N(have));
 
-  DROP_N(have - 1);
+  DROP_N(have + 1);
+  PUSH(type);
 
-  SET_VAR(1);
+  SET_VAR(below_have + 1);
 
   NEXT();
 }
 
 CASE_CODE(BLOCK) {
   gab_value p = READ_CONSTANT;
+  uint64_t have = VAR();
 
   STORE_SP();
 
   gab_value blk = block(GAB(), p, FB(), BLOCK()->upvalues);
 
   PUSH(blk);
+
+  VAR() = have + 1;
+
+  NEXT();
+}
+
+CASE_CODE(TUPLE) {
+  uint64_t have = VAR();
+
+  PUSH(have);
+
+  VAR() = 0;
+
+  NEXT();
+}
+
+CASE_CODE(CONS) {
+  uint64_t have = VAR();
+  uint64_t below_have = PEEK_N(have + 1);
+
+  // Move the given tuple down one.
+  memmove(SP() - (have + 1), SP() - have, have * sizeof(gab_value));
+
+  // Drop the tuple len for the below tuple.
+  DROP();
+
+  // Combine length of each tuple.
+  VAR() = have + below_have;
 
   NEXT();
 }
@@ -1716,16 +1802,17 @@ CASE_CODE(TRIM) {
   }
 
   SP() += have + nulls;
-  VAR() = have + nulls;
 
   while (nulls--)
     PEEK_N(nulls + 1) = gab_nil;
+
+  VAR() = 0;
 
   NEXT();
 }
 
 CASE_CODE(PACK_RECORD) {
-  uint64_t have = compute_arity(VAR(), READ_BYTE);
+  uint64_t have = COMPUTE_TUPLE(READ_BYTE);
   uint8_t below = READ_BYTE;
   uint8_t above = READ_BYTE;
 
@@ -1754,7 +1841,7 @@ CASE_CODE(PACK_RECORD) {
   NEXT();
 }
 CASE_CODE(PACK_LIST) {
-  uint64_t have = compute_arity(VAR(), READ_BYTE);
+  uint64_t have = COMPUTE_TUPLE(READ_BYTE);
   uint8_t below = READ_BYTE;
   uint8_t above = READ_BYTE;
 
@@ -1786,7 +1873,7 @@ CASE_CODE(PACK_LIST) {
 CASE_CODE(SEND) {
   gab_value *ks = READ_CONSTANTS;
   uint8_t have_byte = READ_BYTE;
-  uint64_t have = compute_arity(VAR(), have_byte);
+  uint64_t have = COMPUTE_TUPLE(have_byte);
 
   uint8_t adjust = (have_byte & fHAVE_TAIL) >> 1;
 
@@ -1862,7 +1949,8 @@ CASE_CODE(SEND) {
 
 CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE_PROPERTY) {
   gab_value *ks = READ_CONSTANTS;
-  uint64_t have = compute_arity(VAR(), READ_BYTE);
+  uint64_t have = COMPUTE_TUPLE(READ_BYTE);
+  uint64_t below_have = PEEK_N(have + 1);
 
   gab_value m = PEEK_N(have);
   gab_value r = PEEK_N(have - 1);
@@ -1875,12 +1963,12 @@ CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE_PROPERTY) {
   have--;
   DROP();
 
-  PROPERTY_RECORD(r, have);
+  PROPERTY_RECORD(r, have, below_have);
 }
 
 CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE_BLOCK) {
   gab_value *ks = READ_CONSTANTS;
-  uint64_t have = compute_arity(VAR(), READ_BYTE);
+  uint64_t have = COMPUTE_TUPLE(READ_BYTE);
 
   gab_value m = PEEK_N(have);
   gab_value r = PEEK_N(have - 1);
@@ -1900,7 +1988,7 @@ CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE_BLOCK) {
 
 CASE_CODE(TAILSEND_PRIMITIVE_CALL_MESSAGE_BLOCK) {
   gab_value *ks = READ_CONSTANTS;
-  uint64_t have = compute_arity(VAR(), READ_BYTE);
+  uint64_t have = COMPUTE_TUPLE(READ_BYTE);
 
   gab_value m = PEEK_N(have);
   gab_value r = PEEK_N(have - 1);
@@ -1920,7 +2008,8 @@ CASE_CODE(TAILSEND_PRIMITIVE_CALL_MESSAGE_BLOCK) {
 
 CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE_NATIVE) {
   gab_value *ks = READ_CONSTANTS;
-  uint64_t have = compute_arity(VAR(), READ_BYTE);
+  uint64_t have = COMPUTE_TUPLE(READ_BYTE);
+  uint64_t below_have = PEEK_N(have + 1);
 
   gab_value m = PEEK_N(have);
   gab_value r = PEEK_N(have - 1);
@@ -1935,12 +2024,12 @@ CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE_NATIVE) {
 
   struct gab_onative *spec = (void *)ks[GAB_SEND_KSPEC];
 
-  CALL_NATIVE(spec, have, true);
+  CALL_NATIVE(spec, have, below_have, true);
 }
 
 CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE_PRIMITIVE) {
   gab_value *ks = READ_CONSTANTS;
-  uint64_t have = compute_arity(VAR(), READ_BYTE);
+  uint64_t have = COMPUTE_TUPLE(READ_BYTE);
 
   gab_value m = PEEK_N(have);
   gab_value r = PEEK_N(have - 1);
@@ -1963,7 +2052,8 @@ CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE_PRIMITIVE) {
 
 CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE_CONSTANT) {
   gab_value *ks = READ_CONSTANTS;
-  uint64_t have = compute_arity(VAR(), READ_BYTE);
+  uint64_t have = COMPUTE_TUPLE(READ_BYTE);
+  uint64_t below_have = PEEK_N(have + 1);
 
   gab_value m = PEEK_N(have);
   gab_value r = PEEK_N(have - 1);
@@ -1974,11 +2064,10 @@ CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE_CONSTANT) {
 
   gab_value spec = ks[GAB_SEND_KSPEC];
 
-  DROP_N(have);
-
+  DROP_N(have + 1);
   PUSH(spec);
 
-  SET_VAR(1);
+  SET_VAR(below_have + 1);
 
   NEXT();
 }
@@ -1986,7 +2075,7 @@ CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE_CONSTANT) {
 CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE) {
   gab_value *ks = READ_CONSTANTS;
   uint8_t have_byte = READ_BYTE;
-  uint64_t have = compute_arity(VAR(), have_byte);
+  uint64_t have = COMPUTE_TUPLE(have_byte);
 
   gab_value m = PEEK_N(have);
   gab_value r = PEEK_N(have - 1);
@@ -2049,7 +2138,8 @@ CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE) {
 
 CASE_CODE(SEND_PRIMITIVE_TAKE) {
   SKIP_SHORT;
-  uint64_t have = compute_arity(VAR(), READ_BYTE);
+  uint64_t have = COMPUTE_TUPLE(READ_BYTE);
+  uint64_t below_have = PEEK_N(have + 1);
 
   gab_value c = PEEK_N(have);
 
@@ -2057,7 +2147,10 @@ CASE_CODE(SEND_PRIMITIVE_TAKE) {
 
   STORE_SP();
 
-  gab_value v = gab_tchntake(GAB(), c, cGAB_VM_CHANNEL_TAKE_TIMEOUT_MS);
+  // TODO: Fix the hardcoding of len here
+  assert(has_stackspace(SP(), SB(), cGAB_FRAMES_MAX));
+  gab_value v = gab_ntchntake(GAB(), c, cGAB_FRAMES_MAX, SP() - have,
+                              cGAB_VM_CHANNEL_TAKE_TIMEOUT_MS);
 
   switch (v) {
   case gab_ctimeout:
@@ -2065,53 +2158,62 @@ CASE_CODE(SEND_PRIMITIVE_TAKE) {
   case gab_cinvalid:
     VM_TERM();
   case gab_cundefined:
-    DROP_N(have);
+    DROP_N(have + 1);
     PUSH(gab_none);
-    SET_VAR(1);
+
+    SET_VAR(below_have + 1);
     NEXT();
   default:
-    DROP_N(have);
-    PUSH(gab_ok);
-    PUSH(v);
-    SET_VAR(2);
+    gab_int i = gab_valtoi(v);
+
+    if (i < 0)
+      VM_PANIC(GAB_PANIC, "Channel take failed, insufficient stack space.");
+
+    PEEK_N(have + 1) = gab_ok;
+    SP() += (gab_valtoi(v) - (int64_t)have);
+
+    SET_VAR(below_have + gab_valtou(v) + 1);
     NEXT();
   }
 }
 
 CASE_CODE(SEND_PRIMITIVE_PUT) {
   SKIP_SHORT;
-  uint64_t have = compute_arity(VAR(), READ_BYTE);
+  uint64_t have = COMPUTE_TUPLE(READ_BYTE);
+  uint64_t below_have = PEEK_N(have + 1);
 
   gab_value c = PEEK_N(have);
 
   SEND_GUARD_ISC(c);
 
-  gab_value v = gab_nil;
-
-  if (__gab_likely(have >= 2))
-    v = PEEK_N(have - 1);
-
   STORE_SP();
 
-  gab_value r = gab_tchnput(GAB(), c, v, cGAB_VM_CHANNEL_PUT_TIMEOUT_MS);
+  // All values *but* the channel are put into the channel.
+  gab_value r = gab_ntchnput(GAB(), c, have - 1, SP() - (have - 1),
+                             cGAB_VM_CHANNEL_PUT_TIMEOUT_MS);
 
-  // TODO: Should this handle the case of channel closing underneath, and behave
-  // differently?
   switch (r) {
   case gab_ctimeout:
     VM_YIELD();
   case gab_cinvalid:
     VM_TERM();
   default:
-    DROP_N(have - 1);
-    SET_VAR(1);
+    gab_value ch = PEEK_N(have);
+    // Return the channel
+
+    DROP_N(have + 1);
+    PUSH(ch);
+
+    SET_VAR(below_have + 1);
+
     NEXT();
   }
 }
 
 CASE_CODE(SEND_PRIMITIVE_FIBER) {
   gab_value *ks = READ_CONSTANTS;
-  uint64_t have = compute_arity(VAR(), READ_BYTE);
+  uint64_t have = COMPUTE_TUPLE(READ_BYTE);
+  uint64_t below_have = PEEK_N(have + 1);
 
   SEND_GUARD_CACHED_RECEIVER_TYPE(PEEK_N(have));
 
@@ -2135,33 +2237,36 @@ CASE_CODE(SEND_PRIMITIVE_FIBER) {
 
   assert(fb.status == gab_cvalid);
 
-  DROP_N(have);
+  DROP_N(have + 1);
   PUSH(fb.vresult);
 
-  SET_VAR(1);
+  SET_VAR(below_have + 1);
 
   NEXT();
 }
 
 CASE_CODE(SEND_PRIMITIVE_CHANNEL) {
   gab_value *ks = READ_CONSTANTS;
-  uint64_t have = compute_arity(VAR(), READ_BYTE);
+  uint64_t have = COMPUTE_TUPLE(READ_BYTE);
+  uint64_t below_have = PEEK_N(have + 1);
 
   SEND_GUARD_CACHED_RECEIVER_TYPE(PEEK_N(have));
 
   STORE_SP();
   gab_value chan = gab_channel(GAB());
 
-  DROP_N(have);
+  DROP_N(have + 1);
   PUSH(chan);
-  SET_VAR(1);
+
+  SET_VAR(below_have + 1);
 
   NEXT();
 }
 
 CASE_CODE(SEND_PRIMITIVE_RECORD) {
   gab_value *ks = READ_CONSTANTS;
-  uint64_t have = compute_arity(VAR(), READ_BYTE);
+  uint64_t have = COMPUTE_TUPLE(READ_BYTE);
+  uint64_t below_have = PEEK_N(have + 1);
 
   SEND_GUARD_CACHED_RECEIVER_TYPE(PEEK_N(have));
 
@@ -2173,16 +2278,18 @@ CASE_CODE(SEND_PRIMITIVE_RECORD) {
   STORE_SP();
   gab_value record = gab_record(GAB(), 2, len / 2, SP() - len, SP() + 1 - len);
 
-  DROP_N(have);
+  DROP_N(have + 1);
   PUSH(record);
-  SET_VAR(1);
+
+  SET_VAR(below_have + 1);
 
   NEXT();
 }
 
 CASE_CODE(SEND_PRIMITIVE_MAKE_SHAPE) {
   gab_value *ks = READ_CONSTANTS;
-  uint64_t have = compute_arity(VAR(), READ_BYTE);
+  uint64_t have = COMPUTE_TUPLE(READ_BYTE);
+  uint64_t below_have = PEEK_N(have + 1);
 
   SEND_GUARD_CACHED_RECEIVER_TYPE(PEEK_N(have));
 
@@ -2196,16 +2303,18 @@ CASE_CODE(SEND_PRIMITIVE_MAKE_SHAPE) {
   STORE_SP();
   gab_value record = gab_recordfrom(GAB(), shape, 1, len, SP() - len, nullptr);
 
-  DROP_N(have);
+  DROP_N(have + 1);
   PUSH(record);
-  SET_VAR(1);
+
+  SET_VAR(below_have + 1);
 
   NEXT();
 }
 
 CASE_CODE(SEND_PRIMITIVE_SHAPE) {
   gab_value *ks = READ_CONSTANTS;
-  uint64_t have = compute_arity(VAR(), READ_BYTE);
+  uint64_t have = COMPUTE_TUPLE(READ_BYTE);
+  uint64_t below_have = PEEK_N(have + 1);
 
   SEND_GUARD_CACHED_RECEIVER_TYPE(PEEK_N(have));
 
@@ -2214,16 +2323,19 @@ CASE_CODE(SEND_PRIMITIVE_SHAPE) {
   STORE_SP();
   gab_value shape = gab_shape(GAB(), 1, len, SP() - len, nullptr);
 
-  DROP_N(have);
+  DROP_N(have + 1);
   PUSH(shape);
-  SET_VAR(1);
+
+  SET_VAR(below_have + 1);
 
   NEXT();
 }
 
 CASE_CODE(SEND_PRIMITIVE_LIST) {
   gab_value *ks = READ_CONSTANTS;
-  uint64_t have = compute_arity(VAR(), READ_BYTE);
+  uint64_t have = COMPUTE_TUPLE(READ_BYTE);
+
+  uint64_t below_have = PEEK_N(have + 1);
 
   SEND_GUARD_CACHED_RECEIVER_TYPE(PEEK_N(have));
 
@@ -2232,9 +2344,10 @@ CASE_CODE(SEND_PRIMITIVE_LIST) {
   STORE_SP();
   gab_value rec = gab_list(GAB(), len, SP() - len);
 
-  DROP_N(have);
+  DROP_N(have + 1);
   PUSH(rec);
-  SET_VAR(1);
+
+  SET_VAR(below_have + 1);
 
   NEXT();
 }

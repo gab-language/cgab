@@ -1,54 +1,46 @@
+ui = 'cgui'.use
 
-# Rethinking current tuple destructuring
+(events, app) = (Channels.make, Channels.make)
 
-(a, b, c[]) = (1, 2, 3) # => Now invalid, as a newline is expected between 'c' and '[]'
-(a, b, c{}) = (1, 2, 3) # => Now invalid, as a newline is expected between 'c' and '{}'
+Fibers.make () => ui.run(events, app)
 
-(a, b, [c]**) = (1, 2, 3) # -> Valid, as '**' is in the operator send position here.
-# It is consistent with the '**' splat syntax, which is nice.
+red = '0xff0000ff'.as\n
+blue = '0x0000ffff'.as\n
+green = '0x00ff00ff'.as\n
 
-# Now there is no syntax for collecting extra values as a dict, instead of just a list.
-(a, b, {c}**) => c
+model = { pos: { x: 200 y: 200 } }
 
-# This syntax sugar is fine, but because everything is *messages*, you can destructure
-# Anything that implements these messages.
-# This is kinda good?
+handle\key: .defcase {
+  h: (ev model) => model.put_via(model.pos.x - 10, pos: x:)
+  j: (ev model) => model.put_via(model.pos.y + 10, pos: y:)
+  k: (ev model) => model.put_via(model.pos.y - 10, pos: y:)
+  l: (ev model) => model.put_via(model.pos.x + 10, pos: x:)
 
-# Associative Bindings ---
-# Send the message in each key position to the value. 
-# Apply that result to the binding in the value position.
-# Desugar eg:
-{ name: n self: rec keys: [first] } = { name: 2 }
-  n = (...) .name
-  rec = (...) .self # => rec
-  first = (...) .keys .at! 0
+  Messages.t
+  (ev model) => do
+    'Unhandled key: $\n'.printf(self)
+    model
+  end
+}
 
-# Sequential Bindings ---
-# As lists have an implicit-ascending-integer in each of their key positions,
-# The same principle from associative bindings can be applied.
-# However, since numbers are not valid messages, the at!: and slice:
-#   messages are used.
-#
-# NOTE: *any* type which implements this protocol may be destructured
-#  sequentially. (By default, this includes records and strings)
-#
-# Desugar eg:
-[f, s, rest*] = ['hello', 'world']
-  f = (...) .at! 0
-  s = (...) .at! 1
-  rest = (...) .slice(2, -1)
+handle\type: .defcase {
+  tick:  (ev model) => model
+  mouse: (ev model) => model
+  key:   (ev model) => do
+    ev
+      .at 0
+      .unwrap
+      .to\m
+      .handle\key(ev model)
+  end
+}
 
-# Uh Oh - sequential destructuring is trivial (pretty much already in the language)
-# Via this - unpack a tuple and just splat the record.
-# This does use the VM Stack, but it is *so* efficient on instructions.
-# - PACK_LIST => 'slice' the on-stack tuple
-# - NPOPSTORE_STORELOCAL => pop the now-appropriate number of values into locals
-# Alternative desugar ex:
-[f, s, rest*, l] = ['hello', 'world']
-  (f, s, rest[], l) = ['hello', 'world']**
+controller: .def (
+  model?
+  (type, ev*) => type.handle\type(ev, self))
 
-# Is this worth it? We can sort of destructure manually
-# Just by using multiple return values.
-rec = (...)
-first = rec.keys.at! 0
-name = rec.at! name:
+view: .def (
+  model?
+  () => [[rect: { x: self.pos.x, y: self.pos.y, w: 10, h: 10 }]])
+
+events.pipe(app, Streams.reduce(model controller:) |> Streams.map view:)

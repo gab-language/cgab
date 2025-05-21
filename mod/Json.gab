@@ -6,19 +6,21 @@ array_xf = Streams.map to\json:
 object_xf = Streams.map((v k) => k.to\json + ":" + v.to\json)
          |> Streams.interpose ","
 
-do_encode_record: .defcase {
-  true: array => "[" + array.join array_xf + "]"
-  false: object => "{" + object.join object_xf + "}"
+json\do_encode_record: .defcase {
+  true: array => Strings.make("[", array.join array_xf, "]")
+  false: object => Strings.make("{", object.join object_xf, "}")
 }
 
-to\json: .def () => '"' + self.to\s + '"'
 to\json: .defcase {
-  nil:          'nil'
+  nil:          'null'
   true:         'true'
   false:        'false'
   Numbers.t
   () => self.to\s
 
+  Strings.t
+  () => '"' + self.to\s + '"'
+
   Records.t
-  () => self.is\list.do_encode_record self
+  () => self.is\list.json\do_encode_record self
 }

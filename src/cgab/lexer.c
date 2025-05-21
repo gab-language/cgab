@@ -1,4 +1,5 @@
 #include "gab.h"
+#include "engine.h"
 #include <ctype.h>
 
 bool can_start_operator(uint8_t c) {

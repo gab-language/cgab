@@ -1,20 +1,17 @@
-log = 'lsp/logs'.use
+'lsp/logs'.use
 'lsp/diagnostics'.use
 
 lsp\messages\into:.def(
   Records.t
   () => do
-    (ok, method) = self.at 'method'
-
-    ok .else () => do
-      log.error("No Method", self)
-    end
-
-    (ok, params) = self.at 'params'
+    method = self.at 'method' .unwrap
+    (_, params) = self.at 'params'
 
     method = method.or "" .to\m
     params = params.or {}
-    id     = self .at 'id' .unwrap.or 1
+    (ok, id) = self .at 'id'
+
+    id = ok.== ok: .and id .or 1
 
     {
       method nil:,
@@ -35,7 +32,7 @@ lsp\dispatch:.def(
     message = self
 
     lsp\handle:.at message .then () => do
-        log.("Dispatch" lsp\handle:.at message)
+        server.log("Dispatch" lsp\handle:.at message)
         (ok: message.lsp\handle server)
     end
   end)
@@ -45,7 +42,11 @@ lsp\dispatch:.def(
 # INITIALIZATION
 #
 
-TEXTDOCUMENTSYNCKIND\FULL = 1
+TextDocumentSyncKind = {
+  NONE: 0
+  FULL: 1
+  INCREMENTAL: 2
+}
 
 'initialize' .def\lsp\handler server => do
   server.respond(
@@ -54,10 +55,7 @@ TEXTDOCUMENTSYNCKIND\FULL = 1
         "capabilities" {
           "textDocumentSync" {
             "openClose" true:,
-            #"change": TEXTDOCUMENTSYNCKIND\FULL,
-            "save" {
-              "includeText" true:,
-            },
+            "change" TextDocumentSyncKind.INCREMENTAL,
           },
         },
         "serverInfo" {
@@ -74,9 +72,11 @@ end
 end
 
 'shutdown' .def\lsp\handler server => do
-  log.("Shutting down")
+  server.log("Shutting down")
 
   server.server\open_ch.close
+  server.server\diagnostics.close
+  server.server\logs.close
 
   server
 end
@@ -85,17 +85,18 @@ end
 # SYNCHRONIZATION
 #
 
+
 "textDocument/didOpen" .def\lsp\handler server => do
   uri = self.params.at 'textDocument' .unwrap.at 'uri' .unwrap
   text= self.params.at 'textDocument' .unwrap.at 'text' .unwrap
 
-  log.("Opened", uri)
+  server.log("Opened", uri)
 
   data = server.server\data.put(uri, text)
 
-  server = server.server\data data
+  server = server.put(server\data: data)
 
-  server.diagnostics\queue_all
+  server.diagnostics\queue(text, uri)
 
   server
 end
@@ -104,13 +105,13 @@ end
   uri = self.params.at 'textDocument' .unwrap.at 'uri' .unwrap
   (ok, text) = self.params.at 'text'
 
-  log.("Saved", uri)
+  server.log("Saved", uri)
 
   data = server.server\data.put(uri, text)
 
   updated_server = server.put(server\data: data)
 
-  updated_server.diagnostics\queue_all
+  updated_server.diagnostics\queue(text uri)
 
   (ok, updated_server) .unwrap.or (server)
 end
@@ -121,8 +122,22 @@ end
 end
 
 "textDocument/didChange" .def\lsp\handler server => do
+  uri = self.params.at 'textDocument' .unwrap.at 'uri' .unwrap
+  (ok, changes) = self.params.at 'contentChanges'
+
+  server.log("Changed", uri)
+  text = changes.at 0 .unwrap .at "text" .unwrap
+
+  data = server.server\data.put(uri, text)
+
+  updated_server = server.put(server\data: data)
+
+  updated_server.diagnostics\queue(text uri)
+
+  (ok, updated_server) .unwrap.or (server)
+
   # TODO: Handle incremental changes in documents
-  server
+  updated_server
 end
 
 

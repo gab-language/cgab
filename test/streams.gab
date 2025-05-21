@@ -1,0 +1,8 @@
+xf = Streams.map ++:
+  |> Streams.tap println:
+
+ch = Channels.make
+
+Fibers.make () => ch.each println:
+
+[1 2 3 4 5].pipe(ch xf)

@@ -1,6 +1,6 @@
 #include <assert.h>
-#include <string.h>
 #include <stdbool.h>
+#include <string.h>
 
 #ifndef K
 #error "Define a type K before including this header"
@@ -120,7 +120,7 @@ LINKAGE size_t METHOD(inext)(TYPENAME *self, size_t index) {
 LINKAGE void METHOD(create)(TYPENAME *self, size_t cap) {
   assert(cap % 2 == 0);
 
-  self->buckets = malloc(sizeof(BUCKET_T) * cap);
+  self->buckets = (BUCKET_T *)malloc(sizeof(BUCKET_T) * cap);
   memset(self->buckets, 0, cap * sizeof(BUCKET_T));
 
   self->cap = cap;
@@ -228,7 +228,7 @@ LINKAGE bool METHOD(exists)(TYPENAME *self, K key) {
 LINKAGE V METHOD(read)(TYPENAME *self, K key) {
   if (self->len == 0)
     return DEF_V;
-  
+
   size_t index = METHOD(index_of)(self, key);
 
   BUCKET_T *bucket = self->buckets + index;

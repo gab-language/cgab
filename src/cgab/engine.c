@@ -1,5 +1,3 @@
-#include <stdint.h>
-#include <stdio.h>
 #define GAB_STATUS_NAMES_IMPL
 #define GAB_TOKEN_NAMES_IMPL
 #include "engine.h"
@@ -372,19 +370,19 @@ int32_t worker_job(void *data) {
 #endif
 
   while (!gab_chnisclosed(gab.eg->work_channel) ||
-         !gab_chnisempty(gab.eg->work_channel) ||
          !q_gab_value_is_empty(&job->queue)) {
 #if cGAB_LOG_EG
     gab_fprintf(stdout, "[WORKER $] TAKING WITH TIMEOUT $ms\n",
                 gab_number(gab.wkid), gab_number(cGAB_WORKER_IDLEWAIT_MS));
 #endif
 
+    gab_value fiber =
+        gab_tchntake(gab, gab.eg->work_channel, cGAB_WORKER_IDLEWAIT_MS);
+
 #if cGAB_LOG_EG
     gab_fprintf(stdout, "[WORKER $] chntake succeeded: $\n",
                 gab_number(gab.wkid), fiber);
 #endif
-    gab_value fiber =
-        gab_tchntake(gab, gab.eg->work_channel, cGAB_WORKER_IDLEWAIT_MS);
 
     if (fiber == gab_cinvalid || fiber == gab_ctimeout ||
         fiber == gab_cundefined) {
@@ -407,6 +405,8 @@ int32_t worker_job(void *data) {
     // Run our job.
     union gab_value_pair res = gab_vmexec(gab, fiber);
 
+    assert(q_gab_value_peek(&job->queue) == fiber);
+
     // We did work - pop it off the queue now.
     q_gab_value_pop(&job->queue);
 
@@ -416,26 +416,17 @@ int32_t worker_job(void *data) {
       if (!q_gab_value_push(&job->queue, fiber))
         assert(false && "PUSH FAILED");
       break;
-    case gab_cvalid: {
-      // We completed the work. Continue.
-      // However if we had an error, call our callback.
-      if (res.aresult->data[0] != gab_ok)
-        if (gab.eg->joberr_handler)
-          gab.eg->joberr_handler(gab, res.aresult->data[1]);
-
+    // We completed the work. Nothing else to do.
+    case gab_cvalid:
       break;
-    }
-    case gab_cinvalid: {
-      // Call the registered err_handler if it exists.
-      if (gab.eg->joberr_handler)
-        gab.eg->joberr_handler(gab, res.vresult);
-
+    // We were interruppted by sGAB_TERM. Signal will be handled below.
+    case gab_cinvalid:
       break;
-    }
     default:
       assert(false && "UNREACHABLE");
     }
 
+    /* Yield for signals here before taking a new job */
     switch (gab_yield(gab)) {
     case sGAB_TERM:
       // Clear the work queue - we're terminated
@@ -661,7 +652,7 @@ union gab_value_pair gab_create(struct gab_create_argt args,
 
 void dec_child_shapes(struct gab_triple gab, gab_value shp) {
   assert(gab_valkind(shp) == kGAB_SHAPE || gab_valkind(shp) == kGAB_SHAPELIST);
-  struct gab_obj_shape *shape = GAB_VAL_TO_SHAPE(shp);
+  struct gab_oshape *shape = GAB_VAL_TO_SHAPE(shp);
 
   uint64_t len = shape->transitions.len / 2;
 
@@ -831,9 +822,8 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
     gab_value new_env = gab_fibawaite(gab, fiber.vresult);
     if (env == gab_cinvalid || new_env == gab_cinvalid)
       env = new_env;
-    else {
+    else
       env = gab_reccat(gab, env, new_env);
-    }
 
     assert(env != gab_cinvalid);
 
@@ -1139,11 +1129,11 @@ int sprint_pretty_err(struct gab_triple gab, char **buf, size_t *len,
 
     // Skip preceding whitespace for this line.
     size_t whitespace_skipped = 0;
-    while (*line_src.data == ' ' || *line_src.data == '\t') {
+    while (line_src.data[whitespace_skipped] == ' ' ||
+           line_src.data[whitespace_skipped] == '\t') {
       whitespace_skipped++;
+      assert(line_src.len > whitespace_skipped);
     }
-
-    assert(line_src.len > whitespace_skipped);
 
     line_src.data += whitespace_skipped;
     line_src.len -= whitespace_skipped;
@@ -1151,11 +1141,12 @@ int sprint_pretty_err(struct gab_triple gab, char **buf, size_t *len,
     if (line_num > 1) {
       size_t prev_line_num = line_num - 2;
       s_char prev_line_src = v_s_char_val_at(&src->lines, prev_line_num);
-      if (snprintf_through(buf, len, "\n      %.*s",
-                           (int)(prev_line_src.len - whitespace_skipped),
-                           prev_line_src.data + whitespace_skipped) < 0) {
-        return -1;
-      }
+      if (prev_line_src.len > whitespace_skipped)
+        if (snprintf_through(buf, len, "\n      %.*s",
+                             (int)(prev_line_src.len - whitespace_skipped),
+                             prev_line_src.data + whitespace_skipped) < 0) {
+          return -1;
+        }
     }
 
     int leftpad = (int)(tok_src.data - line_src.data);
@@ -1176,11 +1167,13 @@ int sprint_pretty_err(struct gab_triple gab, char **buf, size_t *len,
     if (line_num < src->lines.len) {
       size_t next_line_num = line_num;
       s_char next_line_src = v_s_char_val_at(&src->lines, next_line_num);
-      if (snprintf_through(buf, len, "\n      %.*s",
-                           (int)(next_line_src.len - whitespace_skipped),
-                           next_line_src.data + whitespace_skipped) < 0) {
-        return -1;
-      }
+
+      if (next_line_src.len > whitespace_skipped)
+        if (snprintf_through(buf, len, "\n      %.*s",
+                             (int)(next_line_src.len - whitespace_skipped),
+                             next_line_src.data + whitespace_skipped) < 0) {
+          return -1;
+        }
     }
   }
 
@@ -1682,3 +1675,182 @@ bool gab_sigcoll(struct gab_triple gab) {
 
   return succeeded;
 }
+
+struct gab_impl_rest
+gab_impl(struct gab_triple gab, gab_value message, gab_value receiver) {
+  gab_value spec = gab_cundefined;
+  gab_value type = receiver;
+
+  /* Check if the receiver has a supertype, and if that supertype implments
+   * the message. ie <gab.shape 0 1>*/
+  if (gab_valhast(receiver)) {
+    type = gab_valtype(gab, receiver);
+    spec = gab_thisfibmsgat(gab, message, type);
+    if (spec != gab_cundefined)
+      return (struct gab_impl_rest){
+          type,
+          .as.spec = spec,
+          kGAB_IMPL_TYPE,
+      };
+  }
+
+  /* Check for the kind of the receiver. ie 'gab\record' */
+  type = gab_type(gab, gab_valkind(receiver));
+  spec = gab_thisfibmsgat(gab, message, type);
+  if (spec != gab_cundefined)
+    return (struct gab_impl_rest){
+        type,
+        .as.spec = spec,
+        kGAB_IMPL_KIND,
+    };
+
+  /* Check if the receiver is a record and has a matching property */
+  if (gab_valkind(receiver) == kGAB_RECORD) {
+    type = gab_recshp(receiver);
+    if (gab_rechas(receiver, message))
+      return (struct gab_impl_rest){
+          type,
+          .as.offset = gab_recfind(receiver, message),
+          kGAB_IMPL_PROPERTY,
+      };
+  }
+
+  /* Check for a default, generic implementation */
+  /* Previously, this had a higher priority than
+   * record properties - I don't remember why I made that change.
+   *
+   * Ahh, I remember the issue. The `Messages.specializations` record
+   * is impossible to do anything with, because it is a record with a key
+   * for every message in the system.
+   */
+  type = gab_cundefined;
+  spec = gab_thisfibmsgat(gab, message, type);
+  if (spec != gab_cundefined)
+    return (struct gab_impl_rest){
+        .as.spec = spec,
+        kGAB_IMPL_GENERAL,
+    };
+
+  return (struct gab_impl_rest){.status = kGAB_IMPL_NONE};
+}
+
+GAB_API enum gab_kind gab_valkind(gab_value value) {
+  if (gab_valiso(value))
+    return gab_valtoo(value)->kind + __GAB_VAL_TAG(value);
+
+  return __GAB_VAL_TAG(value);
+}
+
+GAB_API gab_value gab_type(struct gab_triple gab, enum gab_kind k) {
+  assert(k < kGAB_NKINDS);
+  return gab.eg->types[k];
+}
+
+GAB_API struct gab_gc *gab_gc(struct gab_triple gab) {
+  return &gab.eg->gc;
+}
+
+GAB_API gab_value gab_thisfiber(struct gab_triple gab) {
+  return q_gab_value_peek(&gab.eg->jobs[gab.wkid].queue);
+}
+
+GAB_API gab_value gab_thisfibmsg(struct gab_triple gab) {
+  return gab.eg->messages;
+  /*gab_value fiber = gab_thisfiber(gab);*/
+  /**/
+  /*if (fiber == gab_cinvalid)*/
+  /*  return gab_atmat(gab, gab.eg->messages);*/
+  /**/
+  /*struct gab_ofiber *f = GAB_VAL_TO_FIBER(fiber);*/
+  /*return gab_atmat(gab, f->messages);*/
+}
+
+GAB_API inline bool gab_is_signaling(struct gab_triple gab) {
+  /*printf("SCHEDULE: %i, SIGNALING: %d\n", gab.eg->sig.schedule,
+   * gab.eg->sig.schedule >= 0);*/
+  return gab.eg->sig.schedule >= 0;
+}
+
+GAB_API inline bool gab_sigwaiting(struct gab_triple gab) {
+  return gab.eg->sig.schedule == gab.wkid;
+}
+
+GAB_API inline void gab_signext(struct gab_triple gab, int wkid) {
+#if cGAB_LOG_EG
+  printf("[WORKER %i] TRY NEXT %i\n", gab.wkid, wkid);
+#endif
+
+  // Wrap around the number of jobs. Since
+  // The 0th job is the GC job, we will wrap around
+  // and begin the gc last.
+  if (wkid >= gab.eg->len) {
+#if cGAB_LOG_EG
+    printf("[WORKER %i] WRAP NEXT %i\n", gab.wkid, 0);
+#endif
+
+    gab.eg->sig.schedule = 0;
+    return;
+  }
+
+  // If the worker we're scheduling for isn't alive, skip it
+  if (!gab.eg->jobs[wkid].alive) {
+
+    if (gab.eg->sig.signal == sGAB_COLL)
+      gab.eg->jobs[wkid].epoch++;
+
+#if cGAB_LOG_EG
+    printf("[WORKER %i] SKIP NEXT %i\n", gab.wkid, wkid);
+#endif
+
+    assert(!gab.eg->jobs[wkid].alive);
+    gab_signext(gab, wkid + 1);
+    return;
+  }
+
+  if (gab.eg->sig.schedule < (int8_t)wkid) {
+#if cGAB_LOG_EG
+    printf("[WORKER %i] DO NEXT %i\n", gab.wkid, wkid);
+#endif
+    gab.eg->sig.schedule = wkid;
+  }
+}
+
+GAB_API inline void gab_sigclear(struct gab_triple gab) {
+  assert(gab_is_signaling(gab));
+  gab.eg->sig.signal = sGAB_IGN;
+  gab.eg->sig.schedule = -1;
+}
+
+GAB_API inline bool gab_signal(struct gab_triple gab, enum gab_signal s,
+                               int wkid) {
+  if (wkid == 0)
+    return false;
+
+  if (gab_is_signaling(gab))
+    if (gab.eg->sig.signal == s)
+      return true;
+
+  while (gab_is_signaling(gab))
+    switch (gab_yield(gab)) {
+    case sGAB_COLL:
+      gab_gcepochnext(gab);
+      gab_sigpropagate(gab);
+      break;
+    case sGAB_TERM:
+      return false;
+    default:
+      break;
+    };
+
+  if (gab.eg->sig.schedule >= 0)
+    return gab.eg->sig.signal == s;
+
+#if cGAB_LOG_EG
+  printf("[WORKER %i] SIGNALLING %i\n", gab.wkid, s);
+#endif
+
+  gab.eg->sig.signal = s;
+  gab_signext(gab, wkid);
+  return true;
+};
+

@@ -73,7 +73,7 @@
 // A sleeptime of 0ms will result in *a lot* of context switching,
 // which is undesirable for the OS Scheduler. To help this, a small
 // amount of sleeping in the yield function is useful
-#define GAB_YIELD_SLEEPTIME_NS ((size_t)1 << 10)
+#define GAB_YIELD_SLEEPTIME_NS ((size_t)1 << 6)
 
 // Collect as frequently as possible (on every RC push)
 #ifndef cGAB_DEBUG_GC
@@ -141,7 +141,6 @@
 #define cGAB_ERR_SPRINTF_BUF_MAX 2048
 #endif
 
-// Size of the vm's stack
 #ifndef cGAB_STACK_MAX
 #define cGAB_STACK_MAX (cGAB_FRAMES_MAX * 32)
 #endif
@@ -220,7 +219,7 @@ enum gab_status {
 // VERSION
 #define GAB_VERSION_MAJOR "0"
 #define GAB_VERSION_MINOR "0"
-#define GAB_VERSION_PATCH "3"
+#define GAB_VERSION_PATCH "4"
 #define GAB_VERSION_TAG GAB_VERSION_MAJOR "." GAB_VERSION_MINOR "." GAB_VERSION_PATCH
 
 // Message constants
@@ -333,7 +332,6 @@ enum gab_status {
 #define EQUAL(a, b) (a == b)
 #define LOAD cGAB_DICT_MAX_LOAD
 #include "dict.h"
-#define nullptr NULL
 
 static inline s_char s_char_cstr(const char *str) {
   return (s_char){.data = str, .len = strlen(str)};

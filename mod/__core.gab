@@ -1,5 +1,3 @@
-'os.io'.use
-
 int\between: .def (
   gab\number:,
   (floor, ceil) => self.float\between(floor, ceil).floor)
@@ -53,9 +51,9 @@ end
 cond: .def (vs*, branches) => do
   args = [self, vs*]
 
-  k = args.docond(branches.?.*)
+  k = args.docond(branches ? *)
 
-  branches .at k
+  branches .at k .unwrap
 end
 
 put_by: .def (
@@ -162,14 +160,14 @@ end
 # Forget about their values as soon as they're taken
 [Channels.t] .defmodule {
   seq\init: _ => do
-    (ok, v) = self >!
-    (ok, v, v)
+    (ok, xs*) = self >!
+    (ok, nil:, xs*)
   end
   seq\next: _ => do
-    (ok, v) = self >!
-    (ok, v, v)
+    (ok, xs*) = self >!
+    (ok, nil:, xs*)
   end
-  is\open: _ => self.is\closed.!
+  is\open: _ => self.is\closed!
 }
 
 Channels.t.def\seq

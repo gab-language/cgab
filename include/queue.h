@@ -31,7 +31,7 @@
 typedef struct TYPENAME TYPENAME;
 struct TYPENAME {
   T data[SIZE];
-  size_t head, tail, size;
+  uint64_t head, tail, size;
 };
 
 LINKAGE void METHOD(create)(TYPENAME *self) {

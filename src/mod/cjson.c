@@ -1,5 +1,5 @@
 #define JSMN_STATIC
-#include "../vendor/jsmn/jsmn.h"
+#include "jsmn/jsmn.h"
 
 #include "gab.h"
 
@@ -179,6 +179,7 @@ union gab_value_pair gab_jsonlib_decode(struct gab_triple gab, uint64_t argc,
   uint64_t len = gab_strlen(str);
 
   jsmn_parser jsmn;
+  // Maybe allocating on the stack isn't the safest? Apply a max here?
   jsmntok_t tokens[len];
 
   jsmn_init(&jsmn);

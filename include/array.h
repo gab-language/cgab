@@ -1,7 +1,7 @@
-#include <string.h>
-#include <stdlib.h>
-#include <stdint.h>
 #include <stdbool.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 
 #ifndef T
 #error "Define a type T before including this header"
@@ -27,14 +27,14 @@ struct TYPENAME {
 };
 
 LINKAGE TYPENAME *METHOD(create)(const T *data, uint64_t len) {
-  TYPENAME *self = malloc(sizeof(TYPENAME) + sizeof(T) * len);
+  TYPENAME *self = (TYPENAME *)malloc(sizeof(TYPENAME) + sizeof(T) * len);
   memcpy(self->data, data, sizeof(T) * len);
   self->len = len;
   return self;
 }
 
 LINKAGE TYPENAME *METHOD(empty)(size_t len) {
-  TYPENAME *self = malloc(sizeof(TYPENAME) + sizeof(T) * len);
+  TYPENAME *self = (TYPENAME *)malloc(sizeof(TYPENAME) + sizeof(T) * len);
   memset(self->data, 0, sizeof(T) * len);
   self->len = len;
   return self;
