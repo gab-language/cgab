@@ -1556,7 +1556,7 @@ gab_value gab_fiber(struct gab_triple gab, struct gab_fiber_argt args) {
 
 GAB_API inline struct gab_vm *gab_fibvm(gab_value fiber) {
   assert(gab_valkind(fiber) >= kGAB_FIBER &&
-         gab_valkind(fiber) <= kGAB_FIBERDONE);
+         gab_valkind(fiber) <= kGAB_FIBERRUNNING);
   return &GAB_VAL_TO_FIBER(fiber)->vm;
 }
 
