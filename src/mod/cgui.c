@@ -16,6 +16,10 @@
 #define FONTSTASH_IMPLEMENTATION
 #include "fontstash/src/fontstash.h"
 
+unsigned char fontData[] = {
+#embed "resources/SauceCodeProNerdFont-Regular.ttf"
+};
+
 #define SOKOL_IMPL
 #define SOKOL_GLCORE
 #define SOKOL_EXTERNAL_GL_LOADER
@@ -192,6 +196,65 @@ Clay_Color packedToClayColor(gab_value vcolor) {
   };
 }
 
+union gab_value_pair render_componentlist(struct gab_triple gab, gab_value app);
+
+union gab_value_pair render_box(struct gab_triple gab, gab_value props,
+                                gab_value children) {
+  if (gab_valkind(props) != kGAB_RECORD)
+    return gab_pktypemismatch(gab, props, kGAB_RECORD);
+
+  if (gab_valkind(children) != kGAB_RECORD)
+    return gab_pktypemismatch(gab, children, kGAB_RECORD);
+
+  gab_value vborderColor = gab_cundefined;
+  gab_value vborderWidth = gab_cundefined;
+  gab_value vborder = gab_mrecat(gab, props, "border");
+  if (vborder != gab_cundefined)
+    vborderColor = gab_mrecat(gab, vborder, "color"),
+    vborderWidth = gab_mrecat(gab, vborder, "width");
+
+  if (vborderColor == gab_cundefined)
+    vborderColor = gab_number(0);
+
+  if (vborderWidth == gab_cundefined)
+    vborderWidth = gab_number(0);
+
+  if (gab_valkind(vborderWidth) != kGAB_NUMBER)
+    return gab_pktypemismatch(gab, vborderWidth, kGAB_NUMBER);
+
+  if (gab_valkind(vborderColor) != kGAB_NUMBER)
+    return gab_pktypemismatch(gab, vborderColor, kGAB_NUMBER);
+
+  gab_value vradius = gab_mrecat(gab, props, "radius");
+  if (vradius == gab_cundefined)
+    vradius = gab_number(0);
+
+  if (gab_valkind(vradius) != kGAB_NUMBER)
+    return gab_pktypemismatch(gab, vradius, kGAB_NUMBER);
+
+  gab_float cornerRadius = gab_valtof(vradius);
+
+  CLAY({
+      .layout = {.layoutDirection = CLAY_TOP_TO_BOTTOM},
+      .cornerRadius = {cornerRadius, cornerRadius, cornerRadius, cornerRadius},
+      .border =
+          {
+              .color = packedToClayColor(vborderColor),
+              .width =
+                  {
+                      gab_valtou(vborderWidth),
+                      gab_valtou(vborderWidth),
+                      gab_valtou(vborderWidth),
+                      gab_valtou(vborderWidth),
+                  },
+          },
+  }) {
+    render_componentlist(gab, children);
+  };
+
+  return gab_union_cvalid(gab_nil);
+}
+
 union gab_value_pair render_rect(struct gab_triple gab, gab_value props) {
   if (gab_valkind(props) != kGAB_RECORD)
     return gab_pktypemismatch(gab, props, kGAB_RECORD);
@@ -277,7 +340,7 @@ union gab_value_pair render_text(struct gab_triple gab, gab_value props) {
 
   gab_value vspacing = gab_mrecat(gab, props, "spacing");
   if (vspacing == gab_cundefined)
-    vspacing = gab_number(10);
+    vspacing = gab_number(0);
 
   if (gab_valkind(vspacing) != kGAB_NUMBER)
     return gab_pktypemismatch(gab, vspacing, kGAB_NUMBER);
@@ -286,7 +349,7 @@ union gab_value_pair render_text(struct gab_triple gab, gab_value props) {
 
   gab_value vheight = gab_mrecat(gab, props, "height");
   if (vheight == gab_cundefined)
-    vheight = vsize;
+    vheight = gab_number(0);
 
   if (gab_valkind(vheight) != kGAB_NUMBER)
     return gab_pktypemismatch(gab, vheight, kGAB_NUMBER);
@@ -326,10 +389,20 @@ union gab_value_pair render_component(struct gab_triple gab,
   if (kind == gab_message(gab, "rect"))
     return render_rect(gab, props);
 
+  if (gab_reclen(component) < 3)
+    return gab_panicf(gab, "Expected a list of at least 3 elements, found $",
+                      component);
+
+  gab_value children = gab_lstat(component, 2);
+
+  if (kind == gab_message(gab, "box"))
+    return render_box(gab, props, children);
+
   return gab_panicf(gab, "Unknown component type $", kind);
 }
 
-union gab_value_pair render_app(struct gab_triple gab, gab_value app) {
+union gab_value_pair render_componentlist(struct gab_triple gab,
+                                          gab_value app) {
   if (gab_valkind(app) != kGAB_RECORD)
     return gab_pktypemismatch(gab, app, kGAB_RECORD);
 
@@ -363,7 +436,7 @@ bool dorender() {
 
   Clay_BeginLayout();
 
-  union gab_value_pair res = render_app(gui.gab, app);
+  union gab_value_pair res = render_componentlist(gui.gab, app);
 
   if (res.status != gab_cundefined)
     return false; // Put an error event into the channel
@@ -466,8 +539,7 @@ union gab_value_pair gab_uilib_run(struct gab_triple gab, uint64_t argc,
 
   sclay_setup();
 
-  fonts[0] = sclay_add_font(
-      "/usr/share/fonts/NerdFonts/ttf/AgaveNerdFont-Regular.ttf");
+  fonts[0] = sclay_add_font_mem(fontData, sizeof(fontData));
 
   uint64_t totalMemorySize = Clay_MinMemorySize();
   Clay_Arena clayMemory = Clay_CreateArenaWithCapacityAndMemory(
