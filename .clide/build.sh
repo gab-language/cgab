@@ -2,6 +2,19 @@
 
 cd "$CLIDE_PATH/../" || exit 1
 
+function download-ca-cert() {
+  cd "$CLIDE_PATH/../vendor/BearSSL" || exit 1
+
+  make CC="zig cc"
+
+  curl --etag-compare etag.txt --etag-save etag.txt --remote-name https://curl.se/ca/cacert.pem
+
+  ./build/brssl ta cacert.pem > ../ta.h
+
+  make clean
+  cd "$CLIDE_PATH/../" || exit 1
+}
+
 function gen-libgrapheme() {
   cd "$CLIDE_PATH/../vendor/libgrapheme" || exit 1
 
@@ -20,10 +33,23 @@ function build-libgrapheme() {
 
   make CC="zig cc --target=$1" libgrapheme.a
   mv libgrapheme.a "$CLIDE_PATH/../build-$1/libgrapheme.a"
-  rm src/*.o
+  rm src/*.o # Scuffed instead of make clean, because I don't want to re-run generators every time.
 
   echo "Built static library."
   file "$CLIDE_PATH/../build-$1/libgrapheme.a"
+
+  cd "$CLIDE_PATH/../" || exit 1
+}
+
+function build-libbearssl() {
+  cd "$CLIDE_PATH/../vendor/BearSSL" || exit 1
+
+  make CC="zig cc --target=$1"
+  mv build/libbearssl.a "$CLIDE_PATH/../build-$1/libbearssl.a"
+  make clean
+
+  echo "Built static library."
+  file "$CLIDE_PATH/../build-$1/libbearssl.a"
 
   cd "$CLIDE_PATH/../" || exit 1
 }
@@ -105,7 +131,7 @@ function build {
   for file in src/mod/*.c; do
     name=$(basename "$file" ".c")
     echo "       Building gab$name..."
-    zig cc $platform_bundle  -undefined dynamic_lookup $flags $platform -o "build-$1/mod/$name$dynlib_fileending" -lgrapheme "$file" || exit 1
+    zig cc $platform_bundle  -undefined dynamic_lookup $flags $platform -o "build-$1/mod/$name$dynlib_fileending" -lgrapheme -lbearssl "$file" || exit 1
     echo "       Done!"
     echo "       $(file "build-$1/mod/$name$dynlib_fileending")"
   done
@@ -120,6 +146,9 @@ export -f build
 echo "Building dependency"
 gen-libgrapheme
 
+echo "Fetching SSL Certificate Bundle"
+download-ca-cert
+
 echo "Beginning compilation."
 echo "$GAB_TARGETS"
 
@@ -130,6 +159,7 @@ for target in $targets; do
 
   echo "   Building static shared library dependencies for $target"
   build-libgrapheme $target
+  build-libbearssl $target
 done
 
 echo "$targets" | parallel build "{}" '||' exit 1 '&&' echo "Built {}"

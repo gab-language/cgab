@@ -1,0 +1,18 @@
+sock = IO
+  .sock tcp\ssl:
+  .unwrap
+
+sock
+  .connect("www.google.com" 443)
+  .unwrap
+
+sock
+  .send('GET / HTTP/1.0\r\nHost:www.google.com\r\n\r\n'.to\b)
+  .unwrap
+
+sock
+  .recv(1024)
+  .unwrap
+  .as\s
+  .unwrap
+  .println

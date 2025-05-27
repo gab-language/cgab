@@ -60,4 +60,8 @@ view: .def (
   model?
   () => [header, [rect: { x: self.pos.x, y: self.pos.y, w: 10, h: 10 color: red }]])
 
-events.pipe(app, Streams.reduce(model controller:) |> Streams.map view:)
+events
+  .pipe(
+    app,
+    Streams.reduce(model controller:) |> Streams.map view:
+  )

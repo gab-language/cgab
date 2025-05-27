@@ -196,6 +196,11 @@ Clay_Color packedToClayColor(gab_value vcolor) {
   };
 }
 
+Clay_LayoutConfig parseLayout(struct gab_triple gab, gab_value props){
+  // Do some work in parsing universal layout config from props into our Clay_LayoutConfig
+  return (Clay_LayoutConfig){};
+}
+
 union gab_value_pair render_componentlist(struct gab_triple gab, gab_value app);
 
 union gab_value_pair render_box(struct gab_triple gab, gab_value props,
@@ -235,7 +240,7 @@ union gab_value_pair render_box(struct gab_triple gab, gab_value props,
   gab_float cornerRadius = gab_valtof(vradius);
 
   CLAY({
-      .layout = {.layoutDirection = CLAY_TOP_TO_BOTTOM},
+      .layout = {.layoutDirection = CLAY_TOP_TO_BOTTOM, .padding = {}},
       .cornerRadius = {cornerRadius, cornerRadius, cornerRadius, cornerRadius},
       .border =
           {

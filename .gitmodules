@@ -64,3 +64,6 @@
 [submodule "vendor/fontstash"]
 	path = vendor/fontstash
 	url = https://github.com/memononen/fontstash.git
+[submodule "vendor/BearSSL"]
+	path = vendor/BearSSL
+	url = https://www.bearssl.org/git/BearSSL
