@@ -196,8 +196,9 @@ Clay_Color packedToClayColor(gab_value vcolor) {
   };
 }
 
-Clay_LayoutConfig parseLayout(struct gab_triple gab, gab_value props){
-  // Do some work in parsing universal layout config from props into our Clay_LayoutConfig
+Clay_LayoutConfig parseLayout(struct gab_triple gab, gab_value props) {
+  // Do some work in parsing universal layout config from props into our
+  // Clay_LayoutConfig
   return (Clay_LayoutConfig){};
 }
 
@@ -471,7 +472,16 @@ bool dorender() {
 }
 
 void renderloop() {
-  while (RGFW_window_shouldClose(&gui.win) == RGFW_FALSE) {
+  for (;;) {
+    if (RGFW_window_shouldClose(&gui.win) == RGFW_TRUE)
+      break;
+
+    if (gab_chnisclosed(gui.appch))
+      break;
+
+    if (gab_chnisclosed(gui.evch))
+      break;
+
     while (RGFW_window_checkEvent(&gui.win) != nullptr) {
       Clay_Dimensions dim = {(float)gui.win.r.w, (float)gui.win.r.h};
       sclay_set_layout_dimensions(dim, 1);
@@ -482,6 +492,7 @@ void renderloop() {
     }
 
     gab_chnput(gui.gab, gui.evch, gab_message(gui.gab, "tick"));
+
     if (!dorender())
       return;
 
@@ -502,6 +513,8 @@ void renderloop() {
 
   if (gui.appch != gab_cundefined)
     gab_chnclose(gui.appch);
+
+  RGFW_window_close(&gui.win);
 }
 
 union gab_value_pair gab_uilib_run(struct gab_triple gab, uint64_t argc,
@@ -515,10 +528,10 @@ union gab_value_pair gab_uilib_run(struct gab_triple gab, uint64_t argc,
   gab_value evch = gab_arg(1);
   gab_value appch = gab_arg(2);
 
-  if (gab_valkind(appch) != kGAB_CHANNEL)
+  if (!gab_valisch(evch))
     return gab_pktypemismatch(gab, appch, kGAB_CHANNEL);
 
-  if (gab_valkind(evch) != kGAB_CHANNEL)
+  if (!gab_valisch(appch))
     return gab_pktypemismatch(gab, evch, kGAB_CHANNEL);
 
   gui.gab = gab;

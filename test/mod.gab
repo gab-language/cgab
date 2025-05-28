@@ -657,4 +657,36 @@ channels\handle_multiple_values\test: .def t => do
   t.expect(three ==: 3)
 end
 
+ui\should_open_and_close\test: .def t => do
+  (ev app) = (Channels.make, Channels.make)
+
+  ui = 'cgui'.use
+  Fibers.make () => ui.run(ev app)
+
+  ev.close
+  app.close
+end
+
+io\should_make_working_tls_request\test: .def t => do
+  (ok, sock) = IO.sock\t.to\m.make tcp\tls:
+
+  t.expect(ok ==: ok:)
+
+  ok = sock.connect("www.google.com" 443)
+
+  t.expect(ok ==: ok:)
+
+  ok = sock.send('GET / HTTP/1.0\r\nHost:www.google.com\r\n\r\n'.to\b)
+
+  t.expect(ok ==: ok:)
+
+  (ok, bin) = sock.recv(1024)
+
+  t.expect(ok ==: ok:)
+
+  (ok, str) = bin.as\s
+
+  t.expect(ok ==: ok:)
+end
+
 'tests'.use.()

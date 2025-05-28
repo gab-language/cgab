@@ -1,5 +1,5 @@
 sock = IO
-  .sock tcp\ssl:
+  .sock tcp\tls:
   .unwrap
 
 sock

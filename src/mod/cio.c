@@ -19,6 +19,14 @@
  * IO.sock(tcp\ssl:)
  * IO.sock(udp:)
  * IO.sock(udp\ssl:)
+ * 
+ * ^^ The issue with the above interface is that the state for TLS connections (BearSSL stuff)
+ * is allocated when we see the user wants a tls socket. For Servers (which are sockets that "bind")
+ * There isn't actually any TLS state needed in that socket. All the memory is *per connection*, and so
+ * can be stored on the 'client' (sockets returned by 'accept'). 
+ *
+ * More useful to provide the IO.bind() and IO.connect() Interface, which will know how much memory is 
+ * actually needed.
  *
  * IO.bind(tcp: "::1" 8080) -> Server socket with TCP protocol
  * IO.bind(udp: "::1" 8080) -> Server socket with TCP protocol
@@ -67,6 +75,8 @@ struct gab_ssl_sock {
   struct gab_sock sock;
   struct gab_triple gab;
 
+  mtx_t ssl_mutex;
+
   union {
     struct {
       br_ssl_client_context sc;
@@ -75,8 +85,11 @@ struct gab_ssl_sock {
       unsigned char iobuf[BR_SSL_BUFSIZE_BIDI];
     } client;
 
+    // These are really *connections*, when an ssl_server socket *accepts* a client.
     struct {
       br_ssl_server_context sc;
+      br_sslio_context ioc;
+      unsigned char iobuf[BR_SSL_BUFSIZE_BIDI];
     } server;
   };
 };
@@ -161,63 +174,8 @@ gab_value wrap_qfdssl(struct gab_triple gab, qfd_t qd, enum gab_io_k t,
 
 typedef gab_value (*wrap_fn)(struct gab_triple, qfd_t, enum gab_io_k, bool);
 
-gab_value complete_sockcreate(struct gab_triple gab, qd_t socket_qd, wrap_fn fn,
-                              enum gab_io_k k) {
-  while (!qd_status(socket_qd))
-    switch (gab_yield(gab)) {
-    case sGAB_TERM:
-      return gab_cundefined;
-    case sGAB_COLL:
-      gab_gcepochnext(gab);
-      gab_sigpropagate(gab);
-      break;
-    default:
-      break;
-    }
-
-  qfd_t qfd = qd_destroy(socket_qd);
-
-  if (qfd < 0)
-    return gab_string(gab, strerror(-qfd));
-
-  return fn(gab, qfd, k, true);
-}
-
-union gab_value_pair complete_sockconnect(struct gab_triple gab,
-                                          struct gab_sock *sock,
-                                          const char *hostname, gab_int port) {
-  struct qio_addr addr = {};
-  if (qio_addrfrom(hostname, port, &addr) < 0)
-    return gab_vmpush(gab_thisvm(gab), gab_err,
-                      gab_string(gab, "Invalid address")),
-           gab_union_cvalid(gab_nil);
-
-  qd_t qd = qconnect(sock->fd, &addr);
-
-  while (!qd_status(qd))
-    switch (gab_yield(gab)) {
-    case sGAB_TERM:
-      return gab_union_cvalid(gab_nil);
-    case sGAB_COLL:
-      gab_gcepochnext(gab);
-      gab_sigpropagate(gab);
-      break;
-    default:
-      break;
-    }
-
-  int64_t result = qd_destroy(qd);
-
-  if (result <= 0)
-    return gab_vmpush(gab_thisvm(gab), gab_err,
-                      gab_string(gab, strerror(-result))),
-           gab_union_cvalid(gab_nil);
-
-  return gab_vmpush(gab_thisvm(gab), gab_ok), gab_union_cvalid(gab_nil);
-}
-
 /*
- * Low-level data read callback for the simplified SSL I/O API.
+ * BearSSL Read/Write callbacks, using QIO.
  */
 static int sock_read(void *context, unsigned char *buf, size_t len) {
   struct gab_ssl_sock *ctx = context;
@@ -282,6 +240,168 @@ static int sock_write(void *context, const unsigned char *buf, size_t len) {
 
     return result;
   }
+}
+
+gab_value complete_sockcreate(struct gab_triple gab, qd_t socket_qd, wrap_fn fn,
+                              enum gab_io_k k) {
+  while (!qd_status(socket_qd))
+    switch (gab_yield(gab)) {
+    case sGAB_TERM:
+      return gab_cundefined;
+    case sGAB_COLL:
+      gab_gcepochnext(gab);
+      gab_sigpropagate(gab);
+      break;
+    default:
+      break;
+    }
+
+  qfd_t qfd = qd_destroy(socket_qd);
+
+  if (qfd < 0)
+    return gab_string(gab, strerror(-qfd));
+
+  return fn(gab, qfd, k, true);
+}
+union gab_value_pair complete_sslsockaccept(struct gab_triple gab,
+                                            struct gab_ssl_sock *sock) {
+  struct qio_addr addr = {};
+  qd_t qd = qaccept(sock->sock.fd, &addr);
+
+  while (!qd_status(qd))
+    switch (gab_yield(gab)) {
+    case sGAB_TERM:
+      return gab_union_cvalid(gab_nil);
+    case sGAB_COLL:
+      gab_gcepochnext(gab);
+      gab_sigpropagate(gab);
+      break;
+    default:
+      break;
+    }
+
+  int64_t result = qd_destroy(qd);
+
+  if (result <= 0) {
+    gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, strerror(-result)));
+    return gab_union_cvalid(gab_nil);
+  }
+
+  gab_value vclient = wrap_qfdssl(gab, result, IO_SOCK_SSLCLIENT, true);
+  struct gab_ssl_sock *client = gab_boxdata(vclient);
+
+  // TODO: Somehow initialize RSA and chains here?
+  // br_ssl_server_init_full_rsa(&client->client.sc, CHAIN, CHAIN_LEN, &RSA);
+
+  br_ssl_engine_set_buffer(&client->server.sc.eng, client->server.iobuf,
+                           sizeof client->server.iobuf, 1);
+
+  /*
+   * Reset the server context, for a new handshake.
+   */
+  br_ssl_server_reset(&client->server.sc);
+
+  /*
+   * Initialise the simplified I/O wrapper context.
+   */
+  br_sslio_init(&client->server.ioc, &client->server.sc.eng, sock_read, &client->sock.fd, sock_write, client);
+
+  gab_vmpush(gab_thisvm(gab), gab_ok, vclient);
+  return gab_union_cvalid(gab_nil);
+};
+
+union gab_value_pair complete_sockaccept(struct gab_triple gab,
+                                         struct gab_sock *sock) {
+  struct qio_addr addr = {};
+  qd_t qd = qaccept(sock->fd, &addr);
+
+  while (!qd_status(qd))
+    switch (gab_yield(gab)) {
+    case sGAB_TERM:
+      return gab_union_cvalid(gab_nil);
+    case sGAB_COLL:
+      gab_gcepochnext(gab);
+      gab_sigpropagate(gab);
+      break;
+    default:
+      break;
+    }
+
+  int64_t result = qd_destroy(qd);
+
+  if (result <= 0)
+    gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, strerror(-result)));
+  else
+    gab_vmpush(gab_thisvm(gab), gab_ok,
+               wrap_qfd(gab, result, IO_SOCK_CLIENT, true));
+
+  return gab_union_cvalid(gab_nil);
+};
+
+union gab_value_pair complete_sockbind(struct gab_triple gab,
+                                       struct gab_sock *sock,
+                                       const char *hostname, gab_int port) {
+  struct qio_addr addr = {};
+  if (qio_addrfrom(hostname, gab_valtou(port), &addr) < 0)
+    return gab_vmpush(gab_thisvm(gab), gab_err,
+                      gab_string(gab, "Invalid address")),
+           gab_union_cvalid(gab_nil);
+
+  qd_t qd = qbind(sock->fd, &addr);
+
+  while (!qd_status(qd))
+    switch (gab_yield(gab)) {
+    case sGAB_TERM:
+      return gab_union_cvalid(gab_nil);
+    case sGAB_COLL:
+      gab_gcepochnext(gab);
+      gab_sigpropagate(gab);
+      break;
+    default:
+      break;
+    }
+
+  int64_t result = qd_destroy(qd);
+
+  if (result <= 0)
+    gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, strerror(-result)));
+  else
+    gab_vmpush(gab_thisvm(gab), gab_ok);
+
+  return gab_union_cvalid(gab_nil);
+};
+
+union gab_value_pair complete_sockconnect(struct gab_triple gab,
+                                          struct gab_sock *sock,
+                                          const char *hostname, gab_int port) {
+  struct qio_addr addr = {};
+  if (qio_addrfrom(hostname, port, &addr) < 0)
+    return gab_vmpush(gab_thisvm(gab), gab_err,
+                      gab_string(gab, "Invalid address")),
+           gab_union_cvalid(gab_nil);
+
+  qd_t qd = qconnect(sock->fd, &addr);
+
+  while (!qd_status(qd))
+    switch (gab_yield(gab)) {
+    case sGAB_TERM:
+      return gab_union_cvalid(gab_nil);
+    case sGAB_COLL:
+      gab_gcepochnext(gab);
+      gab_sigpropagate(gab);
+      break;
+    default:
+      break;
+    }
+
+  int64_t result = qd_destroy(qd);
+
+  if (result <= 0)
+    return gab_vmpush(gab_thisvm(gab), gab_err,
+                      gab_string(gab, strerror(-result))),
+           gab_union_cvalid(gab_nil);
+
+  return gab_vmpush(gab_thisvm(gab), gab_ok), gab_union_cvalid(gab_nil);
 }
 
 union gab_value_pair complete_sockrecv(struct gab_triple gab,
@@ -688,11 +808,11 @@ union gab_value_pair gab_iolib_sock(struct gab_triple gab, uint64_t argc,
   gab_value sock = gab_cinvalid;
   if (type == gab_message(gab, "tcp")) {
     sock = create_tcp(gab);
-  } else if (type == gab_message(gab, "tcp\\ssl")) {
+  } else if (type == gab_message(gab, "tcp\\tls")) {
     sock = create_tcpssl(gab);
   } else if (type == gab_message(gab, "udp")) {
     sock = create_udp(gab);
-  } else if (type == gab_message(gab, "udp\\ssl")) {
+  } else if (type == gab_message(gab, "udp\\tls")) {
     sock = create_udpssl(gab);
   } else {
     return gab_panicf(gab, "Unknown socket type $", type);
@@ -821,41 +941,22 @@ union gab_value_pair gab_iolib_connect(struct gab_triple gab, uint64_t argc,
 
 union gab_value_pair gab_iolib_accept(struct gab_triple gab, uint64_t argc,
                                       gab_value argv[argc]) {
-  gab_value sock = gab_arg(0);
+  gab_value vsock = gab_arg(0);
 
-  if (gab_valkind(sock) != kGAB_BOX)
-    return gab_ptypemismatch(gab, sock, gab_string(gab, tGAB_IOSOCK));
+  if (gab_valkind(vsock) != kGAB_BOX)
+    return gab_ptypemismatch(gab, vsock, gab_string(gab, tGAB_IOSOCK));
 
-  qfd_t fs = *(qfd_t *)gab_boxdata(sock);
-
-  struct qio_addr addr = {};
-  qd_t qd = qaccept(fs, &addr);
-
-  while (!qd_status(qd))
-    switch (gab_yield(gab)) {
-    case sGAB_TERM:
-      return gab_union_cvalid(gab_nil);
-    case sGAB_COLL:
-      gab_gcepochnext(gab);
-      gab_sigpropagate(gab);
-      break;
-    default:
-      break;
-    }
-
-  int64_t result = qd_result(qd);
-  qd_destroy(qd);
-
-  // TODO: Do something with addr_out here - need a platform-agnostic and
-  // thread-safe function in qio for converting addr to string.
-
-  if (result <= 0)
-    gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, strerror(-result)));
-  else
-    gab_vmpush(gab_thisvm(gab), gab_ok,
-               wrap_qfd(gab, result, IO_SOCK_CLIENT, true));
-
-  return gab_union_cvalid(gab_nil);
+  struct gab_sock *sock = gab_boxdata(vsock);
+  switch (sock->k) {
+  case IO_SOCK_SERVER:
+    return complete_sockaccept(gab, sock);
+  case IO_SOCK_SSLUNSPECIFIED:
+    return complete_sslsockaccept(gab, (struct gab_ssl_sock *)sock);
+  default:
+    return gab_vmpush(gab_thisvm(gab), gab_err,
+                      gab_string(gab, "Socket is in invalid state")),
+           gab_union_cvalid(gab_nil);
+  };
 }
 
 union gab_value_pair gab_iolib_listen(struct gab_triple gab, uint64_t argc,
@@ -897,53 +998,50 @@ union gab_value_pair gab_iolib_listen(struct gab_triple gab, uint64_t argc,
 
 union gab_value_pair gab_iolib_bind(struct gab_triple gab, uint64_t argc,
                                     gab_value argv[argc]) {
-  gab_value sock = gab_arg(0);
-  gab_value port = gab_arg(1);
-  gab_value ip = gab_arg(2);
+  gab_value vsock = gab_arg(0);
+  gab_value ip = gab_arg(1);
+  gab_value port = gab_arg(2);
 
-  if (gab_valkind(sock) != kGAB_BOX)
-    return gab_ptypemismatch(gab, sock, gab_string(gab, tGAB_IOSOCK));
+  if (gab_valkind(vsock) != kGAB_BOX)
+    return gab_ptypemismatch(gab, vsock, gab_string(gab, tGAB_IOSOCK));
 
   if (gab_valkind(port) != kGAB_NUMBER)
     return gab_pktypemismatch(gab, port, kGAB_NUMBER);
 
-  // Use ipv6 loopback address by default
   if (ip == gab_nil)
     ip = gab_string(gab, "::1");
 
   if (gab_valkind(ip) != kGAB_STRING)
     return gab_pktypemismatch(gab, ip, kGAB_STRING);
 
-  qfd_t fs = *(qfd_t *)gab_boxdata(sock);
+  struct gab_sock *sock = gab_boxdata(vsock);
 
-  struct qio_addr addr = {};
-  if (qio_addrfrom(gab_strdata(&ip), gab_valtou(port), &addr) < 0)
+  switch (sock->k) {
+  case IO_SOCK_UNSPECIFIED: {
+    enum gab_io_k unspec = IO_SOCK_UNSPECIFIED;
+    if (!atomic_compare_exchange_strong(&sock->k, &unspec, IO_SOCK_SERVER))
+      return gab_vmpush(
+                 gab_thisvm(gab), gab_err,
+                 gab_string(gab, "Socket is already connected or bound")),
+             gab_union_cvalid(gab_nil);
+
+    return complete_sockbind(gab, sock, gab_strdata(&ip), gab_valtoi(port));
+  }
+  case IO_SOCK_SSLUNSPECIFIED: {
+    enum gab_io_k unspec = IO_SOCK_SSLUNSPECIFIED;
+    if (!atomic_compare_exchange_strong(&sock->k, &unspec, IO_SOCK_SSLSERVER))
+      return gab_vmpush(
+                 gab_thisvm(gab), gab_err,
+                 gab_string(gab, "Socket is already connected or bound")),
+             gab_union_cvalid(gab_nil);
+
+    return complete_sockbind(gab, sock, gab_strdata(&ip), gab_valtoi(port));
+  }
+  default:
     return gab_vmpush(gab_thisvm(gab), gab_err,
-                      gab_string(gab, "Invalid address")),
+                      gab_string(gab, "Socket is in invalid state")),
            gab_union_cvalid(gab_nil);
-
-  qd_t qd = qbind(fs, &addr);
-
-  while (!qd_status(qd))
-    switch (gab_yield(gab)) {
-    case sGAB_TERM:
-      return gab_union_cvalid(gab_nil);
-    case sGAB_COLL:
-      gab_gcepochnext(gab);
-      gab_sigpropagate(gab);
-      break;
-    default:
-      break;
-    }
-
-  int64_t result = qd_destroy(qd);
-
-  if (result <= 0)
-    gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, strerror(-result)));
-  else
-    gab_vmpush(gab_thisvm(gab), gab_ok);
-
-  return gab_union_cvalid(gab_nil);
+  }
 }
 
 union gab_value_pair gab_iolib_write(struct gab_triple gab, uint64_t argc,
@@ -1036,12 +1134,12 @@ GAB_DYNLIB_MAIN_FN {
 
   gab_def(gab,
           {
-              gab_message(gab, "file.t"),
+              gab_message(gab, "file\\t"),
               mod,
               file_t,
           },
           {
-              gab_message(gab, "sock.t"),
+              gab_message(gab, "sock\\t"),
               mod,
               sock_t,
           },
@@ -1061,9 +1159,9 @@ GAB_DYNLIB_MAIN_FN {
               wrap_qfd(gab, gab_osfileno(stderr), IO_FILE, false),
           },
           {
-              gab_message(gab, "sock"),
-              mod,
-              gab_snative(gab, "sock", gab_iolib_sock),
+              gab_message(gab, "make"),
+              gab_strtomsg(sock_t),
+              gab_snative(gab, "make", gab_iolib_sock),
           },
           {
               gab_message(gab, "file"),

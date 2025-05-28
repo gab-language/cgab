@@ -1418,6 +1418,11 @@ GAB_API uint64_t gab_srcline(struct gab_src *src, uint64_t offset);
  */
 GAB_API enum gab_kind gab_valkind(gab_value value);
 
+GAB_API_INLINE bool gab_valisch(gab_value value) {
+  enum gab_kind k = gab_valkind(value);
+  return k == kGAB_CHANNEL | k == kGAB_CHANNELCLOSED;
+};
+
 /**
  * @brief Check if a value has a type *other than its kind* to check for
  * message sends.
