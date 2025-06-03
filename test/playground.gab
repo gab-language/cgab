@@ -8,13 +8,110 @@ red = '0xff0000ff'.as\n
 blue = '0x0000ffff'.as\n
 green = '0x00ff00ff'.as\n
 
-model = { pos: { x: 200 y: 200 } }
+CELL_SIZE = 10
+MOVE_INTERVAL = 1
+FOOD_INTERVAL = 100
+WIDTH = 800
+HEIGHT = 800
+MOVE_DIST = CELL_SIZE
+
+model = {
+  gameover: false:
+  eaten: 0
+  snake: [{ x: 200 y: 200 facing: right:}]
+  time: 0
+  foods: []
+}
+
+Cells = snake\cell:
+t:.def(Cells, Shapes.make(x: y: facing:))
+[Cells] .defmodule {
+  behind: cell => cell.facing.behind(cell)
+}
+
+behind: .defcase {
+  up: cell => cell.put(y: cell.y + CELL_SIZE .* 2)
+  down: cell => cell.put(y: cell.y - CELL_SIZE .* 2)
+  left: cell => cell.put(x: cell.x - CELL_SIZE .* 2)
+  right:  cell => cell.put(x: cell.x + CELL_SIZE .* 2)
+}
+
+[Cells.t] .defmodule {
+  left:  () => self.put_by(x: x => x - MOVE_DIST)
+  right: () => self.put_by(x: x => x + MOVE_DIST)
+  up:    () => self.put_by(y: y => y - MOVE_DIST)
+  down:  () => self.put_by(y: y => y + MOVE_DIST)
+  move:  () => self.facing.(self)
+  render\snake: () => [
+    rect:
+    { x: self.x, y: self.y, w: CELL_SIZE, h: CELL_SIZE, color: red }
+  ]
+  within_n: (other, n) => do
+    x = (other.x - self.x)
+    y = (other.y - self.y)
+    dist = (x * x) + (y * y)
+    dist < (n * n)
+  end
+}
+
+Foods = snake\food:
+t:.def(Foods, Shapes.make(x: y:))
+[Foods.t].defmodule {
+  render\food: () => [
+    rect:
+    { x: self.x, y: self.y, w: CELL_SIZE, h: CELL_SIZE, color: green }
+  ]
+  within_n: (other, n) => do
+    x = (other.x - self.x)
+    y = (other.y - self.y)
+    dist = (x * x) + (y * y)
+    dist < (n * n)
+  end
+}
+
+[model?].defmodule {
+  head: () => self.snake.at 0 .unwrap
+  body: () => self.snake.slice(1, self.snake.len)
+
+  spawn_food: () => do
+    size = CELL_SIZE / 20
+    randomx = Numbers.int\between(0, WIDTH / size)
+    randomy = Numbers.int\between(0, HEIGHT / size)
+
+    foods = self.foods.push(Foods.t.make(randomx * size, randomy * size))
+    
+    self.put(foods: foods)
+  end
+
+  move_snake: () => do
+    old_snake = self.snake
+
+    self.put(
+      snake:
+      old_snake
+        .map(cell i) => do
+          (ok, leader) = old_snake.at(i - 1)
+
+          ok
+            .then(() => leader)
+            .else(() => cell.move)
+        end)
+  end
+
+  append_tail: () => do
+    snake = self.snake
+    tail = snake.at(snake.len - 1).unwrap
+    snake = snake.push(Cells.behind(tail))
+
+    self.put(snake: snake)
+  end
+}
 
 handle\keydown: .defcase {
-  h: (ev model) => model.put_via(model.pos.x - 10, pos: x:)
-  j: (ev model) => model.put_via(model.pos.y + 10, pos: y:)
-  k: (ev model) => model.put_via(model.pos.y - 10, pos: y:)
-  l: (ev model) => model.put_via(model.pos.x + 10, pos: x:)
+  h: (ev model) => model.put_via(left: snake: 0 facing:)
+  j: (ev model) => model.put_via(down: snake: 0 facing:)
+  k: (ev model) => model.put_via(up: snake: 0 facing:)
+  l: (ev model) => model.put_via(right: snake: 0 facing:)
 
   Messages.t
   (ev model) => do
@@ -34,8 +131,18 @@ handle\key: .defcase {
 }
 
 handle\type: .defcase {
-  tick:  (ev model) => model
-  mouse: (ev model) => model
+  tick:  (ev model) => do
+    # Tick time
+    model = model.put_via_by(++: time:)
+
+    model
+   		.when(model.time % FOOD_INTERVAL == 0, spawn_food:)
+   		.when(model.time % MOVE_INTERVAL == 0, move_snake:)
+  end
+  mouse: (ev model) => do
+    ev.println
+    model
+  end
   key:   (ev model) => do
     keymsg = ev.at 0 .unwrap .to\m
     down = ev.at 2 .unwrap
@@ -43,25 +150,93 @@ handle\type: .defcase {
   end
 }
 
-controller: .def (
-  model?
-  (type, ev*) => type.handle\type(ev, self))
+behaviors = {
+  behavior\eat_food: () => do
+    head = self.head
 
-header = [
-  box:
-  {
-    radius: 0,
-    border: { color: red, width: 5 },
-  }
-  [[text: { content: "Hello world!" size: 128 }]]
-]
+    non_colliding_foods = self
+      .foods
+      .filter(food => food.within_n(head, 10)!)
+
+    ate = non_colliding_foods.len < self.foods.len
+
+    self
+      .when(ate put: foods: non_colliding_foods)
+      .when(ate put: eaten: self.eaten + self.foods.len - non_colliding_foods.len)
+      .when(ate append_tail:)
+  end
+  behavior\collide_self: () => do
+    head = self.head
+
+    colliding_cells = self
+      .body
+      .filter(cell => cell.within_n(head, 10))
+
+    collided = colliding_cells.len > 0
+
+    self
+      .when(collided put: gameover: true:)
+  end
+  behavior\collide_wall: () => do
+    head = self.head
+
+    oob_left = self.head.x < 0
+    oob_right = self.head.x > WIDTH
+    oob_up = self.head.y < 0
+    oob_down = self.head.y > HEIGHT
+
+    self
+      .when(
+        oob_left | oob_right | oob_up | oob_down
+        put: gameover: true:)
+  end
+}
+
+behavior = [behaviors.?.*].reduce(self: |>:)
+
+[model?] .defmodule {
+  # Reduce events into new models
+  controller: (type, ev*) => type
+    .handle\type(ev, self)
+    .behavior
+
+  behaviors**
+
+  # Apply behaviors that should change model state
+  behavior: () => behavior.(self)
+}
 
 view: .def (
   model?
-  () => [header, [rect: { x: self.pos.x, y: self.pos.y, w: 10, h: 10 color: red }]])
+  () => do
+    model = self
+
+    self.gameover
+      .then(() => [
+        [box:
+          { 
+            radius: 10
+            border: { color: green, width: 5 }
+          }
+          [
+            [text: { content: "Gameover! Score: $".sprintf(model.eaten) size: 128 }]
+          ]
+        ]
+      ])
+      .else(() => [
+          [box:
+            {}
+            [[text: { content: "Score: $".sprintf(model.eaten) size: 32 }]]
+          ]
+
+          model.snake.map render\snake: *
+          model.foods.map render\food: *
+        ])
+  end)
 
 events
   .pipe(
     app,
-    Streams.reduce(model controller:) |> Streams.map view:
+    Streams.reduce(model controller:)
+    |> Streams.map view:
   )

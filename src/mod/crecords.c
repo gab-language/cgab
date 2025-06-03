@@ -164,6 +164,38 @@ union gab_value_pair gab_reclib_is_list(struct gab_triple gab, uint64_t argc,
   return gab_union_cvalid(gab_nil);
 }
 
+gab_value doatvia(gab_value rec, uint64_t len, gab_value path[len]) {
+  gab_value key = path[0];
+
+  if (len == 1)
+    return gab_recat(rec, key);
+
+  gab_value subrec = gab_recat(rec, key);
+
+  if (gab_valkind(subrec) != kGAB_RECORD)
+    return gab_cundefined;
+
+  return doatvia(subrec, len - 1, path + 1);
+}
+
+union gab_value_pair gab_reclib_atvia(struct gab_triple gab, uint64_t argc,
+                                      gab_value argv[argc]) {
+  gab_value rec = gab_arg(0);
+
+  if (gab_valkind(rec) != kGAB_RECORD)
+    return gab_pktypemismatch(gab, rec, kGAB_RECORD);
+
+  if (argc == 1)
+    return gab_vmpush(gab_thisvm(gab), gab_ok, rec), gab_union_cvalid(gab_nil);
+
+  gab_value result = doatvia(rec, argc - 1, argv + 1);
+
+  if (result == gab_cundefined)
+    return gab_vmpush(gab_thisvm(gab), gab_none), gab_union_cvalid(gab_nil);
+
+  return gab_vmpush(gab_thisvm(gab), gab_ok, result), gab_union_cvalid(gab_nil);
+}
+
 gab_value doputvia(struct gab_triple gab, gab_value rec, gab_value val,
                    uint64_t len, gab_value path[len]) {
   gab_value key = path[0];
@@ -291,6 +323,11 @@ GAB_DYNLIB_MAIN_FN {
               gab_message(gab, "put_via"),
               t,
               gab_snative(gab, "put_via", gab_reclib_putvia),
+          },
+          {
+              gab_message(gab, "at_via"),
+              t,
+              gab_snative(gab, "at_via", gab_reclib_atvia),
           },
           {
               gab_message(gab, "push"),

@@ -1,1 +1,20 @@
-'crecords'.use
+Records = 'crecords'.use
+
+
+[Records.t] .defmodule {
+  has: key => do
+    self.at key .ok
+  end
+
+  put_by: (k, f) => do
+    v = self.at k .unwrap
+    self.put(k, f.(v))
+  end
+
+  put_via_by: (f, path*) => do
+    v = self.at_via(path*).unwrap
+    self.put_via(f.(v), path*)
+  end
+}
+
+Records

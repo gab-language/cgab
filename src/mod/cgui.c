@@ -16,6 +16,7 @@
 #define FONTSTASH_IMPLEMENTATION
 #include "fontstash/src/fontstash.h"
 
+// Embed a font in the binary. So sick!
 unsigned char fontData[] = {
 #embed "resources/SauceCodeProNerdFont-Regular.ttf"
 };
@@ -84,6 +85,7 @@ struct gui {
   struct RGFW_window win;
   struct gab_triple gab;
   gab_value appch, evch;
+  uint64_t n;
 };
 
 struct gui gui;
@@ -106,22 +108,59 @@ void onkey(RGFW_window *win, RGFW_key key, unsigned char key_char,
   }
 }
 
+gab_value clayGetTopmostId() {
+  Clay_ElementIdArray arr = Clay_GetPointerOverIds();
+
+  // Skip the root - we don't care about clicks there.
+  for (size_t i = arr.length; i > 1; i--) {
+    Clay_String str = arr.internalArray[i - 1].stringId;
+    if (!str.length)
+      continue;
+
+    return gab_nmessage(gui.gab, str.length, str.chars);
+  }
+
+  return gab_cundefined;
+}
+
 void onmousebutton(RGFW_window *win, unsigned char b, double dbl,
                    unsigned char down) {
   switch (b) {
   case RGFW_mouseLeft:
-
     if (gui.evch != gab_cundefined) {
+      gab_value target = clayGetTopmostId();
       gab_value ev[] = {
           gab_message(gui.gab, "mouse"),
           gab_message(gui.gab, "left"),
           gab_number(dbl),
           gab_bool(down),
+          target,
       };
+
+      size_t len = sizeof(ev) / sizeof(gab_value) - (target == gab_cundefined);
 
       gab_niref(gui.gab, 1, LEN_CARRAY(ev), ev);
 
-      gab_nchnput(gui.gab, gui.evch, sizeof(ev) / sizeof(gab_value), ev);
+      gab_nchnput(gui.gab, gui.evch, len, ev);
+
+      gab_ndref(gui.gab, 1, LEN_CARRAY(ev), ev);
+    }
+    break;
+  case RGFW_mouseRight:
+    if (gui.evch != gab_cundefined) {
+      gab_value target = clayGetTopmostId();
+      gab_value ev[] = {
+          gab_message(gui.gab, "mouse"),
+          gab_message(gui.gab, "right"),
+          gab_number(dbl),
+          gab_bool(down),
+          clayGetTopmostId(),
+      };
+      size_t len = sizeof(ev) / sizeof(gab_value) - (target == gab_cundefined);
+
+      gab_niref(gui.gab, 1, LEN_CARRAY(ev), ev);
+
+      gab_nchnput(gui.gab, gui.evch, len, ev);
 
       gab_ndref(gui.gab, 1, LEN_CARRAY(ev), ev);
     }
@@ -145,20 +184,6 @@ void onmousebutton(RGFW_window *win, unsigned char b, double dbl,
       gab_value ev[] = {
           gab_message(gui.gab, "mouse"),
           gab_message(gui.gab, "scroll\\up"),
-          gab_number(dbl),
-          gab_bool(down),
-      };
-
-      gab_niref(gui.gab, 1, LEN_CARRAY(ev), ev);
-      gab_nchnput(gui.gab, gui.evch, sizeof(ev) / sizeof(gab_value), ev);
-      gab_ndref(gui.gab, 1, LEN_CARRAY(ev), ev);
-    }
-    break;
-  case RGFW_mouseRight:
-    if (gui.evch != gab_cundefined) {
-      gab_value ev[] = {
-          gab_message(gui.gab, "mouse"),
-          gab_message(gui.gab, "right"),
           gab_number(dbl),
           gab_bool(down),
       };
@@ -240,7 +265,16 @@ union gab_value_pair render_box(struct gab_triple gab, gab_value props,
 
   gab_float cornerRadius = gab_valtof(vradius);
 
+  gab_value vid = gab_mrecat(gab, props, "id");
+  if (vid != gab_cundefined && gab_valkind(vid) != kGAB_MESSAGE)
+    return gab_pktypemismatch(gab, vid, kGAB_MESSAGE);
+
   CLAY({
+      .id = vid == gab_cundefined ? CLAY_IDI("", gui.n++)
+                                  : CLAY_SID(((Clay_String){
+                                        .length = gab_strlen(vid),
+                                        .chars = gab_strdata(&vid),
+                                    })),
       .layout = {.layoutDirection = CLAY_TOP_TO_BOTTOM, .padding = {}},
       .cornerRadius = {cornerRadius, cornerRadius, cornerRadius, cornerRadius},
       .border =
@@ -300,13 +334,76 @@ union gab_value_pair render_rect(struct gab_triple gab, gab_value props) {
   if (gab_valkind(vcolor) != kGAB_NUMBER)
     return gab_pktypemismatch(gab, vcolor, kGAB_NUMBER);
 
+  gab_value vid = gab_mrecat(gab, props, "id");
+  if (vid != gab_cundefined && gab_valkind(vid) != kGAB_MESSAGE)
+    return gab_pktypemismatch(gab, vid, kGAB_MESSAGE);
+
   CLAY({
+      .id = vid == gab_cundefined ? (Clay_ElementId){0}
+                                  : CLAY_SID(((Clay_String){
+                                        .length = gab_strlen(vid),
+                                        .chars = gab_strdata(&vid),
+                                    })),
       .backgroundColor = packedToClayColor(vcolor),
       .floating =
           {
               .attachTo = CLAY_ATTACH_TO_ROOT,
               .offset = {.x = x, .y = y},
               .expand = {.height = h, .width = w},
+          },
+  });
+
+  return gab_union_cvalid(gab_nil);
+}
+
+union gab_value_pair render_image(struct gab_triple gab, gab_value props) {
+  if (gab_valkind(props) != kGAB_RECORD)
+    return gab_pktypemismatch(gab, props, kGAB_RECORD);
+
+  gab_value vw = gab_mrecat(gab, props, "w");
+  if (vw == gab_cundefined)
+    return gab_panicf(gab, "Props missing required key $",
+                      gab_message(gab, "w"));
+
+  gab_float w = gab_valtof(vw);
+
+  gab_value vh = gab_mrecat(gab, props, "h");
+  if (vh == gab_cundefined)
+    return gab_panicf(gab, "Props missing required key $",
+                      gab_message(gab, "h"));
+
+  gab_float h = gab_valtof(vh);
+
+  gab_value vimage = gab_mrecat(gab, props, "content");
+  if (vimage == gab_cundefined)
+    return gab_panicf(gab, "Props missing required key $",
+                      gab_message(gab, "content"));
+
+  if (gab_valkind(vimage) != kGAB_BINARY)
+    return gab_pktypemismatch(gab, vimage, kGAB_BINARY);
+
+  gab_value vid = gab_mrecat(gab, props, "id");
+  if (vid != gab_cundefined && gab_valkind(vid) != kGAB_MESSAGE)
+    return gab_pktypemismatch(gab, vid, kGAB_MESSAGE);
+
+  CLAY({
+      .id = vid == gab_cundefined ? (Clay_ElementId){0}
+                                  : CLAY_SID(((Clay_String){
+                                        .length = gab_strlen(vid),
+                                        .chars = gab_strdata(&vid),
+                                    })),
+      .layout =
+          {
+              .sizing =
+                  {
+                      .height = CLAY_SIZING_FIXED(h),
+                      .width = CLAY_SIZING_FIXED(w),
+                  },
+          },
+      .image =
+          {
+              .imageData = (void *)gab_strdata(&vimage),
+              .sourceDimensions = {.height = h, .width = w},
           },
   });
 
@@ -394,6 +491,10 @@ union gab_value_pair render_component(struct gab_triple gab,
 
   if (kind == gab_message(gab, "rect"))
     return render_rect(gab, props);
+  
+  // Currently unsupported by sokol_clay.h
+  // if (kind == gab_message(gab, "img"))
+  //   return render_image(gab, props);
 
   if (gab_reclen(component) < 3)
     return gab_panicf(gab, "Expected a list of at least 3 elements, found $",
@@ -432,6 +533,9 @@ union gab_value_pair render_componentlist(struct gab_triple gab,
 sclay_font_t fonts[1];
 
 bool dorender() {
+  // Reset our id counter;
+  gui.n = 0;
+
   gab_value app = gab_chntake(gui.gab, gui.appch);
 
   if (app == gab_cundefined)
@@ -576,12 +680,11 @@ union gab_value_pair gab_uilib_run(struct gab_triple gab, uint64_t argc,
 
 GAB_DYNLIB_MAIN_FN {
   gab_value mod = gab_message(gab, "ui");
-  gab_def(gab,
-          {
-              gab_message(gab, "run"),
-              mod,
-              gab_snative(gab, "run", gab_uilib_run),
-          }, );
+  gab_def(gab, {
+                   gab_message(gab, "run"),
+                   mod,
+                   gab_snative(gab, "run", gab_uilib_run),
+               });
 
   gab_value res[] = {gab_ok, mod};
 

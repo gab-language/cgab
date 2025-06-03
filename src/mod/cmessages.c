@@ -20,6 +20,26 @@ union gab_value_pair gab_msglib_to_string(struct gab_triple gab, uint64_t argc,
   return gab_union_cvalid(gab_nil);
 }
 
+union gab_value_pair gab_msglib_gen(struct gab_triple gab, uint64_t argc,
+                                      gab_value argv[static argc]) {
+  static _Atomic int64_t n;
+  int64_t this_n = atomic_fetch_add(&n, 1);
+
+  gab_value prefix = gab_arg(1);
+  if (prefix == gab_nil)
+    prefix = gab_string(gab, "G__");
+
+  char buf[4096];
+  int len = gab_sprintf(buf, sizeof buf, "$$", prefix, gab_number(this_n));
+
+  if (len < 0)
+    return gab_panicf(gab, "sprintf buffer too small", gab_number(argc - 1));
+
+  gab_value msg = gab_nmessage(gab, len, buf);
+  gab_vmpush(gab_thisvm(gab), msg);
+  return gab_union_cvalid(gab_nil);
+}
+
 union gab_value_pair gab_msglib_specs(struct gab_triple gab, uint64_t argc,
                                       gab_value argv[static argc]) {
   if (argc == 1) {
@@ -212,8 +232,13 @@ GAB_DYNLIB_MAIN_FN {
           },
           {
               gab_message(gab, "t"),
-              gab_strtomsg(t),
+              mod,
               t,
+          },
+          {
+              gab_message(gab, "gen"),
+              mod,
+              gab_snative(gab, "gen", gab_msglib_gen),
           },
           {
               gab_message(gab, "specializations"),

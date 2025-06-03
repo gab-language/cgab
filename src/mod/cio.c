@@ -794,7 +794,7 @@ union gab_value_pair gab_iolib_read(struct gab_triple gab, uint64_t argc,
     return gab_union_cvalid(gab_nil);
   }
 
-  gab_vmpush(gab_thisvm(gab), gab_ok, gab_nstring(gab, sb.len, sb.data));
+  gab_vmpush(gab_thisvm(gab), gab_ok, gab_nbinary(gab, sb.len, sb.data));
 
   return gab_union_cvalid(gab_nil);
 }

@@ -18,6 +18,7 @@ truthy_values .defmodule {
   or: _ => self
   else: _ => self
   assert: _ => self
+  dowhen: (f, args*) => f.(args*)
 }
 
 falsey_values .defmodule {
@@ -28,11 +29,13 @@ falsey_values .defmodule {
   assert: msg => 'Assertion ($) failed: $'.panicf(self, msg .or "")
   to\option: none:,
   to\result: err:,
+  dowhen: (_, r) => r
 }
 
 [] .defmodule {
   to\option: (args*) => (ok:, self, args*)
   to\result: (args*) => (ok:, self, args*)
+  when: (cond, f, args*) => cond.dowhen(f, self, args*)
 }
 
 cond\check: .defcase {
@@ -55,14 +58,6 @@ cond: .def (vs*, branches) => do
 
   branches .at k .unwrap
 end
-
-put_by: .def (
-  Records.t
-  (k, f) => do
-    v = self.at k .unwrap
-
-    self.put(k, f.(v))
-  end)
 
 :.def(
   option:
@@ -182,15 +177,25 @@ Channels.t.def\seq
 
 cons: .def (nil:, o => [o])
 
-[Records.t] .defmodule {
-  has: key => do
-    self.at key .ok
-  end
-}
-
 Records.t.def\seq
 
 Strings.t.def\seq
+
+|>: .def (
+  Messages.t,
+  (second) => do
+    first = self
+    m = Messages.gen
+    m.def (args*) => second.(first.(self args*))
+    m
+  end)
+
+|>: .def (
+  Blocks.t,
+  (second) => do
+    first = self
+    (args*) => second.(first.(args*))
+  end)
 
 is_n: .def false:
 is_n: .def (Numbers.t, true:)

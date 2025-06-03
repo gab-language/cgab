@@ -5,6 +5,11 @@ td\apply: .defcase {
   nil:  x => x
 }
 
+transduce\step:.def(
+  Messages.t, Blocks.t
+  (a b c d) => self.(a b c d)
+)
+
 deftransducer: .def (
   Messages.t
   (cx, init) => do
@@ -26,8 +31,10 @@ deftransducer: .def (
 
       td\apply: c => self.put(continuation: self.continuation.td\apply c)
 
+      transduce\step: (a b c d) => self.reducer.transduce\step(a b c d)
+
       reduce\step: (acc, xs*) => do
-        (s, cmd, c, acc) = self.reducer.(self.continuation, acc, xs, self.state)
+        (s, cmd, c, acc) = self.transduce\step(self.continuation, acc, xs, self.state)
 
         (
           cmd, 
@@ -85,6 +92,10 @@ reduce:.deftransducer(
         # If our command tells us to
         cmd.td\conditionally(outer_r, outer_acc, [acc], { r: r acc: acc })
       end
+  { r: nil: acc: nil: })
+
+transduce:.deftransducer(
+  (inner_acc inner_r td) => td:.reduce(inner_acc, td.td\apply inner_r)
   { r: nil: acc: nil: })
 
 tap:.deftransducer(
