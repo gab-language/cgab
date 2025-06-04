@@ -199,16 +199,6 @@ int srec_dumpproperties(char **dest, size_t *n, gab_value rec, int depth) {
   assert(false && "NOT A REC");
   return 0;
 }
-static const char *chan_strs[] = {
-    [kGAB_CHANNEL] = " is: open",
-    [kGAB_CHANNELCLOSED] = " is: closed ",
-};
-
-static const char *fib_strs[] = {
-    [kGAB_FIBER] = " is: idle",
-    [kGAB_FIBERRUNNING] = " is: running",
-    [kGAB_FIBERDONE] = " is: done",
-};
 
 int sinspectval(char **dest, size_t *n, gab_value self, int depth) {
   switch (gab_valkind(self)) {
@@ -239,9 +229,19 @@ int sinspectval(char **dest, size_t *n, gab_value self, int depth) {
 
     uint64_t len = gab_strlen(self);
 
-    while (len--)
-      if (snprintf_through(dest, n, "%02x", (unsigned char)*s++) < 0)
+    if (len < cGAB_BINARY_LEN_CUTOFF) {
+      while (len--)
+        if (snprintf_through(dest, n, "%02x", (unsigned char)*s++) < 0)
+          return -1;
+    } else {
+      uint64_t preview = cGAB_BINARY_LEN_CUTOFF;
+      while (preview--)
+        if (snprintf_through(dest, n, "%02x", (unsigned char)*s++) < 0)
+          return -1;
+
+      if (snprintf_through(dest, n, "...") < 0)
         return -1;
+    }
 
     if (snprintf_through(dest, n, ">") < 0)
       return -1;
@@ -257,13 +257,11 @@ int sinspectval(char **dest, size_t *n, gab_value self, int depth) {
            snprintf_through(dest, n, ">");
   case kGAB_CHANNEL:
   case kGAB_CHANNELCLOSED:
-    return snprintf_through(dest, n, "<" tGAB_CHANNEL "%s>",
-                            chan_strs[gab_valkind(self)]);
+    return snprintf_through(dest, n, "<" tGAB_CHANNEL ">");
   case kGAB_FIBER:
   case kGAB_FIBERRUNNING:
   case kGAB_FIBERDONE:
-    return snprintf_through(dest, n, "<" tGAB_FIBER " %s>",
-                            fib_strs[gab_valkind(self)]);
+    return snprintf_through(dest, n, "<" tGAB_FIBER ">");
   case kGAB_RECORD: {
     if (gab_valkind(gab_recshp(self)) == kGAB_SHAPELIST)
       return snprintf_through(dest, n, "[") +
@@ -280,7 +278,7 @@ int sinspectval(char **dest, size_t *n, gab_value self, int depth) {
     struct gab_obox *con = GAB_VAL_TO_BOX(self);
     return snprintf_through(dest, n, "<" tGAB_BOX " ") +
            gab_svalinspect(dest, n, con->type, depth) +
-           snprintf_through(dest, n, " len: %lu>", con->len);
+           snprintf_through(dest, n, ">");
   }
   case kGAB_BLOCK: {
     struct gab_oblock *blk = GAB_VAL_TO_BLOCK(self);
@@ -1489,11 +1487,9 @@ gab_value setup_fibersend(struct gab_triple gab, struct gab_ofiber *self) {
   memcpy(self->virtual_frame_bc,
          &(uint8_t[]){
              OP_SEND,
+             fHAVE_TAIL,
              0,
-             0,
-             2,
              OP_RETURN,
-             1,
          },
          sizeof(self->virtual_frame_bc));
 
@@ -1955,19 +1951,16 @@ static uint64_t dumpSendInstruction(FILE *stream, struct gab_oprototype *self,
       ((uint16_t)v_uint8_t_val_at(&self->src->bytecode, offset + 1)) << 8 |
       v_uint8_t_val_at(&self->src->bytecode, offset + 2);
 
-  gab_value msg = v_gab_value_val_at(&self->src->constants, constant);
+  gab_value msg = v_gab_value_val_at(&self->src->constants,
+                                     constant & (~(fHAVE_TAIL << 8)));
 
-  uint8_t arg = v_uint8_t_val_at(&self->src->bytecode, offset + 3);
-
-  uint8_t explicit = arg & fHAVE_VAR;
-  uint8_t tail = arg & fHAVE_TAIL;
+  bool tail = ((constant & (fHAVE_TAIL << 8)) != 0);
 
   fprintf(stream, "%-25s" GAB_BLUE, name);
   gab_fvalinspect(stream, msg, 0);
-  fprintf(stream, GAB_RESET " (%s)%s\n", explicit ? "explicit" : "implicit",
-          tail ? " [TAILCALL]" : "");
+  fprintf(stream, GAB_RESET " %s\n", tail ? " [TAILCALL]" : "");
 
-  return offset + 4;
+  return offset + 3;
 }
 
 static uint64_t dumpByteInstruction(FILE *stream, struct gab_oprototype *self,
@@ -1990,22 +1983,18 @@ static uint64_t dumpTrimInstruction(FILE *stream, struct gab_oprototype *self,
 
 static uint64_t dumpReturnInstruction(FILE *stream, struct gab_oprototype *self,
                                       uint64_t offset) {
-  uint8_t arg = v_uint8_t_val_at(&self->src->bytecode, offset + 1);
-  fprintf(stream, "%-25s%s\n", "RETURN", arg ? "explicit" : "implicit");
-  return offset + 2;
+  fprintf(stream, "%-25s\n", "RETURN");
+  return offset + 1;
 }
 
 static uint64_t dumpPackInstruction(FILE *stream, struct gab_oprototype *self,
                                     uint64_t offset) {
-  uint8_t havebyte = v_uint8_t_val_at(&self->src->bytecode, offset + 1);
-  uint8_t operandA = v_uint8_t_val_at(&self->src->bytecode, offset + 2);
-  uint8_t operandB = v_uint8_t_val_at(&self->src->bytecode, offset + 3);
+  uint8_t operandA = v_uint8_t_val_at(&self->src->bytecode, offset + 1);
+  uint8_t operandB = v_uint8_t_val_at(&self->src->bytecode, offset + 2);
   const char *name =
       gab_opcode_names[v_uint8_t_val_at(&self->src->bytecode, offset)];
-  uint8_t have = havebyte >> 2;
-  fprintf(stream, "%-25s(%hhx%s) -> %hhx %hhx\n", name, have,
-          havebyte & fHAVE_VAR ? " & more" : "", operandA, operandB);
-  return offset + 4;
+  fprintf(stream, "%-25s -> %hhx %hhx\n", name, operandA, operandB);
+  return offset + 3;
 }
 
 static uint64_t dumpConstantInstruction(FILE *stream,

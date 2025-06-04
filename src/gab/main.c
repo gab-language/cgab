@@ -46,9 +46,8 @@ bool check_and_printerr(union gab_value_pair res) {
 }
 
 static const char *default_modules[] = {
-    "Strings", "Binaries", "Messages", "Numbers",  "Blocks",
-    "Records", "Shapes",   "Fibers",   "Channels", "__core",
-    "Ranges",  "Streams",  "IO",
+    "Strings", "Binaries", "Messages", "Numbers", "Blocks", "Records", "Shapes",
+    "Fibers",  "Channels", "__core",   "Ranges",  "IO",     "Streams",
 };
 static const size_t ndefault_modules = LEN_CARRAY(default_modules);
 
@@ -551,8 +550,7 @@ int get(struct command_arguments args) {
     // Fetch dev files (libcgab.a, headers)
     v_char_spush(&url, s_char_cstr(GAB_RELEASE_DOWNLOAD_URL));
     v_char_spush(&url, s_char_cstr(tagbuf));
-    v_char_spush(&url,
-                 s_char_cstr("/gab-release-" GAB_TARGET_TRIPLE "-dev"));
+    v_char_spush(&url, s_char_cstr("/gab-release-" GAB_TARGET_TRIPLE "-dev"));
     v_char_push(&url, '\0');
 
     v_char_spush(&location, s_char_cstr(location_prefix));

@@ -231,7 +231,7 @@ struct gab_ofiber {
 
   /* When a user creates a fiber, A frame is setup on the stack using these
    * arrays as the moduile bytescode and constants.*/
-  uint8_t virtual_frame_bc[6];
+  uint8_t virtual_frame_bc[4];
   gab_value virtual_frame_ks[7];
 
   struct gab_vm vm;

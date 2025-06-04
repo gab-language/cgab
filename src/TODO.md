@@ -93,3 +93,5 @@ The lower 32 bits can be the number of extra values *under* where this will retu
 
 Also ideally, optimize away this memmove by having locals be indexed under FB().
 But that can be another day.
+
+Now sends don't have argument counts, everything is tracked in implicit tuples.

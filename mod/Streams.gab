@@ -31,7 +31,9 @@ deftransducer: .def (
 
       td\apply: c => self.put(continuation: self.continuation.td\apply c)
 
-      transduce\step: (a b c d) => self.reducer.transduce\step(a b c d)
+      transduce\step: (a b c d) => do
+        self.reducer.transduce\step(a b c d)
+      end
 
       reduce\step: (acc, xs*) => do
         (s, cmd, c, acc) = self.transduce\step(self.continuation, acc, xs, self.state)
@@ -69,7 +71,6 @@ td\stop_conditionally: .defcase {
   true: (r, acc, xs, s) => (s, r.reduce\step(acc, xs*))
   false: (r, acc, xs, s) => (s, stop:, r, acc)
 }
-
 
 map:.deftransducer(
   f => (r, acc, xs) => (nil:, r.reduce\step(acc, f.(xs*))))
@@ -177,6 +178,5 @@ split:.deftransducer(
         (sep == x).td\do_split(r acc xs split)
       end
   [])
-
 
 module

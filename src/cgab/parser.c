@@ -1147,14 +1147,6 @@ static inline void push_storel(struct bc *bc, uint8_t local, gab_value node) {
   return;
 }
 
-static inline uint8_t encode_arity(struct gab_triple gab, struct bc *bc,
-                                   gab_value lhs, gab_value rhs,
-                                   gab_value *vout, bool explicit) {
-  *vout = gab_cvalid;
-
-  return explicit;
-}
-
 [[nodiscard]]
 static inline gab_value push_send(struct gab_triple gab, struct bc *bc,
                                   gab_value m, gab_value lhs, gab_value rhs,
@@ -1175,12 +1167,6 @@ static inline gab_value push_send(struct gab_triple gab, struct bc *bc,
 
   push_op(bc, OP_SEND, node);
   push_short(bc, ks, node);
-
-  gab_value res;
-  push_byte(bc, encode_arity(gab, bc, lhs, rhs, &res, explicit), node);
-
-  if (res != gab_cvalid)
-    return res;
 
   return gab_cvalid;
 }
@@ -1261,28 +1247,22 @@ static inline bool push_trim_node(struct gab_triple gab, struct bc *bc,
 static inline gab_value
 push_listpack(struct gab_triple gab, struct bc *bc, gab_value rhs,
               uint8_t below, uint8_t above, bool explicit, gab_value node) {
-  gab_value res;
-
   push_op(bc, OP_PACK_LIST, node);
-  push_byte(bc, encode_arity(gab, bc, rhs, gab_cinvalid, &res, explicit), node);
   push_byte(bc, below, node);
   push_byte(bc, above, node);
 
-  return res;
+  return gab_cvalid;
 }
 
 [[nodiscard]]
 static inline gab_value
 push_recordpack(struct gab_triple gab, struct bc *bc, gab_value rhs,
                 uint8_t below, uint8_t above, bool explicit, gab_value node) {
-  gab_value res;
-
   push_op(bc, OP_PACK_RECORD, node);
-  push_byte(bc, encode_arity(gab, bc, rhs, gab_cinvalid, &res, explicit), node);
   push_byte(bc, below, node);
   push_byte(bc, above, node);
 
-  return res;
+  return gab_cvalid;
 }
 
 [[nodiscard]]
@@ -1300,48 +1280,43 @@ static inline gab_value push_ret(struct gab_triple gab, struct bc *bc,
   if (len == 0) {
     switch (bc->prev_op) {
     case OP_SEND: {
-      gab_value res;
-
-      uint8_t have_byte = v_uint8_t_val_at(&bc->bc, bc->bc.len - 1);
-      v_uint8_t_set(&bc->bc, bc->bc.len - 1, have_byte | fHAVE_TAIL);
+      uint8_t first_short_byte = v_uint8_t_val_at(&bc->bc, bc->bc.len - 2);
+      assert(!(first_short_byte & fHAVE_TAIL));
+      v_uint8_t_set(&bc->bc, bc->bc.len - 2, first_short_byte | fHAVE_TAIL);
       push_op(bc, OP_RETURN, node);
-      push_byte(bc, encode_arity(gab, bc, tup, gab_cinvalid, &res, explicit),
-                node);
 
-      return res;
+      return gab_cvalid;
     }
     case OP_TRIM: {
       if (bc->pprev_op != OP_SEND)
         break;
 
-      gab_value res;
-      uint8_t have_byte = v_uint8_t_val_at(&bc->bc, bc->bc.len - 3);
-      v_uint8_t_set(&bc->bc, bc->bc.len - 3, have_byte | fHAVE_TAIL);
+      uint8_t first_short_byte = v_uint8_t_val_at(&bc->bc, bc->bc.len - 4);
+      assert(!(first_short_byte & fHAVE_TAIL));
+      v_uint8_t_set(&bc->bc, bc->bc.len - 4, first_short_byte | fHAVE_TAIL);
       bc->prev_op = bc->pprev_op;
       bc->bc.len -= 2;
       bc->bc_toks.len -= 2;
       push_op(bc, OP_RETURN, node);
-      push_byte(bc, encode_arity(gab, bc, tup, gab_cinvalid, &res, explicit),
-                node);
 
-      return res;
+      return gab_cvalid;
     }
     }
   }
 #endif
-  gab_value res;
 
   push_op(bc, OP_RETURN, node);
-  push_byte(bc, encode_arity(gab, bc, tup, gab_cinvalid, &res, explicit), node);
 
-  return res;
+  return gab_cvalid;
 }
 
 void patch_init(struct bc *bc, uint8_t nlocals) {
   if (v_uint8_t_val_at(&bc->bc, 0) == OP_TRIM)
     v_uint8_t_set(&bc->bc, 1, nlocals);
-  else if (v_uint8_t_val_at(&bc->bc, 4) == OP_TRIM)
-    v_uint8_t_set(&bc->bc, 5, nlocals);
+  else if (v_uint8_t_val_at(&bc->bc, 3) == OP_TRIM)
+    v_uint8_t_set(&bc->bc, 4, nlocals);
+  else
+    assert(false && "UNREACHABLE");
 }
 
 size_t locals_in_env(gab_value env) {

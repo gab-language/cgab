@@ -156,6 +156,8 @@
 #error "cGAB_GC_MOD_BUFF_MAX must be greater than to cGAB_STACK_MAX"
 #endif
 
+#define cGAB_BINARY_LEN_CUTOFF 16
+
 // Not configurable, just constants
 #define GAB_CONSTANTS_MAX (UINT16_MAX + 1)
 // Maximum value of a local.
@@ -208,7 +210,7 @@
 
 #define VAR_EXP 255
 #define fHAVE_VAR (1 << 0)
-#define fHAVE_TAIL (1 << 1)
+#define fHAVE_TAIL (1 << 7)
 
 enum gab_status {
 #define STATUS(name, message) GAB_##name,
