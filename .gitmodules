@@ -67,3 +67,9 @@
 [submodule "vendor/BearSSL"]
 	path = vendor/BearSSL
 	url = https://www.bearssl.org/git/BearSSL
+[submodule "vendor/llhttp"]
+	path = vendor/llhttp
+	url = https://github.com/nodejs/llhttp.git
+[submodule "vendor/furi"]
+	path = vendor/furi
+	url = https://github.com/iboB/furi.git

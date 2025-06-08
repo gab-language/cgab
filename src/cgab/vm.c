@@ -60,7 +60,7 @@ static handler handlers[] = {
     LOG(o)                                                                     \
                                                                                \
     assert(SP() < VM()->sb + cGAB_STACK_MAX);                                  \
-    assert(SP() > FB());                                                       \
+    assert(SP() >= FB());                                                      \
                                                                                \
     [[clang::musttail]] return handlers[o](DISPATCH_ARGS());                   \
   })
@@ -757,7 +757,7 @@ inline uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc,
 
 #define SET_VAR(n)                                                             \
   ({                                                                           \
-    assert(SP() > FB());                                                       \
+    assert(SP() >= FB());                                                      \
     *SP() = n;                                                                 \
   })
 
@@ -1002,17 +1002,41 @@ union gab_value_pair gab_vmexec(struct gab_triple gab, gab_value f) {
 
 #define SEND_GUARD_KIND(r, k) SEND_GUARD(gab_valkind(r) == k)
 
-#define SEND_GUARD_ISC(r)                                                      \
+/*
+ * SEND guard which checks that the
+ * world is as we expect, and the receiver is a channel.
+ * */
+#define SEND_GUARD_ISCHN(r)                                                    \
   SEND_GUARD(gab_valkind(r) >= kGAB_CHANNEL &&                                 \
              gab_valkind(r) <= kGAB_CHANNELCLOSED)
 
+/*
+ * SEND guard which checks that the world
+ * is as we expect, and the receiver is a record.
+ */
+#define SEND_GUARD_ISREC(r)                                                    \
+  SEND_GUARD_KIND(r, kGAB_RECORD)
+
+/*
+ * SEND guard which checks that the world
+ * is as we expect, and the receiver is a shape.
+ */
 #define SEND_GUARD_ISSHP(r)                                                    \
   SEND_GUARD(gab_valkind(r) == kGAB_SHAPE || gab_valkind(r) == kGAB_SHAPELIST)
 
+/*
+ * SEND guard which compares the message record checked against last time
+ * to the current rec.
+ */
 #define SEND_GUARD_CACHED_MESSAGE_SPECS()                                      \
   SEND_GUARD(gab_valeq(gab_thisfibmsgrec(GAB(), ks[GAB_SEND_KMESSAGE]),        \
                        ks[GAB_SEND_KSPECS]))
 
+/*
+ * SEND guard which checks that the world is
+ * as we expect, and that the receiver type is the
+ * same as seen last time.
+ */
 #define SEND_GUARD_CACHED_RECEIVER_TYPE(r)                                     \
   SEND_GUARD(gab_valisa(GAB(), r, ks[GAB_SEND_KTYPE]))
 
@@ -1560,12 +1584,13 @@ CASE_CODE(SEND_PRIMITIVE_CONS_RECORD) {
 }
 
 CASE_CODE(SEND_PRIMITIVE_SPLATSHAPE) {
-  SKIP_SHORT; // Constants
+  gab_value *ks = READ_SENDCONSTANTS; // Constants
   uint64_t have = COMPUTE_TUPLE();
   uint64_t below_have = PEEK_N(have + 1);
 
   gab_value s = PEEK_N(have);
 
+  SEND_GUARD_CACHED_MESSAGE_SPECS();
   SEND_GUARD_ISSHP(s);
 
   DROP_N(have + 1);
@@ -1574,8 +1599,11 @@ CASE_CODE(SEND_PRIMITIVE_SPLATSHAPE) {
 
   VM_PANIC_GUARD_STACKSPACE(len);
 
-  for (uint64_t i = 0; i < len; i++)
-    PUSH(gab_ushpat(s, i));
+  if (len)
+    for (uint64_t i = 0; i < len; i++)
+      PUSH(gab_ushpat(s, i));
+  else
+    PUSH(gab_nil), len++;
 
   SET_VAR(below_have + len);
 
@@ -1589,7 +1617,8 @@ CASE_CODE(SEND_PRIMITIVE_SPLATLIST) {
 
   gab_value r = PEEK_N(have);
 
-  SEND_GUARD_CACHED_RECEIVER_TYPE(r);
+  SEND_GUARD_CACHED_MESSAGE_SPECS();
+  SEND_GUARD_ISREC(r);
 
   DROP_N(have + 1);
 
@@ -1597,8 +1626,11 @@ CASE_CODE(SEND_PRIMITIVE_SPLATLIST) {
 
   VM_PANIC_GUARD_STACKSPACE(len);
 
-  for (uint64_t i = 0; i < len; i++)
-    PUSH(gab_uvrecat(r, i));
+  if (len)
+    for (uint64_t i = 0; i < len; i++)
+      PUSH(gab_uvrecat(r, i));
+  else
+    PUSH(gab_nil), len++;
 
   SET_VAR(below_have + len);
 
@@ -1612,7 +1644,8 @@ CASE_CODE(SEND_PRIMITIVE_SPLATDICT) {
 
   gab_value r = PEEK_N(have);
 
-  SEND_GUARD_CACHED_RECEIVER_TYPE(r);
+  SEND_GUARD_CACHED_MESSAGE_SPECS();
+  SEND_GUARD_ISREC(r);
 
   DROP_N(have + 1);
 
@@ -1620,8 +1653,11 @@ CASE_CODE(SEND_PRIMITIVE_SPLATDICT) {
 
   VM_PANIC_GUARD_STACKSPACE(len * 2);
 
-  for (uint64_t i = 0; i < len; i++)
-    PUSH(gab_ukrecat(r, i)), PUSH(gab_uvrecat(r, i));
+  if (len)
+    for (uint64_t i = 0; i < len; i++)
+      PUSH(gab_ukrecat(r, i)), PUSH(gab_uvrecat(r, i));
+  else
+    PUSH(gab_nil), len++;
 
   SET_VAR(below_have + len * 2);
 
@@ -1664,6 +1700,9 @@ CASE_CODE(SEND_PROPERTY) {
 CASE_CODE(RETURN) {
   uint64_t have = COMPUTE_TUPLE();
   uint64_t below_have = FB()[-4];
+
+  /* This will break other things - have can not be 0. */
+  assert(have != 0);
 
   gab_value *from = SP() - have;
   gab_value *to = FB() - 4;
@@ -1906,6 +1945,9 @@ CASE_CODE(SEND) {
   gab_value *ks = READ_SENDCONSTANTS_ANDTAIL(adjust);
   uint64_t have = COMPUTE_TUPLE();
 
+  /* This will break other things - have can not be 0. */
+  assert(have != 0);
+
   gab_value r = PEEK_N(have);
   gab_value m = ks[GAB_SEND_KMESSAGE];
 
@@ -1984,9 +2026,14 @@ CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE_PROPERTY) {
   gab_value m = PEEK_N(have);
   gab_value r = PEEK_N(have - 1);
 
+  // Guard that our callee is still a message
   SEND_GUARD_KIND(m, kGAB_MESSAGE);
-  SEND_GUARD_CACHED_GENERIC_CALL_SPECS(m);
+  // Guard that implementations for this message haven't changed
+  SEND_GUARD_CACHED_MESSAGE_SPECS();
+  // Guard that true-receivers type hasn't changed
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
+  // Guard that implementations for the true-message (m) haven't changed
+  SEND_GUARD_CACHED_GENERIC_CALL_SPECS(m);
 
   memmove(SP() - (have), SP() - (have - 1), (have - 1) * sizeof(gab_value));
   have--;
@@ -2004,9 +2051,14 @@ CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE_BLOCK) {
   gab_value m = PEEK_N(have);
   gab_value r = PEEK_N(have - 1);
 
+  // Guard that our callee is still a message
   SEND_GUARD_KIND(m, kGAB_MESSAGE);
-  SEND_GUARD_CACHED_GENERIC_CALL_SPECS(m);
+  // Guard that implementations for this message haven't changed
+  SEND_GUARD_CACHED_MESSAGE_SPECS();
+  // Guard that true-receivers type hasn't changed
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
+  // Guard that implementations for the true-message (m) haven't changed
+  SEND_GUARD_CACHED_GENERIC_CALL_SPECS(m);
 
   memmove(SP() - (have), SP() - (have - 1), (have - 1) * sizeof(gab_value));
   have--;
@@ -2026,9 +2078,14 @@ CASE_CODE(TAILSEND_PRIMITIVE_CALL_MESSAGE_BLOCK) {
   gab_value m = PEEK_N(have);
   gab_value r = PEEK_N(have - 1);
 
+  // Guard that our callee is still a message
   SEND_GUARD_KIND(m, kGAB_MESSAGE);
-  SEND_GUARD_CACHED_GENERIC_CALL_SPECS(m);
+  // Guard that implementations for this message haven't changed
+  SEND_GUARD_CACHED_MESSAGE_SPECS();
+  // Guard that true-receivers type hasn't changed
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
+  // Guard that implementations for the true-message (m) haven't changed
+  SEND_GUARD_CACHED_GENERIC_CALL_SPECS(m);
 
   memmove(SP() - (have), SP() - (have - 1), (have - 1) * sizeof(gab_value));
   have--;
@@ -2047,9 +2104,15 @@ CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE_NATIVE) {
   gab_value m = PEEK_N(have);
   gab_value r = PEEK_N(have - 1);
 
+  // Guard that our callee is still a message
   SEND_GUARD_KIND(m, kGAB_MESSAGE);
-  SEND_GUARD_CACHED_GENERIC_CALL_SPECS(m);
+  // Guard that implementations for this message haven't changed
+  SEND_GUARD_CACHED_MESSAGE_SPECS();
+  // Guard that true-receivers type hasn't changed
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
+  // Guard that implementations for the true-message (m) haven't changed
+  SEND_GUARD_CACHED_GENERIC_CALL_SPECS(m);
+
 
   memmove(SP() - (have), SP() - (have - 1), (have - 1) * sizeof(gab_value));
   have--;
@@ -2067,9 +2130,14 @@ CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE_PRIMITIVE) {
   gab_value m = PEEK_N(have);
   gab_value r = PEEK_N(have - 1);
 
+  // Guard that our callee is still a message
   SEND_GUARD_KIND(m, kGAB_MESSAGE);
-  SEND_GUARD_CACHED_GENERIC_CALL_SPECS(m);
+  // Guard that implementations for this message haven't changed
+  SEND_GUARD_CACHED_MESSAGE_SPECS();
+  // Guard that true-receivers type hasn't changed
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
+  // Guard that implementations for the true-message (m) haven't changed
+  SEND_GUARD_CACHED_GENERIC_CALL_SPECS(m);
 
   memmove(SP() - (have), SP() - (have - 1), (have - 1) * sizeof(gab_value));
   PEEK() = gab_nil;
@@ -2091,9 +2159,14 @@ CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE_CONSTANT) {
   gab_value m = PEEK_N(have);
   gab_value r = PEEK_N(have - 1);
 
+  // Guard that our callee is still a message
   SEND_GUARD_KIND(m, kGAB_MESSAGE);
-  SEND_GUARD_CACHED_GENERIC_CALL_SPECS(m);
+  // Guard that implementations for this message haven't changed
+  SEND_GUARD_CACHED_MESSAGE_SPECS();
+  // Guard that true-receivers type hasn't changed
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
+  // Guard that implementations for the true-message (m) haven't changed
+  SEND_GUARD_CACHED_GENERIC_CALL_SPECS(m);
 
   gab_value spec = ks[GAB_SEND_KSPEC];
 
@@ -2168,13 +2241,14 @@ CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE) {
 }
 
 CASE_CODE(SEND_PRIMITIVE_TAKE) {
-  SKIP_SHORT;
+  gab_value *ks = READ_SENDCONSTANTS;
   uint64_t have = COMPUTE_TUPLE();
   uint64_t below_have = PEEK_N(have + 1);
 
   gab_value c = PEEK_N(have);
 
-  SEND_GUARD_ISC(c);
+  SEND_GUARD_CACHED_MESSAGE_SPECS();
+  SEND_GUARD_ISCHN(c);
 
   STORE_SP();
 
@@ -2209,13 +2283,14 @@ CASE_CODE(SEND_PRIMITIVE_TAKE) {
 }
 
 CASE_CODE(SEND_PRIMITIVE_PUT) {
-  SKIP_SHORT;
+  gab_value *ks = READ_SENDCONSTANTS;
   uint64_t have = COMPUTE_TUPLE();
   uint64_t below_have = PEEK_N(have + 1);
 
   gab_value c = PEEK_N(have);
 
-  SEND_GUARD_ISC(c);
+  SEND_GUARD_CACHED_MESSAGE_SPECS();
+  SEND_GUARD_ISCHN(c);
 
   STORE_SP();
 

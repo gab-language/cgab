@@ -28,6 +28,16 @@ function gen-libgrapheme() {
   cd "$CLIDE_PATH/../" || exit 1
 }
 
+function gen-libllhttp() {
+  cd "$CLIDE_PATH/../vendor/llhttp" || exit 1
+
+  make CC="zig cc --target=$1"
+  mv build/llhttp.h "$CLIDE_PATH/../vendor/"
+  make clean
+
+  cd "$CLIDE_PATH/../" || exit 1
+}
+
 function build-libgrapheme() {
   cd "$CLIDE_PATH/../vendor/libgrapheme" || exit 1
 
@@ -50,6 +60,19 @@ function build-libbearssl() {
 
   echo "Built static library."
   file "$CLIDE_PATH/../build-$1/libbearssl.a"
+
+  cd "$CLIDE_PATH/../" || exit 1
+}
+
+function build-libllhttp() {
+  cd "$CLIDE_PATH/../vendor/llhttp" || exit 1
+
+  make CC="zig cc --target=$1"
+  mv build/libllhttp.a "$CLIDE_PATH/../build-$1/libllhttp.a"
+  make clean
+
+  echo "Built static library."
+  file "$CLIDE_PATH/../build-$1/libllhttp.a"
 
   cd "$CLIDE_PATH/../" || exit 1
 }
@@ -131,7 +154,7 @@ function build {
   for file in src/mod/*.c; do
     name=$(basename "$file" ".c")
     echo "       Building gab$name..."
-    zig cc $platform_bundle  -undefined dynamic_lookup $flags $platform -o "build-$1/mod/$name$dynlib_fileending" -lgrapheme -lbearssl "$file" || exit 1
+    zig cc $platform_bundle  -undefined dynamic_lookup $flags $platform -o "build-$1/mod/$name$dynlib_fileending" -lgrapheme -lbearssl -lllhttp "$file" || exit 1
     echo "       Done!"
     echo "       $(file "build-$1/mod/$name$dynlib_fileending")"
   done
@@ -145,6 +168,7 @@ export -f build
 
 echo "Building dependency"
 gen-libgrapheme
+gen-libllhttp
 
 echo "Fetching SSL Certificate Bundle"
 download-ca-cert
@@ -160,6 +184,7 @@ for target in $targets; do
   echo "   Building static shared library dependencies for $target"
   build-libgrapheme $target
   build-libbearssl $target
+  build-libllhttp $target
 done
 
 echo "$targets" | parallel build "{}" '||' exit 1 '&&' echo "Built {}"

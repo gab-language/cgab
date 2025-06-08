@@ -138,7 +138,7 @@
 #endif
 
 #ifndef cGAB_ERR_SPRINTF_BUF_MAX
-#define cGAB_ERR_SPRINTF_BUF_MAX 2048
+#define cGAB_ERR_SPRINTF_BUF_MAX 4096
 #endif
 
 #ifndef cGAB_STACK_MAX
@@ -222,7 +222,8 @@ enum gab_status {
 #define GAB_VERSION_MAJOR "0"
 #define GAB_VERSION_MINOR "0"
 #define GAB_VERSION_PATCH "4"
-#define GAB_VERSION_TAG GAB_VERSION_MAJOR "." GAB_VERSION_MINOR "." GAB_VERSION_PATCH
+#define GAB_VERSION_TAG                                                        \
+  GAB_VERSION_MAJOR "." GAB_VERSION_MINOR "." GAB_VERSION_PATCH
 
 // Message constants
 #define mGAB_LT "<"
@@ -355,9 +356,15 @@ static inline s_char s_char_tok(s_char str, uint64_t start, char ch) {
   return (s_char){.data = str.data + start, .len = cursor - start};
 }
 
-static inline void v_char_spush(v_char* self, s_char slice) {
+static inline void v_char_spush(v_char *self, s_char slice) {
   for (size_t i = 0; i < slice.len; i++) {
     v_char_push(self, slice.data[i]);
+  }
+}
+
+static inline void v_uint8_t_npush(v_uint8_t *self, size_t n, uint8_t buff[n]) {
+  for (size_t i = 0; i < n; i++) {
+    v_uint8_t_push(self, buff[i]);
   }
 }
 

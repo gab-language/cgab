@@ -1,5 +1,10 @@
-sock = IO
-  .sock\t.to\m.make tcp\tls:
+'chttp'.use
+Socket = IO.Sock
+
+req = 'GET / HTTP/1.0\r\nHost:www.google.com\r\n\r\n'
+
+sock = Socket
+  .make tcp\tls:
   .unwrap
 
 sock
@@ -7,12 +12,31 @@ sock
   .unwrap
 
 sock
-  .send('GET / HTTP/1.0\r\nHost:www.google.com\r\n\r\n'.to\b)
+  .write(req.to\b)
   .unwrap
 
-sock
-  .recv(1024)
-  .unwrap
-  .as\s
-  .unwrap
-  .println
+res = sock.read.unwrap.as\s.unwrap
+
+res.len.println
+res.println
+
+#data = sock
+#  .read
+#  .unwrap
+#  .as\s
+#  .unwrap
+#
+#http_res = data
+#  .as\http
+#  .unwrap
+#
+#'STATUS: $\nHEADERS:\n$\nBODY:\n$'
+#  .sprintf(
+#    http_res.http\status
+#    http_res.http\headers.join(
+#      Streams.map((value field) => do
+#        '$: $'.sprintf(field value)
+#      end)
+#      |> Streams.interpose '\n')
+#    http_res.http\body)
+#  .println

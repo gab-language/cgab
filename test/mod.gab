@@ -668,7 +668,7 @@ ui\should_open_and_close\test: .def t => do
 end
 
 io\should_make_working_tls_request\test: .def t => do
-  (ok, sock) = IO.sock\t.to\m.make tcp\tls:
+  (ok, sock) = IO.Sock.make tcp\tls:
 
   t.expect(ok ==: ok:)
 
@@ -676,11 +676,11 @@ io\should_make_working_tls_request\test: .def t => do
 
   t.expect(ok ==: ok:)
 
-  ok = sock.send('GET / HTTP/1.0\r\nHost:www.google.com\r\n\r\n'.to\b)
+  ok = sock.write('GET / HTTP/1.0\r\nHost:www.google.com\r\n\r\n'.to\b)
 
   t.expect(ok ==: ok:)
 
-  (ok, bin) = sock.recv(1024)
+  (ok, bin) = sock.read(1024)
 
   t.expect(ok ==: ok:)
 

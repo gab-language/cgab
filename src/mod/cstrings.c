@@ -579,7 +579,7 @@ union gab_value_pair gab_fmtlib_panicf(struct gab_triple gab, uint64_t argc,
   gab_value fmtstr = gab_arg(0);
   const char *fmt = gab_strdata(&fmtstr);
 
-  char buf[4096];
+  char buf[10000];
   int len = gab_nsprintf(buf, sizeof(buf), fmt, argc - 1, argv + 1);
 
   if (len < 0)
@@ -594,14 +594,20 @@ union gab_value_pair gab_fmtlib_sprintf(struct gab_triple gab, uint64_t argc,
 
   const char *fmt = gab_strdata(&fmtstr);
 
-  char buf[2048];
-  int len = gab_nsprintf(buf, sizeof(buf), fmt, argc - 1, argv + 1);
+  size_t n = 2048;
+  for (;; n *= 2) {
+    char *buf = malloc(n);
+    int len = gab_nsprintf(buf, n, fmt, argc - 1, argv + 1);
 
-  if (len < 0)
-    return gab_panicf(gab, "sprintf buffer too small", gab_number(argc - 1));
+    if (len < 0) {
+      free(buf);
+      continue;
+    }
 
-  gab_vmpush(gab_thisvm(gab), gab_string(gab, buf));
-  return gab_union_cvalid(gab_nil);
+    gab_vmpush(gab_thisvm(gab), gab_string(gab, buf));
+    free(buf);
+    return gab_union_cvalid(gab_nil);
+  }
 }
 
 GAB_DYNLIB_MAIN_FN {

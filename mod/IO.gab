@@ -1,13 +1,14 @@
 io = 'cio'.use
 
-stdout = io.stdout
-
-println:.def () => stdout.write('$\n'.sprintf(self))
+println:.def () => io.stdout.write('$\n'.sprintf(self))
 
 printf:.def(
   Strings.t
   (args*) => do
-    stdout.write(self.sprintf(args*))
+    io.stdout.write(self.sprintf(args*))
   end)
+
+#Socket = io.Sock
+#File = io.File
 
 io
