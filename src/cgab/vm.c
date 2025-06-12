@@ -654,6 +654,13 @@ union gab_value_pair gab_ptypemismatch(struct gab_triple gab, gab_value found,
                   gab_valtype(gab, found), texpected);
 }
 
+gab_value gab_vmmsg(struct gab_vm* vm) {
+  uint8_t* __ip = vm->ip - SEND_CACHE_DIST;
+  gab_value* __kb = vm->kb;
+  gab_value *ks = READ_SENDCONSTANTS;
+  return ks[GAB_SEND_KMESSAGE];
+}
+
 gab_value gab_vmframe(struct gab_triple gab, uint64_t depth) {
   // uint64_t frame_count = gab_vm(gab)->fp - gab_vm(gab)->sb;
   //
@@ -1198,16 +1205,20 @@ CASE_CODE(NLOAD_LOCAL) {
   VM_PANIC_GUARD_STACKSPACE(n);
 
   uint64_t have = VAR();
-  SP()[n] = have + n;
+  uint64_t len = have + n;
 
   while (n--)
     PUSH(LOCAL(READ_BYTE));
+
+  SET_VAR(len);
 
   NEXT();
 }
 
 CASE_CODE(STORE_LOCAL) {
   LOCAL(READ_BYTE) = PEEK();
+
+  SET_VAR(1);
 
   NEXT();
 }

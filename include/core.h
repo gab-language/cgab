@@ -362,7 +362,7 @@ static inline void v_char_spush(v_char *self, s_char slice) {
   }
 }
 
-static inline void v_uint8_t_npush(v_uint8_t *self, size_t n, uint8_t buff[n]) {
+static inline void v_uint8_t_npush(v_uint8_t *self, size_t n, uint8_t *buff) {
   for (size_t i = 0; i < n; i++) {
     v_uint8_t_push(self, buff[i]);
   }

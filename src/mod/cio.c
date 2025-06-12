@@ -147,8 +147,7 @@ gab_value wrap_qfd(struct gab_triple gab, qfd_t qd, enum gab_io_k t,
   gab_value vbox =
       gab_box(gab, (struct gab_box_argt){
                        .type = gab_string(gab, io_tname[t]),
-                       .data = &qd,
-                       .size = sizeof(qfd_t),
+                       .size = sizeof(struct gab_sock),
                        .destructor = owning ? io_tdestroy[t] : nullptr,
                    });
 
@@ -1140,7 +1139,7 @@ GAB_DYNLIB_MAIN_FN {
    * call to thrd_create, and our initialze while loop will wait forever.
    */
   _Atomic int initialized;
-  atomic_init(&initialized, 1);
+  atomic_init(&initialized, 0);
 
   thrd_t io_t;
   if (thrd_create(&io_t, io_loop_cb, &initialized) != thrd_success)

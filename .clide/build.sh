@@ -154,7 +154,7 @@ function build {
   for file in src/mod/*.c; do
     name=$(basename "$file" ".c")
     echo "       Building gab$name..."
-    zig cc $platform_bundle  -undefined dynamic_lookup $flags $platform -o "build-$1/mod/$name$dynlib_fileending" -lgrapheme -lbearssl -lllhttp "$file" || exit 1
+    zig cc $platform_bundle -undefined dynamic_lookup $flags $platform -o "build-$1/mod/$name$dynlib_fileending" -lgrapheme -lbearssl -lllhttp "$file" || exit 1
     echo "       Done!"
     echo "       $(file "build-$1/mod/$name$dynlib_fileending")"
   done

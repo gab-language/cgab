@@ -1,1 +1,19 @@
-'cmessages'.use
+Messages = 'cmessages'.use
+
+# Helper message for defining 'class'-esque types.
+defclass: .def (fields*, module) => do
+# Combine the fields into a shape to get our class type.
+  t = Shapes.make(fields*)
+
+# Define t: for this message, returning our class type.
+  t: .def(self t)
+
+# Define the module (the 'instance methods') on our class type.
+  [t] .defmodule module
+
+# Return our 'class'
+  self
+end
+
+
+Messages

@@ -23,8 +23,26 @@ model = {
   foods: []
 }
 
-Cells = snake\cell:
-t:.def(Cells, Shapes.make(x: y: facing:))
+Cells = snake\cell: .defclass (
+  x: y: facing:
+  {
+    left:  () => self.put_by(x: x => x - MOVE_DIST)
+    right: () => self.put_by(x: x => x + MOVE_DIST)
+    up:    () => self.put_by(y: y => y - MOVE_DIST)
+    down:  () => self.put_by(y: y => y + MOVE_DIST)
+    move:  () => self.facing.(self)
+    render\snake: () => [
+      rect:
+      { x: self.x, y: self.y, w: CELL_SIZE, h: CELL_SIZE, color: red }
+    ]
+    within_n: (other, n) => do
+      x = (other.x - self.x)
+      y = (other.y - self.y)
+      dist = (x * x) + (y * y)
+      dist < (n * n)
+    end
+  })
+
 [Cells] .defmodule {
   behind: cell => cell.facing.behind(cell)
 }
@@ -36,38 +54,20 @@ behind: .defcase {
   right:  cell => cell.put(x: cell.x + CELL_SIZE .* 2)
 }
 
-[Cells.t] .defmodule {
-  left:  () => self.put_by(x: x => x - MOVE_DIST)
-  right: () => self.put_by(x: x => x + MOVE_DIST)
-  up:    () => self.put_by(y: y => y - MOVE_DIST)
-  down:  () => self.put_by(y: y => y + MOVE_DIST)
-  move:  () => self.facing.(self)
-  render\snake: () => [
-    rect:
-    { x: self.x, y: self.y, w: CELL_SIZE, h: CELL_SIZE, color: red }
-  ]
-  within_n: (other, n) => do
-    x = (other.x - self.x)
-    y = (other.y - self.y)
-    dist = (x * x) + (y * y)
-    dist < (n * n)
-  end
-}
-
-Foods = snake\food:
-t:.def(Foods, Shapes.make(x: y:))
-[Foods.t].defmodule {
-  render\food: () => [
-    rect:
-    { x: self.x, y: self.y, w: CELL_SIZE, h: CELL_SIZE, color: green }
-  ]
-  within_n: (other, n) => do
-    x = (other.x - self.x)
-    y = (other.y - self.y)
-    dist = (x * x) + (y * y)
-    dist < (n * n)
-  end
-}
+Foods = snake\food: .defclass (
+  x: y:
+  {
+    render\food: () => [
+      rect:
+      { x: self.x, y: self.y, w: CELL_SIZE, h: CELL_SIZE, color: green }
+    ]
+    within_n: (other, n) => do
+      x = (other.x - self.x)
+      y = (other.y - self.y)
+      dist = (x * x) + (y * y)
+      dist < (n * n)
+    end
+  })
 
 [model?].defmodule {
   head: () => self.snake.at 0 .unwrap

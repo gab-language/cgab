@@ -7,10 +7,6 @@
 #ifndef GAB_H
 #define GAB_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include <errno.h>
 #include <inttypes.h>
 #include <stdarg.h>
@@ -23,6 +19,10 @@ extern "C" {
 
 #include "core.h"
 #include "platform.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #if cGAB_LIKELY
 #define __gab_likely(x) (__builtin_expect(!!(x), 1))
@@ -2391,6 +2391,18 @@ GAB_API_INLINE struct gab_vm *gab_thisvm(struct gab_triple gab) {
   assert(fiber != gab_cinvalid);
   return gab_fibvm(fiber);
 }
+
+GAB_API gab_value gab_vmmsg(struct gab_vm* vm);
+
+/**
+ * @brief In native functions, it can be useful to check what the current message
+ * is that is being sent. This function returns that message.
+ *
+ * @return The message being sent in the current vm.
+ */
+GAB_API_INLINE gab_value gab_thisvmmsg(struct gab_triple gab){
+  return gab_vmmsg(gab_thisvm(gab));
+};
 
 enum gab_signal {
   sGAB_IGN,

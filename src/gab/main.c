@@ -46,7 +46,7 @@ bool check_and_printerr(union gab_value_pair res) {
 }
 
 static const char *default_modules[] = {
-    "Strings", "Binaries", "Messages", "Numbers", "Blocks", "Records", "Shapes",
+    "Strings", "Binaries", "Shapes", "Messages", "Numbers", "Blocks", "Records",
     "Fibers",  "Channels", "__core",   "Ranges",  "IO",     "Streams",
 };
 static const size_t ndefault_modules = LEN_CARRAY(default_modules);
