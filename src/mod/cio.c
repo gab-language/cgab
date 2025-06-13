@@ -1,6 +1,5 @@
 #include "BearSSL/inc/bearssl_ssl.h"
 #include "core.h"
-#include <stdatomic.h>
 #define QIO_LOOP_INTERVAL_NS 50000
 #define QIO_INTERNAL_QUEUE_INITIAL_LEN 2056
 #include "qio/qio.h"

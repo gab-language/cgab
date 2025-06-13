@@ -2,4 +2,4 @@
 
 cd "$CLIDE_PATH/../" || exit
 
-rm -rf ./build-*/
+make clean
