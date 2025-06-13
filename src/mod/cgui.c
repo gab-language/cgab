@@ -1,9 +1,14 @@
 #include <stdint.h>
+
+// GL/gl.h won't work because some OS's have files which override.
+// Use glad/gl.h instead.
 #define GLAD_GL
 #define GLAD_GL_IMPLEMENTATION
-#include "GL/gl.h"
+#include "glad/gl.h"
 
-// Further includes of "GL/gl.h" should not define implementations.
+// GL/gl.h points to our glad directory. Therefore it is necessary
+// to undefined these as further includes of "GL/gl.h"
+// should not define implementations.
 #undef GLAD_GL
 #undef GLAD_GL_IMPLEMENTATION
 
@@ -13,10 +18,10 @@
 #define CLAY_IMPLEMENTATION
 #include "Clay/clay.h"
 
+#include <stdio.h>
 #define FONTSTASH_IMPLEMENTATION
 #include "fontstash/src/fontstash.h"
 
-// Embed a font in the binary. So sick!
 unsigned char fontData[] = {
 #embed "resources/SauceCodeProNerdFont-Regular.ttf"
 };

@@ -173,7 +173,7 @@ GAB_API_INLINE int gab_nosproc(char *cmd, size_t nargs, char *args[]) {
   }
 
   // This implicitly appends a null-value, as it is initialized to zero.
-  char *cmd_args[nargs + 2] = {};
+  char *cmd_args[nargs + 2];
 
   cmd_args[0] = cmd;
   memcpy(cmd_args + 1, args, sizeof(const char *) * nargs);

@@ -11,4 +11,4 @@ export GAB_CCFLAGS=
 export GAB_TARGETS=
 source configuration || exit 1
 
-make
+make 

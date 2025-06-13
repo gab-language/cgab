@@ -31,7 +31,7 @@ elif [[ "$targets" =~ "mac" ]]; then
   cflags="$cflags $unixflags -DQIO_MACOS -DRGFW_NO_IOKIT -isystem vendor/xcode-frameworks/include"
   dynlib_fileending=".so"
 elif [[ "$targets" =~ "windows" ]]; then
-  cflags="$cflags $winflags -DQIO_WINDOWS"
+  cflags="$cflags $winflags -DQIO_WINDOWS -DOEMRESOURCE"
   dynlib_fileending=".dll"
 fi
 

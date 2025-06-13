@@ -73,3 +73,6 @@
 [submodule "vendor/furi"]
 	path = vendor/furi
 	url = https://github.com/iboB/furi.git
+[submodule "vendor/apache-arrow"]
+	path = vendor/apache-arrow
+	url = https://github.com/apache/arrow.git

@@ -17,6 +17,15 @@ CFLAGS = -std=c23 \
 				 $(INCLUDE) \
 				 $(GAB_CCFLAGS)
 
+CXXFLAGS = -std=c++23 \
+				 -fPIC \
+				 -Wall \
+				 --target=$(GAB_TARGETS) \
+				 -DGAB_TARGET_TRIPLE=\"$(GAB_TARGETS)\"\
+				 -DGAB_DYNLIB_FILEENDING=\"$(GAB_DYNLIB_FILEENDING)\" \
+				 $(INCLUDE) \
+				 $(GAB_CCFLAGS)
+
 # A binary executable needs to keep all cgab symbols,
 # in case they are used by a dynamically loaded c-module.
 # This is why -rdynamic is used.
@@ -27,8 +36,12 @@ BINARY_FLAGS = -rdynamic -DGAB_CORE $(LINK_CGAB)
 # As it is not linked with cgab. The symbols from cgab
 # that these modules require will already exist,
 # as they will be in the gab executable
-LINK_DEPS    = -lgrapheme -lllhttp -lbearssl
-SHARED_FLAGS = -shared -undefined dynamic_lookup $(LINK_DEPS)
+CMOD_LINK_DEPS   = -lgrapheme -lllhttp -lbearssl
+CXXMOD_LINK_DEPS = -larrow -larrow_bundled_dependencies
+CXXMOD_INCLUDE   = -I$(VENDOR_PREFIX)/apache-arrow/cpp/$(BUILD_PREFIX)/src/
+
+CSHARED_FLAGS 	= -shared -undefined dynamic_lookup $(CMOD_LINK_DEPS)
+CXXSHARED_FLAGS = -shared -undefined dynamic_lookup $(CXXMOD_LINK_DEPS) $(CXXMOD_INCLUDE)
 
 # Source files in src/cgab are part of libcgab.
 # Their object files are compiled and archived together into libcgab.a
@@ -46,9 +59,12 @@ GAB_OBJ = $(GAB_SRC:src/gab/%.c=$(BUILD_PREFIX)/%.o)
 CMOD_SRC 	 = $(wildcard src/mod/*.c)
 CMOD_SHARED = $(CMOD_SRC:src/mod/%.c=$(BUILD_PREFIX)/mod/%.so)
 
-all: gab cmodules
+CXXMOD_SRC 	 = $(wildcard src/mod/*.cc)
+CXXMOD_SHARED = $(CXXMOD_SRC:src/mod/%.cc=$(BUILD_PREFIX)/mod/%.so)
 
-# This rule builds object files out of source files, recursively (for all c files in src/**)
+all: gab cmodules cxxmodules
+
+# This rule builds object files out of c source files
 $(BUILD_PREFIX)/%.o: $(SRC_PREFIX)/%.c
 	$(CC) $(CFLAGS) $< -c -o $@
 
@@ -60,20 +76,46 @@ $(BUILD_PREFIX)/libcgab.a: $(CGAB_OBJ)
 $(BUILD_PREFIX)/gab: $(GAB_OBJ) $(BUILD_PREFIX)/libcgab.a
 	$(CC) $(CFLAGS) $(BINARY_FLAGS) $(GAB_OBJ) -o $@
 
-# This rule builds each c-module shared library.
+# This rule builds each c++ module shared library.
+$(BUILD_PREFIX)/mod/%.so: $(SRC_PREFIX)/%.cc \
+							$(BUILD_PREFIX)/libarrow.a
+	$(CXX) $(CXXFLAGS) $(CXXSHARED_FLAGS) $< -o $@
+
+# This rule builds each c module shared library.
 $(BUILD_PREFIX)/mod/%.so: $(SRC_PREFIX)/%.c \
 							$(BUILD_PREFIX)/libbearssl.a 	\
 							$(BUILD_PREFIX)/libllhttp.a  	\
 							$(BUILD_PREFIX)/libgrapheme.a
-	$(CC) $(CFLAGS) $(SHARED_FLAGS) $< -o $@
+	$(CC) $(CFLAGS) $(CSHARED_FLAGS) $< -o $@
 
+# This curls a mozilla cert used for TLS clients.
 cacert.pem:
 	curl --etag-compare etag.txt --etag-save etag.txt --remote-name 'https://curl.se/ca/cacert.pem'
 
+# This rule is the bear-ssl generated file equating to our certificate.
+# Used in TLS clients.
 $(VENDOR_PREFIX)/ta.h: cacert.pem
 	make CC="$(CC)" -s -C $(VENDOR_PREFIX)/BearSSL
 	$(VENDOR_PREFIX)/BearSSL/build/brssl ta cacert.pem > vendor/ta.h
 	make clean -s -C $(VENDOR_PREFIX)/BearSSL
+
+# This rule uses cmake to generate a Makefile for apache-arrow.
+# This is used to build libarrow.a and libarrow_bundled_dependencies.a
+$(VENDOR_PREFIX)/apache-arrow/cpp/$(BUILD_PREFIX)/Makefile:
+	mkdir -p $(VENDOR_PREFIX)/apache-arrow/cpp/$(BUILD_PREFIX)
+	cd $(VENDOR_PREFIX)/apache-arrow/cpp/$(BUILD_PREFIX) && \
+		CC="$(CC)" 													 									\
+		CXX="$(CXX)" 												 									\
+		cmake .. 														 									\
+		-DCMAKE_CXX_FLAGS=--target=$(GAB_TARGETS)	 						\
+		-DCMAKE_C_FLAGS=--target=$(GAB_TARGETS) 		 				 	\
+		-DARROW_MIMALLOC=OFF 								 									\
+		-DARROW_ENABLE_THREADING=OFF 				 									\
+		-DARROW_DEPENDENCY_SOURCE=BUNDLED 	 									\
+		-DARROW_ACERO=ON 										 									\
+		-DARROW_BUILD_SHARED=OFF 						 									\
+		-DARROW_COMPUTE=ON 									 									\
+		-DARROW_CSV=ON
 
 # This rule generates libgraphemes code to be later compiled
 # to specific targets
@@ -92,16 +134,23 @@ libllhttp_generated:
 	make clean -s -C $(VENDOR_PREFIX)/llhttp
 
 $(BUILD_PREFIX)/libgrapheme.a:
+	rm -f $(VENDOR_PREFIX)/libgrapheme/libgrapheme.a $(VENDOR_PREFIX)/libgrapheme/src/*.o
 	make libgrapheme.a CC="$(CC) --target=$(GAB_TARGETS)" -s -C $(VENDOR_PREFIX)/libgrapheme
 	mv $(VENDOR_PREFIX)/libgrapheme/libgrapheme.a $(BUILD_PREFIX)/
 
 $(BUILD_PREFIX)/libllhttp.a:
+	make clean -s -C $(VENDOR_PREFIX)/llhttp
 	make CLANG="$(CC) --target=$(GAB_TARGETS)" -s -C $(VENDOR_PREFIX)/llhttp
 	mv $(VENDOR_PREFIX)/llhttp/build/libllhttp.a $(BUILD_PREFIX)/
 
 $(BUILD_PREFIX)/libbearssl.a:
+	make clean -s -C $(VENDOR_PREFIX)/BearSSL
 	make lib AR="zig ar" LD="$(CC) --target=$(GAB_TARGETS)" CC="$(CC) --target=$(GAB_TARGETS)" -s -C $(VENDOR_PREFIX)/BearSSL
 	mv $(VENDOR_PREFIX)/BearSSL/build/libbearssl.a $(BUILD_PREFIX)/
+
+$(BUILD_PREFIX)/libarrow.a: $(VENDOR_PREFIX)/apache-arrow/cpp/$(BUILD_PREFIX)/Makefile
+	make -j 4 -s -C $(VENDOR_PREFIX)/apache-arrow/cpp/$(BUILD_PREFIX)
+	mv $(VENDOR_PREFIX)/apache-arrow/cpp/$(BUILD_PREFIX)/release/*.a $(BUILD_PREFIX)/
 
 # These are some convenience rules for making the cli simpler.
 
@@ -109,9 +158,11 @@ gab: $(BUILD_PREFIX)/gab
 
 lib: $(BUILD_PREFIX)/libcgab.a
 
+cxxmodules: $(CXXMOD_SHARED)
+
 cmodules: $(VENDOR_PREFIX)/ta.h libllhttp_generated libgrapheme_generated $(CMOD_SHARED)
 
-test: gab cmodules
+test: gab cmodules cxxmodules
 	mv $(BUILD_PREFIX)/mod/* mod/
 	$(BUILD_PREFIX)/gab run test
 
