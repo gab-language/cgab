@@ -29,8 +29,8 @@ CXXFLAGS = -std=c++23 \
 # A binary executable needs to keep all cgab symbols,
 # in case they are used by a dynamically loaded c-module.
 # This is why -rdynamic is used.
-LINK_CGAB = -lcgab
-BINARY_FLAGS = -rdynamic -DGAB_CORE $(LINK_CGAB)
+GAB_LINK_DEPS = -lcgab -llinenoise -lc++
+BINARY_FLAGS 	= -rdynamic -DGAB_CORE $(GAB_LINK_DEPS)
 
 # A shared module needs undefined dynamic lookup
 # As it is not linked with cgab. The symbols from cgab
@@ -73,7 +73,7 @@ $(BUILD_PREFIX)/libcgab.a: $(CGAB_OBJ)
 	zig ar rcs $@ $^
 
 # This rule builds the gab executable, linking with libcgab.a
-$(BUILD_PREFIX)/gab: $(GAB_OBJ) $(BUILD_PREFIX)/libcgab.a
+$(BUILD_PREFIX)/gab: $(GAB_OBJ) $(BUILD_PREFIX)/libcgab.a $(BUILD_PREFIX)/liblinenoise.a
 	$(CC) $(CFLAGS) $(BINARY_FLAGS) $(GAB_OBJ) -o $@
 
 # This rule builds each c++ module shared library.
@@ -98,6 +98,21 @@ $(VENDOR_PREFIX)/ta.h: cacert.pem
 	make CC="$(CC)" -s -C $(VENDOR_PREFIX)/BearSSL
 	$(VENDOR_PREFIX)/BearSSL/build/brssl ta cacert.pem > vendor/ta.h
 	make clean -s -C $(VENDOR_PREFIX)/BearSSL
+
+$(VENDOR_PREFIX)/linenoise/$(BUILD_PREFIX)/Makefile:
+	mkdir -p $(VENDOR_PREFIX)/linenoise/$(BUILD_PREFIX)
+	cd $(VENDOR_PREFIX)/linenoise/$(BUILD_PREFIX) && 	\
+		CC="$(CC)" 																			\
+		CXX="$(CXX)" 												 						\
+		cmake .. 														 						\
+		-DCMAKE_CXX_FLAGS=--target=$(GAB_TARGETS)	 			\
+		-DCMAKE_C_FLAGS=--target=$(GAB_TARGETS) 		 		\
+		-DCMAKE_POLICY_VERSION_MINIMUM=3.5							\
+		-DCMAKE_BUILD_TYPE=Release
+
+$(BUILD_PREFIX)/liblinenoise.a: $(VENDOR_PREFIX)/linenoise/$(BUILD_PREFIX)/Makefile
+	make -s -C $(VENDOR_PREFIX)/linenoise/$(BUILD_PREFIX)
+	mv $(VENDOR_PREFIX)/linenoise/$(BUILD_PREFIX)/liblinenoise.a $(BUILD_PREFIX)/
 
 # This rule uses cmake to generate a Makefile for apache-arrow.
 # This is used to build libarrow.a and libarrow_bundled_dependencies.a

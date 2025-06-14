@@ -1561,6 +1561,7 @@ union gab_value_pair gab_fibawait(struct gab_triple gab, gab_value f) {
 
   struct gab_ofiber *fiber = GAB_VAL_TO_FIBER(f);
 
+  assert(gab_valkind(f) == fiber->header.kind);
   while (fiber->header.kind != kGAB_FIBERDONE)
     switch (gab_yield(gab)) {
     case sGAB_COLL:

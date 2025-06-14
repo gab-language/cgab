@@ -748,24 +748,17 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
   printf("%s\n", args.welcome_message);
 
   for (;;) {
-    printf("%s", args.prompt_prefix);
-    fflush(stdout);
-    a_char *src = gab_fosreadl(stdin);
 
-    if (src->len <= 1) {
-      a_char_destroy(src);
+    char *src = args.readline(args.prompt_prefix);
+
+    if (!src)
       return;
-    }
 
-    if ((int8_t)src->data[0] == EOF) {
-      a_char_destroy(src);
-      return;
-    }
-
-    if (src->data[1] == '\0') {
-      a_char_destroy(src);
+    if (src[0] == '\0')
       continue;
-    }
+
+    if (args.add_hist)
+      args.add_hist(src);
 
     // Append the iterations number to the end of the given name
     char unique_name[strlen(args.name) + 16];
@@ -777,7 +770,7 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
     if (env == gab_cinvalid) {
       fiber = gab_aexec(gab, (struct gab_exec_argt){
                                  .name = unique_name,
-                                 .source = (char *)src->data,
+                                 .source = src,
                                  .flags = args.flags,
                                  .len = args.len,
                                  .sargv = args.sargv,
@@ -798,7 +791,7 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
 
       fiber = gab_aexec(gab, (struct gab_exec_argt){
                                  .name = unique_name,
-                                 .source = (char *)src->data,
+                                 .source = src,
                                  .flags = args.flags,
                                  .len = len,
                                  .sargv = keys,
@@ -806,7 +799,6 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
                              });
     }
 
-    a_char_destroy(src);
     src = nullptr;
 
     if (fiber.status != gab_cvalid) {
@@ -815,6 +807,24 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
       puts(errstr);
       continue;
     }
+
+    printf("  %s" GAB_SAVE, args.result_prefix);
+
+    const char waitstrs[] = {'|', '/', '-', '\\'};
+    for (int i = 0; !gab_fibisdone(fiber.vresult); i++) {
+      printf("\r%c" GAB_RESTORE, waitstrs[i & 0b11]);
+      fflush(stdout);
+      switch (gab_yield(gab)) {
+      case sGAB_COLL:
+        gab_gcepochnext(gab);
+        gab_sigpropagate(gab);
+      default:
+        thrd_sleep(&(struct timespec){.tv_nsec = 50000000}, nullptr);
+        continue;
+      }
+    }
+    printf("\r "GAB_RESTORE);
+    fflush(stdout);
 
     union gab_value_pair res = gab_fibawait(gab, fiber.vresult);
 
@@ -828,14 +838,22 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
     assert(env != gab_cinvalid);
 
     if (res.status != gab_cvalid) {
+      const char *errstr = gab_errtocs(gab, res.vresult);
+      assert(errstr != nullptr);
+      printf("\n%s", errstr);
+      fflush(stdout);
       continue;
     }
 
     if (res.aresult->data[0] != gab_ok) {
+      const char *errstr = gab_errtocs(gab, res.aresult->data[1]);
+      assert(errstr != nullptr);
+      printf("\n%s", errstr);
+      fflush(stdout);
+      fflush(stdout);
       continue;
     }
 
-    printf("%s", args.result_prefix);
     for (int32_t i = 0; i < res.aresult->len; i++) {
       gab_value arg = res.aresult->data[i];
 
@@ -1676,8 +1694,8 @@ bool gab_sigcoll(struct gab_triple gab) {
   return succeeded;
 }
 
-struct gab_impl_rest
-gab_impl(struct gab_triple gab, gab_value message, gab_value receiver) {
+struct gab_impl_rest gab_impl(struct gab_triple gab, gab_value message,
+                              gab_value receiver) {
   gab_value spec = gab_cundefined;
   gab_value type = receiver;
 
@@ -1746,9 +1764,7 @@ GAB_API gab_value gab_type(struct gab_triple gab, enum gab_kind k) {
   return gab.eg->types[k];
 }
 
-GAB_API struct gab_gc *gab_gc(struct gab_triple gab) {
-  return &gab.eg->gc;
-}
+GAB_API struct gab_gc *gab_gc(struct gab_triple gab) { return &gab.eg->gc; }
 
 GAB_API gab_value gab_thisfiber(struct gab_triple gab) {
   return q_gab_value_peek(&gab.eg->jobs[gab.wkid].queue);
@@ -1853,4 +1869,3 @@ GAB_API inline bool gab_signal(struct gab_triple gab, enum gab_signal s,
   gab_signext(gab, wkid);
   return true;
 };
-

@@ -1,7 +1,7 @@
-#include "core.h"
-#include "engine.h"
 #include "gab.h"
 #include <locale.h>
+
+#include "linenoise/include/linenoise.h"
 
 #define TOSTRING(x) #x
 #define STR(x) TOSTRING(x)
@@ -46,8 +46,9 @@ bool check_and_printerr(union gab_value_pair res) {
 }
 
 static const char *default_modules[] = {
-    "Strings", "Binaries", "Shapes", "Messages", "Numbers", "Blocks", "Records",
-    "Fibers",  "Channels", "__core",   "Ranges",  "IO",     "Streams",
+    "Strings", "Binaries", "Shapes",  "Messages", "Numbers",
+    "Blocks",  "Records",  "Fibers",  "Channels", "__core",
+    "Ranges",  "IO",       "Streams",
 };
 static const size_t ndefault_modules = LEN_CARRAY(default_modules);
 
@@ -55,7 +56,6 @@ int run_repl(int flags, size_t nmodules, const char **modules) {
   union gab_value_pair res = gab_create(
       (struct gab_create_argt){
           .flags = flags,
-          .joberr_handler = print_err,
           .len = nmodules,
           .modules = modules,
       },
@@ -64,15 +64,25 @@ int run_repl(int flags, size_t nmodules, const char **modules) {
   if (!check_and_printerr(res))
     return gab_destroy(gab), 1;
 
+  linenoiseSetMultiLine(true);
   gab_repl(gab, (struct gab_repl_argt){
                     .name = MAIN_MODULE,
                     .flags = flags,
                     .welcome_message = "Gab version " GAB_VERSION_TAG "",
-                    .prompt_prefix = " > ",
+                    .prompt_prefix = "> ",
+                    .result_prefix = "=> ",
+                    .readline = linenoise,
+                    .add_hist = linenoiseHistoryAdd,
                     .len = nmodules,
                     .sargv = modules,
                     .argv = res.aresult->data + 1, // Skip initial ok:
                 });
+
+  // The user may have left some fibers running unterminated.
+  // This will confusingly hang after gab_repl has returned,
+  // until the user sends SIG_INT.
+  // We just manually terimate any running fibers here.
+  gab_sigterm(gab);
 
   a_gab_value_destroy(res.aresult);
 

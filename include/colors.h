@@ -1,4 +1,8 @@
 
+#define GAB_INVIS "\x1b[28m"
+#define GAB_BLINK "\x1b[25m"
+#define GAB_SAVE "\x1b[s"
+#define GAB_RESTORE "\x1b[u"
 #define GAB_BLACK "\x1b[30m"
 #define GAB_RED "\x1b[31m"
 #define GAB_GREEN "\x1b[32m"

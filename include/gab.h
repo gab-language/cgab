@@ -1135,6 +1135,14 @@ struct gab_repl_argt {
    */
   const char *name;
   /**
+   * A callback function for reading a line of user input.
+   */
+  char *(*readline)(const char *prompt);
+  /**
+   * A callback function for adding lines of user input to history.
+   */
+  int (*add_hist)(const char *line);
+  /**
    * Optional flags for compilation AND execution.
    */
   int flags;
@@ -2392,15 +2400,15 @@ GAB_API_INLINE struct gab_vm *gab_thisvm(struct gab_triple gab) {
   return gab_fibvm(fiber);
 }
 
-GAB_API gab_value gab_vmmsg(struct gab_vm* vm);
+GAB_API gab_value gab_vmmsg(struct gab_vm *vm);
 
 /**
- * @brief In native functions, it can be useful to check what the current message
- * is that is being sent. This function returns that message.
+ * @brief In native functions, it can be useful to check what the current
+ * message is that is being sent. This function returns that message.
  *
  * @return The message being sent in the current vm.
  */
-GAB_API_INLINE gab_value gab_thisvmmsg(struct gab_triple gab){
+GAB_API_INLINE gab_value gab_thisvmmsg(struct gab_triple gab) {
   return gab_vmmsg(gab_thisvm(gab));
 };
 
