@@ -200,10 +200,8 @@ LINKAGE T METHOD(del)(TYPENAME *self, uint64_t index) {
 #undef METHOD
 #undef CONCAT
 #undef CONCAT_
-#ifdef V_CONCURRENT
 #undef INIT_LOCK
 #undef DESTROY_LOCK
 #undef AQUIRE_LOCK
 #undef RELEASE_LOCK
 #undef V_CONCURRENT
-#endif

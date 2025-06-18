@@ -504,8 +504,7 @@ union gab_value_pair vvm_terminate(struct gab_triple gab, const char *fmt,
       gab_recordfrom(gab, shape, 1, gab_shplen(shape), vm->fp, nullptr);
   gab_egkeep(gab.eg, gab_iref(gab, env));
 
-  if (gab.eg->joberr_handler)
-    gab.eg->joberr_handler(gab, res.vresult);
+  v_gab_value_thrd_push(&gab.eg->err, err);
 
   assert(GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERRUNNING);
   GAB_VAL_TO_FIBER(fiber)->res_values = res;
@@ -524,12 +523,16 @@ union gab_value_pair vm_givenerr(struct gab_triple gab,
   gab_value shape = gab_prtshp(p);
   gab_value env =
       gab_recordfrom(gab, shape, 1, gab_shplen(shape), vm->fp, nullptr);
+
   gab_egkeep(gab.eg, gab_iref(gab, env));
+
+  v_gab_value_thrd_push(&gab.eg->err, given.vresult);
 
   assert(GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERRUNNING);
   GAB_VAL_TO_FIBER(fiber)->res_values = given;
   GAB_VAL_TO_FIBER(fiber)->res_env = env;
   GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERDONE;
+
   return given;
 }
 
@@ -562,8 +565,7 @@ union gab_value_pair vvm_error(struct gab_triple gab, enum gab_status s,
       gab_recordfrom(gab, shape, 1, gab_shplen(shape), vm->fp, nullptr);
   gab_egkeep(gab.eg, gab_iref(gab, env));
 
-  if (gab.eg->joberr_handler)
-    gab.eg->joberr_handler(gab, res.aresult->data[1]);
+  v_gab_value_thrd_push(&gab.eg->err, err);
 
   assert(GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERRUNNING);
   GAB_VAL_TO_FIBER(fiber)->res_values = res;
@@ -654,9 +656,9 @@ union gab_value_pair gab_ptypemismatch(struct gab_triple gab, gab_value found,
                   gab_valtype(gab, found), texpected);
 }
 
-gab_value gab_vmmsg(struct gab_vm* vm) {
-  uint8_t* __ip = vm->ip - SEND_CACHE_DIST;
-  gab_value* __kb = vm->kb;
+gab_value gab_vmmsg(struct gab_vm *vm) {
+  uint8_t *__ip = vm->ip - SEND_CACHE_DIST;
+  gab_value *__kb = vm->kb;
   gab_value *ks = READ_SENDCONSTANTS;
   return ks[GAB_SEND_KMESSAGE];
 }
@@ -1021,8 +1023,7 @@ union gab_value_pair gab_vmexec(struct gab_triple gab, gab_value f) {
  * SEND guard which checks that the world
  * is as we expect, and the receiver is a record.
  */
-#define SEND_GUARD_ISREC(r)                                                    \
-  SEND_GUARD_KIND(r, kGAB_RECORD)
+#define SEND_GUARD_ISREC(r) SEND_GUARD_KIND(r, kGAB_RECORD)
 
 /*
  * SEND guard which checks that the world
@@ -1637,11 +1638,8 @@ CASE_CODE(SEND_PRIMITIVE_SPLATLIST) {
 
   VM_PANIC_GUARD_STACKSPACE(len);
 
-  if (len)
-    for (uint64_t i = 0; i < len; i++)
-      PUSH(gab_uvrecat(r, i));
-  else
-    PUSH(gab_nil), len++;
+  for (uint64_t i = 0; i < len; i++)
+    PUSH(gab_uvrecat(r, i));
 
   SET_VAR(below_have + len);
 
@@ -1664,11 +1662,8 @@ CASE_CODE(SEND_PRIMITIVE_SPLATDICT) {
 
   VM_PANIC_GUARD_STACKSPACE(len * 2);
 
-  if (len)
-    for (uint64_t i = 0; i < len; i++)
-      PUSH(gab_ukrecat(r, i)), PUSH(gab_uvrecat(r, i));
-  else
-    PUSH(gab_nil), len++;
+  for (uint64_t i = 0; i < len; i++)
+    PUSH(gab_ukrecat(r, i)), PUSH(gab_uvrecat(r, i));
 
   SET_VAR(below_have + len * 2);
 
@@ -1713,7 +1708,8 @@ CASE_CODE(RETURN) {
   uint64_t below_have = FB()[-4];
 
   /* This will break other things - have can not be 0. */
-  assert(have != 0);
+  // if (have == 0)
+  //   PUSH(gab_nil), have++;
 
   gab_value *from = SP() - have;
   gab_value *to = FB() - 4;
@@ -1957,7 +1953,8 @@ CASE_CODE(SEND) {
   uint64_t have = COMPUTE_TUPLE();
 
   /* This will break other things - have can not be 0. */
-  assert(have != 0);
+  if (have == 0)
+    PUSH(gab_nil), have++;
 
   gab_value r = PEEK_N(have);
   gab_value m = ks[GAB_SEND_KMESSAGE];
@@ -2123,7 +2120,6 @@ CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE_NATIVE) {
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
   // Guard that implementations for the true-message (m) haven't changed
   SEND_GUARD_CACHED_GENERIC_CALL_SPECS(m);
-
 
   memmove(SP() - (have), SP() - (have - 1), (have - 1) * sizeof(gab_value));
   have--;

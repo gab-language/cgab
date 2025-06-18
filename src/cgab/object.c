@@ -139,65 +139,34 @@ int srec_dumpvalues(char **dest, size_t *n, gab_value rec, int depth) {
 }
 
 int srec_dumpproperties(char **dest, size_t *n, gab_value rec, int depth) {
-  switch (gab_valkind(rec)) {
-  case kGAB_RECORD: {
-    uint64_t len = gab_reclen(rec);
+  assert(gab_valkind(rec) == kGAB_RECORD);
+  uint64_t len = gab_reclen(rec);
 
-    if (len == 0)
-      return 0;
+  if (len == 0)
+    return 0;
 
-    if (len > 16 && depth >= 0)
-      return snprintf_through(dest, n, " ... ");
+  if (len > 16 && depth >= 0)
+    return snprintf_through(dest, n, " ... ");
+
+  if (snprintf_through(dest, n, " ") < 0)
+    return -1;
+
+  for (uint64_t i = 0; i < len; i++) {
+    if (gab_svalinspect(dest, n, gab_ukrecat(rec, i), depth - 1) < 0)
+      return -1;
 
     if (snprintf_through(dest, n, " ") < 0)
       return -1;
 
-    for (uint64_t i = 0; i < len; i++) {
-      if (gab_svalinspect(dest, n, gab_ukrecat(rec, i), depth - 1) < 0)
-        return -1;
-
-      if (snprintf_through(dest, n, " ") < 0)
-        return -1;
-
-      if (gab_svalinspect(dest, n, gab_uvrecat(rec, i), depth - 1) < 0)
-        return -1;
-
-      if (i + 1 < len)
-        if (snprintf_through(dest, n, ", ") < 0)
-          return -1;
-    }
-
-    return snprintf_through(dest, n, " ");
-  }
-  case kGAB_RECORDNODE: {
-    struct gab_orecnode *m = GAB_VAL_TO_RECNODE(rec);
-    uint64_t len = m->len;
-
-    if (len == 0)
-      return snprintf_through(dest, n, "~ ");
-
-    if (len > 16)
-      return snprintf_through(dest, n, "... ");
-
-    if (snprintf_through(dest, n, " ") < 0)
+    if (gab_svalinspect(dest, n, gab_uvrecat(rec, i), depth - 1) < 0)
       return -1;
 
-    for (uint64_t i = 0; i < len; i++) {
-      if (gab_svalinspect(dest, n, m->data[i], depth - 1) < 0)
+    if (i + 1 < len)
+      if (snprintf_through(dest, n, ", ") < 0)
         return -1;
-
-      if (i + 1 < len)
-        if (snprintf_through(dest, n, ", ") < 0)
-          return -1;
-    }
-
-    return snprintf_through(dest, n, " ");
   }
-  default:
-    break;
-  }
-  assert(false && "NOT A REC");
-  return 0;
+
+  return snprintf_through(dest, n, " ");
 }
 
 int sinspectval(char **dest, size_t *n, gab_value self, int depth) {
@@ -1011,9 +980,10 @@ gab_value cons(struct gab_triple gab, gab_value rec, gab_value v,
   gab_value record =
       recsetshp(assoc(gab, reccpy(gab, rec, recneedsspace(rec, i)), v, i), shp);
 
-  // ASSERT ALL leaves are valid
+#ifndef NDEBUG
   for (size_t j = 0; j < i; j++)
     gab_uvrecat(record, j);
+#endif
 
   return record;
 }
@@ -2209,6 +2179,415 @@ int gab_fmodinspect(FILE *stream, gab_value module) {
 
   return 0;
 }
+
+/*
+ *
+ * PRETTY PRINTING GAB OBJECTS
+ *
+ * An object produces a vector of gab_pprint structs. These are laid out
+ * with a layout algorithm.
+ */
+enum gab_pprint_k {
+  kPPRINT_VALUE,
+  kPPRINT_STRING,
+  kPPRINT_BREAK,
+  kPPRINT_SPACE,
+  kPPRINT_COMMA,
+  kPPRINT_INDENT,
+  kPPRINT_DEDENT,
+};
+
+struct gab_pprint {
+  enum gab_pprint_k k; /* Kind of the tokken */
+  int32_t width;       /* Pre-computed width of the token */
+  union gab_pprint_d {
+    gab_value val; /* Gab value to be printed with this token. THis should be a
+                 primitive value, not a nested one. */
+    char c;
+    const char *s;
+  } as;
+};
+
+#define T struct gab_pprint
+#define NAME gab_pprint
+#include "vector.h"
+
+int32_t pprint_width(gab_value val) {
+  switch (gab_valkind(val)) {
+  case kGAB_STRING:
+    return gab_strlen(val);
+  case kGAB_MESSAGE:
+    return gab_strlen(val) + 1;
+  case kGAB_BINARY:
+    return gab_strlen(val) + 15;
+  case kGAB_NATIVE:
+    return gab_strlen(GAB_VAL_TO_NATIVE(val)->name) + 13;
+  case kGAB_BOX:
+    return pprint_width(GAB_VAL_TO_BOX(val)->type) + 10;
+  case kGAB_PRIMITIVE:
+    switch (val) {
+    case gab_cundefined:
+      return strlen("cundefined");
+    case gab_cinvalid:
+      return strlen("cinvalid");
+    case gab_ctimeout:
+      return strlen("ctimeout");
+    case gab_cvalid:
+      return strlen("cvalid");
+    default:
+      return strlen(gab_opcode_names[gab_valtop(val)]) + 3;
+    }
+  case kGAB_BLOCK: {
+    struct gab_oblock *blk = GAB_VAL_TO_BLOCK(val);
+    struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(blk->p);
+    return gab_strlen(gab_srcname(p->src)) + 4 + 4;
+  }
+  case kGAB_NUMBER:
+    char buf[20] = {};
+    // Maybe I can just return number of bytes written?
+    snprintf(buf, sizeof(buf), "%lg", gab_valtof(val));
+    return strlen(buf);
+  default:
+    fprintf(stderr, "%d\n", gab_valkind(val));
+    fflush(stderr);
+    assert(false && "unreachable");
+    return 0;
+  }
+}
+
+void push_pprint_v(v_gab_pprint *self, gab_value val) {
+  v_gab_pprint_push(self, (struct gab_pprint){
+                              .k = kPPRINT_VALUE,
+                              .width = pprint_width(val),
+                              .as.val = val,
+                          });
+}
+
+void push_pprint_k(v_gab_pprint *self, enum gab_pprint_k k) {
+  v_gab_pprint_push(self, (struct gab_pprint){
+                              .k = k,
+                              .width = 1,
+                              .as.val = gab_nil,
+                          });
+}
+
+void push_pprint_s(v_gab_pprint *self, const char *s) {
+  v_gab_pprint_push(self, (struct gab_pprint){
+                              .k = kPPRINT_STRING,
+                              .width = strlen(s),
+                              .as.s = s,
+                          });
+}
+
+void push_pprint_kd(v_gab_pprint *self, enum gab_pprint_k k,
+                    union gab_pprint_d d) {
+  v_gab_pprint_push(self, (struct gab_pprint){
+                              .k = k,
+                              .width = 1,
+                              .as = d,
+                          });
+}
+
+bool pprint_tokify(v_gab_pprint *self, gab_value val);
+
+void pprint_rec(v_gab_pprint *self, gab_value rec) {
+  assert(gab_valkind(rec) == kGAB_RECORD);
+
+  push_pprint_kd(self, kPPRINT_INDENT, (union gab_pprint_d){'{'});
+  push_pprint_k(self, kPPRINT_SPACE);
+
+  uint64_t len = gab_reclen(rec);
+
+  for (uint64_t i = 0; i < len; i++) {
+    pprint_tokify(self, gab_ukrecat(rec, i));
+
+    push_pprint_s(self, " ");
+
+    pprint_tokify(self, gab_uvrecat(rec, i));
+
+    if (i + 1 < len)
+      push_pprint_k(self, kPPRINT_COMMA);
+
+    push_pprint_k(self, kPPRINT_SPACE);
+  }
+
+  push_pprint_kd(self, kPPRINT_DEDENT, (union gab_pprint_d){'}'});
+};
+
+void pprint_box(v_gab_pprint *self, gab_value box) {
+  assert(gab_valkind(box) == kGAB_BOX);
+  struct gab_obox *v = GAB_VAL_TO_BOX(box);
+  push_pprint_kd(self, kPPRINT_INDENT, (union gab_pprint_d){'<'});
+  push_pprint_s(self, tGAB_BOX);
+  push_pprint_k(self, kPPRINT_SPACE);
+  push_pprint_v(self, v->type);
+  push_pprint_kd(self, kPPRINT_DEDENT, (union gab_pprint_d){'>'});
+}
+
+void pprint_binary(v_gab_pprint *self, gab_value bin) {
+  assert(gab_valkind(bin) == kGAB_BINARY);
+  push_pprint_kd(self, kPPRINT_INDENT, (union gab_pprint_d){'<'});
+  push_pprint_s(self, tGAB_BINARY);
+  push_pprint_k(self, kPPRINT_SPACE);
+  push_pprint_s(self, "0x");
+  push_pprint_v(self, gab_bintostr(bin));
+  push_pprint_kd(self, kPPRINT_DEDENT, (union gab_pprint_d){'>'});
+}
+
+void pprint_native(v_gab_pprint *self, gab_value ntv) {
+  assert(gab_valkind(ntv) == kGAB_NATIVE);
+  struct gab_onative *v = GAB_VAL_TO_NATIVE(ntv);
+  push_pprint_kd(self, kPPRINT_INDENT, (union gab_pprint_d){'<'});
+  push_pprint_s(self, tGAB_NATIVE);
+  push_pprint_k(self, kPPRINT_SPACE);
+  push_pprint_v(self, v->name);
+  push_pprint_kd(self, kPPRINT_DEDENT, (union gab_pprint_d){'>'});
+}
+
+void pprint_block(v_gab_pprint *self, gab_value block) {
+  assert(gab_valkind(block) == kGAB_BLOCK);
+
+  struct gab_oblock *blk = GAB_VAL_TO_BLOCK(block);
+  struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(blk->p);
+  uint64_t line = gab_srcline(p->src, p->offset);
+
+  push_pprint_kd(self, kPPRINT_INDENT, (union gab_pprint_d){'<'});
+  push_pprint_s(self, tGAB_BLOCK);
+  push_pprint_k(self, kPPRINT_SPACE);
+  push_pprint_v(self, gab_srcname(p->src));
+  push_pprint_k(self, kPPRINT_SPACE);
+  push_pprint_v(self, gab_number(line));
+  push_pprint_kd(self, kPPRINT_DEDENT, (union gab_pprint_d){'>'});
+}
+void pprint_shape(v_gab_pprint *self, gab_value shp) {
+  assert(gab_valkind(shp) == kGAB_SHAPE || gab_valkind(shp) == kGAB_SHAPELIST);
+
+  push_pprint_kd(self, kPPRINT_INDENT, (union gab_pprint_d){'<'});
+  push_pprint_s(self, tGAB_SHAPE);
+  push_pprint_k(self, kPPRINT_SPACE);
+
+  uint64_t len = gab_shplen(shp);
+  for (uint64_t i = 0; i < len; i++) {
+    pprint_tokify(self, gab_ushpat(shp, i));
+    push_pprint_k(self, kPPRINT_SPACE);
+  }
+
+  push_pprint_kd(self, kPPRINT_DEDENT, (union gab_pprint_d){'>'});
+}
+void pprint_reclist(v_gab_pprint *self, gab_value rec) {
+  assert(gab_valkind(rec) == kGAB_RECORD);
+
+  push_pprint_kd(self, kPPRINT_INDENT, (union gab_pprint_d){'['});
+  push_pprint_k(self, kPPRINT_SPACE);
+
+  uint64_t len = gab_reclen(rec);
+
+  for (uint64_t i = 0; i < len; i++) {
+    pprint_tokify(self, gab_uvrecat(rec, i));
+
+    if (i + 1 < len)
+      push_pprint_k(self, kPPRINT_COMMA);
+
+    push_pprint_k(self, kPPRINT_SPACE);
+  }
+
+  push_pprint_kd(self, kPPRINT_DEDENT, (union gab_pprint_d){']'});
+}
+
+bool pprint_tokify(v_gab_pprint *self, gab_value val) {
+  switch (gab_valkind(val)) {
+  case kGAB_SHAPE:
+    return pprint_shape(self, val), true;
+  case kGAB_BLOCK:
+    return pprint_block(self, val), false;
+  case kGAB_BOX:
+    return pprint_box(self, val), false;
+  case kGAB_NATIVE:
+    return pprint_native(self, val), false;
+  case kGAB_BINARY:
+    return pprint_binary(self, val), false;
+  case kGAB_RECORD:
+    return (gab_recisl(val) ? pprint_reclist(self, val)
+                            : pprint_rec(self, val)),
+           true;
+  default:
+    return push_pprint_v(self, val), false;
+  }
+}
+
+const char *colorforkind(gab_value v) {
+  switch (gab_valkind(v)) {
+  case kGAB_STRING:
+    return GAB_GREEN;
+  case kGAB_NUMBER:
+    return GAB_YELLOW;
+  case kGAB_MESSAGE:
+    return GAB_CYAN;
+  case kGAB_PRIMITIVE:
+    return GAB_RED;
+  default:
+    return "";
+  }
+}
+
+int spprint_through(char **buf, size_t *len, struct gab_pprint t) {
+  switch (t.k) {
+  case kPPRINT_SPACE:
+    return snprintf_through(buf, len, " ");
+  case kPPRINT_COMMA:
+    return snprintf_through(buf, len, ",");
+  case kPPRINT_INDENT:
+    return snprintf_through(buf, len, GAB_YELLOW "%c" GAB_RESET, t.as.c);
+  case kPPRINT_DEDENT:
+    return snprintf_through(buf, len, GAB_YELLOW "%c" GAB_RESET, t.as.c);
+  case kPPRINT_BREAK:
+    return snprintf_through(buf, len, "\n");
+  case kPPRINT_STRING:
+    return snprintf_through(buf, len, GAB_YELLOW "%s" GAB_RESET, t.as.s);
+  case kPPRINT_VALUE:
+    // Depth should be irrelevant bc these should be
+    // primitives only
+    const char *color = colorforkind(t.as.val);
+    if (snprintf_through(buf, len, "%s", color) < 0)
+      return -1;
+
+    if (sinspectval(buf, len, t.as.val, 1) < 0)
+      return -1;
+
+    return snprintf_through(buf, len, GAB_RESET);
+  }
+}
+
+/*
+ * LAYOUT ALGORITHM:
+ * - We are given a list of tokens.
+ * - Given a configured width (40 columns),
+ *   convert some SPACE tokens to BREAK tokens
+ *   such that the string fits in the given width.
+ *
+ *          { a: 'hi', b: 'world', c: [1, 2] }
+ *  Spaces   ^  ^     ^  ^        ^  ^   ^  ^
+ * Indents  ^                         ^
+ * Dedents                                 ^ ^
+ *    Seps           ^           ^      ^
+ *
+ *    => {
+ *          a: 'hi',
+ *          b: 'world',
+ *          c: [1, 2],
+ *       }
+ *
+ *  Track a stack of indents.
+ *  Try to layout indent on one line.
+ *  if width < 40
+ *    all done
+ *  else
+ *    backtrack to INDENT token.
+ *    Increment indent count.
+ *    Layout until DEDENT is found
+ *    by converting SPACE to BREAK
+ */
+
+struct layout {
+  int32_t t, w;
+};
+
+struct layout dolayout(v_gab_pprint *self, int32_t t, int32_t indent);
+
+// Compute if the whole indentation can be laid out on one line.
+struct layout layout_line(v_gab_pprint *self, int32_t t, int32_t width) {
+  // Begin with the given amount of indent. An 'indent' is two spaces (not a
+  // tab) for now.
+  assert(v_gab_pprint_val_at(self, t).k == kPPRINT_INDENT);
+
+  struct layout l = {.t = t, .w = width};
+
+  for (struct gab_pprint p = v_gab_pprint_val_at(self, ++l.t);
+       p.k != kPPRINT_DEDENT; p = v_gab_pprint_val_at(self, ++l.t)) {
+    assert(l.t < self->len);
+    l.w += p.width;
+
+    if (p.k == kPPRINT_INDENT)
+      l = layout_line(self, l.t, l.w);
+
+    if (l.t < 0 || l.w > 40)
+      return (struct layout){-1};
+  }
+
+  return l;
+};
+
+struct layout layout_multi(v_gab_pprint *self, int32_t t, int32_t indent) {
+  assert(v_gab_pprint_val_at(self, t).k == kPPRINT_INDENT);
+
+  for (struct gab_pprint *p = v_gab_pprint_ref_at(self, ++t);
+       p->k != kPPRINT_DEDENT; p = v_gab_pprint_ref_at(self, ++t)) {
+    assert(t < self->len);
+
+    if (p->k == kPPRINT_SPACE)
+      p->k = kPPRINT_BREAK;
+
+    if (p->k == kPPRINT_INDENT)
+      t = dolayout(self, t, indent).t;
+  }
+
+  return (struct layout){t};
+}
+
+struct layout dolayout(v_gab_pprint *self, int32_t t, int32_t indent) {
+  struct layout l = layout_line(self, t, indent * 2);
+
+  if (l.t < 0)
+    return layout_multi(self, t, indent + 1);
+
+  return l;
+}
+
+gab_value sprint_tokens(struct gab_triple gab, v_gab_pprint *self) {
+  for (int i = 2048;; i *= 2) {
+    char buf[i];
+    size_t len = i;
+    char *cursor = buf;
+    int32_t indent = 0;
+
+    for (uint64_t n = 0; n < self->len; n++) {
+      struct gab_pprint t = v_gab_pprint_val_at(self, n);
+
+      if (t.k == kPPRINT_INDENT)
+        indent++;
+
+      // Dedent needs to be applied *before* we
+      // draw the dedent token
+      if (n + 1 < self->len)
+        if (v_gab_pprint_val_at(self, n + 1).k == kPPRINT_DEDENT)
+          indent--;
+
+      if (spprint_through(&cursor, &len, t) < 0)
+        goto morespace;
+
+      if (t.k == kPPRINT_BREAK)
+        for (int32_t i = 0; i < indent; i++)
+          if (snprintf_through(&cursor, &len, "  ") < 0)
+            goto morespace;
+    }
+
+    gab_value newestr = gab_string(gab, buf);
+    return newestr;
+
+  morespace:
+  }
+}
+
+gab_value gab_pvalintos(struct gab_triple gab, gab_value value) {
+  v_gab_pprint tokens = {};
+
+  if (pprint_tokify(&tokens, value))
+    dolayout(&tokens, 0, 0);
+
+  gab_value s = sprint_tokens(gab, &tokens);
+
+  return v_gab_pprint_destroy(&tokens), s;
+};
 
 #undef CREATE_GAB_FLEX_OBJ
 #undef CREATE_GAB_OBJ

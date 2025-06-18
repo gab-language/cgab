@@ -211,12 +211,13 @@ view: .def (
   () => do
     model = self
 
-    self.gameover
+    self
+      .gameover
       .then(() => [
         [box:
           { 
             radius: 10
-            border: { color: green, width: 5 }
+            border: { color: green width: 5 }
           }
           [
             [text: { content: "Gameover! Score: $".sprintf(model.eaten) size: 128 }]
@@ -225,12 +226,17 @@ view: .def (
       ])
       .else(() => [
           [box:
-            {}
-            [[text: { content: "Score: $".sprintf(model.eaten) size: 32 }]]
+            {
+              radius: 10
+              border: { color: green width: 5 }
+            }
+            [
+              [text: { content: "Score: $".sprintf(model.eaten) size: 32 }]
+            ]
           ]
 
-          model.snake.map render\snake: *
-          model.foods.map render\food: *
+          (model.snake.map render\snake:)*
+          (model.foods.map render\food:)*
         ])
   end)
 

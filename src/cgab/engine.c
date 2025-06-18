@@ -13,6 +13,16 @@ struct errdetails {
   uint64_t token, row, col_begin, col_end, byte_begin, byte_end;
 };
 
+gab_value *gab_egerrs(struct gab_eg *eg) {
+  v_gab_value_thrd errs;
+  v_gab_value_thrd_drain(&eg->err, &errs);
+  v_gab_value_thrd_push(&errs, gab_nil);
+
+  /* Just free the mutex, leave the pointer to be cleaned up by caller */
+  mtx_destroy(&errs.mtx);
+  return errs.data;
+};
+
 a_char *gab_fosread(FILE *fd) {
   v_char buffer = {0};
 
@@ -515,11 +525,12 @@ union gab_value_pair gab_create(struct gab_create_argt args,
   eg->njobs = 0;
   eg->hash_seed = time(nullptr);
   eg->sig.schedule = -1;
-  eg->joberr_handler = args.joberr_handler;
 
   // The only non-zero initialization that jobs need is epoch = 1
   for (uint64_t i = 0; i < eg->len; i++)
     eg->jobs[i].epoch = 1;
+
+  v_gab_value_thrd_create(&eg->err, 8);
 
   mtx_init(&eg->shapes_mtx, mtx_plain);
   mtx_init(&eg->sources_mtx, mtx_plain);
@@ -727,6 +738,7 @@ void gab_destroy(struct gab_triple gab) {
   d_gab_src_destroy(&gab.eg->sources);
 
   v_gab_value_destroy(&gab.eg->scratch);
+  v_gab_value_thrd_destroy(&gab.eg->err);
 
   mtx_destroy(&gab.eg->shapes_mtx);
   mtx_destroy(&gab.eg->strings_mtx);
@@ -736,10 +748,81 @@ void gab_destroy(struct gab_triple gab) {
   free(gab.eg);
 }
 
+bool repl_check_res(struct gab_triple gab, union gab_value_pair res) {
+  if (res.status != gab_cvalid) {
+    gab_value *err = gab_egerrs(gab.eg);
+
+    for (gab_value *thiserr = err; *thiserr != gab_nil; thiserr++) {
+      assert(gab_valkind(*thiserr) == kGAB_RECORD);
+
+      if (*thiserr == res.vresult)
+        continue;
+
+      const char *errstr = gab_errtocs(gab, *thiserr);
+      assert(errstr != nullptr);
+
+      puts(errstr);
+    };
+
+    free(err);
+
+    const char *errstr = gab_errtocs(gab, res.vresult);
+    assert(errstr != nullptr);
+
+    puts(errstr);
+    fflush(stdout);
+
+    return true;
+  }
+
+  return false;
+}
+
+bool repl_check_vresult(struct gab_triple gab, union gab_value_pair res) {
+  return repl_check_res(gab, res);
+}
+
+bool repl_check_aresult(struct gab_triple gab, union gab_value_pair res) {
+  if (repl_check_res(gab, res))
+    return true;
+
+  if (res.aresult->data[0] != gab_ok) {
+    const char *errstr = gab_errtocs(gab, res.aresult->data[1]);
+    assert(errstr != nullptr);
+
+    puts(errstr);
+    fflush(stdout);
+
+    return true;
+  }
+
+  return false;
+}
+
+void repl_wait_for(struct gab_triple gab, struct gab_repl_argt *args,
+                   gab_value fib) {
+  printf("  %s" GAB_SAVE, args->result_prefix);
+
+  const char waitstrs[] = {'|', '/', '-', '\\'};
+  for (int i = 0; !gab_fibisdone(fib); i++) {
+    printf("\r%c" GAB_RESTORE, waitstrs[i & 0b11]);
+    fflush(stdout);
+    switch (gab_yield(gab)) {
+    case sGAB_COLL:
+      gab_gcepochnext(gab);
+      gab_sigpropagate(gab);
+    default:
+      thrd_sleep(&(struct timespec){.tv_nsec = 50000000}, nullptr);
+      continue;
+    }
+  }
+  printf("\r " GAB_RESTORE);
+  fflush(stdout);
+}
+
 void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
   uint64_t iterations = 0;
   gab_value env = gab_cinvalid;
-  union gab_value_pair fiber;
 
   args.welcome_message = args.welcome_message ? args.welcome_message : "";
   args.prompt_prefix = args.prompt_prefix ? args.prompt_prefix : "";
@@ -748,7 +831,6 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
   printf("%s\n", args.welcome_message);
 
   for (;;) {
-
     char *src = args.readline(args.prompt_prefix);
 
     if (!src)
@@ -767,69 +849,56 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
 
     iterations++;
 
-    if (env == gab_cinvalid) {
-      fiber = gab_aexec(gab, (struct gab_exec_argt){
-                                 .name = unique_name,
-                                 .source = src,
-                                 .flags = args.flags,
-                                 .len = args.len,
-                                 .sargv = args.sargv,
-                                 .argv = args.argv,
-                             });
-    } else {
-      size_t len = gab_reclen(env) - 1;
-      const char *keys[len + 1];
-      gab_value keyvals[len + 1];
-      gab_value vals[len + 1];
+    // Skip self
+    size_t reclen = env == gab_cinvalid ? 0 : (gab_reclen(env) - 1);
 
-      for (size_t i = 0; i < len; i++) {
-        size_t index = i + 1;
-        keyvals[i] = gab_ukrecat(env, index);
-        vals[i] = gab_uvrecat(env, index);
-        keys[i] = gab_strdata(keyvals + i);
-      }
+    size_t len = reclen + args.len;
 
-      fiber = gab_aexec(gab, (struct gab_exec_argt){
-                                 .name = unique_name,
-                                 .source = src,
-                                 .flags = args.flags,
-                                 .len = len,
-                                 .sargv = keys,
-                                 .argv = vals,
-                             });
+    // Allocate the maximum number of space we may need
+    const char *keys[len + 1];
+    gab_value keyvals[len + 1];
+    gab_value vals[len + 1];
+
+    // Insert local names from env
+    for (size_t i = 0; i < reclen; i++) {
+      size_t index = i + 1;
+      keyvals[i] = gab_ukrecat(env, index);
+      vals[i] = gab_uvrecat(env, index);
+      keys[i] = gab_strdata(keyvals + i);
     }
 
-    src = nullptr;
-
-    if (fiber.status != gab_cvalid) {
-      const char *errstr = gab_errtocs(gab, fiber.vresult);
-      assert(errstr != nullptr);
-      puts(errstr);
-      continue;
-    }
-
-    printf("  %s" GAB_SAVE, args.result_prefix);
-
-    const char waitstrs[] = {'|', '/', '-', '\\'};
-    for (int i = 0; !gab_fibisdone(fiber.vresult); i++) {
-      printf("\r%c" GAB_RESTORE, waitstrs[i & 0b11]);
-      fflush(stdout);
-      switch (gab_yield(gab)) {
-      case sGAB_COLL:
-        gab_gcepochnext(gab);
-        gab_sigpropagate(gab);
-      default:
-        thrd_sleep(&(struct timespec){.tv_nsec = 50000000}, nullptr);
+    // If there is a local name in the env, skip it from the args.
+    // otherwise, add an element for this.
+    size_t n = reclen;
+    for (size_t i = 0; i < args.len; i++) {
+      if (env != gab_cinvalid &&
+          gab_rechas(env, gab_string(gab, args.sargv[i])))
         continue;
-      }
+
+      keys[n] = args.sargv[i];
+      vals[n] = args.argv[i];
+      n++;
     }
-    printf("\r "GAB_RESTORE);
-    fflush(stdout);
+
+    union gab_value_pair fiber = gab_aexec(gab, (struct gab_exec_argt){
+                                                    .name = unique_name,
+                                                    .source = src,
+                                                    .flags = args.flags,
+                                                    .len = n,
+                                                    .sargv = keys,
+                                                    .argv = vals,
+                                                });
+
+    if (repl_check_vresult(gab, fiber))
+      continue;
+
+    repl_wait_for(gab, &args, fiber.vresult);
 
     union gab_value_pair res = gab_fibawait(gab, fiber.vresult);
 
     /* Setup env regardless of run failing/succeeding */
     gab_value new_env = gab_fibawaite(gab, fiber.vresult);
+
     if (env == gab_cinvalid || new_env == gab_cinvalid)
       env = new_env;
     else
@@ -837,30 +906,16 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
 
     assert(env != gab_cinvalid);
 
-    if (res.status != gab_cvalid) {
-      const char *errstr = gab_errtocs(gab, res.vresult);
-      assert(errstr != nullptr);
-      printf("\n%s", errstr);
-      fflush(stdout);
+    if (repl_check_aresult(gab, res))
       continue;
-    }
-
-    if (res.aresult->data[0] != gab_ok) {
-      const char *errstr = gab_errtocs(gab, res.aresult->data[1]);
-      assert(errstr != nullptr);
-      printf("\n%s", errstr);
-      fflush(stdout);
-      fflush(stdout);
-      continue;
-    }
 
     for (int32_t i = 0; i < res.aresult->len; i++) {
       gab_value arg = res.aresult->data[i];
 
       if (i == res.aresult->len - 1) {
-        gab_fvalinspect(stdout, arg, -1);
+        gab_fvalinspect(stdout, gab_pvalintos(gab, arg), -1);
       } else {
-        gab_fvalinspect(stdout, arg, -1);
+        gab_fvalinspect(stdout, gab_pvalintos(gab, arg), -1);
         printf(" ");
       }
     }
@@ -1126,6 +1181,8 @@ int sprint_pretty_err(struct gab_triple gab, char **buf, size_t *len,
 
   const char *src_name = src ? gab_strdata(&src->name) : "C";
 
+  // Include gab@<wkid> here isn't useful really anymore. Can be removed.
+  // Maybe it is better to show the fiber?
   if (snprintf_through(buf, len,
                        "[" GAB_GREEN "gab@%i" GAB_RESET
                        "] panicked in " GAB_GREEN "%s" GAB_RESET
@@ -1320,11 +1377,14 @@ const char *gab_errtocs(struct gab_triple gab, gab_value err) {
     return nullptr;
 
   if (!gab_recisl(err)) {
-    // Only works because this will never be a shortstr.
-    // This is dangerous typically though.
     gab_value str = single_errtos(gab, err);
     assert(str != gab_nil);
     assert(gab_strlen(str) > 5);
+    // Only works because this will never be a shortstr.
+    // This is *not* an appropriate way to use
+    // gab_strdata however, because if str *is* a shortstr,
+    // the pointer would be pointing to our local variable str.
+    // And then we would be returning a pointer to a local.
     return gab_strdata(&str);
   }
 
@@ -1722,17 +1782,6 @@ struct gab_impl_rest gab_impl(struct gab_triple gab, gab_value message,
         kGAB_IMPL_KIND,
     };
 
-  /* Check if the receiver is a record and has a matching property */
-  if (gab_valkind(receiver) == kGAB_RECORD) {
-    type = gab_recshp(receiver);
-    if (gab_rechas(receiver, message))
-      return (struct gab_impl_rest){
-          type,
-          .as.offset = gab_recfind(receiver, message),
-          kGAB_IMPL_PROPERTY,
-      };
-  }
-
   /* Check for a default, generic implementation */
   /* Previously, this had a higher priority than
    * record properties - I don't remember why I made that change.
@@ -1748,6 +1797,17 @@ struct gab_impl_rest gab_impl(struct gab_triple gab, gab_value message,
         .as.spec = spec,
         kGAB_IMPL_GENERAL,
     };
+
+  /* Check if the receiver is a record and has a matching property */
+  if (gab_valkind(receiver) == kGAB_RECORD) {
+    type = gab_recshp(receiver);
+    if (gab_rechas(receiver, message))
+      return (struct gab_impl_rest){
+          type,
+          .as.offset = gab_recfind(receiver, message),
+          kGAB_IMPL_PROPERTY,
+      };
+  }
 
   return (struct gab_impl_rest){.status = kGAB_IMPL_NONE};
 }

@@ -1,3 +1,4 @@
+#include "engine.h"
 #include "gab.h"
 #include <locale.h>
 
@@ -28,19 +29,27 @@ void print_err(struct gab_triple gab, gab_value err) {
   fprintf(stderr, "%s\n", str);
 }
 
-bool check_and_printerr(union gab_value_pair res) {
-  if (res.status != gab_cvalid) {
-    const char *errstr = gab_errtocs(gab, res.vresult);
-    puts(errstr);
-    return false;
-  }
+void pop_and_printerr(struct gab_triple gab) {
+  gab_value *errors = gab_egerrs(gab.eg);
 
-  if (res.aresult->data[0] != gab_ok) {
-    const char *errstr = gab_errtocs(gab, res.aresult->data[1]);
-    puts(errstr);
-    a_gab_value_destroy(res.aresult);
+  for (gab_value *err = errors; *err != gab_nil; err++) {
+    assert(gab_valkind(*err) == kGAB_RECORD);
+    const char *errstr = gab_errtocs(gab, *err);
+    assert(errstr != nullptr);
+    fputs(errstr, stderr);
+  };
+
+  free(errors);
+}
+
+bool check_and_printerr(union gab_value_pair res) {
+  pop_and_printerr(gab);
+
+  if (res.status != gab_cvalid)
     return false;
-  }
+
+  if (res.aresult->data[0] != gab_ok)
+    return a_gab_value_destroy(res.aresult), false;
 
   return true;
 }
@@ -94,7 +103,6 @@ int run_string(const char *string, int flags, size_t jobs, size_t nmodules,
   union gab_value_pair res = gab_create(
       (struct gab_create_argt){
           .flags = flags,
-          .joberr_handler = print_err,
           .jobs = jobs,
           .len = nmodules,
           .modules = modules,
@@ -130,7 +138,6 @@ int run_file(const char *path, int flags, size_t jobs, size_t nmodules,
   union gab_value_pair res = gab_create(
       (struct gab_create_argt){
           .flags = flags,
-          .joberr_handler = print_err,
           .jobs = jobs,
           .len = nmodules,
           .modules = modules,

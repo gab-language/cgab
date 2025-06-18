@@ -863,7 +863,7 @@ gab_value parse(struct gab_triple gab, struct parser *parser) {
     return gab_cinvalid;
 
   if (gab.flags & fGAB_AST_DUMP)
-    gab_fprintf(stdout, "$\n", ast);
+    gab_fprintf(stdout, "$\n", gab_pvalintos(gab, ast));
 
   gab_iref(gab, ast);
   gab_egkeep(gab.eg, ast);

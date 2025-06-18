@@ -401,6 +401,11 @@ GAB_API_INLINE gab_uint __gab_valtou(gab_value v) {
 #define T gab_value
 #include "vector.h"
 
+#define T gab_value
+#define NAME gab_value_thrd
+#define V_CONCURRENT
+#include "vector.h"
+
 struct gab_gc;
 struct gab_vm;
 struct gab_eg;
@@ -432,8 +437,6 @@ typedef gab_value (*gab_atomswap_f)(struct gab_triple gab, gab_value current);
 
 typedef gab_value (*gab_atomvswap_f)(struct gab_triple gab, gab_value current,
                                      va_list va);
-
-typedef void (*gab_joberr_f)(struct gab_triple gab, gab_value err);
 
 /**
  * @brief INTERNAL: Free memory held by an object.
@@ -499,8 +502,6 @@ struct gab_create_argt {
    * */
   uint32_t len;
   const char **modules;
-
-  gab_joberr_f joberr_handler;
 };
 
 /**
@@ -616,14 +617,23 @@ GAB_API uint64_t gab_egkeep(struct gab_eg *eg, gab_value value);
 GAB_API uint64_t gab_negkeep(struct gab_eg *eg, uint64_t len, gab_value *argv);
 
 /**
+ * @brief As Gab code runs, errors encountered by fibers accumulate
+ * in the engine. It is up to the user to choose *when* to drain
+ * said errors and handle/present to a user.
+ *
+ * The errors are in a sentine-terminated array of gab\records.
+ * It is the callers responsibility to free the pointer.
+ * The array ends in gab_nil:.
+ */
+GAB_API gab_value* gab_egerrs(struct gab_eg *eg);
+
+/**
  * @brief A convenient structure for returning results from c-code.
  */
 union gab_value_pair {
   gab_value data[2];
-
   struct {
     gab_value status;
-
     union {
       /* A single result value. */
       gab_value vresult;
@@ -2472,6 +2482,15 @@ GAB_API_INLINE gab_value gab_thisfibmsgat(struct gab_triple gab,
 GAB_API_INLINE bool gab_valintob(gab_value value) {
   return !(gab_valeq(value, gab_false) || gab_valeq(value, gab_nil));
 }
+
+/**
+ * @brief Coerce the given value to a string. Format said string to be pretty!
+ *
+ * @param gab The engine
+ * @param value The value to convert
+ * @return The string representation of the value.
+ */
+GAB_API gab_value gab_pvalintos(struct gab_triple gab, gab_value value);
 
 /**
  * @brief Coerce the given value to a string.

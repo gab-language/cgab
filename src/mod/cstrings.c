@@ -504,7 +504,7 @@ union gab_value_pair gab_strlib_has(struct gab_triple gab, uint64_t argc,
 union gab_value_pair gab_strlib_string_into(struct gab_triple gab,
                                             uint64_t argc,
                                             gab_value argv[argc]) {
-  gab_vmpush(gab_thisvm(gab), gab_valintos(gab, gab_arg(0)));
+  gab_vmpush(gab_thisvm(gab), gab_pvalintos(gab, gab_arg(0)));
   return gab_union_cvalid(gab_nil);
 }
 

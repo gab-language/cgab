@@ -4,6 +4,7 @@
 #include "core.h"
 #include "gab.h"
 #include <stdint.h>
+#include <threads.h>
 
 #ifdef GAB_STATUS_NAMES_IMPL
 static const char *gab_status_names[] = {
@@ -34,7 +35,7 @@ static const char *gab_opcode_names[] = {
 #define OP_CODE(name) #name,
 #include "bytecode.h"
 #undef OP_CODE
-  #undef GAB_OPCODE_NAMES_IMPL
+#undef GAB_OPCODE_NAMES_IMPL
 };
 #endif
 
@@ -445,9 +446,10 @@ struct gab_eg {
   _Atomic int8_t njobs;
 
   uint64_t hash_seed;
-  gab_joberr_f joberr_handler;
 
   v_gab_value scratch;
+
+  v_gab_value_thrd err;
 
   gab_value types[kGAB_NKINDS];
 

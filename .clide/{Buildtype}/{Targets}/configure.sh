@@ -6,7 +6,6 @@ echo "$buildtype"
 echo "  <targets>"
 echo "$targets"
 
-
 cd "$CLIDE_PATH/../" || exit
 
 rm -f configuration # Remove the conf file if it exists
