@@ -1707,9 +1707,7 @@ CASE_CODE(RETURN) {
   uint64_t have = COMPUTE_TUPLE();
   uint64_t below_have = FB()[-4];
 
-  /* This will break other things - have can not be 0. */
-  // if (have == 0)
-  //   PUSH(gab_nil), have++;
+  // Maybe we would need to trim have up to at least one here?
 
   gab_value *from = SP() - have;
   gab_value *to = FB() - 4;
@@ -1952,9 +1950,12 @@ CASE_CODE(SEND) {
   gab_value *ks = READ_SENDCONSTANTS_ANDTAIL(adjust);
   uint64_t have = COMPUTE_TUPLE();
 
-  /* This will break other things - have can not be 0. */
-  if (have == 0)
-    PUSH(gab_nil), have++;
+  // Have can not be 0. We need a receiver!
+  if (!have) {
+    PUSH(gab_nil);
+    SET_VAR(1);
+    have++;
+  }
 
   gab_value r = PEEK_N(have);
   gab_value m = ks[GAB_SEND_KMESSAGE];
