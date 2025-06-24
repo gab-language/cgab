@@ -15,6 +15,27 @@ Records = 'crecords'.use
     v = self.at_via(path*).unwrap
     self.put_via(f.(v), path*)
   end
+
+  is\record: true:
+}
+
+is\record: .def false:
+
+sort: .defcase {
+  []?
+  []
+
+  Records.t
+  (f) => do
+    (tail head) = self.pop
+
+    smaller = tail.filter(a => f.(a) <= f.(head)).sort
+    bigger = tail.filter(a => f.(a) > f.(head)).sort
+
+    smaller
+      .push head
+      .+ bigger
+  end
 }
 
 Records

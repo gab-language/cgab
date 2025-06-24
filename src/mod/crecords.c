@@ -78,6 +78,24 @@ union gab_value_pair gab_reclib_slice(struct gab_triple gab, uint64_t argc,
   return gab_union_cvalid(gab_nil);
 }
 
+union gab_value_pair gab_reclib_cat(struct gab_triple gab, uint64_t argc,
+                                     gab_value argv[argc]) {
+  gab_value rec = gab_arg(0);
+
+  if (gab_valkind(rec) != kGAB_RECORD)
+    return gab_pktypemismatch(gab, rec, kGAB_RECORD);
+
+  gab_value oth = gab_arg(1);
+
+  if (gab_valkind(oth) != kGAB_RECORD)
+    return gab_pktypemismatch(gab, oth, kGAB_RECORD);
+
+  gab_value res = gab_lstcat(gab, rec, oth);
+
+  gab_vmpush(gab_thisvm(gab), res);
+  return gab_union_cvalid(gab_nil);
+}
+
 union gab_value_pair gab_reclib_push(struct gab_triple gab, uint64_t argc,
                                      gab_value argv[argc]) {
   gab_value rec = gab_arg(0);
@@ -88,7 +106,6 @@ union gab_value_pair gab_reclib_push(struct gab_triple gab, uint64_t argc,
   rec = gab_nlstpush(gab, rec, argc - 1, argv + 1);
 
   gab_vmpush(gab_thisvm(gab), rec);
-
   return gab_union_cvalid(gab_nil);
 }
 
@@ -333,6 +350,11 @@ GAB_DYNLIB_MAIN_FN {
               gab_message(gab, "push"),
               t,
               gab_snative(gab, "push", gab_reclib_push),
+          },
+          {
+              gab_message(gab, "+"),
+              t,
+              gab_snative(gab, "+", gab_reclib_cat),
           },
           {
               gab_message(gab, "is\\empty"),

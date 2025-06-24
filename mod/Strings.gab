@@ -1,1 +1,3 @@
-'cstrings'.use
+Strings = 'cstrings'.use
+
+Strings

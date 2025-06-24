@@ -51,12 +51,20 @@ docond: .def (fs*) => do
     (acc, f) => acc.else () => f.cond\check(args*).and f)
 end
 
+cond\eval: .defcase {
+  Blocks.t
+  (v) => self.(v)
+}
+cond\eval: .def () => self
+
 cond: .def (vs*, branches) => do
   args = [self, vs*]
 
   k = args.docond(branches ? *)
 
-  branches .at k .unwrap
+  v = branches .at k .unwrap
+
+  v.cond\eval(self)
 end
 
 :.def(
@@ -202,6 +210,10 @@ is_n: .def (Numbers.t, true:)
 
 to\n: .def (falsey_values, 0)
 to\n: .def (truthy_values, 1)
+
+[Strings.t].defmodule {
+  is\empty: () => self.len == 0
+}
 
 [Numbers.t] .defmodule {
   ->: to => (to, self) .to\range

@@ -626,6 +626,8 @@ union gab_value_pair gab_vpanicf(struct gab_triple gab, const char *fmt,
     a_gab_value *results =
         a_gab_value_create(res, sizeof(res) / sizeof(gab_value));
 
+    v_gab_value_thrd_push(&gab.eg->err, err);
+
     return (union gab_value_pair){
         .status = gab_cvalid,
         .aresult = results,

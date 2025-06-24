@@ -1,0 +1,46 @@
+Specs = 'Specs'.use
+
+test = Specs.cat(
+  'status' Specs.int
+  'name'   Specs+(Specs.string))
+
+[test.spec\fits(12)].to\s.println
+
+[test.spec\fits(12 12)].to\s.println
+
+[test.spec\fits(42 'hello')].to\s.println
+
+[test.spec\fits(42 'hello' 'world''world')].to\s.println
+
+[test.spec\fits(42 'hello' 12)].to\s.println
+
+ints = Specs*(Specs.int)
+atleastoneString = Specs+(Specs.string)
+
+nextest = Specs.cat(
+  'ints' ints
+  'strings' atleastoneString)
+
+[nextest.spec\fits(12 'hello')].to\s.println
+
+[nextest.spec\fits(12 'hello' 'world')].to\s.println
+
+[nextest.spec\fits(12 'hello' 'world' 'again')].to\s.println
+
+[nextest.spec\fits(12 42 'world')].to\s.println
+
+[nextest.spec\fits(12 42 'hello' 'world')].to\s.println
+
+[nextest.spec\fits(12 'hello' 42 'world')].to\s.println
+
+[nextest.spec\fits('hello')].to\s.println
+
+[nextest.spec\fits(1)].to\s.println
+
+nested = Specs.cat(
+  'nextest' nextest
+  'ints2' ints)
+
+[nested.spec\fits(12 'hello')].to\s.println
+
+[nested.spec\fits(12 'hello' 21 22)].to\s.println
