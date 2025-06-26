@@ -18,6 +18,8 @@
 #define CLAY_IMPLEMENTATION
 #include "Clay/clay.h"
 
+#include "Clay/renderers/terminal/cl"
+
 #include <stdio.h>
 #define FONTSTASH_IMPLEMENTATION
 #include "fontstash/src/fontstash.h"
@@ -496,7 +498,7 @@ union gab_value_pair render_component(struct gab_triple gab,
 
   if (kind == gab_message(gab, "rect"))
     return render_rect(gab, props);
-  
+
   // Currently unsupported by sokol_clay.h
   // if (kind == gab_message(gab, "img"))
   //   return render_image(gab, props);
@@ -579,8 +581,18 @@ bool dorender() {
   RGFW_window_swapBuffers(&gui.win);
   return true;
 }
+void tuirenderloop() {
+  for (;;) {
+    if (gab_chnisclosed(gui.appch))
+      break;
 
-void renderloop() {
+    if (gab_chnisclosed(gui.evch))
+      break;
+
+  }
+}
+
+void guirenderloop() {
   for (;;) {
     if (RGFW_window_shouldClose(&gui.win) == RGFW_TRUE)
       break;
@@ -626,8 +638,8 @@ void renderloop() {
   RGFW_window_close(&gui.win);
 }
 
-union gab_value_pair gab_uilib_run(struct gab_triple gab, uint64_t argc,
-                                   gab_value argv[argc]) {
+union gab_value_pair gab_uilib_rungui(struct gab_triple gab, uint64_t argc,
+                                      gab_value argv[argc]) {
   if (!RGFW_createWindowPtr("window", RGFW_RECT(0, 0, 800, 800),
                             RGFW_windowCenter | RGFW_windowNoResize, &gui.win))
     return gab_vmpush(gab_thisvm(gab), gab_err,
@@ -678,18 +690,50 @@ union gab_value_pair gab_uilib_run(struct gab_triple gab, uint64_t argc,
 
   Clay_SetMeasureTextFunction(sclay_measure_text, &fonts);
 
-  renderloop();
+  guirenderloop();
+
+  return gab_vmpush(gab_thisvm(gab), gab_ok), gab_union_cvalid(gab_nil);
+}
+
+union gab_value_pair gab_uilib_runtui(struct gab_triple gab, uint64_t argc,
+                                      gab_value argv[argc]) {
+  gab_value evch = gab_arg(1);
+  gab_value appch = gab_arg(2);
+
+  if (!gab_valisch(evch))
+    return gab_pktypemismatch(gab, appch, kGAB_CHANNEL);
+
+  if (!gab_valisch(appch))
+    return gab_pktypemismatch(gab, evch, kGAB_CHANNEL);
+
+  uint64_t totalMemorySize = Clay_MinMemorySize();
+  Clay_Arena clayMemory = Clay_CreateArenaWithCapacityAndMemory(
+      totalMemorySize, malloc(totalMemorySize));
+
+  Clay_Initialize(clayMemory,
+                  (Clay_Dimensions){(float)gui.win.r.w, (float)gui.win.r.h},
+                  (Clay_ErrorHandler){HandleClayErrors});
+
+  Clay_SetMeasureTextFunction(sclay_measure_text, &fonts);
+
+  guirenderloop();
 
   return gab_vmpush(gab_thisvm(gab), gab_ok), gab_union_cvalid(gab_nil);
 }
 
 GAB_DYNLIB_MAIN_FN {
   gab_value mod = gab_message(gab, "ui");
-  gab_def(gab, {
-                   gab_message(gab, "run"),
-                   mod,
-                   gab_snative(gab, "run", gab_uilib_run),
-               });
+  gab_def(gab,
+          {
+              gab_message(gab, "run\\gui"),
+              mod,
+              gab_snative(gab, "run\\gui", gab_uilib_rungui),
+          },
+          {
+              gab_message(gab, "run\\tui"),
+              mod,
+              gab_snative(gab, "run\\tui", gab_uilib_rungui),
+          }, );
 
   gab_value res[] = {gab_ok, mod};
 

@@ -24,9 +24,10 @@ union gab_value_pair gab_fiblib_await(struct gab_triple gab, uint64_t argc,
   if (res.status == gab_cvalid) {
     gab_nvmpush(gab_thisvm(gab), res.aresult->len, res.aresult->data);
     gab_vmpush(gab_thisvm(gab), env);
+    return gab_union_cvalid(gab_nil);
   }
 
-  return gab_union_cvalid(gab_nil);
+  return res;
 }
 
 union gab_value_pair gab_fiblib_is_done(struct gab_triple gab, uint64_t argc,

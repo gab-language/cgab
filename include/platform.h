@@ -289,6 +289,25 @@ GAB_API_INLINE int gab_nosproc(char *cmd, size_t nargs, char *args[]) {
   return 0;
 }
 
+#elifdef GAB_PLATFORM_WASI
+#include <signal.h>
+
+#define gab_osdynlib void *
+#define gab_oslibopen(path) (nullptr)
+#define gab_oslibfind(dynlib, name) (nullptr)
+GAB_API_INLINE const char *gab_osprefix(const char *v) {
+  return "";
+}
+
+#define gab_ossignal(sig, handler) signal(sig, handler)
+
+GAB_API_INLINE int gab_nosproc(char *cmd, size_t nargs, char *args[]) {
+  return 1;
+}
+
+GAB_API_INLINE const bool gab_osmkdirp(const char *path) {
+  return false;
+}
 #endif
 
 #endif

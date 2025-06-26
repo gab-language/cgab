@@ -661,7 +661,10 @@ ui\should_open_and_close\test: .def t => do
   (ev app) = (Channels.make, Channels.make)
 
   ui = 'cgui'.use
-  Fibers.make () => ui.run(ev app)
+  fib = Fibers.make () => do
+    ok = ui.run(ev app)
+    t.expect(ok ==: ok:)
+  end
 
   ev.close
   app.close

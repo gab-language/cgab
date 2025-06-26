@@ -29,8 +29,6 @@ test\compare: .def (
 )
 
 test\result\t = { test\path: nil: test\receiver: nil: }?
-test\result\pass\t = { test\path: nil: test\receiver: nil: test\meta: nil:  true: nil: }?
-test\result\fail\t = { test\path: nil: test\receiver: nil: test\meta: nil: false: nil: }?
 
 [test\result\t] .defmodule {
   expect: (lhs cmp rhs) => do
@@ -40,44 +38,64 @@ test\result\fail\t = { test\path: nil: test\receiver: nil: test\meta: nil: false
     suite = self.test\path .at 0 .unwrap
     chan = suites\all .at suite .unwrap
     # Queue up the outcome of the comparison
-    chan <! self .put (test\meta: { lhs: lhs, cmp: cmp, rhs: rhs }) .put test\outcome
+    chan <! (test\outcome, self.test\path, { lhs: lhs, cmp: cmp, rhs: rhs })
   end,
 }
 
-test\result\display: .defcase {
-  test\result\pass\t _ => do
-    #' ✔ $ $ $\n' .printf (self.test\meta*)
-    nil:
-  end
-  test\result\fail\t  _ => do
-    (suite behavior) = self.test\path*
-    msg = ' ❌$ should $\n\t$ $ $'.sprintf(suite, behavior, self.test\meta*)
-    msg.println
-  end,
-}
 
-Fibers.make () => do
-  suites\all .each (c s) => do
-    msg = '✔ $'.sprintf(s)
-    msg.println
-    c .each test\result\display:
+render_results = (suite\result) => do
+  s = suite\result.suite
+  r = suite\result.results
+
+  successes = r.filter test\outcome:
+  failures  = r.skip test\outcome:
+
+  failures.is\empty.then () => do
+    test_successes = successes
+      .transduce({} put: Streams.map p => p.test\path.join(Streams.interpose ' should '))
+
+    'PASS | $: $ assertions passed in $ unique tests\n'.printf(s.to\s, successes.len.to\s, test_successes.len.to\s)
+    #test_successes.each (_, p) => '  $\n'.printf(p)
+
+    ok:
+  end .else () => do
+    'FAIL | $: $ assertions failed\n'.printf(s.to\s, failures.len.to\s)
   end
 end
 
+watcher = Fibers.make () => do
+  suite\results = suites\all .map (c s) => do
+    results = c.collect(Streams.map (outcome, path, meta)
+      => { test\outcome: outcome, test\path: path test\meta: meta})
+
+    { suite: s results: results }
+  end
+
+  suite\results.each render_results
+end
+
 () => do
+  'Discovered $ test suites.\n'.printf(tests\all.len.to\s)
   fibers = tests\all.map (behaviors suite) => do 
       Fibers.make () => do
+        '\nRunning suite $\n'.printf(suite.to\s)
         behaviors.each (runnable behavior) => do 
           (path body) = runnable*
+          '\r\t$'.printf(path.join.to\s)
           body.each(t r) => do
             t.{ test\path: path, test\receiver: r }
           end
         end
+        '\r\t                  '.printf
 
-        chan = suites\all.at suite .unwrap
-        chan.close
+        suites\all
+          .at suite
+          .unwrap
+          .close
       end
     end
 
   fibers.each await:
+  watcher.await
 end
+

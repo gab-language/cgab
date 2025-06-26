@@ -498,6 +498,7 @@ union gab_value_pair vvm_terminate(struct gab_triple gab, const char *fmt,
 
   union gab_value_pair res = {{gab_cinvalid, err}};
 
+  assert(frame_block(vm->fp));
   gab_value p = frame_block(vm->fp)->p;
   gab_value shape = gab_prtshp(p);
   gab_value env =
@@ -526,7 +527,10 @@ union gab_value_pair vm_givenerr(struct gab_triple gab,
 
   gab_egkeep(gab.eg, gab_iref(gab, env));
 
-  v_gab_value_thrd_push(&gab.eg->err, given.vresult);
+  // If our given is valid and we're in this codepath, then
+  // a given_err returned a panic and we shoud push that.
+  if (given.status == gab_cvalid)
+    v_gab_value_thrd_push(&gab.eg->err, given.aresult->data[1]);
 
   assert(GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERRUNNING);
   GAB_VAL_TO_FIBER(fiber)->res_values = given;

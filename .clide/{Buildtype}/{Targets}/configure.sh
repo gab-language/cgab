@@ -14,13 +14,14 @@ export cflags
 
 # Create a small script which will export the variables we need, and then 
 case "$buildtype" in
-  debug)          cflags="-g -O0 -fsanitize=address,undefined" ;;
+  debug)          cflags="-g -O0 -fsanitize=address,undefined,leak,memory" ;;
   debugoptimized) cflags="-g -O2" ;;
   release)        cflags="-O3 -DNDEBUG"    ;;
 esac
 
 unixflags="-DGAB_PLATFORM_UNIX -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE"
 winflags="-DGAB_PLATFORM_WIN"
+wasmflags="-DGAB_PLATFORM_WASI -D_WASI_EMULATED_SIGNAL -lwasi-emulated-signal -D_WASI_EMULATED_PROCESS_CLOCKS -lwasi-emulated-process-clocks"
 dynlib_fileending=""
 
 if [[ "$targets" =~ "linux" ]]; then
@@ -32,6 +33,9 @@ elif [[ "$targets" =~ "mac" ]]; then
 elif [[ "$targets" =~ "windows" ]]; then
   cflags="$cflags $winflags -DQIO_WINDOWS -DOEMRESOURCE"
   dynlib_fileending=".dll"
+elif [[ "$targets" =~ "wasm" ]]; then
+  cflags="$cflags $wasmflags -DQIO_LINUX"
+  dynlib_fileending=".so"
 fi
 
 echo "#!/usr/bin/env bash" >> configuration

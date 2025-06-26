@@ -290,6 +290,15 @@ stringify_forms = (forms, sep)
     forms.map re\debug: .join (Streams.interpose sep)
     ")")
 
+collapse_path = (path) => do
+  path.reduce({} (col elem) => do
+    via = elem.at 0 .unwrap
+    status = elem.at 1 .unwrap
+    val = elem.at 2 .unwrap .at 1 .unwrap
+    col.when(status put_via_by: v => v.cons val via*)
+  end)
+end
+
 make: .defcase {
   RE\Atom (spec meta path) => RE\Atom.t.make(
     nil:
@@ -526,9 +535,8 @@ re\d: .defcase {
     so_far = self.path
 
     steps = steps.cons self
-    name = steps.join(Streams.map re\name:
-                  |> Streams.filter(x => x == '%' !)
-                  |> Streams.interpose '\\')
+    name = steps.collect(Streams.map re\name:
+                  |> Streams.filter(x => x == '%' !))
 
     path = so_far.push [name, ok, rest]
 
@@ -627,7 +635,8 @@ match: .defcase {
 # Naturally this only succeeds if the match is empty
 # But what if one of the alt paths is empty
   []?, (re) => do
-    (re.re\empty.re\is\empty, re.re\path, re.re\remainder.re\debug)
+    path = re.re\path
+    (re.re\empty.re\is\empty, collapse_path.(path), re.re\remainder.re\debug)
   end
 
   Records.t, (re) => do

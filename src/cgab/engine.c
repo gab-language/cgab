@@ -20,6 +20,8 @@ gab_value *gab_egerrs(struct gab_eg *eg) {
 
   /* Just free the mutex, leave the pointer to be cleaned up by caller */
   mtx_destroy(&errs.mtx);
+  assert(errs.data != nullptr);
+  assert(errs.len > 0);
   return errs.data;
 };
 
@@ -1090,7 +1092,7 @@ int gab_fprintf(FILE *stream, const char *fmt, ...) {
 }
 
 int gab_nsprintf(char *dest, size_t n, const char *fmt, uint64_t argc,
-                 gab_value argv[argc]) {
+                 gab_value *argv) {
   const char *c = fmt;
   char *cursor = dest;
   size_t remaining = n;
@@ -1426,7 +1428,9 @@ union gab_value_pair gab_use_dynlib(struct gab_triple gab, const char *path,
 #ifdef GAB_PLATFORM_UNIX
     return gab_panicf(gab, "Failed to load module '$': $",
                       gab_string(gab, path), gab_string(gab, dlerror()));
-#else
+#elifdef GAB_PLATFORM_WASI
+    return gab_panicf(gab, "Failed to load module '$'", gab_string(gab, path));
+#elifdef GAB_PLATFORM_WIN
     {
       int error = GetLastError();
       char buffer[128];
@@ -1448,7 +1452,9 @@ union gab_value_pair gab_use_dynlib(struct gab_triple gab, const char *path,
 #ifdef GAB_PLATFORM_UNIX
     return gab_panicf(gab, "Failed to load module '$': $",
                       gab_string(gab, path), gab_string(gab, dlerror()));
-#else
+#elifdef GAB_PLATFORM_WASI
+    return gab_panicf(gab, "Failed to load module '$'", gab_string(gab, path));
+#elifdef GAB_PLATFORM_WIN
   {
     int error = GetLastError();
     char buffer[128];

@@ -1,3 +1,4 @@
+#include "engine.h"
 #include "gab.h"
 #include <locale.h>
 
@@ -10,10 +11,12 @@
 
 #ifdef GAB_PLATFORM_UNIX
 #define GAB_SYMLINK_RECOMMENDATION "ln -sf %s/gab /usr/local/bin"
-#else
+#elifdef GAB_PLATFORM_WIN
 #define GAB_SYMLINK_RECOMMENDATION                                             \
   "New-Item -ItemType SymbolicLink -Path %s\gab -Target "                      \
   "\"Some\\Directory\\In\\Path\""
+#elifdef GAB_PLATFORM_WASI
+#define GAB_SYMLINK_RECOMMENDATION ""
 #endif
 
 struct gab_triple gab;
@@ -30,6 +33,7 @@ void print_err(struct gab_triple gab, gab_value err) {
 
 void pop_and_printerr(struct gab_triple gab) {
   gab_value *errors = gab_egerrs(gab.eg);
+  assert(errors != nullptr);
 
   for (gab_value *err = errors; *err != gab_nil; err++) {
     assert(gab_valkind(*err) == kGAB_RECORD);

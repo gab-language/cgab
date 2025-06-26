@@ -12,8 +12,8 @@ Records = 'crecords'.use
   end
 
   put_via_by: (f, path*) => do
-    v = self.at_via(path*).unwrap
-    self.put_via(f.(v), path*)
+    (ok, v) = self.at_via(path*)
+    self.put_via(f.(ok .and v .or nil:), path*)
   end
 
   is\record: true:
