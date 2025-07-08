@@ -83,6 +83,10 @@
 #endif
 
 #define GAB_DYNLIB_MAIN_FN union gab_value_pair gab_lib(struct gab_triple gab)
+#define GAB_DYNLIB_NATIVE_FN(module, name)                                     \
+  union gab_value_pair gab_mod_##module##_##name(                              \
+      struct gab_triple gab, uint64_t argc, gab_value *argv,                   \
+      gab_value reentrant)
 
 #define gab_osproc(cmd, ...)                                                   \
   ({                                                                           \
@@ -240,7 +244,7 @@ GAB_API_INLINE const char *gab_osprefix(const char *v) {
 }
 
 GAB_API_INLINE bool gab_osfisready(FILE *f) {
-  HANDLE *h = (HANDLE) _get_osfhandle(_fileno(f));
+  HANDLE *h = (HANDLE)_get_osfhandle(_fileno(f));
   DWORD result = WaitForSingleObject(h, 0);
   return result == WAIT_OBJECT_0;
 }
@@ -295,9 +299,7 @@ GAB_API_INLINE int gab_nosproc(char *cmd, size_t nargs, char *args[]) {
 #define gab_osdynlib void *
 #define gab_oslibopen(path) (nullptr)
 #define gab_oslibfind(dynlib, name) (nullptr)
-GAB_API_INLINE const char *gab_osprefix(const char *v) {
-  return "";
-}
+GAB_API_INLINE const char *gab_osprefix(const char *v) { return ""; }
 
 #define gab_ossignal(sig, handler) signal(sig, handler)
 
@@ -305,9 +307,7 @@ GAB_API_INLINE int gab_nosproc(char *cmd, size_t nargs, char *args[]) {
   return 1;
 }
 
-GAB_API_INLINE const bool gab_osmkdirp(const char *path) {
-  return false;
-}
+GAB_API_INLINE const bool gab_osmkdirp(const char *path) { return false; }
 #endif
 
 #endif

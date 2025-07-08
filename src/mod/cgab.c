@@ -8,8 +8,7 @@ const char *modules[] = {
 };
 const size_t nmodules = sizeof(modules) / sizeof(modules[0]);
 
-union gab_value_pair gab_gablib_build(struct gab_triple gab, uint64_t argc,
-                                      gab_value argv[static argc]) {
+GAB_DYNLIB_NATIVE_FN(gab, build) {
   gab_value source = gab_arg(0);
   const char *src = gab_strdata(&source);
 
@@ -32,8 +31,7 @@ union gab_value_pair gab_gablib_build(struct gab_triple gab, uint64_t argc,
   return gab_union_cvalid(gab_nil);
 }
 
-union gab_value_pair gab_gablib_parse(struct gab_triple gab, uint64_t argc,
-                                      gab_value argv[static argc]) {
+GAB_DYNLIB_NATIVE_FN(gab, parse) {
   gab_value source = gab_arg(0);
   const char *src = gab_strdata(&source);
 
@@ -61,8 +59,7 @@ union gab_value_pair gab_gablib_parse(struct gab_triple gab, uint64_t argc,
   return gab_union_cvalid(gab_nil);
 }
 
-union gab_value_pair gab_gablib_aeval(struct gab_triple gab, uint64_t argc,
-                                      gab_value argv[static argc]) {
+GAB_DYNLIB_NATIVE_FN(gab, aeval) {
   gab_value source = gab_arg(0);
   gab_value env = gab_arg(1);
 
@@ -122,17 +119,17 @@ GAB_DYNLIB_MAIN_FN {
           {
               gab_message(gab, "as\\gab"),
               gab_type(gab, kGAB_STRING),
-              gab_snative(gab, "as\\gab", gab_gablib_aeval),
+              gab_snative(gab, "as\\gab", gab_mod_gab_aeval),
           },
           {
               gab_message(gab, "as\\gab\\block"),
               gab_type(gab, kGAB_STRING),
-              gab_snative(gab, "as\\gab\\block", gab_gablib_build),
+              gab_snative(gab, "as\\gab\\block", gab_mod_gab_build),
           },
           {
               gab_message(gab, "as\\gab\\ast"),
               gab_type(gab, kGAB_STRING),
-              gab_snative(gab, "as\\gab\\ast", gab_gablib_parse),
+              gab_snative(gab, "as\\gab\\ast", gab_mod_gab_parse),
           });
 
   gab_value res[] = {gab_ok};

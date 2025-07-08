@@ -662,7 +662,7 @@ ui\should_open_and_close\test: .def t => do
 
   ui = 'cgui'.use
   fib = Fibers.make () => do
-    ok = ui.run(ev app)
+    ok = ui.run\gui(ev app)
     t.expect(ok ==: ok:)
   end
 

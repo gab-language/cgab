@@ -230,6 +230,8 @@ struct gab_ofiber {
   /* Flags copied from the gab-triple when this fiber was created. */
   uint32_t flags;
 
+  gab_value reentrant;
+
   /* When a user creates a fiber, A frame is setup on the stack using these
    * arrays as the moduile bytescode and constants.*/
   uint8_t virtual_frame_bc[4];
@@ -454,8 +456,8 @@ struct gab_eg {
   gab_value types[kGAB_NKINDS];
 
   struct gab_sig {
-    int8_t schedule;
-    int8_t signal;
+    _Atomic int8_t schedule;
+    _Atomic int8_t signal;
   } sig;
 
   struct gab_gc gc;
@@ -545,6 +547,7 @@ struct gab_err_argt {
   const char *note_fmt;
   struct gab_src *src;
   uint64_t tok;
+  int wkid;
 };
 
 /*

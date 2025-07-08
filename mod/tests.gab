@@ -14,7 +14,7 @@ xf = Streams.filter((_ m) => m.is\unittest)
 # Collect all the implementations into a giant, nested map.
 tests\all = implementations.transduce(
   {}
-  (t p i) => t.put_via(i p*)
+  (t p i) => t.put_via(p*, i)
   xf
 )
 
@@ -33,12 +33,12 @@ test\result\t = { test\path: nil: test\receiver: nil: }?
 [test\result\t] .defmodule {
   expect: (lhs cmp rhs) => do
     # Run the comparison of the expect
-    test\outcome = cmp .test\compare (lhs, rhs)
+    behavior\outcome = cmp .test\compare (lhs, rhs)
     # Get the suite we're executing
     suite = self.test\path .at 0 .unwrap
     chan = suites\all .at suite .unwrap
     # Queue up the outcome of the comparison
-    chan <! (test\outcome, self.test\path, { lhs: lhs, cmp: cmp, rhs: rhs })
+    chan <! (behavior\outcome, self.test\path, { lhs: lhs, cmp: cmp, rhs: rhs })
   end,
 }
 
@@ -47,8 +47,8 @@ render_results = (suite\result) => do
   s = suite\result.suite
   r = suite\result.results
 
-  successes = r.filter test\outcome:
-  failures  = r.skip test\outcome:
+  successes = r.filter behavior\outcome:
+  failures  = r.skip behavior\outcome:
 
   failures.is\empty.then () => do
     test_successes = successes
@@ -63,39 +63,110 @@ render_results = (suite\result) => do
   end
 end
 
-watcher = Fibers.make () => do
-  suite\results = suites\all .map (c s) => do
-    results = c.collect(Streams.map (outcome, path, meta)
-      => { test\outcome: outcome, test\path: path test\meta: meta})
+clear_screen = () => '\e[2J\e[H'.printf
 
-    { suite: s results: results }
-  end
+Suite = test\suite:.defclass(
+  suite\behaviors: suite\name:
+  default:
+  {
+    suite\render: () => do
+      '\t$\n'.printf(self.suite\name.to\s) 
+      self
+        .suite\behaviors
+        .each behavior\render:
+    end
+  })
 
-  suite\results.each render_results
+behavior\render: .defcase {
+  true:  t => 'P   $\n'.printf(t.behavior\path.at 1 .unwrap)
+  nil:   t => '... $\n'.printf(t.behavior\path.at 1 .unwrap)
+  false: t => 'F   $\n'.printf(t.behavior\path.at 1 .unwrap)
+}
+
+Behavior = test\behavior:.defclass(
+  behavior\path: behavior\meta: behavior\outcome:
+  default:
+  {
+    behavior\render: () => self.behavior\outcome.behavior\render self
+  })
+
+appch = Channels.make
+
+App = test\app:.defclass(
+  test\suites: test\tests:
+  default:
+  {
+    app\draw: () => do
+      appch <! self
+      self
+    end
+    app\render: () => do
+      clear_screen.()
+      self
+        .test\suites
+        .each suite\render:
+    end
+    app\push_suite: (suite) => do
+      self
+        .put_via(test\suites:, suite.suite\name, suite)
+        .app\draw
+    end
+    app\push_behavior: (behavior) => do
+      suite = behavior.behavior\path.at 0 .unwrap
+      bhv = behavior.behavior\path.at 1 .unwrap
+
+      self
+        .put_via(test\suites: suite suite\behaviors: bhv behavior)
+        .app\draw
+    end
+    app\resolve_behavior: (outcome path meta) => do
+      suite = path.at 0 .unwrap
+      bhv = path.at 1 .unwrap
+      self
+        .put_via(test\suites: suite suite\behaviors: bhv behavior\outcome: outcome)
+        .put_via(test\suites: suite suite\behaviors: bhv behavior\meta: meta)
+        .app\draw
+    end
+  })
+
+renderfib = Fibers.make () => appch.each app => do 
+  app.app\render
 end
 
+Atoms = 'Atom'.use
+
 () => do
-  'Discovered $ test suites.\n'.printf(tests\all.len.to\s)
+  test\app = Atoms.make(App.make({} {}))
+
   fibers = tests\all.map (behaviors suite) => do 
+      test\app.swap(app\push_suite:  Suite.make([] suite))
+
       Fibers.make () => do
-        '\nRunning suite $\n'.printf(suite.to\s)
         behaviors.each (runnable behavior) => do 
           (path body) = runnable*
-          '\r\t$'.printf(path.join.to\s)
+
+          test\app.swap(app\push_behavior: Behavior.make(path nil: nil:))
+
           body.each(t r) => do
             t.{ test\path: path, test\receiver: r }
           end
         end
-        '\r\t                  '.printf
 
         suites\all
           .at suite
           .unwrap
           .close
       end
-    end
+  end
 
-  fibers.each await:
-  watcher.await
+  watchers = suites\all .map (c s) => do
+    Fibers.make () => do 
+      c.collect(Streams.map (outcome path meta) => do
+        test\app.swap(app\resolve_behavior: outcome path meta)
+      end)
+    end
+  end
+
+  (fibers + watchers).each await:
 end
 

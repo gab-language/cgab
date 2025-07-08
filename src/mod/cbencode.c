@@ -55,8 +55,7 @@ int push_value(struct gab_triple gab, struct bencode *bncd,
   return tok;
 }
 
-union gab_value_pair gab_bencodelib_decode(struct gab_triple gab, uint64_t argc,
-                                           gab_value argv[static argc]) {
+GAB_DYNLIB_NATIVE_FN(bencode, decode) {
   gab_value str = gab_arg(0);
 
   if (gab_valkind(str) != kGAB_STRING)
@@ -99,7 +98,7 @@ GAB_DYNLIB_MAIN_FN {
   gab_def(gab, {
                    gab_message(gab, "as\\bencode"),
                    gab_type(gab, kGAB_STRING),
-                   gab_snative(gab, "as\\bencode", gab_bencodelib_decode),
+                   gab_snative(gab, "as\\bencode", gab_mod_bencode_decode),
                });
 
   gab_value res[] = {gab_ok};

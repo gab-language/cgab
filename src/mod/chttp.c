@@ -2,6 +2,7 @@
 #include "llhttp.h"
 
 #include "furi/code/furi/furi.h"
+#include "platform.h"
 
 #define M_HTTP_VERSION "http\\version"
 #define M_HTTP_METHOD "http\\method"
@@ -324,8 +325,7 @@ gab_value build_http(llhttp_t *parser) {
   assert(false && "UNREACHABLE");
 }
 
-union gab_value_pair gab_urilib_decode(struct gab_triple gab, uint64_t argc,
-                                       gab_value argv[static argc]) {
+GAB_DYNLIB_NATIVE_FN(uri, decode) {
   gab_value vuri = gab_arg(0);
 
   gab_value res = build_url(gab, gab_strdata(&vuri), gab_strlen(vuri));
@@ -337,8 +337,7 @@ union gab_value_pair gab_urilib_decode(struct gab_triple gab, uint64_t argc,
     return gab_vmpush(gab_thisvm(gab), gab_ok, res), gab_union_cvalid(gab_nil);
 }
 
-union gab_value_pair gab_httplib_decode(struct gab_triple gab, uint64_t argc,
-                                        gab_value argv[static argc]) {
+GAB_DYNLIB_NATIVE_FN(http, decode) {
   gab_value vreq = gab_arg(0);
 
   llhttp_t parser;
@@ -373,12 +372,12 @@ GAB_DYNLIB_MAIN_FN {
           {
               gab_message(gab, "as\\http"),
               gab_type(gab, kGAB_STRING),
-              gab_snative(gab, "as\\http", gab_httplib_decode),
+              gab_snative(gab, "as\\http", gab_mod_http_decode),
           },
           {
               gab_message(gab, "as\\uri"),
               gab_type(gab, kGAB_STRING),
-              gab_snative(gab, "as\\uri", gab_urilib_decode),
+              gab_snative(gab, "as\\uri", gab_mod_uri_decode),
           });
 
   gab_value res[] = {gab_ok};

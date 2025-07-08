@@ -166,6 +166,9 @@ typedef signed _BitInt(GAB_INTWIDTH) gab_int;
 typedef unsigned _BitInt(GAB_INTWIDTH) gab_uint;
 #endif
 
+// This is the MAXIMUM SAFE INTEGER, because anything greater
+// cannot be exactly represented by a 64-bit floating point number.
+// This is because they have 53 bits of mantissa.
 #define GAB_INTMAX (2e53 - 1.0)
 
 typedef double gab_float;
@@ -425,7 +428,8 @@ struct gab_triple {
 typedef void (*gab_gcvisit_f)(struct gab_triple, struct gab_obj *obj);
 
 typedef union gab_value_pair (*gab_native_f)(struct gab_triple, uint64_t argc,
-                                             gab_value *argv);
+                                             gab_value *argv,
+                                             gab_value reentrant);
 
 typedef void (*gab_boxdestroy_f)(struct gab_triple gab, uint64_t len,
                                  char *data);
@@ -625,7 +629,7 @@ GAB_API uint64_t gab_negkeep(struct gab_eg *eg, uint64_t len, gab_value *argv);
  * It is the callers responsibility to free the pointer.
  * The array ends in gab_nil:.
  */
-GAB_API gab_value* gab_egerrs(struct gab_eg *eg);
+GAB_API gab_value *gab_egerrs(struct gab_eg *eg);
 
 /**
  * @brief A convenient structure for returning results from c-code.
@@ -1003,7 +1007,7 @@ GAB_API union gab_value_pair gab_arun(struct gab_triple gab,
  * @param args The arguments.
  * @return The fiber that was queued.
  */
-GAB_API union gab_value_pair gab_tarun(struct gab_triple gab, size_t nms,
+GAB_API union gab_value_pair gab_tarun(struct gab_triple gab, size_t tries,
                                        struct gab_run_argt args);
 
 /**
@@ -1439,6 +1443,11 @@ GAB_API enum gab_kind gab_valkind(gab_value value);
 GAB_API_INLINE bool gab_valisch(gab_value value) {
   enum gab_kind k = gab_valkind(value);
   return k == kGAB_CHANNEL | k == kGAB_CHANNELCLOSED;
+};
+
+GAB_API_INLINE bool gab_valisfib(gab_value value) {
+  enum gab_kind k = gab_valkind(value);
+  return k == kGAB_FIBER | k == kGAB_FIBERDONE | k == kGAB_FIBERRUNNING;
 };
 
 /**
@@ -2122,7 +2131,12 @@ GAB_API struct gab_vm *gab_fibvm(gab_value fiber);
 GAB_API union gab_value_pair gab_fibawait(struct gab_triple gab,
                                           gab_value fiber);
 
+GAB_API union gab_value_pair gab_tfibawait(struct gab_triple gab,
+                                           gab_value fiber, size_t tries);
+
 GAB_API gab_value gab_fibawaite(struct gab_triple gab, gab_value fiber);
+
+GAB_API gab_value gab_fibstacktrace(struct gab_triple gab, gab_value fiber);
 
 GAB_API_INLINE bool gab_fibisrunning(gab_value fiber) {
   return gab_valkind(fiber) == kGAB_FIBERRUNNING;
@@ -2169,13 +2183,27 @@ GAB_API gab_value gab_chnput(struct gab_triple gab, gab_value channel,
                              gab_value value);
 
 GAB_API gab_value gab_tchnput(struct gab_triple gab, gab_value channel,
-                              gab_value value, uint64_t nms);
+                              gab_value value, uint64_t tries);
 
 GAB_API gab_value gab_nchnput(struct gab_triple gab, gab_value channel,
                               uint64_t len, gab_value *value);
 
 GAB_API gab_value gab_ntchnput(struct gab_triple gab, gab_value channel,
-                               uint64_t len, gab_value *value, uint64_t nms);
+                               uint64_t len, gab_value *value, uint64_t tries);
+
+/*
+ * This is an unsafe version of channel put.
+ * It is unsafe because it is *not atomic*. It will block for up to tries tries,
+ * and try to put the slice of values in the channel.
+ * It *will not* block until a taker arrives.
+ * It *will not* atomically **undo** the put if a taker never arrives.
+ * Because of this, it may mutate the channel (leave it with values inside).
+ */
+GAB_API gab_value gab_untchnput(struct gab_triple gab, gab_value channel,
+                               uint64_t len, gab_value *value, uint64_t tries);
+
+GAB_API gab_value gab_untchntake(struct gab_triple gab, gab_value channel,
+                               uint64_t len, gab_value *value, uint64_t tries);
 
 /**
  * @brief Take a value from the given channel. This will block the caller
@@ -2191,10 +2219,10 @@ GAB_API gab_value gab_nchntake(struct gab_triple gab, gab_value channel,
                                uint64_t len, gab_value *data);
 
 GAB_API gab_value gab_tchntake(struct gab_triple gab, gab_value channel,
-                               uint64_t nms);
+                               uint64_t tries);
 
 GAB_API gab_value gab_ntchntake(struct gab_triple gab, gab_value channel,
-                                uint64_t len, gab_value *data, uint64_t nms);
+                                uint64_t len, gab_value *data, uint64_t tries);
 
 /**
  * @brief Close the given channel. A closed channel cannot receive new values.
@@ -2540,7 +2568,7 @@ GAB_API bool gab_sigwaiting(struct gab_triple gab);
 /**
  * @brief most likely you want @see gab_sigpropagate
  */
-GAB_API void gab_signext(struct gab_triple gab, int wkid);
+GAB_API bool gab_signext(struct gab_triple gab, int wkid);
 
 /**
  * @brief Propagate the current signal to the next worker. Skips dead workers.

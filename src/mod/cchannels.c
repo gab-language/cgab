@@ -1,7 +1,7 @@
 #include "gab.h"
+#include "platform.h"
 
-union gab_value_pair gab_chnlib_close(struct gab_triple gab, uint64_t argc,
-                                      gab_value argv[argc]) {
+GAB_DYNLIB_NATIVE_FN(channel, close) {
   gab_chnclose(gab_arg(0));
 
   gab_vmpush(gab_thisvm(gab), gab_arg(0));
@@ -9,8 +9,7 @@ union gab_value_pair gab_chnlib_close(struct gab_triple gab, uint64_t argc,
   return gab_union_cvalid(gab_nil);
 }
 
-union gab_value_pair gab_chnlib_is_closed(struct gab_triple gab, uint64_t argc,
-                                          gab_value argv[argc]) {
+GAB_DYNLIB_NATIVE_FN(channel, is_closed) {
   bool closed = gab_chnisclosed(gab_arg(0));
 
   gab_vmpush(gab_thisvm(gab), gab_bool(closed));
@@ -18,8 +17,7 @@ union gab_value_pair gab_chnlib_is_closed(struct gab_triple gab, uint64_t argc,
   return gab_union_cvalid(gab_nil);
 }
 
-union gab_value_pair gab_chnlib_is_full(struct gab_triple gab, uint64_t argc,
-                                        gab_value argv[argc]) {
+GAB_DYNLIB_NATIVE_FN(channel, is_full) {
   bool full = gab_chnisfull(gab_arg(0));
 
   gab_vmpush(gab_thisvm(gab), gab_bool(full));
@@ -27,8 +25,7 @@ union gab_value_pair gab_chnlib_is_full(struct gab_triple gab, uint64_t argc,
   return gab_union_cvalid(gab_nil);
 }
 
-union gab_value_pair gab_chnlib_is_empty(struct gab_triple gab, uint64_t argc,
-                                         gab_value argv[argc]) {
+GAB_DYNLIB_NATIVE_FN(channel, is_empty) {
   bool empty = gab_chnisempty(gab_arg(0));
 
   gab_vmpush(gab_thisvm(gab), gab_bool(empty));
@@ -48,22 +45,22 @@ GAB_DYNLIB_MAIN_FN {
           {
               gab_message(gab, "close"),
               t,
-              gab_snative(gab, "close", gab_chnlib_close),
+              gab_snative(gab, "close", gab_mod_channel_close),
           },
           {
               gab_message(gab, "is\\closed"),
               t,
-              gab_snative(gab, "is\\closed", gab_chnlib_is_closed),
+              gab_snative(gab, "is\\closed", gab_mod_channel_is_closed),
           },
           {
               gab_message(gab, "is\\full"),
               t,
-              gab_snative(gab, "is\\full", gab_chnlib_is_full),
+              gab_snative(gab, "is\\full", gab_mod_channel_is_full),
           },
           {
               gab_message(gab, "is\\empty"),
               t,
-              gab_snative(gab, "is\\empty", gab_chnlib_is_empty),
+              gab_snative(gab, "is\\empty", gab_mod_channel_is_empty),
           });
 
   gab_value res[] = {gab_ok, gab_strtomsg(t)};

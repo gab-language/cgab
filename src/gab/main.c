@@ -1,4 +1,3 @@
-#include "engine.h"
 #include "gab.h"
 #include <locale.h>
 
@@ -45,14 +44,27 @@ void pop_and_printerr(struct gab_triple gab) {
   free(errors);
 }
 
-bool check_and_printerr(union gab_value_pair res) {
+bool check_and_printerr(union gab_value_pair *res) {
+  if (res->status == gab_ctimeout)
+    *res = gab_fibawait(gab, res->vresult);
+
   pop_and_printerr(gab);
 
-  if (res.status != gab_cvalid)
+  if (res->status != gab_cvalid) {
+    if (res->status == gab_cinvalid && res->vresult) {
+      const char *errstr = gab_errtocs(gab, res->vresult);
+      assert(errstr != nullptr);
+      fputs(errstr, stderr);
+    }
     return false;
+  }
 
-  if (res.aresult->data[0] != gab_ok)
-    return a_gab_value_destroy(res.aresult), false;
+  if (res->aresult->data[0] != gab_ok) {
+    const char *errstr = gab_errtocs(gab, res->aresult->data[1]);
+    assert(errstr != nullptr);
+    fputs(errstr, stderr);
+    return a_gab_value_destroy(res->aresult), false;
+  }
 
   return true;
 }
@@ -73,7 +85,7 @@ int run_repl(int flags, size_t nmodules, const char **modules) {
       },
       &gab);
 
-  if (!check_and_printerr(res))
+  if (!check_and_printerr(&res))
     return gab_destroy(gab), 1;
 
   linenoiseSetMultiLine(true);
@@ -112,7 +124,7 @@ int run_string(const char *string, int flags, size_t jobs, size_t nmodules,
       },
       &gab);
 
-  if (!check_and_printerr(res))
+  if (!check_and_printerr(&res))
     return gab_destroy(gab), 0;
 
   // This is a weird case where we actually want to include the null terminator
@@ -130,7 +142,7 @@ int run_string(const char *string, int flags, size_t jobs, size_t nmodules,
 
   a_gab_value_destroy(res.aresult);
 
-  if (!check_and_printerr(run_res))
+  if (!check_and_printerr(&run_res))
     return gab_destroy(gab), 1;
 
   return a_gab_value_destroy(run_res.aresult), gab_destroy(gab), 0;
@@ -138,6 +150,7 @@ int run_string(const char *string, int flags, size_t jobs, size_t nmodules,
 
 int run_file(const char *path, int flags, size_t jobs, size_t nmodules,
              const char **modules) {
+
   union gab_value_pair res = gab_create(
       (struct gab_create_argt){
           .flags = flags,
@@ -147,7 +160,7 @@ int run_file(const char *path, int flags, size_t jobs, size_t nmodules,
       },
       &gab);
 
-  if (!check_and_printerr(res))
+  if (!check_and_printerr(&res))
     return gab_destroy(gab), 1;
 
   union gab_value_pair run_res = gab_use(gab, (struct gab_use_argt){
@@ -159,7 +172,7 @@ int run_file(const char *path, int flags, size_t jobs, size_t nmodules,
 
   a_gab_value_destroy(res.aresult);
 
-  if (!check_and_printerr(run_res))
+  if (!check_and_printerr(&run_res))
     return gab_destroy(gab), 1;
 
   return a_gab_value_destroy(run_res.aresult), gab_destroy(gab), 0;

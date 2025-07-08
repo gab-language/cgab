@@ -11,6 +11,7 @@
 #define GAB_MAGENTA "\x1b[35m"
 #define GAB_CYAN "\x1b[36m"
 #define GAB_RESET "\x1b[0m"
+#define GAB_CLEAR "\x1b[2J"
 
 #ifdef GAB_COLORS_IMPL
 static const char *ANSI_COLORS[] = {

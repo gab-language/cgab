@@ -1,12 +1,19 @@
 Messages = 'cmessages'.use
 
+to\class_cxtor: .defcase {
+  default: () => (t) => (args*) => t.make(args*)
+}
+to\class_cxtor: .def () => self
+
 # Helper message for defining 'class'-esque types.
-defclass: .def (fields*, module) => do
+defclass: .def (fields*, cxtor, module) => do
 # Combine the fields into a shape to get our class type.
   t = Shapes.make(fields*)
 
 # Define t: for this message, returning our class type.
   t: .def(self t)
+# Define the make: constructor message
+  make: .def(self cxtor.to\class_cxtor.(t))
 
 # Define the module (the 'instance methods') on our class type.
   [t] .defmodule module

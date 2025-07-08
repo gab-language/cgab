@@ -168,8 +168,7 @@ gab_value *push_value(struct gab_triple gab, const char *json, gab_value *sp,
   return sp;
 }
 
-union gab_value_pair gab_jsonlib_decode(struct gab_triple gab, uint64_t argc,
-                                        gab_value argv[static argc]) {
+GAB_DYNLIB_NATIVE_FN(json, decode) {
   gab_value str = gab_arg(0);
 
   if (gab_valkind(str) != kGAB_STRING)
@@ -211,8 +210,7 @@ union gab_value_pair gab_jsonlib_decode(struct gab_triple gab, uint64_t argc,
 
   if (sp == nullptr) {
     // Encountered an invalid token.
-    gab_vmpush(gab_thisvm(gab), gab_err,
-               gab_string(gab, "Invalid JSON value"));
+    gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, "Invalid JSON value"));
     return gab_union_cvalid(gab_nil);
   }
 
@@ -226,7 +224,7 @@ GAB_DYNLIB_MAIN_FN {
   gab_def(gab, {
                    gab_message(gab, "as\\json"),
                    gab_type(gab, kGAB_STRING),
-                   gab_snative(gab, "as\\json", gab_jsonlib_decode),
+                   gab_snative(gab, "as\\json", gab_mod_json_decode),
                });
 
   gab_value res[] = {gab_ok};

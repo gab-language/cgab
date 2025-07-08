@@ -229,8 +229,17 @@ int sinspectval(char **dest, size_t *n, gab_value self, int depth) {
     return snprintf_through(dest, n, "<" tGAB_CHANNEL ">");
   case kGAB_FIBER:
   case kGAB_FIBERRUNNING:
-  case kGAB_FIBERDONE:
-    return snprintf_through(dest, n, "<" tGAB_FIBER ">");
+  case kGAB_FIBERDONE: {
+    struct gab_ofiber *fiber = GAB_VAL_TO_FIBER(self);
+    gab_value msg = fiber->data[0];
+    gab_value rec = fiber->data[1];
+
+    return snprintf_through(dest, n, "<" tGAB_FIBER " ") +
+           sinspectval(dest, n, msg, depth + 1) +
+           snprintf_through(dest, n, " ") +
+           sinspectval(dest, n, rec, depth + 1) +
+           snprintf_through(dest, n, ">");
+  }
   case kGAB_RECORD: {
     if (gab_valkind(gab_recshp(self)) == kGAB_SHAPELIST)
       return snprintf_through(dest, n, "[") +
@@ -1494,6 +1503,8 @@ gab_value gab_fiber(struct gab_triple gab, struct gab_fiber_argt args) {
     memcpy(self->data + 2, args.argv, args.argc * sizeof(gab_value));
   }
 
+  self->reentrant = gab_cundefined;
+
   self->data[0] = args.message;
   self->data[1] = args.receiver;
 
@@ -1526,12 +1537,13 @@ GAB_API inline struct gab_vm *gab_fibvm(gab_value fiber) {
   return &GAB_VAL_TO_FIBER(fiber)->vm;
 }
 
-union gab_value_pair gab_fibawait(struct gab_triple gab, gab_value f) {
+union gab_value_pair gab_tfibawait(struct gab_triple gab, gab_value f,
+                                   size_t tries) {
   assert(gab_valkind(f) >= kGAB_FIBER && gab_valkind(f) <= kGAB_FIBERRUNNING);
-
   struct gab_ofiber *fiber = GAB_VAL_TO_FIBER(f);
+  uint64_t sofar = 0;
 
-  while (fiber->header.kind != kGAB_FIBERDONE)
+  while (fiber->header.kind != kGAB_FIBERDONE) {
     switch (gab_yield(gab)) {
     case sGAB_COLL:
       gab_gcepochnext(gab);
@@ -1543,7 +1555,16 @@ union gab_value_pair gab_fibawait(struct gab_triple gab, gab_value f) {
       break;
     }
 
+    sofar++;
+    if (sofar > tries)
+      return (union gab_value_pair){.status = gab_ctimeout, .vresult = f};
+  }
+
   return fiber->res_values;
+}
+
+union gab_value_pair gab_fibawait(struct gab_triple gab, gab_value f) {
+  return gab_tfibawait(gab, f, (size_t)-1);
 }
 
 gab_value gab_fibawaite(struct gab_triple gab, gab_value f) {
@@ -1664,25 +1685,17 @@ gab_value channel_take(struct gab_ochannel *channel, uint64_t n,
   //   // return gab_cundefined;
   //   return gab_number(-avail);
   uint64_t len = n < avail ? n : avail;
-
-  // Try the take - perform our copy.
   memcpy(dest, src, sizeof(gab_value) * len);
 
-  // If this exchange fails:
-  //  The data ptr in the channel no longer matches the src ptr
-  //  that we just memcpy'd from. That means someone got to the data first
-  //  (and either the channel is now empty, or a new src ptr is there).
-  //  In either case, we should return 0 (failure) on a mismatch.
   if (atomic_compare_exchange_weak(&channel->data, &src, nullptr))
     return gab_number(len);
   else
     return gab_cundefined;
 }
 
-/* Identical to put, except the memcpy goes the other way. */
 gab_value channel_block_while_full(struct gab_triple gab,
                                    struct gab_ochannel *channel, gab_value c,
-                                   uint64_t timeout_ns, uint64_t *timer_ns) {
+                                   uint64_t tries, uint64_t *sofar) {
   while (gab_chnisfull(c)) {
     switch (gab_yield(gab)) {
     case sGAB_COLL:
@@ -1695,12 +1708,12 @@ gab_value channel_block_while_full(struct gab_triple gab,
       break;
     }
 
-    *timer_ns += GAB_YIELD_SLEEPTIME_NS;
+    *sofar = *sofar + 1;
 
     if (gab_chnisclosed(c))
       return gab_cundefined;
 
-    if (*timer_ns > timeout_ns)
+    if (*sofar > tries)
       return gab_ctimeout;
   }
 
@@ -1709,7 +1722,7 @@ gab_value channel_block_while_full(struct gab_triple gab,
 
 gab_value channel_block_while_empty(struct gab_triple gab,
                                     struct gab_ochannel *channel, gab_value c,
-                                    uint64_t timeout_ns, uint64_t *timer_ns) {
+                                    uint64_t tries, uint64_t *sofar) {
   while (gab_chnisempty(c)) {
     switch (gab_yield(gab)) {
     case sGAB_COLL:
@@ -1722,12 +1735,12 @@ gab_value channel_block_while_empty(struct gab_triple gab,
       break;
     }
 
-    *timer_ns += GAB_YIELD_SLEEPTIME_NS;
+    *sofar = *sofar + 1;
 
     if (gab_chnisclosed(c))
       return gab_cundefined;
 
-    if (*timer_ns > timeout_ns)
+    if (*sofar > tries)
       return gab_ctimeout;
   }
 
@@ -1735,40 +1748,51 @@ gab_value channel_block_while_empty(struct gab_triple gab,
 }
 
 /*
- * Returns
- * gab_ctimeout on timeout
- * gab_cundefined on close!
- * gab_cinvalid on terminate
- * gab_cvalid on success
+ * The current implementation of
+ *  - channel_blocking_put
+ *  - channel_blocking_take
+ *  are flawed. They require a *handshake* two occur between two threads *at the
+ * same time*.
+ *
  */
-gab_value channel_blocking_put(struct gab_triple gab,
-                               struct gab_ochannel *channel, gab_value c,
-                               uint64_t len, gab_value *vs, size_t nms) {
+gab_value unsafe_channel_blocking_put(struct gab_triple gab,
+                                      struct gab_ochannel *channel, gab_value c,
+                                      uint64_t len, gab_value *vs,
+                                      uint64_t tries, uint64_t *sofar) {
   gab_value res = gab_cundefined;
 
-  const uint64_t timeout_ns = nms * 1000000;
-  uint64_t timer_ns = 0;
-
   while (!gab_chnisclosed(c)) {
-    res = channel_block_while_full(gab, channel, c, timeout_ns, &timer_ns);
+    res = channel_block_while_full(gab, channel, c, tries, sofar);
 
     if (res != gab_cvalid)
       return res;
 
     if (channel_put(channel, len, vs))
-      break;
+      return res;
   }
+
+  assert(false && "Unreachable");
+  return gab_cinvalid;
+}
+
+gab_value channel_blocking_put(struct gab_triple gab,
+                               struct gab_ochannel *channel, gab_value c,
+                               uint64_t len, gab_value *vs, size_t tries) {
+  uint64_t sofar = 0;
+
+  gab_value res = unsafe_channel_blocking_put(gab, channel, c, len, vs,
+                                              tries, &sofar);
 
   // If a taker never arrives, we should remove our value as if our put
   // failed and return a timeout.
-  res = channel_block_while_full(gab, channel, c, timeout_ns, &timer_ns);
+  res = channel_block_while_full(gab, channel, c, tries, &sofar);
 
   switch (res) {
   // We were interrupted, timed out, or the channel closed.
-  // Take the value we put in out, and return.
   case gab_ctimeout:
   case gab_cinvalid:
   case gab_cundefined:
+    // Take the value we put in out, and return.
     return channel_abandon(channel), res;
   // A taker arrived.
   default:
@@ -1787,14 +1811,14 @@ gab_value channel_blocking_put(struct gab_triple gab,
  */
 gab_value channel_blocking_take(struct gab_triple gab,
                                 struct gab_ochannel *channel, gab_value c,
-                                uint64_t len, gab_value *vs, size_t nms) {
+                                uint64_t len, gab_value *vs,
+                                size_t tries) {
   gab_value res = gab_cundefined;
 
-  const uint64_t timeout_ns = nms * 1000000;
-  uint64_t timer_ns = 0;
+  uint64_t sofar = 0;
 
   while (!gab_chnisclosed(c) && res == gab_cundefined) {
-    res = channel_block_while_empty(gab, channel, c, timeout_ns, &timer_ns);
+    res = channel_block_while_empty(gab, channel, c, tries, &sofar);
 
     if (res != gab_cvalid)
       return res;
@@ -1813,7 +1837,7 @@ gab_value channel_blocking_take(struct gab_triple gab,
  * gab_cvalid on success
  */
 gab_value gab_ntchnput(struct gab_triple gab, gab_value c, uint64_t len,
-                       gab_value *vs, uint64_t nms) {
+                       gab_value *vs, uint64_t tries) {
   assert(gab_valkind(c) >= kGAB_CHANNEL &&
          gab_valkind(c) <= kGAB_CHANNELCLOSED);
 
@@ -1821,7 +1845,31 @@ gab_value gab_ntchnput(struct gab_triple gab, gab_value c, uint64_t len,
 
   switch (channel->header.kind) {
   case kGAB_CHANNEL:
-    return channel_blocking_put(gab, channel, c, len, vs, nms);
+    return channel_blocking_put(gab, channel, c, len, vs, tries);
+  case kGAB_CHANNELCLOSED:
+    return gab_cundefined;
+  default:
+    assert(false && "UNREACHABLE");
+    return gab_cinvalid;
+  }
+}
+
+// gab_value gab_untchntake(struct gab_triple gab, gab_value channel, uint64_t
+// len,
+//                          gab_value *value, uint64_t nms) {}
+
+gab_value gab_untchnput(struct gab_triple gab, gab_value c, uint64_t len,
+                        gab_value *vs, uint64_t tries) {
+  assert(gab_valkind(c) >= kGAB_CHANNEL &&
+         gab_valkind(c) <= kGAB_CHANNELCLOSED);
+
+  struct gab_ochannel *channel = GAB_VAL_TO_CHANNEL(c);
+
+  switch (channel->header.kind) {
+  case kGAB_CHANNEL: {
+    uint64_t sofar = 0;
+    return unsafe_channel_blocking_put(gab, channel, c, len, vs, tries, &sofar);
+  }
   case kGAB_CHANNELCLOSED:
     return gab_cundefined;
   default:
@@ -1831,19 +1879,19 @@ gab_value gab_ntchnput(struct gab_triple gab, gab_value c, uint64_t len,
 }
 
 gab_value gab_tchnput(struct gab_triple gab, gab_value c, gab_value value,
-                      uint64_t nms) {
-  return gab_ntchnput(gab, c, 1, &value, nms);
+                      uint64_t tries) {
+  return gab_ntchnput(gab, c, 1, &value, tries);
 }
 
 gab_value gab_nchnput(struct gab_triple gab, gab_value channel, uint64_t len,
                       gab_value *vs) {
-  gab_value v = gab_ntchnput(gab, channel, len, vs, -1);
+  gab_value v = gab_ntchnput(gab, channel, len, vs, (size_t)-1);
   assert(v != gab_ctimeout);
   return v;
 }
 
 gab_value gab_chnput(struct gab_triple gab, gab_value c, gab_value value) {
-  gab_value v = gab_tchnput(gab, c, value, -1);
+  gab_value v = gab_tchnput(gab, c, value, (size_t)-1);
   assert(v != gab_ctimeout);
   return v;
 }
@@ -1857,7 +1905,7 @@ gab_value gab_chnput(struct gab_triple gab, gab_value c, gab_value value) {
  * number if space wasn't available.
  */
 gab_value gab_ntchntake(struct gab_triple gab, gab_value c, uint64_t len,
-                        gab_value *data, uint64_t nms) {
+                        gab_value *data, uint64_t tries) {
   assert(gab_valkind(c) >= kGAB_CHANNEL &&
          gab_valkind(c) <= kGAB_CHANNELCLOSED);
 
@@ -1865,7 +1913,7 @@ gab_value gab_ntchntake(struct gab_triple gab, gab_value c, uint64_t len,
 
   switch (channel->header.kind) {
   case kGAB_CHANNEL:
-    return channel_blocking_take(gab, channel, c, len, data, nms);
+    return channel_blocking_take(gab, channel, c, len, data, tries);
   case kGAB_CHANNELCLOSED:
     return gab_cundefined;
   default:
@@ -1874,9 +1922,9 @@ gab_value gab_ntchntake(struct gab_triple gab, gab_value c, uint64_t len,
   }
 };
 
-gab_value gab_tchntake(struct gab_triple gab, gab_value channel, uint64_t nms) {
+gab_value gab_tchntake(struct gab_triple gab, gab_value channel, uint64_t tries) {
   gab_value out;
-  gab_value res = gab_ntchntake(gab, channel, 1, &out, nms);
+  gab_value res = gab_ntchntake(gab, channel, 1, &out, tries);
 
   if (gab_valkind(res) != kGAB_NUMBER)
     return res;
@@ -1892,11 +1940,11 @@ gab_value gab_tchntake(struct gab_triple gab, gab_value channel, uint64_t nms) {
 
 gab_value gab_nchntake(struct gab_triple gab, gab_value channel, uint64_t len,
                        gab_value *data) {
-  return gab_ntchntake(gab, channel, len, data, -1);
+  return gab_ntchntake(gab, channel, len, data, (size_t)-1);
 }
 
 gab_value gab_chntake(struct gab_triple gab, gab_value c) {
-  gab_value v = gab_tchntake(gab, c, -1);
+  gab_value v = gab_tchntake(gab, c, (size_t)-1);
   assert(v != gab_ctimeout);
   return v;
 }
@@ -2246,6 +2294,13 @@ int32_t pprint_width(gab_value val) {
     // Maybe I can just return number of bytes written?
     snprintf(buf, sizeof(buf), "%lg", gab_valtof(val));
     return strlen(buf);
+  case kGAB_CHANNEL:
+  case kGAB_CHANNELCLOSED:
+    return 13;
+  case kGAB_FIBER:
+  case kGAB_FIBERDONE:
+  case kGAB_FIBERRUNNING:
+    return 11;
   default:
     fprintf(stderr, "%d\n", gab_valkind(val));
     fflush(stderr);

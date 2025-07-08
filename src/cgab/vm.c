@@ -163,17 +163,17 @@ static handler handlers[] = {
     [[clang::musttail]] return OP_TRIM_HANDLER(DISPATCH_ARGS());               \
   })
 
-#define VM_YIELD()                                                             \
+#define VM_YIELD(value)                                                        \
   ({                                                                           \
     IP() -= SEND_CACHE_DIST;                                                   \
     STORE();                                                                   \
-    return vm_yield(GAB());                                                    \
+    return vm_yield(GAB(), value);                                             \
   })
 
 #define VM_TERM()                                                              \
   ({                                                                           \
     STORE();                                                                   \
-    return vm_terminate(GAB(), "$", gab_thisfiber(GAB()));                     \
+    return vm_terminate(GAB(), "While executing $\n", gab_thisfiber(GAB()));   \
   })
 
 #define IMPL_SEND_UNARY_NUMERIC(CODE, value_type, operation_type, decoder,     \
@@ -440,20 +440,27 @@ struct gab_err_argt vm_frame_build_err(struct gab_triple gab,
         .src = p->src,
         .note_fmt = fmt,
         .status = s,
+        .wkid = gab.wkid,
     };
   }
 
   return (struct gab_err_argt){
       .note_fmt = fmt,
       .status = s,
+      .wkid = gab.wkid,
   };
 }
 
-union gab_value_pair vm_yield(struct gab_triple gab) {
-  gab_value fiber = gab_thisfiber(gab);
-  assert(GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERRUNNING);
-  GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBER;
-  return (union gab_value_pair){{gab_ctimeout}};
+// TODO: Accept a *value* here, to be passed when
+union gab_value_pair vm_yield(struct gab_triple gab, gab_value value) {
+  gab_value f = gab_thisfiber(gab);
+  struct gab_ofiber *fiber = GAB_VAL_TO_FIBER(f);
+
+  assert(fiber->header.kind = kGAB_FIBERRUNNING);
+  fiber->header.kind = kGAB_FIBER;
+  fiber->reentrant = value;
+
+  return (union gab_value_pair){{gab_ctimeout, f}};
 }
 
 gab_value sprint_stacktrace(struct gab_triple gab, struct gab_vm *vm,
@@ -471,15 +478,24 @@ gab_value sprint_stacktrace(struct gab_triple gab, struct gab_vm *vm,
   ip = frame_ip(f);
   f = frame_parent(f);
 
-  while (f && frame_parent(f) > vm->sb) {
-    frame = vm_frame_build_err(gab, frame_block(f), ip, GAB_NONE, "");
-    vframes[nframes++] = gab_vspanicf(gab, va, frame);
-
-    ip = frame_ip(f);
-    f = frame_parent(f);
-  }
+  // while (f && frame_parent(f) > vm->sb) {
+  //   frame = vm_frame_build_err(gab, frame_block(f), ip, GAB_NONE, "");
+  //   vframes[nframes++] = gab_vspanicf(gab, va, frame);
+  //
+  //   ip = frame_ip(f);
+  //   f = frame_parent(f);
+  // }
 
   return gab_list(gab, nframes, vframes);
+}
+
+gab_value gab_fibstacktrace(struct gab_triple gab, gab_value fiber) {
+  struct gab_vm *vm = gab_fibvm(fiber);
+
+  gab_value *f = vm->fp;
+  uint8_t *ip = vm->ip;
+
+  return sprint_stacktrace(gab, vm, f, ip, GAB_TERM, nullptr, nullptr);
 }
 
 union gab_value_pair vvm_terminate(struct gab_triple gab, const char *fmt,
@@ -498,11 +514,17 @@ union gab_value_pair vvm_terminate(struct gab_triple gab, const char *fmt,
 
   union gab_value_pair res = {{gab_cinvalid, err}};
 
-  assert(frame_block(vm->fp));
-  gab_value p = frame_block(vm->fp)->p;
-  gab_value shape = gab_prtshp(p);
-  gab_value env =
-      gab_recordfrom(gab, shape, 1, gab_shplen(shape), vm->fp, nullptr);
+  struct gab_oblock *blk = frame_block(vm->fp);
+  gab_value env;
+
+  if (blk) {
+    gab_value p = blk->p;
+    gab_value shape = gab_prtshp(p);
+    env = gab_recordfrom(gab, shape, 1, gab_shplen(shape), vm->fp, nullptr);
+  } else {
+    env = gab_recordof(gab);
+  }
+
   gab_egkeep(gab.eg, gab_iref(gab, env));
 
   v_gab_value_thrd_push(&gab.eg->err, err);
@@ -621,6 +643,7 @@ union gab_value_pair gab_vpanicf(struct gab_triple gab, const char *fmt,
                                  (struct gab_err_argt){
                                      .status = GAB_PANIC,
                                      .note_fmt = fmt,
+                                     .wkid = gab.wkid,
                                  });
 
     gab_iref(gab, err);
@@ -744,7 +767,7 @@ void gab_fvminspectall(FILE *stream, struct gab_vm *vm) {
   }
 }
 
-#define COMPUTE_TUPLE() (VAR());
+#define COMPUTE_TUPLE() (VAR())
 
 static inline bool has_stackspace(gab_value *sp, gab_value *sb,
                                   uint64_t space_needed) {
@@ -870,7 +893,10 @@ inline uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc,
                                                                                \
     uint64_t pass = message ? have : have - 1;                                 \
                                                                                \
-    union gab_value_pair res = (*native->function)(GAB(), pass, SP() - pass);  \
+    union gab_value_pair res =                                                 \
+        (*native->function)(GAB(), pass, SP() - pass, FIBER()->reentrant);     \
+                                                                               \
+    FIBER()->reentrant = gab_cundefined;                                       \
                                                                                \
     if (__gab_unlikely(res.status != gab_cundefined))                          \
       return res;                                                              \
@@ -961,12 +987,6 @@ union gab_value_pair do_vmexecfiber(struct gab_triple gab, gab_value f) {
   // We can't return *to* this frame because it has no block.
   // But we *should* return here so that the environment returned
   // to the fiber is as expected
-
-  if (op == OP_SEND_PRIMITIVE_CALL_BLOCK)
-    op = OP_TAILSEND_PRIMITIVE_CALL_BLOCK;
-
-  if (op == OP_SEND_BLOCK)
-    op = OP_TAILSEND_BLOCK;
 
   assert(fiber->header.kind != kGAB_FIBERDONE);
   fiber->header.kind = kGAB_FIBERRUNNING;
@@ -1509,37 +1529,53 @@ CASE_CODE(SEND_PRIMITIVE_USE) {
   SEND_GUARD_KIND(r, kGAB_STRING);
 
   STORE();
+  gab_value reentrant = FIBER()->reentrant;
+  union gab_value_pair mod;
 
-  /*
-   * This pulling in of args/values to pass on to use'd module
-   * is a little scuffed. I'd rather do it a different way.
-   */
-  gab_value shp = gab_prtshp(BLOCK()->p);
-  gab_value svargs[32];
-  const char *sargs[32];
+  if (reentrant != gab_cundefined) {
+    assert(gab_valisfib(reentrant));
 
-  size_t len = gab_shplen(shp);
-  assert(len < 32);
-  for (int i = 0; i < len; i++) {
-    svargs[i] = gab_ushpat(shp, i);
-    sargs[i] = gab_strdata(svargs + i);
+    mod = gab_tfibawait(GAB(), reentrant, cGAB_WORKER_IDLEWAIT_NS);
+
+    FIBER()->reentrant = gab_cundefined;
+  } else {
+    /*
+     * This pulling in of args/values to pass on to use'd module
+     * is a little scuffed. I'd rather do it a different way.
+     */
+    gab_value shp = gab_prtshp(BLOCK()->p);
+    gab_value svargs[32];
+    const char *sargs[32];
+
+    size_t len = gab_shplen(shp);
+    assert(len < 32);
+    for (int i = 0; i < len; i++) {
+      svargs[i] = gab_ushpat(shp, i);
+      sargs[i] = gab_strdata(svargs + i);
+    }
+
+    mod = gab_use(GAB(), (struct gab_use_argt){
+                             .vname = r,
+                             .len = BLOCK_PROTO()->narguments,
+                             .argv = FB() + 1, // To skip self local
+                             .sargv = sargs,
+                         });
   }
 
-  union gab_value_pair mod =
-      gab_use(GAB(), (struct gab_use_argt){
-                         .vname = r,
-                         .len = BLOCK_PROTO()->narguments,
-                         .argv = FB() + 1, // To skip self local
-                         .sargv = sargs,
-                     });
-
-  DROP_N(have + 1);
+  // This isn't quite reentrant, I want to *await* the previous thingie, not
+  // spin up a new one.
+  if (mod.status == gab_ctimeout) {
+    assert(gab_valisfib(mod.vresult));
+    VM_YIELD(mod.vresult);
+  }
 
   if (mod.status != gab_cvalid)
     VM_GIVEN(mod);
 
   if (mod.aresult->data[0] != gab_ok)
     VM_GIVEN(mod);
+
+  DROP_N(have + 1);
 
   for (uint64_t i = 1; i < mod.aresult->len; i++)
     PUSH(mod.aresult->data[i]);
@@ -2267,13 +2303,12 @@ CASE_CODE(SEND_PRIMITIVE_TAKE) {
   STORE_SP();
 
   // TODO: Fix the hardcoding of len here
-  assert(has_stackspace(SP(), SB(), cGAB_FRAMES_MAX));
-  gab_value v = gab_ntchntake(GAB(), c, cGAB_FRAMES_MAX, SP() - have,
-                              cGAB_VM_CHANNEL_TAKE_TIMEOUT_MS);
+  gab_value takebuf[32];
+  gab_value v = gab_ntchntake(GAB(), c, 32, takebuf, 0);
 
   switch (v) {
   case gab_ctimeout:
-    VM_YIELD();
+    VM_YIELD(gab_cundefined);
   case gab_cinvalid:
     VM_TERM();
   case gab_cundefined:
@@ -2283,15 +2318,16 @@ CASE_CODE(SEND_PRIMITIVE_TAKE) {
     SET_VAR(below_have + 1);
     NEXT();
   default:
-    gab_int i = gab_valtoi(v);
+    DROP_N(have + 1);
+    PUSH(gab_ok);
 
-    if (i < 0)
-      VM_PANIC(GAB_PANIC, "Channel take failed, insufficient stack space.");
+    uint64_t len = gab_valtou(v);
+    assert(has_stackspace(SP(), SB(), len));
 
-    PEEK_N(have + 1) = gab_ok;
-    SP() += (gab_valtoi(v) - (int64_t)have);
+    memmove(SP(), takebuf, len * sizeof(gab_value));
+    SP() += len;
 
-    SET_VAR(below_have + gab_valtou(v) + 1);
+    SET_VAR(below_have + len + 1);
     NEXT();
   }
 }
@@ -2308,25 +2344,34 @@ CASE_CODE(SEND_PRIMITIVE_PUT) {
 
   STORE_SP();
 
+  if (FIBER()->reentrant == c) {
+    // If we're reentering, check that our channel
+    // is still holding our data ptr.
+    // If so, we need to yield again.
+    if (GAB_VAL_TO_CHANNEL(c)->data == SP() - (have - 1))
+      VM_YIELD(c);
+
+    FIBER()->reentrant = gab_cundefined;
+
+    // If not, our put is complete and we can move on
+    DROP_N(have + 1);
+    PUSH(c);
+    SET_VAR(below_have + 1);
+    NEXT();
+  }
+
   // All values *but* the channel are put into the channel.
-  gab_value r = gab_ntchnput(GAB(), c, have - 1, SP() - (have - 1),
-                             cGAB_VM_CHANNEL_PUT_TIMEOUT_MS);
+  // TODO: ERROR: DIFFERENCE BETWEEN SUCCESSFUL
+  // AND UNSUCCESSFUL TRY-PUT HERE ISN"T SHOWN
+  gab_value r = gab_untchnput(GAB(), c, have - 1, SP() - (have - 1), 0);
 
   switch (r) {
-  case gab_ctimeout:
-    VM_YIELD();
   case gab_cinvalid:
     VM_TERM();
+  case gab_ctimeout:
+    VM_YIELD(r);
   default:
-    gab_value ch = PEEK_N(have);
-    // Return the channel
-
-    DROP_N(have + 1);
-    PUSH(ch);
-
-    SET_VAR(below_have + 1);
-
-    NEXT();
+    VM_YIELD(c);
   }
 }
 
@@ -2346,14 +2391,14 @@ CASE_CODE(SEND_PRIMITIVE_FIBER) {
 
   STORE_SP();
 
-  union gab_value_pair fb = gab_tarun(GAB(), cGAB_VM_CHANNEL_PUT_TIMEOUT_MS,
+  union gab_value_pair fb = gab_tarun(GAB(), cGAB_VM_CHANNEL_PUT_TIMEOUT_NS,
                                       (struct gab_run_argt){
                                           .flags = GAB().flags,
                                           .main = block,
                                       });
 
   if (fb.status == gab_ctimeout)
-    VM_YIELD();
+    VM_YIELD(gab_cundefined);
 
   assert(fb.status == gab_cvalid);
 

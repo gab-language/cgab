@@ -41,29 +41,20 @@
 #define cGAB_TAILCALL 1
 #endif
 
-// Step size in milliseconds for putting and taking on channels
-// This is how long each *attempt* to put/take will last.
-// put/take are still blocking - this is basically the resolution of the check.
-#ifndef cGAB_CHANNEL_STEP_MS
-#define cGAB_CHANNEL_STEP_MS ((size_t)4)
-#endif
-
-#define GAB_CHANNEL_STEP_NS ((size_t)(cGAB_CHANNEL_STEP_MS * 1000000))
-
 // Workers (os threads that can actually run gab code)
 // will wait this long before exiting, if they haven't received work.
 // New workers are spawned as needed up until a maximum is reached (specified at
 // runtime) Worker threads wait about half a second before spinning down.
-#ifndef cGAB_WORKER_IDLEWAIT_MS
-#define cGAB_WORKER_IDLEWAIT_MS ((size_t)512)
+#ifndef cGAB_WORKER_IDLEWAIT_NS
+#define cGAB_WORKER_IDLEWAIT_NS ((size_t)1)
 #endif
 
-#ifndef cGAB_VM_CHANNEL_PUT_TIMEOUT_MS
-#define cGAB_VM_CHANNEL_PUT_TIMEOUT_MS ((size_t)256)
+#ifndef cGAB_VM_CHANNEL_PUT_TIMEOUT_NS
+#define cGAB_VM_CHANNEL_PUT_TIMEOUT_NS ((size_t)1 << 16)
 #endif
 
-#ifndef cGAB_VM_CHANNEL_TAKE_TIMEOUT_MS
-#define cGAB_VM_CHANNEL_TAKE_TIMEOUT_MS ((size_t)512)
+#ifndef cGAB_VM_CHANNEL_TAKE_TIMEOUT_NS
+#define cGAB_VM_CHANNEL_TAKE_TIMEOUT_NS ((size_t)1 << 16)
 #endif
 
 // A worker (os thread) may need to yield at an arbitrary point.
@@ -73,7 +64,7 @@
 // A sleeptime of 0ms will result in *a lot* of context switching,
 // which is undesirable for the OS Scheduler. To help this, a small
 // amount of sleeping in the yield function is useful
-#define GAB_YIELD_SLEEPTIME_NS ((size_t)1 << 6)
+#define GAB_YIELD_SLEEPTIME_NS (0)
 
 // Collect as frequently as possible (on every RC push)
 #ifndef cGAB_DEBUG_GC
@@ -189,16 +180,9 @@
 #define GAB_SEND_KGENERIC_CALL_SPECS 5
 #define GAB_SEND_KGENERIC_CALL_MESSAGE 6
 
-// #define GAB_CALL_CACHE_SIZE 4
-// #define GAB_CALL_CACHE_LEN ((cGAB_SEND_CACHE_LEN * GAB_SEND_CACHE_SIZE) /
-// GAB_CALL_CACHE_SIZE)
-
-// #if GAB_CALL_CACHE_LEN % 2 != 0
-// #error Invalid GAB_CALL_CACHE_SIZE
-// #endif
+#define GAB_SEND_KNATIVE_REENTRANT_USERDATA 7
 
 #define GAB_SEND_HASH(t) (t & (cGAB_SEND_CACHE_LEN - 1))
-// #define GAB_CALL_HASH(t) (t & (cGAB_CALL_CACHE_LEN - 1))
 
 #define GAB_PVEC_BITS (5)
 #define GAB_PVEC_SIZE (1 << GAB_PVEC_BITS)

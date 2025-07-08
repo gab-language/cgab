@@ -634,8 +634,7 @@ gab_value create_udpssl(struct gab_triple gab) {
                              IO_SOCK_SSLUNSPECIFIED);
 }
 
-union gab_value_pair gab_iolib_open(struct gab_triple gab, uint64_t argc,
-                                    gab_value argv[argc]) {
+GAB_DYNLIB_NATIVE_FN(io, open) {
   gab_value path = gab_arg(1);
   gab_value perm = gab_arg(2);
 
@@ -738,8 +737,7 @@ int osnfread(struct gab_triple gab, qfd_t qfd, size_t n, uint8_t buf[n]) {
   return bytes_read;
 }
 
-union gab_value_pair gab_iolib_until(struct gab_triple gab, uint64_t argc,
-                                     gab_value argv[argc]) {
+GAB_DYNLIB_NATIVE_FN(io, until) {
   gab_value iostream = gab_arg(0);
   gab_value delim = gab_arg(1);
 
@@ -782,8 +780,7 @@ union gab_value_pair gab_iolib_until(struct gab_triple gab, uint64_t argc,
   return gab_union_cvalid(gab_nil);
 }
 
-union gab_value_pair gab_iolib_scan(struct gab_triple gab, uint64_t argc,
-                                    gab_value argv[argc]) {
+GAB_DYNLIB_NATIVE_FN(io, scan) {
   gab_value iostream = gab_arg(0);
   gab_value bytesToRead = gab_arg(1);
 
@@ -815,8 +812,7 @@ union gab_value_pair gab_iolib_scan(struct gab_triple gab, uint64_t argc,
   return gab_union_cvalid(gab_nil);
 }
 
-union gab_value_pair gab_iolib_read(struct gab_triple gab, uint64_t argc,
-                                    gab_value argv[argc]) {
+GAB_DYNLIB_NATIVE_FN(io, read) {
   if (argc != 1 || gab_valkind(argv[0]) != kGAB_BOX)
     return gab_panicf(gab, "&:read expects a file handle");
 
@@ -835,8 +831,7 @@ union gab_value_pair gab_iolib_read(struct gab_triple gab, uint64_t argc,
   return gab_union_cvalid(gab_nil);
 }
 
-union gab_value_pair gab_iolib_sock(struct gab_triple gab, uint64_t argc,
-                                    gab_value argv[argc]) {
+GAB_DYNLIB_NATIVE_FN(io, sock) {
   gab_value type = gab_arg(1);
   if (gab_valkind(type) != kGAB_MESSAGE)
     return gab_pktypemismatch(gab, type, kGAB_MESSAGE);
@@ -866,8 +861,7 @@ union gab_value_pair gab_iolib_sock(struct gab_triple gab, uint64_t argc,
   return gab_vmpush(gab_thisvm(gab), gab_ok, sock), gab_union_cvalid(gab_nil);
 }
 
-union gab_value_pair gab_iolib_send(struct gab_triple gab, uint64_t argc,
-                                    gab_value argv[argc]) {
+GAB_DYNLIB_NATIVE_FN(io, send) {
   gab_value vsock = gab_arg(0);
 
   if (gab_valkind(vsock) != kGAB_BOX)
@@ -895,8 +889,7 @@ union gab_value_pair gab_iolib_send(struct gab_triple gab, uint64_t argc,
   return gab_panicf(gab, "Reached unreachable codepath");
 }
 
-union gab_value_pair gab_iolib_recv(struct gab_triple gab, uint64_t argc,
-                                    gab_value argv[argc]) {
+GAB_DYNLIB_NATIVE_FN(io, recv) {
   gab_value vsock = gab_arg(0);
 
   if (gab_valkind(vsock) != kGAB_BOX)
@@ -914,8 +907,7 @@ union gab_value_pair gab_iolib_recv(struct gab_triple gab, uint64_t argc,
   }
 }
 
-union gab_value_pair gab_iolib_connect(struct gab_triple gab, uint64_t argc,
-                                       gab_value argv[argc]) {
+GAB_DYNLIB_NATIVE_FN(io, connect) {
   gab_value vsock = gab_arg(0);
   gab_value ip = gab_arg(1);
   gab_value port = gab_arg(2);
@@ -963,8 +955,7 @@ union gab_value_pair gab_iolib_connect(struct gab_triple gab, uint64_t argc,
   };
 }
 
-union gab_value_pair gab_iolib_accept(struct gab_triple gab, uint64_t argc,
-                                      gab_value argv[argc]) {
+GAB_DYNLIB_NATIVE_FN(io, accept) {
   gab_value vsock = gab_arg(0);
 
   if (gab_valkind(vsock) != kGAB_BOX)
@@ -983,8 +974,7 @@ union gab_value_pair gab_iolib_accept(struct gab_triple gab, uint64_t argc,
   };
 }
 
-union gab_value_pair gab_iolib_listen(struct gab_triple gab, uint64_t argc,
-                                      gab_value argv[argc]) {
+GAB_DYNLIB_NATIVE_FN(io, listen) {
   gab_value sock = gab_arg(0);
   gab_value backlog = gab_arg(1);
 
@@ -1020,8 +1010,7 @@ union gab_value_pair gab_iolib_listen(struct gab_triple gab, uint64_t argc,
   return gab_union_cvalid(gab_nil);
 }
 
-union gab_value_pair gab_iolib_bind(struct gab_triple gab, uint64_t argc,
-                                    gab_value argv[argc]) {
+GAB_DYNLIB_NATIVE_FN(io, bind) {
   gab_value vsock = gab_arg(0);
   gab_value ip = gab_arg(1);
   gab_value port = gab_arg(2);
@@ -1068,8 +1057,7 @@ union gab_value_pair gab_iolib_bind(struct gab_triple gab, uint64_t argc,
   }
 }
 
-union gab_value_pair gab_iolib_write(struct gab_triple gab, uint64_t argc,
-                                     gab_value argv[argc]) {
+GAB_DYNLIB_NATIVE_FN(io, write) {
   gab_value stream = gab_arg(0);
 
   if (gab_valkind(stream) != kGAB_BOX)
@@ -1096,6 +1084,11 @@ union gab_value_pair gab_iolib_write(struct gab_triple gab, uint64_t argc,
    * just be =, but use >= for safety's sake), write was completed. return ok.
    */
   for (;;) {
+    if (!len) {
+      gab_vmpush(gab_thisvm(gab), gab_ok);
+      return gab_union_cvalid(gab_nil);
+    }
+
     qd_t qd = qwrite(fs, len, (uint8_t *)data);
 
     while (!qd_status(qd))
@@ -1195,62 +1188,62 @@ GAB_DYNLIB_MAIN_FN {
           {
               gab_message(gab, "make"),
               gab_strtomsg(sock_t),
-              gab_snative(gab, "make", gab_iolib_sock),
+              gab_snative(gab, "make", gab_mod_io_sock),
           },
           {
               gab_message(gab, "make"),
               gab_strtomsg(file_t),
-              gab_snative(gab, "make", gab_iolib_open),
+              gab_snative(gab, "make", gab_mod_io_open),
           },
           {
               gab_message(gab, "until"),
               file_t,
-              gab_snative(gab, "until", gab_iolib_until),
+              gab_snative(gab, "until", gab_mod_io_until),
           },
           {
               gab_message(gab, "read"),
               file_t,
-              gab_snative(gab, "read", gab_iolib_read),
+              gab_snative(gab, "read", gab_mod_io_read),
           },
           {
               gab_message(gab, "scan"),
               file_t,
-              gab_snative(gab, "scan", gab_iolib_scan),
+              gab_snative(gab, "scan", gab_mod_io_scan),
           },
           {
               gab_message(gab, "write"),
               file_t,
-              gab_snative(gab, "write", gab_iolib_write),
+              gab_snative(gab, "write", gab_mod_io_write),
           },
           {
               gab_message(gab, "write"),
               sock_t,
-              gab_snative(gab, "write", gab_iolib_send),
+              gab_snative(gab, "write", gab_mod_io_send),
           },
           {
               gab_message(gab, "read"),
               sock_t,
-              gab_snative(gab, "read", gab_iolib_recv),
+              gab_snative(gab, "read", gab_mod_io_recv),
           },
           {
               gab_message(gab, "accept"),
               sock_t,
-              gab_snative(gab, "accept", gab_iolib_accept),
+              gab_snative(gab, "accept", gab_mod_io_accept),
           },
           {
               gab_message(gab, "listen"),
               sock_t,
-              gab_snative(gab, "listen", gab_iolib_listen),
+              gab_snative(gab, "listen", gab_mod_io_listen),
           },
           {
               gab_message(gab, "bind"),
               sock_t,
-              gab_snative(gab, "bind", gab_iolib_bind),
+              gab_snative(gab, "bind", gab_mod_io_bind),
           },
           {
               gab_message(gab, "connect"),
               sock_t,
-              gab_snative(gab, "connect", gab_iolib_connect),
+              gab_snative(gab, "connect", gab_mod_io_connect),
           });
 
   gab_value res[] = {gab_ok, mod};

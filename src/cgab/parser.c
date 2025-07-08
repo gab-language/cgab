@@ -229,6 +229,8 @@ static a_char *parse_raw_str(struct parser *parser, s_char raw_str) {
       case '\'':
         buffer[buf_end++] = '\'';
         break;
+      case 'e':
+        buffer[buf_end++] = '\033';
         break;
       case 'u':
         i += 2;
@@ -1159,11 +1161,8 @@ static inline gab_value push_send(struct gab_triple gab, struct bc *bc,
   uint16_t ks = addk(gab, bc, m);
   addk(gab, bc, gab_cinvalid);
 
-  for (int i = 0; i < cGAB_SEND_CACHE_LEN; i++) {
-    for (int j = 0; j < GAB_SEND_CACHE_SIZE; j++) {
-      addk(gab, bc, gab_cinvalid);
-    }
-  }
+  for (int i = 0; i < cGAB_SEND_CACHE_LEN * GAB_SEND_CACHE_SIZE; i++)
+    addk(gab, bc, gab_cinvalid);
 
   push_op(bc, OP_SEND, node);
   push_short(bc, ks, node);

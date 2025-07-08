@@ -1,7 +1,7 @@
 #include <assert.h>
-#include <string.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
 
 #ifndef T
 #error "Define a type T before including this header"
@@ -20,6 +20,8 @@
 #define SIZE 128
 #endif
 
+#define MASK (SIZE - 1)
+
 #ifndef DEF_T
 #define DEF_T 0
 #endif
@@ -35,36 +37,24 @@ struct TYPENAME {
 };
 
 LINKAGE void METHOD(create)(TYPENAME *self) {
-  self->head = -1;
-  self->tail = -1;
+  self->head = 0;
+  self->tail = 0;
   self->size = SIZE;
 }
 
-LINKAGE bool METHOD(is_empty)(TYPENAME *self) { return self->head == -1; }
+LINKAGE bool METHOD(is_empty)(TYPENAME *self) {
+  return self->head == self->tail;
+}
 
 LINKAGE bool METHOD(is_full)(TYPENAME *self) {
-  if (self->head == 0 && self->tail == SIZE - 1)
-    return true;
-
-  if ((self->tail + 1) % SIZE == self->head)
-    return true;
-
-  return false;
+  return self->tail - self->head >= SIZE;
 }
 
 LINKAGE bool METHOD(push)(TYPENAME *self, T value) {
   if (METHOD(is_full)(self))
     return false;
 
-  self->tail++;
-
-  if (self->tail == SIZE)
-    self->tail = 0;
-
-  if (self->head == -1)
-    self->head = 0;
-
-  self->data[self->tail] = value;
+  self->data[self->tail++ & MASK] = value;
 
   return true;
 }
@@ -73,7 +63,7 @@ LINKAGE T METHOD(peek)(TYPENAME *self) {
   if (METHOD(is_empty)(self))
     return DEF_T;
 
-  T value = self->data[self->head];
+  T value = self->data[self->head & MASK];
 
   return value;
 }
@@ -82,22 +72,14 @@ LINKAGE T METHOD(pop)(TYPENAME *self) {
   if (METHOD(is_empty)(self))
     return DEF_T;
 
-  T value = self->data[self->head];
-
-  if (self->head == self->tail) {
-    self->head = -1;
-    self->tail = -1;
-  } else {
-    if (self->head == SIZE)
-      self->head = 0;
-    else
-      self->head++;
-  }
+  T value = self->data[self->head++ & MASK];
 
   return value;
 }
 
 #undef T
+#undef SIZE
+#undef MASK
 #undef TYPENAME
 #undef NAME
 #undef GROW

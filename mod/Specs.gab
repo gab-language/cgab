@@ -268,20 +268,24 @@ re\fields = [forms: meta: path:]
 
 RE\Atom = re\atom: .defclass (
   re\atom: re\fields*
+  default:
   {})
 
 RE\Seq = re\seq: .defclass(
   re\seq: re\fields*
+  default:
   {})
 
 RE\Alt = re\alt: .defclass(
   re\alt: re\fields*
+  default:
   {
     re\is\empty: () => self.forms.any re\is\empty:
   })
 
 RE\Rep = re\rep: .defclass(
   re\rep: re\fields*
+  default:
   {})
 
 stringify_forms = (forms, sep)

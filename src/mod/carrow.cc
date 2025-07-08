@@ -1,10 +1,10 @@
 #include "arrow/api.h"
+#include "arrow/csv/api.h"
+#include "arrow/io/api.h"
 #include "arrow/compute/api.h"
-#include <arrow/csv/api.h>
-#include <arrow/io/api.h>
-#include <memory>
 
 #include "gab.h"
+#include "platform.h"
 
 /*
  * A custom input stream class which yields to the gab engine
@@ -249,8 +249,7 @@ gab_value datumToValue(struct gab_triple gab, arrow::Datum datum) {
 // implement each operatin.
 
 #define GAB_ARRAYLIB_UNARY(_, f)                                               \
-  union gab_value_pair gab_arraylib_##f(struct gab_triple gab, uint64_t argc,  \
-                                        gab_value *argv) {                     \
+  GAB_DYNLIB_NATIVE_FN(array, f) {                                             \
     gab_value varr = gab_arg(0);                                               \
     gab_value array_t = gab_string(gab, GAB_ARRAY);                            \
                                                                                \
@@ -271,8 +270,7 @@ gab_value datumToValue(struct gab_triple gab, arrow::Datum datum) {
   }
 
 #define GAB_ARRAYLIB_BINARY(_, f)                                              \
-  union gab_value_pair gab_arraylib_##f(struct gab_triple gab, uint64_t argc,  \
-                                        gab_value *argv) {                     \
+  GAB_DYNLIB_NATIVE_FN(array, f) {                                             \
     gab_value varr = gab_arg(0);                                               \
     gab_value vrhs = gab_arg(1);                                               \
     gab_value array_t = gab_string(gab, GAB_ARRAY);                            \
@@ -296,8 +294,7 @@ gab_value datumToValue(struct gab_triple gab, arrow::Datum datum) {
   }
 
 #define GAB_ARRAYLIB_BINARY_CALL(_, f)                                         \
-  union gab_value_pair gab_arraylib_##f(struct gab_triple gab, uint64_t argc,  \
-                                        gab_value *argv) {                     \
+  GAB_DYNLIB_NATIVE_FN(array, f) {                                             \
     gab_value varr = gab_arg(0);                                               \
     gab_value vrhs = gab_arg(1);                                               \
     gab_value array_t = gab_string(gab, GAB_ARRAY);                            \
@@ -373,8 +370,7 @@ GAB_XARRAYLIB_UNARY(GAB_ARRAYLIB_UNARY, SEMICOLON)
 GAB_XARRAYLIB_BINARY(GAB_ARRAYLIB_BINARY, SEMICOLON)
 GAB_XARRAYLIB_BINARYCALL(GAB_ARRAYLIB_BINARY_CALL, SEMICOLON)
 
-union gab_value_pair gab_arraylib_tos(struct gab_triple gab, uint64_t argc,
-                                      gab_value *argv) {
+GAB_DYNLIB_NATIVE_FN(array, tos) {
   gab_value varr = gab_arg(0);
 
   auto arr = unwrap<arrow::Array>(varr);
@@ -383,8 +379,7 @@ union gab_value_pair gab_arraylib_tos(struct gab_triple gab, uint64_t argc,
   return gab_union_cvalid(gab_nil);
 }
 
-union gab_value_pair gab_tablelib_tos(struct gab_triple gab, uint64_t argc,
-                                      gab_value *argv) {
+GAB_DYNLIB_NATIVE_FN(table, tos) {
   gab_value varr = gab_arg(0);
 
   auto table = unwrap<arrow::Table>(varr);
@@ -393,8 +388,7 @@ union gab_value_pair gab_tablelib_tos(struct gab_triple gab, uint64_t argc,
   return gab_union_cvalid(gab_nil);
 }
 
-union gab_value_pair gab_tablelib_open(struct gab_triple gab, uint64_t argc,
-                                       gab_value *argv) {
+GAB_DYNLIB_NATIVE_FN(table, open) {
   gab_value vpath = gab_arg(1);
   if (gab_valkind(vpath) != kGAB_STRING)
     return gab_pktypemismatch(gab, vpath, kGAB_STRING);
@@ -431,8 +425,7 @@ union gab_value_pair gab_tablelib_open(struct gab_triple gab, uint64_t argc,
   return gab_union_cvalid(gab_nil);
 }
 
-union gab_value_pair gab_tablelib_create(struct gab_triple gab, uint64_t argc,
-                                         gab_value *argv) {
+GAB_DYNLIB_NATIVE_FN(table, create) {
   gab_value vschema = gab_arg(1);
   gab_value schema_t = gab_string(gab, GAB_SCHEMA);
 
@@ -465,8 +458,7 @@ union gab_value_pair gab_tablelib_create(struct gab_triple gab, uint64_t argc,
   return gab_union_cvalid(gab_nil);
 }
 
-union gab_value_pair gab_schemalib_create(struct gab_triple gab, uint64_t argc,
-                                          gab_value *argv) {
+GAB_DYNLIB_NATIVE_FN(schema, create) {
   std::vector<std::shared_ptr<arrow::Field>> fields = {};
 
   uint64_t nargs = (argc - 1) / 2;
@@ -537,8 +529,7 @@ union gab_value_pair gab_schemalib_create(struct gab_triple gab, uint64_t argc,
 
 #define getstrdata(str) gab_strdata(&str)
 
-union gab_value_pair gab_arraylib_create(struct gab_triple gab, uint64_t argc,
-                                         gab_value *argv) {
+GAB_DYNLIB_NATIVE_FN(array, create) {
   gab_value type = gab_arg(1);
 
   GAB_ARRAYBUILDER(Int8Builder, GAB_DATATYPE_INT8, kGAB_NUMBER, gab_valtoi);
@@ -560,7 +551,7 @@ union gab_value_pair gab_arraylib_create(struct gab_triple gab, uint64_t argc,
 }
 
 #define GAB_ARRAYLIB_MESSAGE(m, f)                                             \
-  {gab_message(gab, m), array_type, gab_snative(gab, m, gab_arraylib_##f)}
+  {gab_message(gab, m), array_type, gab_snative(gab, m, gab_mod_array_##f)}
 
 extern "C" {
 GAB_DYNLIB_MAIN_FN {
@@ -597,7 +588,7 @@ GAB_DYNLIB_MAIN_FN {
           {
               gab_message(gab, "make"),
               array_mod,
-              gab_snative(gab, "make", gab_arraylib_create),
+              gab_snative(gab, "make", gab_mod_array_create),
           },
           {
               gab_message(gab, "t"),
@@ -607,7 +598,7 @@ GAB_DYNLIB_MAIN_FN {
           {
               gab_message(gab, "make"),
               schema_mod,
-              gab_snative(gab, "make", gab_schemalib_create),
+              gab_snative(gab, "make", gab_mod_schema_create),
           },
           {
               gab_message(gab, "t"),
@@ -617,7 +608,7 @@ GAB_DYNLIB_MAIN_FN {
           {
               gab_message(gab, "make"),
               table_mod,
-              gab_snative(gab, "make", gab_tablelib_create),
+              gab_snative(gab, "make", gab_mod_table_create),
           },
           {
               gab_message(gab, "t"),
@@ -627,7 +618,7 @@ GAB_DYNLIB_MAIN_FN {
           {
               gab_message(gab, "open"),
               table_mod,
-              gab_snative(gab, "open", gab_tablelib_open),
+              gab_snative(gab, "open", gab_mod_table_open),
           },
           GAB_XARRAYLIB_UNARY(GAB_ARRAYLIB_MESSAGE, COMMA),
           GAB_XARRAYLIB_BINARY(GAB_ARRAYLIB_MESSAGE, COMMA),
@@ -636,7 +627,7 @@ GAB_DYNLIB_MAIN_FN {
           {
               gab_message(gab, "to\\s"),
               table_type,
-              gab_snative(gab, "to\\s", gab_tablelib_tos),
+              gab_snative(gab, "to\\s", gab_mod_table_tos),
           }, );
 
   gab_value res[] = {gab_ok, mod};

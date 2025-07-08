@@ -6,14 +6,14 @@ Records = 'crecords'.use
     self.at key .ok
   end
 
-  put_by: (k, f) => do
+  put_by: (k f) => do
     v = self.at k .unwrap
     self.put(k, f.(v))
   end
 
-  put_via_by: (f, path*) => do
+  put_via_by: (path*, f) => do
     (ok, v) = self.at_via(path*)
-    self.put_via(f.(ok .and v .or nil:), path*)
+    self.put_via(path*, f.(ok .and v .or nil:))
   end
 
   is\record: true:

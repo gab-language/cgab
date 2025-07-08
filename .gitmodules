@@ -79,3 +79,6 @@
 [submodule "vendor/linenoise"]
 	path = vendor/linenoise
 	url = https://github.com/arangodb/linenoise-ng.git
+[submodule "vendor/termbox2"]
+	path = vendor/termbox2
+	url = https://github.com/termbox/termbox2.git

@@ -1,7 +1,7 @@
 #include "gab.h"
+#include "platform.h"
 
-union gab_value_pair gab_reclib_at(struct gab_triple gab, uint64_t argc,
-                                   gab_value argv[argc]) {
+GAB_DYNLIB_NATIVE_FN(rec, at) {
   gab_value rec = gab_arg(0);
   gab_value key = gab_arg(1);
 
@@ -22,8 +22,7 @@ union gab_value_pair gab_reclib_at(struct gab_triple gab, uint64_t argc,
 #define MAX(a, b) (a > b ? a : b)
 #define CLAMP(a, b) (MAX(0, MIN(a, b)))
 
-union gab_value_pair gab_reclib_slice(struct gab_triple gab, uint64_t argc,
-                                      gab_value argv[argc]) {
+GAB_DYNLIB_NATIVE_FN(rec, slice) {
   gab_value rec = gab_arg(0);
   uint64_t len = gab_reclen(argv[0]);
   uint64_t start = 0, end = len;
@@ -78,8 +77,7 @@ union gab_value_pair gab_reclib_slice(struct gab_triple gab, uint64_t argc,
   return gab_union_cvalid(gab_nil);
 }
 
-union gab_value_pair gab_reclib_cat(struct gab_triple gab, uint64_t argc,
-                                     gab_value argv[argc]) {
+GAB_DYNLIB_NATIVE_FN(rec, cat) {
   gab_value rec = gab_arg(0);
 
   if (gab_valkind(rec) != kGAB_RECORD)
@@ -96,8 +94,7 @@ union gab_value_pair gab_reclib_cat(struct gab_triple gab, uint64_t argc,
   return gab_union_cvalid(gab_nil);
 }
 
-union gab_value_pair gab_reclib_push(struct gab_triple gab, uint64_t argc,
-                                     gab_value argv[argc]) {
+GAB_DYNLIB_NATIVE_FN(rec, push) {
   gab_value rec = gab_arg(0);
 
   if (gab_valkind(rec) != kGAB_RECORD)
@@ -109,8 +106,7 @@ union gab_value_pair gab_reclib_push(struct gab_triple gab, uint64_t argc,
   return gab_union_cvalid(gab_nil);
 }
 
-union gab_value_pair gab_reclib_pop(struct gab_triple gab, uint64_t argc,
-                                    gab_value argv[argc]) {
+GAB_DYNLIB_NATIVE_FN(rec, pop) {
   gab_value rec = gab_arg(0);
 
   if (gab_valkind(rec) != kGAB_RECORD)
@@ -124,8 +120,7 @@ union gab_value_pair gab_reclib_pop(struct gab_triple gab, uint64_t argc,
   return gab_union_cvalid(gab_nil);
 }
 
-union gab_value_pair gab_reclib_put(struct gab_triple gab, uint64_t argc,
-                                    gab_value argv[argc]) {
+GAB_DYNLIB_NATIVE_FN(rec, put) {
   gab_value rec = gab_arg(0);
   gab_value key = gab_arg(1);
   gab_value val = gab_arg(2);
@@ -138,8 +133,7 @@ union gab_value_pair gab_reclib_put(struct gab_triple gab, uint64_t argc,
   return gab_union_cvalid(gab_nil);
 }
 
-union gab_value_pair gab_reclib_take(struct gab_triple gab, uint64_t argc,
-                                     gab_value argv[argc]) {
+GAB_DYNLIB_NATIVE_FN(rec, take) {
   gab_value rec = gab_arg(0);
   gab_value key = gab_arg(1);
 
@@ -155,8 +149,7 @@ union gab_value_pair gab_reclib_take(struct gab_triple gab, uint64_t argc,
   return gab_union_cvalid(gab_nil);
 }
 
-union gab_value_pair gab_reclib_is_empty(struct gab_triple gab, uint64_t argc,
-                                         gab_value argv[argc]) {
+GAB_DYNLIB_NATIVE_FN(rec, is_empty) {
   gab_value rec = gab_arg(0);
 
   if (gab_valkind(rec) != kGAB_RECORD)
@@ -169,8 +162,7 @@ union gab_value_pair gab_reclib_is_empty(struct gab_triple gab, uint64_t argc,
   return gab_union_cvalid(gab_nil);
 }
 
-union gab_value_pair gab_reclib_is_list(struct gab_triple gab, uint64_t argc,
-                                        gab_value argv[argc]) {
+GAB_DYNLIB_NATIVE_FN(rec, is_list) {
   gab_value rec = gab_arg(0);
 
   if (gab_valkind(rec) != kGAB_RECORD)
@@ -195,8 +187,7 @@ gab_value doatvia(gab_value rec, uint64_t len, gab_value path[len]) {
   return doatvia(subrec, len - 1, path + 1);
 }
 
-union gab_value_pair gab_reclib_atvia(struct gab_triple gab, uint64_t argc,
-                                      gab_value argv[argc]) {
+GAB_DYNLIB_NATIVE_FN(rec, at_via) {
   gab_value rec = gab_arg(0);
 
   if (gab_valkind(rec) != kGAB_RECORD)
@@ -236,10 +227,9 @@ gab_value doputvia(struct gab_triple gab, gab_value rec, gab_value val,
   return gab_recput(gab, rec, key, subval);
 }
 
-union gab_value_pair gab_reclib_putvia(struct gab_triple gab, uint64_t argc,
-                                       gab_value argv[argc]) {
+GAB_DYNLIB_NATIVE_FN(rec, put_via) {
   gab_value rec = gab_arg(0);
-  gab_value val = gab_arg(1);
+  gab_value val = gab_arg(argc - 1);
 
   if (gab_valkind(rec) != kGAB_RECORD)
     return gab_pktypemismatch(gab, rec, kGAB_RECORD);
@@ -249,7 +239,7 @@ union gab_value_pair gab_reclib_putvia(struct gab_triple gab, uint64_t argc,
     return gab_union_cvalid(gab_nil);
   }
 
-  gab_value result = doputvia(gab, rec, val, argc - 2, argv + 2);
+  gab_value result = doputvia(gab, rec, val, argc - 2, argv + 1);
 
   if (result == gab_cundefined)
     return gab_panicf(gab, "Invalid path for $ on $",
@@ -260,8 +250,7 @@ union gab_value_pair gab_reclib_putvia(struct gab_triple gab, uint64_t argc,
   return gab_union_cvalid(gab_nil);
 }
 
-union gab_value_pair gab_reclib_len(struct gab_triple gab, uint64_t argc,
-                                    gab_value argv[argc]) {
+GAB_DYNLIB_NATIVE_FN(rec, len) {
   gab_value rec = gab_arg(0);
 
   if (gab_valkind(rec) != kGAB_RECORD)
@@ -272,8 +261,7 @@ union gab_value_pair gab_reclib_len(struct gab_triple gab, uint64_t argc,
   return gab_union_cvalid(gab_nil);
 }
 
-union gab_value_pair gab_reclib_seqinit(struct gab_triple gab, uint64_t argc,
-                                        gab_value argv[argc]) {
+GAB_DYNLIB_NATIVE_FN(rec, seq_init) {
   gab_value rec = gab_arg(0);
 
   if (gab_valkind(rec) != kGAB_RECORD)
@@ -293,8 +281,7 @@ union gab_value_pair gab_reclib_seqinit(struct gab_triple gab, uint64_t argc,
   return gab_union_cvalid(gab_nil);
 }
 
-union gab_value_pair gab_reclib_seqnext(struct gab_triple gab, uint64_t argc,
-                                        gab_value argv[argc]) {
+GAB_DYNLIB_NATIVE_FN(rec, seq_next) {
   gab_value rec = gab_arg(0);
   gab_value old_key = gab_arg(1);
 
@@ -334,72 +321,72 @@ GAB_DYNLIB_MAIN_FN {
           {
               gab_message(gab, "slice"),
               t,
-              gab_snative(gab, "slice", gab_reclib_slice),
+              gab_snative(gab, "slice", gab_mod_rec_slice),
           },
           {
               gab_message(gab, "put_via"),
               t,
-              gab_snative(gab, "put_via", gab_reclib_putvia),
+              gab_snative(gab, "put_via", gab_mod_rec_put_via),
           },
           {
               gab_message(gab, "at_via"),
               t,
-              gab_snative(gab, "at_via", gab_reclib_atvia),
+              gab_snative(gab, "at_via", gab_mod_rec_at_via),
           },
           {
               gab_message(gab, "push"),
               t,
-              gab_snative(gab, "push", gab_reclib_push),
+              gab_snative(gab, "push", gab_mod_rec_push),
           },
           {
               gab_message(gab, "+"),
               t,
-              gab_snative(gab, "+", gab_reclib_cat),
+              gab_snative(gab, "+", gab_mod_rec_cat),
           },
           {
               gab_message(gab, "is\\empty"),
               t,
-              gab_snative(gab, "is\\empty", gab_reclib_is_empty),
+              gab_snative(gab, "is\\empty", gab_mod_rec_is_empty),
           },
           {
               gab_message(gab, "is\\list"),
               t,
-              gab_snative(gab, "is\\list", gab_reclib_is_list),
+              gab_snative(gab, "is\\list", gab_mod_rec_is_list),
           },
           {
               gab_message(gab, "take"),
               t,
-              gab_snative(gab, "take", gab_reclib_take),
+              gab_snative(gab, "take", gab_mod_rec_take),
           },
           {
               gab_message(gab, "pop"),
               t,
-              gab_snative(gab, "pop", gab_reclib_pop),
+              gab_snative(gab, "pop", gab_mod_rec_pop),
           },
           {
               gab_message(gab, "put"),
               t,
-              gab_snative(gab, "put", gab_reclib_put),
+              gab_snative(gab, "put", gab_mod_rec_put),
           },
           {
               gab_message(gab, "at"),
               t,
-              gab_snative(gab, "at", gab_reclib_at),
+              gab_snative(gab, "at", gab_mod_rec_at),
           },
           {
               gab_message(gab, "len"),
               t,
-              gab_snative(gab, "len", gab_reclib_len),
+              gab_snative(gab, "len", gab_mod_rec_len),
           },
           {
               gab_message(gab, "seq\\next"),
               t,
-              gab_snative(gab, "seq\\next", gab_reclib_seqnext),
+              gab_snative(gab, "seq\\next", gab_mod_rec_seq_next),
           },
           {
               gab_message(gab, "seq\\init"),
               t,
-              gab_snative(gab, "seq\\init", gab_reclib_seqinit),
+              gab_snative(gab, "seq\\init", gab_mod_rec_seq_init),
           });
 
   gab_value res[] = {gab_ok, gab_strtomsg(t)};

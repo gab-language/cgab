@@ -11,6 +11,7 @@ INCLUDE		= -I$(INCLUDE_PREFIX) -isystem$(VENDOR_PREFIX) -L$(BUILD_PREFIX)
 CFLAGS = -std=c23 \
 				 -fPIC \
 				 -Wall \
+				 -MMD  \
 				 --target=$(GAB_TARGETS) \
 				 -DGAB_TARGET_TRIPLE=\"$(GAB_TARGETS)\"\
 				 -DGAB_DYNLIB_FILEENDING=\"$(GAB_DYNLIB_FILEENDING)\" \
@@ -61,8 +62,9 @@ CMOD_SHARED = $(CMOD_SRC:src/mod/%.c=$(BUILD_PREFIX)/mod/%.so)
 
 CXXMOD_SRC 	 = $(wildcard src/mod/*.cc)
 CXXMOD_SHARED = $(CXXMOD_SRC:src/mod/%.cc=$(BUILD_PREFIX)/mod/%.so)
-
 all: gab cmodules cxxmodules
+
+-include $(CGAB_OBJ:.o=.d) $(GAB_OBJ:.o=.d) $(CMOD_SHARED:.so=.d)
 
 # This rule builds object files out of c source files
 $(BUILD_PREFIX)/%.o: $(SRC_PREFIX)/%.c

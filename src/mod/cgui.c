@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <unistd.h>
 
 // GL/gl.h won't work because some OS's have files which override.
 // Use glad/gl.h instead.
@@ -18,7 +19,7 @@
 #define CLAY_IMPLEMENTATION
 #include "Clay/clay.h"
 
-#include "Clay/renderers/terminal/cl"
+#include "Clay/renderers/terminal/clay_renderer_terminal_ansi.c"
 
 #include <stdio.h>
 #define FONTSTASH_IMPLEMENTATION
@@ -46,6 +47,31 @@ unsigned char fontData[] = {
 void HandleClayErrors(Clay_ErrorData errorData) {
   printf("%s\n", errorData.errorText.chars);
 }
+
+// TODO: Disable TUI on windows, as termbox2 doesn't have windows support yet.
+int terminal_cols();
+int terminal_rows();
+
+#ifdef GAB_PLATFORM_UNIX
+#include <sys/ioctl.h>
+int terminal_cols() {
+  struct winsize w;
+  ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);
+  return w.ws_col;
+}
+int terminal_rows() {
+  struct winsize w;
+  ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);
+  return w.ws_row;
+}
+#elifdef GAB_PLATFORM_WIN
+#error WINDOWS TODO
+#elifdef GAB_PLATFORM_WASI
+int terminal_cols() { return 0; }
+int terminal_rows() { return 0; }
+#else
+#error Invalid GAB_PLATFORM
+#endif
 
 Clay_Vector2 mousePosition;
 
@@ -410,7 +436,6 @@ union gab_value_pair render_image(struct gab_triple gab, gab_value props) {
       .image =
           {
               .imageData = (void *)gab_strdata(&vimage),
-              .sourceDimensions = {.height = h, .width = w},
           },
   });
 
@@ -539,7 +564,7 @@ union gab_value_pair render_componentlist(struct gab_triple gab,
 
 sclay_font_t fonts[1];
 
-bool dorender() {
+bool render(Clay_RenderCommandArray *array_out) {
   // Reset our id counter;
   gui.n = 0;
 
@@ -558,7 +583,24 @@ bool dorender() {
   if (res.status != gab_cundefined)
     return false; // Put an error event into the channel
 
-  Clay_RenderCommandArray renderCommands = Clay_EndLayout();
+  *array_out = Clay_EndLayout();
+  return true;
+}
+
+// TODO: Upgrade this to use termbox renderer!
+bool dotuirender() {
+  Clay_RenderCommandArray renderCommands;
+  if (!render(&renderCommands))
+    return false;
+
+  Clay_Terminal_Render(renderCommands, terminal_cols(), terminal_rows(), 1);
+  return true;
+}
+
+bool doguirender() {
+  Clay_RenderCommandArray renderCommands;
+  if (!render(&renderCommands))
+    return false;
 
   sg_begin_pass(&(sg_pass){
       .swapchain =
@@ -581,6 +623,7 @@ bool dorender() {
   RGFW_window_swapBuffers(&gui.win);
   return true;
 }
+
 void tuirenderloop() {
   for (;;) {
     if (gab_chnisclosed(gui.appch))
@@ -589,6 +632,30 @@ void tuirenderloop() {
     if (gab_chnisclosed(gui.evch))
       break;
 
+    Clay_SetLayoutDimensions((Clay_Dimensions){
+        .height = terminal_rows(),
+        .width = terminal_cols(),
+    });
+
+    // Try to read input and re-render here
+    // if (!dotuirender())
+    //   return;
+
+    gab_chnput(gui.gab, gui.evch, gab_message(gui.gab, "tick"));
+
+    if (!dotuirender())
+      return;
+
+    switch (gab_yield(gui.gab)) {
+    case sGAB_TERM:
+      return;
+    case sGAB_COLL:
+      gab_gcepochnext(gui.gab);
+      gab_sigpropagate(gui.gab);
+      break;
+    default:
+      break;
+    }
   }
 }
 
@@ -608,13 +675,13 @@ void guirenderloop() {
       sclay_set_layout_dimensions(dim, 1);
 
       if (clay_RGFW_update(&gui.win, 10))
-        if (!dorender())
+        if (!doguirender())
           return;
     }
 
     gab_chnput(gui.gab, gui.evch, gab_message(gui.gab, "tick"));
 
-    if (!dorender())
+    if (!doguirender())
       return;
 
     switch (gab_yield(gui.gab)) {
@@ -638,8 +705,7 @@ void guirenderloop() {
   RGFW_window_close(&gui.win);
 }
 
-union gab_value_pair gab_uilib_rungui(struct gab_triple gab, uint64_t argc,
-                                      gab_value argv[argc]) {
+GAB_DYNLIB_NATIVE_FN(ui, run_gui) {
   if (!RGFW_createWindowPtr("window", RGFW_RECT(0, 0, 800, 800),
                             RGFW_windowCenter | RGFW_windowNoResize, &gui.win))
     return gab_vmpush(gab_thisvm(gab), gab_err,
@@ -695,8 +761,7 @@ union gab_value_pair gab_uilib_rungui(struct gab_triple gab, uint64_t argc,
   return gab_vmpush(gab_thisvm(gab), gab_ok), gab_union_cvalid(gab_nil);
 }
 
-union gab_value_pair gab_uilib_runtui(struct gab_triple gab, uint64_t argc,
-                                      gab_value argv[argc]) {
+GAB_DYNLIB_NATIVE_FN(ui, run_tui) {
   gab_value evch = gab_arg(1);
   gab_value appch = gab_arg(2);
 
@@ -706,17 +771,23 @@ union gab_value_pair gab_uilib_runtui(struct gab_triple gab, uint64_t argc,
   if (!gab_valisch(appch))
     return gab_pktypemismatch(gab, evch, kGAB_CHANNEL);
 
+  gui.gab = gab;
+  gui.appch = appch;
+  gui.evch = evch;
+
   uint64_t totalMemorySize = Clay_MinMemorySize();
   Clay_Arena clayMemory = Clay_CreateArenaWithCapacityAndMemory(
       totalMemorySize, malloc(totalMemorySize));
 
-  Clay_Initialize(clayMemory,
-                  (Clay_Dimensions){(float)gui.win.r.w, (float)gui.win.r.h},
-                  (Clay_ErrorHandler){HandleClayErrors});
+  Clay_Initialize(
+      clayMemory,
+      (Clay_Dimensions){.height = terminal_rows(), .width = terminal_cols()},
+      (Clay_ErrorHandler){HandleClayErrors});
 
-  Clay_SetMeasureTextFunction(sclay_measure_text, &fonts);
+  int columnWidth = 1;
+  Clay_SetMeasureTextFunction(Console_MeasureText, &columnWidth);
 
-  guirenderloop();
+  tuirenderloop();
 
   return gab_vmpush(gab_thisvm(gab), gab_ok), gab_union_cvalid(gab_nil);
 }
@@ -727,12 +798,12 @@ GAB_DYNLIB_MAIN_FN {
           {
               gab_message(gab, "run\\gui"),
               mod,
-              gab_snative(gab, "run\\gui", gab_uilib_rungui),
+              gab_snative(gab, "run\\gui", gab_mod_ui_run_gui),
           },
           {
               gab_message(gab, "run\\tui"),
               mod,
-              gab_snative(gab, "run\\tui", gab_uilib_rungui),
+              gab_snative(gab, "run\\tui", gab_mod_ui_run_tui),
           }, );
 
   gab_value res[] = {gab_ok, mod};
