@@ -2200,10 +2200,11 @@ GAB_API gab_value gab_ntchnput(struct gab_triple gab, gab_value channel,
  * Because of this, it may mutate the channel (leave it with values inside).
  */
 GAB_API gab_value gab_untchnput(struct gab_triple gab, gab_value channel,
-                               uint64_t len, gab_value *value, uint64_t tries);
+                                uint64_t len, gab_value *value, uint64_t tries);
 
 GAB_API gab_value gab_untchntake(struct gab_triple gab, gab_value channel,
-                               uint64_t len, gab_value *value, uint64_t tries);
+                                 uint64_t len, gab_value *value,
+                                 uint64_t tries);
 
 /**
  * @brief Take a value from the given channel. This will block the caller
@@ -2254,6 +2255,8 @@ GAB_API bool gab_chnisfull(gab_value channel);
  * @return whetehr or not the channel is empty
  */
 GAB_API bool gab_chnisempty(gab_value channel);
+
+GAB_API bool gab_chnmatches(gab_value channel, gab_value *ptr);
 
 /* Cast a value to a (gab_ochannel*) */
 #define GAB_VAL_TO_CHANNEL(value) ((struct gab_ochannel *)gab_valtoo(value))

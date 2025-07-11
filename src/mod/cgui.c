@@ -19,7 +19,13 @@
 #define CLAY_IMPLEMENTATION
 #include "Clay/clay.h"
 
-#include "Clay/renderers/terminal/clay_renderer_terminal_ansi.c"
+// #include <wchar.h>
+// #define TB_OPT_LIBC_WCHAR
+#define TB_OPT_EGC
+#define TB_IMPL
+#define STB_IMAGE_IMPLEMENTATION
+#define STB_IMAGE_RESIZE_IMPLEMENTATION
+#include "Clay/renderers/termbox2/clay_renderer_termbox2.c"
 
 #include <stdio.h>
 #define FONTSTASH_IMPLEMENTATION
@@ -74,7 +80,6 @@ int terminal_rows() { return 0; }
 #endif
 
 Clay_Vector2 mousePosition;
-
 bool clay_RGFW_update(RGFW_window *win, double deltaTime) {
   RGFW_event ev = win->event;
   switch (ev.type) {
@@ -82,7 +87,8 @@ bool clay_RGFW_update(RGFW_window *win, double deltaTime) {
     switch (ev.button) {
     case RGFW_mouseScrollUp:
     case RGFW_mouseScrollDown:
-      Clay_UpdateScrollContainers(false, (Clay_Vector2){0, ev.scroll}, 0);
+      Clay_UpdateScrollContainers(false, (Clay_Vector2){0, ev.scroll},
+                                  deltaTime);
       return true;
     default:
       Clay_SetPointerState(mousePosition,
@@ -122,25 +128,6 @@ struct gui {
 };
 
 struct gui gui;
-
-void onkey(RGFW_window *win, RGFW_key key, unsigned char key_char,
-           RGFW_keymod key_mod, RGFW_bool down) {
-  if (gui.evch != gab_cundefined) {
-    gab_value ev[] = {
-        gab_message(gui.gab, "key"),
-        gab_nstring(gui.gab, 1, (const char *)&key_char),
-        gab_number(key_mod),
-        gab_bool(down),
-    };
-
-    gab_niref(gui.gab, 1, LEN_CARRAY(ev), ev);
-
-    gab_nchnput(gui.gab, gui.evch, LEN_CARRAY(ev), ev);
-
-    gab_ndref(gui.gab, 1, LEN_CARRAY(ev), ev);
-  }
-}
-
 gab_value clayGetTopmostId() {
   Clay_ElementIdArray arr = Clay_GetPointerOverIds();
 
@@ -156,75 +143,50 @@ gab_value clayGetTopmostId() {
   return gab_cundefined;
 }
 
+void putevent(const char *type, const char *event, gab_value data1,
+              gab_value data2, gab_value data3) {
+  if (gui.evch != gab_cundefined) {
+    gab_value ev[] = {
+        gab_message(gui.gab, type),
+        gab_message(gui.gab, event),
+        data1,
+        data2,
+        data3,
+    };
+
+    size_t len = sizeof(ev) / sizeof(gab_value) - (data3 == gab_cundefined);
+
+    gab_niref(gui.gab, 1, LEN_CARRAY(ev), ev);
+
+    gab_nchnput(gui.gab, gui.evch, len, ev);
+
+    gab_ndref(gui.gab, 1, LEN_CARRAY(ev), ev);
+  }
+}
+
+void onkey(RGFW_window *win, RGFW_key key, unsigned char key_char,
+           RGFW_keymod key_mod, RGFW_bool down) {
+  const char ev[] = {key_char, '\0'};
+  putevent("key", ev, gab_number(key_mod), gab_bool(down), gab_cundefined);
+}
+
 void onmousebutton(RGFW_window *win, unsigned char b, double dbl,
                    unsigned char down) {
+  gab_value target = clayGetTopmostId();
   switch (b) {
   case RGFW_mouseLeft:
-    if (gui.evch != gab_cundefined) {
-      gab_value target = clayGetTopmostId();
-      gab_value ev[] = {
-          gab_message(gui.gab, "mouse"),
-          gab_message(gui.gab, "left"),
-          gab_number(dbl),
-          gab_bool(down),
-          target,
-      };
-
-      size_t len = sizeof(ev) / sizeof(gab_value) - (target == gab_cundefined);
-
-      gab_niref(gui.gab, 1, LEN_CARRAY(ev), ev);
-
-      gab_nchnput(gui.gab, gui.evch, len, ev);
-
-      gab_ndref(gui.gab, 1, LEN_CARRAY(ev), ev);
-    }
+    putevent("mouse", "left", gab_number(dbl), gab_bool(down), target);
     break;
   case RGFW_mouseRight:
-    if (gui.evch != gab_cundefined) {
-      gab_value target = clayGetTopmostId();
-      gab_value ev[] = {
-          gab_message(gui.gab, "mouse"),
-          gab_message(gui.gab, "right"),
-          gab_number(dbl),
-          gab_bool(down),
-          clayGetTopmostId(),
-      };
-      size_t len = sizeof(ev) / sizeof(gab_value) - (target == gab_cundefined);
-
-      gab_niref(gui.gab, 1, LEN_CARRAY(ev), ev);
-
-      gab_nchnput(gui.gab, gui.evch, len, ev);
-
-      gab_ndref(gui.gab, 1, LEN_CARRAY(ev), ev);
-    }
+    putevent("mouse", "right", gab_number(dbl), gab_bool(down), target);
     break;
   case RGFW_mouseScrollDown:
-    if (gui.evch != gab_cundefined) {
-      gab_value ev[] = {
-          gab_message(gui.gab, "mouse"),
-          gab_message(gui.gab, "scroll\\down"),
-          gab_number(dbl),
-          gab_bool(down),
-      };
-
-      gab_niref(gui.gab, 1, LEN_CARRAY(ev), ev);
-      gab_nchnput(gui.gab, gui.evch, sizeof(ev) / sizeof(gab_value), ev);
-      gab_ndref(gui.gab, 1, LEN_CARRAY(ev), ev);
-    }
+    putevent("mouse", "scroll\\down", gab_number(dbl), gab_bool(down),
+             gab_cundefined);
     break;
   case RGFW_mouseScrollUp:
-    if (gui.evch != gab_cundefined) {
-      gab_value ev[] = {
-          gab_message(gui.gab, "mouse"),
-          gab_message(gui.gab, "scroll\\up"),
-          gab_number(dbl),
-          gab_bool(down),
-      };
-
-      gab_niref(gui.gab, 1, LEN_CARRAY(ev), ev);
-      gab_nchnput(gui.gab, gui.evch, sizeof(ev) / sizeof(gab_value), ev);
-      gab_ndref(gui.gab, 1, LEN_CARRAY(ev), ev);
-    }
+    putevent("mouse", "scroll\\up", gab_number(dbl), gab_bool(down),
+             gab_cundefined);
     break;
   };
 }
@@ -241,6 +203,48 @@ void onmousepos(RGFW_window *win, RGFW_point dst, RGFW_point) {
   //
   //   gab_nchnput(gui.gab, evch, sizeof(ev) / sizeof(gab_value), ev);
   // }
+}
+
+bool clay_termbox_update(struct tb_event *e, double deltaTime) {
+  switch (e->type) {
+  case TB_EVENT_RESIZE:
+    return false;
+  case TB_EVENT_KEY:
+    const char ev[] = {e->ch, '\0'};
+    putevent("key", ev, gab_number(e->mod), gab_bool(true), gab_cundefined);
+    return true;
+  case TB_EVENT_MOUSE:
+    switch (e->key) {
+    case TB_KEY_MOUSE_RELEASE:
+      Clay_SetPointerState((Clay_Vector2){e->x, e->y}, false);
+      putevent("mouse", "left", gab_number(0), gab_false, clayGetTopmostId());
+      return true;
+    case TB_KEY_MOUSE_RIGHT:
+      Clay_SetPointerState((Clay_Vector2){e->x, e->y}, false);
+      putevent("mouse", "right", gab_number(0), gab_true, clayGetTopmostId());
+      return true;
+    case TB_KEY_MOUSE_LEFT:
+      Clay_SetPointerState((Clay_Vector2){e->x, e->y}, true);
+      putevent("mouse", "left", gab_number(0), gab_true, clayGetTopmostId());
+      return true;
+    case TB_KEY_MOUSE_WHEEL_UP:
+      Clay_UpdateScrollContainers(false, (Clay_Vector2){0, e->y}, deltaTime);
+      putevent("mouse", "scroll\\up", gab_number(0), gab_false,
+               clayGetTopmostId());
+      return true;
+    case TB_KEY_MOUSE_WHEEL_DOWN:
+      Clay_UpdateScrollContainers(false, (Clay_Vector2){0, e->y}, deltaTime);
+      putevent("mouse", "scroll\\down", gab_number(0), gab_false,
+               clayGetTopmostId());
+      return true;
+    default:
+      goto err;
+    }
+  }
+
+err:
+  assert(false && "UNREACHABLE");
+  return false;
 }
 
 Clay_Color packedToClayColor(gab_value vcolor) {
@@ -587,13 +591,14 @@ bool render(Clay_RenderCommandArray *array_out) {
   return true;
 }
 
-// TODO: Upgrade this to use termbox renderer!
 bool dotuirender() {
   Clay_RenderCommandArray renderCommands;
   if (!render(&renderCommands))
     return false;
 
-  Clay_Terminal_Render(renderCommands, terminal_cols(), terminal_rows(), 1);
+  tb_clear();
+  Clay_Termbox_Render(renderCommands);
+  tb_present();
   return true;
 }
 
@@ -632,14 +637,34 @@ void tuirenderloop() {
     if (gab_chnisclosed(gui.evch))
       break;
 
-    Clay_SetLayoutDimensions((Clay_Dimensions){
-        .height = terminal_rows(),
-        .width = terminal_cols(),
-    });
+    struct tb_event e;
+    for (;;) {
+      switch (tb_peek_event(&e, 0)) {
+      case TB_OK:
+        Clay_SetLayoutDimensions((Clay_Dimensions){
+            .height = tb_height(),
+            .width = tb_width(),
+        });
 
-    // Try to read input and re-render here
-    // if (!dotuirender())
-    //   return;
+        if (e.type == TB_EVENT_KEY && e.key == TB_KEY_ESC)
+          goto fin;
+
+        if (clay_termbox_update(&e, 10))
+          if (!dotuirender())
+            return;
+
+        continue;
+      case TB_ERR_POLL:
+        if (tb_last_errno() == EINTR)
+          continue;
+      default:
+        return;
+      case TB_ERR_NO_EVENT:
+        // fallthrough
+      }
+
+      break;
+    }
 
     gab_chnput(gui.gab, gui.evch, gab_message(gui.gab, "tick"));
 
@@ -657,6 +682,15 @@ void tuirenderloop() {
       break;
     }
   }
+
+          fin:
+  if (gui.evch != gab_cundefined)
+    gab_chnclose(gui.evch);
+
+  if (gui.appch != gab_cundefined)
+    gab_chnclose(gui.appch);
+
+  Clay_Termbox_Close();
 }
 
 void guirenderloop() {
@@ -775,6 +809,10 @@ GAB_DYNLIB_NATIVE_FN(ui, run_tui) {
   gui.appch = appch;
   gui.evch = evch;
 
+  Clay_Termbox_Initialize(TB_OUTPUT_256, CLAY_TB_BORDER_MODE_DEFAULT,
+                          CLAY_TB_BORDER_CHARS_DEFAULT,
+                          CLAY_TB_IMAGE_MODE_DEFAULT, false);
+
   uint64_t totalMemorySize = Clay_MinMemorySize();
   Clay_Arena clayMemory = Clay_CreateArenaWithCapacityAndMemory(
       totalMemorySize, malloc(totalMemorySize));
@@ -784,8 +822,7 @@ GAB_DYNLIB_NATIVE_FN(ui, run_tui) {
       (Clay_Dimensions){.height = terminal_rows(), .width = terminal_cols()},
       (Clay_ErrorHandler){HandleClayErrors});
 
-  int columnWidth = 1;
-  Clay_SetMeasureTextFunction(Console_MeasureText, &columnWidth);
+  Clay_SetMeasureTextFunction(Clay_Termbox_MeasureText, nullptr);
 
   tuirenderloop();
 

@@ -85,6 +85,8 @@ static handler handlers[] = {
 #define GAB() (__gab)
 #define EG() (GAB().eg)
 #define FIBER() (GAB_VAL_TO_FIBER(gab_thisfiber(GAB())))
+#define REENTRANT() (FIBER()->reentrant)
+#define RESET_REENTRANT() (FIBER()->reentrant = gab_cundefined)
 #define GC() (GAB().eg->gc)
 #define VM() (gab_thisvm(GAB()))
 #define SET_BLOCK(b) (FB()[-3] = (uintptr_t)(b));
@@ -478,13 +480,13 @@ gab_value sprint_stacktrace(struct gab_triple gab, struct gab_vm *vm,
   ip = frame_ip(f);
   f = frame_parent(f);
 
-  // while (f && frame_parent(f) > vm->sb) {
-  //   frame = vm_frame_build_err(gab, frame_block(f), ip, GAB_NONE, "");
-  //   vframes[nframes++] = gab_vspanicf(gab, va, frame);
-  //
-  //   ip = frame_ip(f);
-  //   f = frame_parent(f);
-  // }
+  while (f && frame_parent(f) > vm->sb) {
+    frame = vm_frame_build_err(gab, frame_block(f), ip, GAB_NONE, "");
+    vframes[nframes++] = gab_vspanicf(gab, va, frame);
+
+    ip = frame_ip(f);
+    f = frame_parent(f);
+  }
 
   return gab_list(gab, nframes, vframes);
 }
@@ -883,7 +885,7 @@ inline uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc,
     NEXT();                                                                    \
   })
 
-#define CALL_NATIVE(native, have, below_have, message)                         \
+#define CALL_NATIVE(native, have, below_have, message, dyn)                    \
   ({                                                                           \
     STORE();                                                                   \
                                                                                \
@@ -891,15 +893,19 @@ inline uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc,
                                                                                \
     gab_value *before = SP();                                                  \
                                                                                \
-    uint64_t pass = message ? have : have - 1;                                 \
+    uint64_t pass = (message ? have - dyn : have - 1);                         \
                                                                                \
     union gab_value_pair res =                                                 \
-        (*native->function)(GAB(), pass, SP() - pass, FIBER()->reentrant);     \
+        (*native->function)(GAB(), pass, SP() - pass, REENTRANT());            \
                                                                                \
-    FIBER()->reentrant = gab_cundefined;                                       \
+    RESET_REENTRANT();                                                         \
                                                                                \
-    if (__gab_unlikely(res.status != gab_cundefined))                          \
-      return res;                                                              \
+    if (__gab_unlikely(res.status != gab_cundefined)) {                        \
+      if (res.status == gab_ctimeout)                                          \
+        VM_YIELD(res.vresult);                                                 \
+      else                                                                     \
+        return res;                                                            \
+    }                                                                          \
                                                                                \
     SP() = VM()->sp;                                                           \
                                                                                \
@@ -1292,7 +1298,7 @@ CASE_CODE(SEND_NATIVE) {
 
   struct gab_onative *n = (void *)ks[GAB_SEND_KSPEC];
 
-  CALL_NATIVE(n, have, below_have, true);
+  CALL_NATIVE(n, have, below_have, true, false);
 }
 
 CASE_CODE(SEND_BLOCK) {
@@ -1410,7 +1416,7 @@ CASE_CODE(SEND_PRIMITIVE_CALL_NATIVE) {
 
   struct gab_onative *n = GAB_VAL_TO_NATIVE(r);
 
-  CALL_NATIVE(n, have, below_have, false);
+  CALL_NATIVE(n, have, below_have, false, false);
 }
 
 IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_ADD, gab_number, gab_float, gab_valtof, +);
@@ -1529,15 +1535,15 @@ CASE_CODE(SEND_PRIMITIVE_USE) {
   SEND_GUARD_KIND(r, kGAB_STRING);
 
   STORE();
-  gab_value reentrant = FIBER()->reentrant;
+  gab_value reentrant = REENTRANT();
   union gab_value_pair mod;
 
   if (reentrant != gab_cundefined) {
     assert(gab_valisfib(reentrant));
 
-    mod = gab_tfibawait(GAB(), reentrant, cGAB_WORKER_IDLEWAIT_NS);
+    mod = gab_tfibawait(GAB(), reentrant, 0);
 
-    FIBER()->reentrant = gab_cundefined;
+    RESET_REENTRANT();
   } else {
     /*
      * This pulling in of args/values to pass on to use'd module
@@ -1562,8 +1568,6 @@ CASE_CODE(SEND_PRIMITIVE_USE) {
                          });
   }
 
-  // This isn't quite reentrant, I want to *await* the previous thingie, not
-  // spin up a new one.
   if (mod.status == gab_ctimeout) {
     assert(gab_valisfib(mod.vresult));
     VM_YIELD(mod.vresult);
@@ -2164,13 +2168,9 @@ CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE_NATIVE) {
   // Guard that implementations for the true-message (m) haven't changed
   SEND_GUARD_CACHED_GENERIC_CALL_SPECS(m);
 
-  memmove(SP() - (have), SP() - (have - 1), (have - 1) * sizeof(gab_value));
-  have--;
-  DROP();
-
   struct gab_onative *spec = (void *)ks[GAB_SEND_KSPEC];
 
-  CALL_NATIVE(spec, have, below_have, true);
+  CALL_NATIVE(spec, have, below_have, true, true);
 }
 
 CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE_PRIMITIVE) {
@@ -2180,17 +2180,31 @@ CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE_PRIMITIVE) {
   gab_value m = PEEK_N(have);
   gab_value r = PEEK_N(have - 1);
 
-  // Guard that our callee is still a message
-  SEND_GUARD_KIND(m, kGAB_MESSAGE);
-  // Guard that implementations for this message haven't changed
-  SEND_GUARD_CACHED_MESSAGE_SPECS();
-  // Guard that true-receivers type hasn't changed
-  SEND_GUARD_CACHED_RECEIVER_TYPE(r);
-  // Guard that implementations for the true-message (m) haven't changed
-  SEND_GUARD_CACHED_GENERIC_CALL_SPECS(m);
+  // TODO: More resilient and correct implementation
+  // for handling primitives that yield.
+  //
+  // It is improper for this op to modify the stack,
+  // As the op we dispatch to *may* yield.
+  //
+  // In the case where it does yield, we still reenter
+  // into *this* opcode. 
+  //
+  // Sadly, I can't think of a reasonable way to make dispatch work
+  // here without memmove
 
-  memmove(SP() - (have), SP() - (have - 1), (have - 1) * sizeof(gab_value));
-  PEEK() = gab_nil;
+  if (REENTRANT() == gab_cundefined) {
+    // Guard that our callee is still a message
+    SEND_GUARD_KIND(m, kGAB_MESSAGE);
+    // Guard that implementations for this message haven't changed
+    SEND_GUARD_CACHED_MESSAGE_SPECS();
+    // Guard that true-receivers type hasn't changed
+    SEND_GUARD_CACHED_RECEIVER_TYPE(r);
+    // Guard that implementations for the true-message (m) haven't changed
+    SEND_GUARD_CACHED_GENERIC_CALL_SPECS(m);
+
+    memmove(SP() - (have), SP() - (have - 1), (have - 1) * sizeof(gab_value));
+    PEEK() = gab_nil;
+  }
 
   uint8_t spec = ks[GAB_SEND_KSPEC];
 
@@ -2304,11 +2318,12 @@ CASE_CODE(SEND_PRIMITIVE_TAKE) {
 
   // TODO: Fix the hardcoding of len here
   gab_value takebuf[32];
-  gab_value v = gab_ntchntake(GAB(), c, 32, takebuf, 0);
+  gab_value v =
+      gab_ntchntake(GAB(), c, 32, takebuf, cGAB_VM_CHANNEL_TAKE_TRIES);
 
   switch (v) {
   case gab_ctimeout:
-    VM_YIELD(gab_cundefined);
+    VM_YIELD(gab_ctimeout);
   case gab_cinvalid:
     VM_TERM();
   case gab_cundefined:
@@ -2344,14 +2359,19 @@ CASE_CODE(SEND_PRIMITIVE_PUT) {
 
   STORE_SP();
 
-  if (FIBER()->reentrant == c) {
+  if (REENTRANT() == c) {
     // If we're reentering, check that our channel
     // is still holding our data ptr.
-    // If so, we need to yield again.
-    if (GAB_VAL_TO_CHANNEL(c)->data == SP() - (have - 1))
+    // I *believe* this is sound based on the following principles:
+    //  - Fibers only ever run on *one* thread, they never migrate.
+    //  - Fibers don't share vm's - the address range of one stack
+    //    can never overlap with another's. (If stacks become resizeable, this
+    //    changes)
+    //  - Fiber's stacks never resize
+    if (gab_chnmatches(c, SP() - (have - 1)))
       VM_YIELD(c);
 
-    FIBER()->reentrant = gab_cundefined;
+    RESET_REENTRANT();
 
     // If not, our put is complete and we can move on
     DROP_N(have + 1);
@@ -2363,13 +2383,17 @@ CASE_CODE(SEND_PRIMITIVE_PUT) {
   // All values *but* the channel are put into the channel.
   // TODO: ERROR: DIFFERENCE BETWEEN SUCCESSFUL
   // AND UNSUCCESSFUL TRY-PUT HERE ISN"T SHOWN
-  gab_value r = gab_untchnput(GAB(), c, have - 1, SP() - (have - 1), 0);
+
+  gab_value r = gab_untchnput(GAB(), c, have - 1, SP() - (have - 1),
+                              cGAB_VM_CHANNEL_PUT_TRIES);
 
   switch (r) {
   case gab_cinvalid:
     VM_TERM();
+    // The put timed-out (The channel already held values)
   case gab_ctimeout:
     VM_YIELD(r);
+    // The put succeeded, we must yield until it completes.
   default:
     VM_YIELD(c);
   }
@@ -2379,6 +2403,10 @@ CASE_CODE(SEND_PRIMITIVE_FIBER) {
   gab_value *ks = READ_SENDCONSTANTS;
   uint64_t have = COMPUTE_TUPLE();
   uint64_t below_have = PEEK_N(have + 1);
+
+  // TODO:
+  //  This function should create the fiber, store it on the stack, and then do
+  //  a unsafe channel put.
 
   SEND_GUARD_CACHED_RECEIVER_TYPE(PEEK_N(have));
 
@@ -2391,14 +2419,17 @@ CASE_CODE(SEND_PRIMITIVE_FIBER) {
 
   STORE_SP();
 
-  union gab_value_pair fb = gab_tarun(GAB(), cGAB_VM_CHANNEL_PUT_TIMEOUT_NS,
+  // We cannot have a low (0-1) value here for some reason
+  union gab_value_pair fb = gab_tarun(GAB(), 1 << 16,
                                       (struct gab_run_argt){
                                           .flags = GAB().flags,
                                           .main = block,
                                       });
 
   if (fb.status == gab_ctimeout)
-    VM_YIELD(gab_cundefined);
+    VM_YIELD(gab_ctimeout);
+  else
+    RESET_REENTRANT();
 
   assert(fb.status == gab_cvalid);
 

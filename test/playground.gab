@@ -2,14 +2,14 @@ ui = 'cgui'.use
 
 (events, app) = (Channels.make, Channels.make)
 
-Fibers.make () => ui.run\gui(events, app)
+Fibers.make () => ui.run\tui(events, app)
 
 red = '0xff0000ff'.as\n
 blue = '0x0000ffff'.as\n
 green = '0x00ff00ff'.as\n
 
 CELL_SIZE = 10
-MOVE_INTERVAL = 1
+MOVE_INTERVAL = 50
 FOOD_INTERVAL = 100
 WIDTH = 800
 HEIGHT = 800
@@ -25,6 +25,7 @@ model = {
 
 Cells = snake\cell: .defclass (
   x: y: facing:
+  default:
   {
     left:  () => self.put_by(x: x => x - MOVE_DIST)
     right: () => self.put_by(x: x => x + MOVE_DIST)
@@ -56,6 +57,7 @@ behind: .defcase {
 
 Foods = snake\food: .defclass (
   x: y:
+  default:
   {
     render\food: () => [
       rect:
@@ -108,10 +110,10 @@ Foods = snake\food: .defclass (
 }
 
 handle\keydown: .defcase {
-  h: (ev model) => model.put_via(left: snake: 0 facing:)
-  j: (ev model) => model.put_via(down: snake: 0 facing:)
-  k: (ev model) => model.put_via(up: snake: 0 facing:)
-  l: (ev model) => model.put_via(right: snake: 0 facing:)
+  h: (ev model) => model.put_via(snake: 0 facing: left:)
+  j: (ev model) => model.put_via(snake: 0 facing: down:)
+  k: (ev model) => model.put_via(snake: 0 facing: up:)
+  l: (ev model) => model.put_via(snake: 0 facing: right:)
 
   Messages.t
   (ev model) => do
@@ -133,7 +135,7 @@ handle\key: .defcase {
 handle\type: .defcase {
   tick:  (ev model) => do
     # Tick time
-    model = model.put_via_by(++: time:)
+    model = model.put_via_by(time: ++:)
 
     model
    		.when(model.time % FOOD_INTERVAL == 0, spawn_food:)
@@ -144,7 +146,7 @@ handle\type: .defcase {
     model
   end
   key:   (ev model) => do
-    keymsg = ev.at 0 .unwrap .to\m
+    keymsg = ev.at 0 .unwrap
     down = ev.at 2 .unwrap
     down.handle\key(keymsg ev model)
   end
@@ -192,13 +194,17 @@ behaviors = {
   end
 }
 
-behavior = [behaviors.?.*].reduce(self: |>:)
+behavior = [behaviors.?.*].transduce(self: |>:)
 
 [model?] .defmodule {
   # Reduce events into new models
-  controller: (type, ev*) => type
-    .handle\type(ev, self)
-    .behavior
+  controller: (type, ev*) => do
+    res = type
+      .handle\type(ev, self)
+      .behavior
+
+    res
+  end
 
   behaviors**
 

@@ -1,15 +1,11 @@
 #include "colors.h"
 #include "core.h"
-#include <stdatomic.h>
-#include <stdint.h>
 #define GAB_COLORS_IMPL
 #include "colors.h"
 #define GAB_OPCODE_NAMES_IMPL
 #include "engine.h"
 #include "gab.h"
 #include "lexer.h"
-#include <stdlib.h>
-#include <wchar.h>
 
 #define GAB_CREATE_OBJ(obj_type, kind)                                         \
   ((struct obj_type *)gab_obj_create(gab, sizeof(struct obj_type), kind))
@@ -1642,6 +1638,13 @@ bool gab_chnisfull(gab_value c) {
   return false;
 };
 
+bool gab_chnmatches(gab_value c, gab_value *ptr) {
+  assert(gab_valkind(c) >= kGAB_CHANNEL &&
+         gab_valkind(c) <= kGAB_CHANNELCLOSED);
+  struct gab_ochannel *channel = GAB_VAL_TO_CHANNEL(c);
+  return atomic_load(&channel->data) == ptr;
+}
+
 /*
  * Try to put a slice into a channel. Uses weak atomic exchange, so
  *  must be used in loops.
@@ -1780,12 +1783,12 @@ gab_value channel_blocking_put(struct gab_triple gab,
                                uint64_t len, gab_value *vs, size_t tries) {
   uint64_t sofar = 0;
 
-  gab_value res = unsafe_channel_blocking_put(gab, channel, c, len, vs,
-                                              tries, &sofar);
+  // TODO: Check result of following
+  unsafe_channel_blocking_put(gab, channel, c, len, vs, tries, &sofar);
 
   // If a taker never arrives, we should remove our value as if our put
   // failed and return a timeout.
-  res = channel_block_while_full(gab, channel, c, tries, &sofar);
+  gab_value res = channel_block_while_full(gab, channel, c, tries, &sofar);
 
   switch (res) {
   // We were interrupted, timed out, or the channel closed.
@@ -1811,8 +1814,7 @@ gab_value channel_blocking_put(struct gab_triple gab,
  */
 gab_value channel_blocking_take(struct gab_triple gab,
                                 struct gab_ochannel *channel, gab_value c,
-                                uint64_t len, gab_value *vs,
-                                size_t tries) {
+                                uint64_t len, gab_value *vs, size_t tries) {
   gab_value res = gab_cundefined;
 
   uint64_t sofar = 0;
@@ -1922,7 +1924,8 @@ gab_value gab_ntchntake(struct gab_triple gab, gab_value c, uint64_t len,
   }
 };
 
-gab_value gab_tchntake(struct gab_triple gab, gab_value channel, uint64_t tries) {
+gab_value gab_tchntake(struct gab_triple gab, gab_value channel,
+                       uint64_t tries) {
   gab_value out;
   gab_value res = gab_ntchntake(gab, channel, 1, &out, tries);
 

@@ -389,13 +389,13 @@ int32_t worker_job(void *data) {
   while (!gab_chnisclosed(gab.eg->work_channel) ||
          !q_gab_value_is_empty(&job->queue)) {
 #if cGAB_LOG_EG
-    gab_fprintf(stderr, "[WORKER $] TAKING WITH TIMEOUT $ms\n",
-                gab_number(gab.wkid),
-                gab_number(cGAB_WORKER_IDLEWAIT_NS / 1000000.f));
+    gab_fprintf(stderr, "[WORKER $] TAKING WITH $ tries\n",
+                gab_number(gab.wkid), gab_number(cGAB_WORKER_IDLE_TRIES));
 #endif
 
+    assert(!q_gab_value_is_full(&job->queue));
     gab_value fiber =
-        gab_tchntake(gab, gab.eg->work_channel, cGAB_WORKER_IDLEWAIT_NS);
+        gab_tchntake(gab, gab.eg->work_channel, cGAB_WORKER_IDLE_TRIES);
 
 #if cGAB_LOG_EG
     gab_fprintf(stderr, "[WORKER $] chntake succeeded: $\n",
@@ -406,7 +406,6 @@ int32_t worker_job(void *data) {
       goto bail;
 
     if (fiber == gab_ctimeout || fiber == gab_cundefined) {
-
       // Our global take timed out and our internal queue is empty.
       // our work is done.
       // TWO IMPLEMENTATION OPTIONS HERE:
@@ -465,7 +464,7 @@ int32_t worker_job(void *data) {
     // We completed the work. Nothing else to do.
     case gab_cvalid:
       if (res.aresult->data[0] != gab_ok)
-        gab_signal(gab, sGAB_TERM, 1);
+        gab_sigterm(gab);
       break;
     // We were interruppted by sGAB_TERM. Signal will be handled below.
     case gab_cinvalid:
@@ -484,6 +483,7 @@ int32_t worker_job(void *data) {
   }
 
 bail:
+  // printf("WORKER %i is bailing\n", gab.wkid);
   while (!q_gab_value_is_empty(&job->queue)) {
     gab_value fiber = q_gab_value_pop(&job->queue);
     gab_value err = gab_fibstacktrace(gab, fiber);
@@ -726,6 +726,7 @@ void dec_child_shapes(struct gab_triple gab, gab_value shp) {
 }
 
 void gab_destroy(struct gab_triple gab) {
+  gab_sigterm(gab);
   // Wait until there is no work to be done
   // This doesn't quite work anymore as now
   // Workers have local queues of work to do.
@@ -1577,7 +1578,7 @@ union gab_value_pair gab_use_source(struct gab_triple gab, const char *path,
   if (fiber.status != gab_cvalid)
     return fiber;
 
-  return gab_tfibawait(gab, fiber.vresult, cGAB_WORKER_IDLEWAIT_NS);
+  return gab_tfibawait(gab, fiber.vresult, cGAB_WORKER_IDLE_TRIES);
 }
 
 resource resources[] = {
@@ -1939,7 +1940,8 @@ GAB_API inline bool gab_sigwaiting(struct gab_triple gab) {
 }
 
 /*
- * Race conditions are impossible by construction - only workers whose turn it is call this function.
+ * Race conditions are impossible by construction - only workers whose turn it
+ * is call this function.
  */
 GAB_API inline bool gab_signext(struct gab_triple gab, int wkid) {
 #if cGAB_LOG_EG
@@ -1976,7 +1978,8 @@ GAB_API inline bool gab_signext(struct gab_triple gab, int wkid) {
 #if cGAB_LOG_EG
     fprintf(stderr, "[WORKER %i] DO NEXT %i\n", gab.wkid, wkid);
 #endif
-    return atomic_compare_exchange_strong(&gab.eg->sig.schedule, &current, wkid);
+    return atomic_compare_exchange_strong(&gab.eg->sig.schedule, &current,
+                                          wkid);
   }
 
   assert(false && "UNRECHABLE");

@@ -82,3 +82,6 @@
 [submodule "vendor/termbox2"]
 	path = vendor/termbox2
 	url = https://github.com/termbox/termbox2.git
+[submodule "vendor/stb"]
+	path = vendor/stb
+	url = https://github.com/nothings/stb.git

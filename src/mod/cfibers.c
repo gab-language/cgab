@@ -5,6 +5,10 @@ GAB_DYNLIB_NATIVE_FN(fib, await) {
 
   union gab_value_pair res = gab_tfibawait(gab, fib, 0);
 
+  if (res.status == gab_ctimeout) {
+    return (union gab_value_pair){{gab_ctimeout, fib}};
+  }
+
   if (res.status == gab_cvalid) {
     gab_value env = gab_fibawaite(gab, fib);
     gab_nvmpush(gab_thisvm(gab), res.aresult->len, res.aresult->data);

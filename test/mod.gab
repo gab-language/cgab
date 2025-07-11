@@ -668,6 +668,7 @@ ui\should_open_and_close\test: .def t => do
 
   ev.close
   app.close
+  fib.await
 end
 
 io\should_make_working_tls_request\test: .def t => do

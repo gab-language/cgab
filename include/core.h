@@ -45,16 +45,16 @@
 // will wait this long before exiting, if they haven't received work.
 // New workers are spawned as needed up until a maximum is reached (specified at
 // runtime) Worker threads wait about half a second before spinning down.
-#ifndef cGAB_WORKER_IDLEWAIT_NS
-#define cGAB_WORKER_IDLEWAIT_NS ((size_t)1)
+#ifndef cGAB_WORKER_IDLE_TRIES
+#define cGAB_WORKER_IDLE_TRIES ((size_t)1)
 #endif
 
-#ifndef cGAB_VM_CHANNEL_PUT_TIMEOUT_NS
-#define cGAB_VM_CHANNEL_PUT_TIMEOUT_NS ((size_t)1 << 16)
+#ifndef cGAB_VM_CHANNEL_PUT_TRIES
+#define cGAB_VM_CHANNEL_PUT_TRIES (0)
 #endif
 
-#ifndef cGAB_VM_CHANNEL_TAKE_TIMEOUT_NS
-#define cGAB_VM_CHANNEL_TAKE_TIMEOUT_NS ((size_t)1 << 16)
+#ifndef cGAB_VM_CHANNEL_TAKE_TRIES
+#define cGAB_VM_CHANNEL_TAKE_TRIES (0)
 #endif
 
 // A worker (os thread) may need to yield at an arbitrary point.
