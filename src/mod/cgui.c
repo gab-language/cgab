@@ -14,6 +14,7 @@
 #undef GLAD_GL_IMPLEMENTATION
 
 #define RGFW_IMPLEMENTATION
+#define RGFW_OPENGL
 #include "RGFW/RGFW.h"
 
 #define CLAY_IMPLEMENTATION
@@ -56,35 +57,34 @@ void HandleClayErrors(Clay_ErrorData errorData) {
 
 Clay_Vector2 mousePosition;
 bool clay_RGFW_update(RGFW_window *win, double deltaTime) {
-  RGFW_event ev = win->event;
+  RGFW_event ev;
+  RGFW_window_checkEvent(win, &ev);
+
   switch (ev.type) {
   case RGFW_mouseButtonPressed: {
-    switch (ev.button) {
+    switch (ev.button.type) {
     case RGFW_mouseScrollUp:
     case RGFW_mouseScrollDown:
-      Clay_UpdateScrollContainers(false, (Clay_Vector2){0, ev.scroll},
+      Clay_UpdateScrollContainers(false, (Clay_Vector2){0, ev.button.scroll},
                                   deltaTime);
       return true;
     default:
-      Clay_SetPointerState(mousePosition,
-                           RGFW_isMousePressed(win, RGFW_mouseLeft));
+      Clay_SetPointerState(mousePosition, RGFW_isMousePressed(RGFW_mouseLeft));
       return true;
     }
 
     return false;
   }
   case RGFW_mouseButtonReleased:
-    Clay_SetPointerState(mousePosition,
-                         RGFW_isMousePressed(win, RGFW_mouseLeft));
+    Clay_SetPointerState(mousePosition, RGFW_isMousePressed(RGFW_mouseLeft));
     return true;
   case RGFW_mousePosChanged:
-    mousePosition = (Clay_Vector2){(float)ev.point.x, (float)ev.point.y};
-    Clay_SetPointerState(mousePosition,
-                         RGFW_isMousePressed(win, RGFW_mouseLeft));
+    mousePosition = (Clay_Vector2){(float)ev.mouse.x, (float)ev.mouse.y};
+    Clay_SetPointerState(mousePosition, RGFW_isMousePressed(RGFW_mouseLeft));
     return false;
   case RGFW_windowMoved:
   case RGFW_windowResized:
-    Clay_Dimensions dim = {(float)win->r.w, (float)win->r.h};
+    Clay_Dimensions dim = {(float)win->w, (float)win->h};
     sclay_set_layout_dimensions(dim, 1);
     return false;
   case RGFW_keyPressed:
@@ -141,12 +141,12 @@ void putevent(const char *type, const char *event, gab_value data1,
 
 #define RGFW_KEY_CASE(key, str)                                                \
   case RGFW_##key:                                                             \
-    putevent("key", #str, gab_number(key_mod), gab_bool(down),                 \
+    putevent("key", #str, gab_number(key_mod), gab_bool(press),                \
              gab_cundefined);                                                  \
     break;
 
 void onkey(RGFW_window *win, RGFW_key key, unsigned char key_char,
-           RGFW_keymod key_mod, RGFW_bool down) {
+           RGFW_keymod key_mod, unsigned char repeat, unsigned char press) {
   switch (key) {
     RGFW_KEY_CASE(enter, enter);
     RGFW_KEY_CASE(backSpace, backspace);
@@ -170,7 +170,7 @@ void onkey(RGFW_window *win, RGFW_key key, unsigned char key_char,
     RGFW_KEY_CASE(F12, f12);
   default:
     const char ev[] = {key_char, '\0'};
-    putevent("key", ev, gab_number(key_mod), gab_bool(down), gab_cundefined);
+    putevent("key", ev, gab_number(key_mod), gab_bool(repeat), gab_cundefined);
     break;
   }
 }
@@ -196,7 +196,7 @@ void onmousebutton(RGFW_window *win, unsigned char b, double dbl,
   };
 }
 
-void onmousepos(RGFW_window *win, RGFW_point dst, RGFW_point) {
+void onmousepos(RGFW_window *win, int x, int y, float, float) {
   // Mouse position events flood the event channel too much
   // if (evch != gab_cundefined) {
   //   gab_value ev[] = {
@@ -757,8 +757,8 @@ bool doguirender() {
   sg_begin_pass(&(sg_pass){
       .swapchain =
           {
-              .width = gui.win.r.w,
-              .height = gui.win.r.h,
+              .width = gui.win.w,
+              .height = gui.win.h,
               .sample_count = 1, // or 4 for MSAA
               .color_format = SG_PIXELFORMAT_RGBA8,
               .depth_format = SG_PIXELFORMAT_DEPTH_STENCIL,
@@ -772,7 +772,7 @@ bool doguirender() {
   sg_end_pass();
   sg_commit();
 
-  RGFW_window_swapBuffers(&gui.win);
+  RGFW_window_swapBuffers_OpenGL(&gui.win);
   return true;
 }
 
@@ -858,8 +858,9 @@ void guirenderloop() {
     if (gab_chnisclosed(gui.evch))
       break;
 
-    while (RGFW_window_checkEvent(&gui.win) != nullptr) {
-      Clay_Dimensions dim = {(float)gui.win.r.w, (float)gui.win.r.h};
+    RGFW_event ev;
+    while (RGFW_window_checkEvent(&gui.win, &ev)) {
+      Clay_Dimensions dim = {(float)gui.win.w, (float)gui.win.h};
       sclay_set_layout_dimensions(dim, 1);
 
       if (clay_RGFW_update(&gui.win, 10))
@@ -894,7 +895,7 @@ void guirenderloop() {
 }
 
 GAB_DYNLIB_NATIVE_FN(ui, run_gui) {
-  if (!RGFW_createWindowPtr("window", RGFW_RECT(0, 0, 800, 800),
+  if (!RGFW_createWindowPtr("window", 0, 0, 800, 800,
                             RGFW_windowCenter | RGFW_windowNoResize, &gui.win))
     return gab_vmpush(gab_thisvm(gab), gab_err,
                       gab_string(gab, "Failed to create window")),
@@ -917,7 +918,7 @@ GAB_DYNLIB_NATIVE_FN(ui, run_gui) {
   RGFW_setMouseButtonCallback(onmousebutton);
   RGFW_setMousePosCallback(onmousepos);
 
-  if (!gladLoadGL(RGFW_getProcAddress))
+  if (!gladLoadGL(RGFW_getProcAddress_OpenGL))
     return gab_vmpush(gab_thisvm(gab), gab_err,
                       gab_string(gab, "Failed to load OpenGL")),
            gab_union_cvalid(gab_nil);
@@ -939,7 +940,7 @@ GAB_DYNLIB_NATIVE_FN(ui, run_gui) {
       totalMemorySize, malloc(totalMemorySize));
 
   Clay_Initialize(clayMemory,
-                  (Clay_Dimensions){(float)gui.win.r.w, (float)gui.win.r.h},
+                  (Clay_Dimensions){(float)gui.win.w, (float)gui.win.h},
                   (Clay_ErrorHandler){HandleClayErrors});
 
   Clay_SetMeasureTextFunction(sclay_measure_text, &fonts);
