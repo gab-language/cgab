@@ -1,261 +1,132 @@
 'cgab'.use
-'ranges'.use
-xf = 'transducers'.use
-Terminal = 'os.terminal'.use
+ui = 'cgui'.use
 
-term = Terminal.make
+(events, app) = (Channels.make, Channels.make)
 
-(events, server) = (Channels.make, Channels.make)
+Fibers.make () => ui.run\tui(events, app)
+#Fibers.make () => ui.run\gui(events, app)
 
-event\quit:.def(
-  Records.t,
-  () => self.ch == 'q')
+model = {
+  input: ''
+  history_index: 0
+  history: []
+}
 
-# Fiber for polling terminal events and pushing them
-# into a channel for handling. Transducer terminates
-# the stream on the quit event.
-Main = Fibers.make () => do
-  term.pipe(
-    events
-    xf.take_until event\quit?:)
+red = '0xff0000ff'.as\n
+blue = '0x0000ffff'.as\n
+green = '0x00ff00ff'.as\n
 
-# Close all channels at this point.
-  events.close!
-  server.close!
-end
+HistoryElement = repl\history\elem: .defclass (
+  source: fiber:
+  default:
+  {
+    view: () => do
+      fiber = self.fiber.to\s plain:
+      [
+        box:
+        { width\grow: 1 border: { width: 4 color: red } padding: 8 }
+        [
+          [
+            text: { content: self.source }
+          ]
+          [
+            text: { content: '=> $'.sprintf(fiber) }
+          ]
+        ]
+      ]
+    end
+  })
 
-HistoryElement = Shapes.make(source: result:)
-
-to\s:.defcase {
-  Shapes.make(status: fiber:) () => do
-   "=> $ $".sprintf(self.status, self.fiber)
+handle\keydown: .defcase {
+  backspace: (ev model) => do
+    model.put_by(input: pop:)
   end
-  Shapes.make(status: res: env:) () => do
-    "=> $ $".sprintf(self.status, self.res.map to\s: .join(xf.interpose " "))
+  enter: (ev model) => do
+    source = model.input
+
+    (ok, fib) = source.as\gab
+
+    history_elem = HistoryElement.make(source, fib)
+
+    model = model
+      .when(
+        ok.ok?
+        put: history: model.history.push history_elem)
+      .put(input: "")
+
+    model.put(history_index: model.history.len)
+  end
+  Messages.t
+  (ev model) => do
+    str = self.to\s
+    model.put_by(input: curr => curr + str)
   end
 }
 
-EvalCmd = Shapes.make(eval:)
-EnvCmd = Shapes.make(env:)
+handle\keyup: .defcase {
+  Messages.t
+  (ev model) => model
+}
 
-tick\history_element\result:.defcase {
-  Shapes.make(status: fiber:) (he) => do
-    result = he.result
-    fib = result.fiber
+handle\key: .defcase {
+  true: (msg ev model) => msg.handle\keydown(ev model)
+  false: (msg ev model) => msg.handle\keyup(ev model)
+}
 
-    fib
-      .then done?:
-      .then(() => do
-        (status, res[], env) = fib.await!
+handle\type: .defcase {
+  tick:  (ev model) => do
+    # Tick time
+    model
+  end
+  mouse: (ev model) => do
+    model
+  end
+  key:   (ev model) => do
+    keymsg = ev.at 0 .unwrap
+    down = ev.at 2 .unwrap
+    down.handle\key(keymsg ev model)
+  end
+}
 
-        status
-          .ok?
-          .then(() => server <! EnvCmd.make(env))
+render\history: .def (
+  model?
+  () => self.history.map view:)
 
-        he.result {
-          status: status
-          res: res
-          env: env
+controller: .def (
+  model?
+  (type ev*) => do
+    type
+      .handle\type(ev self)
+  end)
+
+view: .def (
+  model?
+  () => do
+    history = self.render\history
+    [
+      [
+        box:
+        { width\relative: 100 padding: 32 }
+        history
+      ]
+      [
+        box:
+        {
+          width\relative: 100
+          height\relative: 10
+          border: { width: 4 }
+          padding: 32
         }
-      end)
-      .or he
-  end
-  Shapes.make(status: res: env:) (he) => he
-}
+        [
+          [text: { size: 32 content: self.input }]
+        ]
+      ]
+    ]
+  end)
 
-tick\history_element:.def(
-  HistoryElement
-  () => self.result.tick\history_element\result self)
-
-cmd\handle:.defcase {
-  EvalCmd (state) => do
-    (ok, fib) = self.eval.gab\eval(state.env)
-
-    server <! { status: ok, fiber: fib }
-
-    state
-  end
-  EnvCmd (state) => do
-    state.env(self.env)
-  end
-}
-
-REPLServer = Shapes.make(env:)
-
-make:.def(
-  REPLServer:
-  () => REPLServer.make(nil:))
-
-run:.def(
-  REPLServer:
-  ()
-    => Fibers.make ()
-      => server.reduce(
-        REPLServer:.make,
-        (state, cmd)
-          => cmd.cmd\handle state))
-
-Server = REPLServer:.run
-
-REPLClient = Shapes.make(input: history_index: history:)
-
-make:.def(
-  REPLClient:,
-  () => REPLClient.make("" 0 []))
-
-event\ctrl\key\handle:.def (state) => state
-
-event\ctrl\key\handle:.defcase {
-  backspace: (state, event) => do
-    input = state.input.slice(0, state.input.len - 1)
-    state.input input
-  end
-  enter: (state, event) => do
-    server <! EvalCmd.make(state.input)
-
-    (ok, res) = server >!
-
-    history_elem = HistoryElement.make(state.input, res)
-
-    state = ok
-      .and state.history(state.history.push history_elem)
-      .or state
-      .input ""
-
-    state.history_index(state.history.len)
-  end
-}
-
-event\key\key\handle:.defcase {
-  arrow\down: (state, event) => do
-    state = state.history_index(state.history_index ++)
-    (ok, hist) = state.history.at(state.history_index)
-
-    ok
-      .then(() => state.input(hist.source))
-      .else(() => state.input "")
-  end
-  arrow\up: (state, event) => do
-    state = state.history_index(state.history_index --)
-    (ok, hist) = state.history.at(state.history_index)
-
-    ok
-      .then(() => state.input(hist.source))
-      .else(() => state.input "")
-  end
-}
-
-event\key\key\handle:.def (state event) =>  do
-  input = state.input + event.ch
-  state.input input
-end
-
-event\key\handle:.defcase {
-  ctrl: (state, event) => event.key.event\ctrl\key\handle(state event),
-  key: (state, event) => event.key.event\key\key\handle(state event)
-}
-
-event\handle:.defcase {
-  key: (state, event) => event.mod.event\key\handle(state event)
-  tick: (state) => do
-    state.history(state.history.map tick\history_element:)
-  end
-}
-
-box_chars = {
-  h: "─"
-  v: "│"
-  bl: "╰"
-  br: "╯"
-  tl: "╭"
-  tr: "╮"
-}
-
-doprintline:.defcase {
-  horizontal: (x y dx char)
-    => x .-> (x + dx) .each i
-      => term.cell\set(i y char)
-  vertical: (x y dy char)
-    => y .-> (y + dy) .each i
-      => term.cell\set(x i char)
-}
-
-printline = (x y opts{})
-  => opts.axis.doprintline(x y opts.dist, opts.char)
-
-printbox = (x y w h) => do
-  term.cell\set(x y box_chars.tl)
-  term.cell\set(x + w y box_chars.tr)
-  term.cell\set(x y + h box_chars.bl)
-  term.cell\set(x + w y + h box_chars.br)
-
-  printline.(
-    x + 1
-    y
-    char: box_chars.h
-    axis: horizontal:
-    dist: w - 2)
-
-  printline.(
-    x
-    y + 1
-    char: box_chars.v
-    axis: vertical:
-    dist: h - 2)
-
-  printline.(
-    x + 1
-    y + h
-    char: box_chars.h
-    axis: horizontal:
-    dist: w - 2)
-
-  printline.(
-    x + w
-    y + 1
-    char: box_chars.v
-    axis: vertical:
-    dist: h - 2)
-end
-
-Ticker = Fibers.make () => do
-  events <! { type: tick: }
-
-  Fibers.sleep!(100000000)
-
-  events.closed?.else self
-end
-
-Client = Fibers.make() 
-  => events
-  .reduce(
-    REPLClient:.make, # Initial state
-    (state event) => do
-      term.clear!
-
-      #term.print!(0, 0, "$".sprintf event)
-
-      state = event.type.event\handle(state, event)
-
-      (w h) = (term.width, term.height)
-
-      state.history.each (h, i) => do
-        source_line = "$: $".sprintf(i, h.source)
-        term.print!(0, 3 + (i * 2), source_line)
-
-        result_line = h.result.to\s
-        term.print!(0, 4 + (i * 2), result_line)
-      end
-
-      printbox.(0 h - 3 w - 2 2)
-      input_line = " > $".sprintf(state.input)
-      term.print!(1, h - 2, input_line)
-
-      term.render!
-
-      state
-    end)
-
-[Main Server Client Ticker]
-  .map await!:
-  .map unwrap!:
+events
+  .pipe(
+    app,
+    Streams.reduce(model controller:)
+    |> Streams.map view:
+  )

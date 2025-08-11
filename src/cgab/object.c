@@ -2248,7 +2248,7 @@ enum gab_pprint_k {
 };
 
 struct gab_pprint {
-  enum gab_pprint_k k; /* Kind of the tokken */
+  enum gab_pprint_k k; /* Kind of the token */
   int32_t width;       /* Pre-computed width of the token */
   union gab_pprint_d {
     gab_value val; /* Gab value to be printed with this token. THis should be a
@@ -2299,11 +2299,11 @@ int32_t pprint_width(gab_value val) {
     return strlen(buf);
   case kGAB_CHANNEL:
   case kGAB_CHANNELCLOSED:
-    return 13;
+    return 13; // Hardcoded and never change
   case kGAB_FIBER:
   case kGAB_FIBERDONE:
   case kGAB_FIBERRUNNING:
-    return 11;
+    return 11; // Needs to be updated to match
   default:
     fprintf(stderr, "%d\n", gab_valkind(val));
     fflush(stderr);
@@ -2467,6 +2467,8 @@ bool pprint_tokify(v_gab_pprint *self, gab_value val) {
     return (gab_recisl(val) ? pprint_reclist(self, val)
                             : pprint_rec(self, val)),
            true;
+  case kGAB_FIBER:
+    // Needs to be updated to match sinspect
   default:
     return push_pprint_v(self, val), false;
   }

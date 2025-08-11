@@ -2321,6 +2321,8 @@ CASE_CODE(SEND_PRIMITIVE_TAKE) {
   gab_value v =
       gab_ntchntake(GAB(), c, 32, takebuf, cGAB_VM_CHANNEL_TAKE_TRIES);
 
+  RESET_REENTRANT();
+
   switch (v) {
   case gab_ctimeout:
     VM_YIELD(gab_ctimeout);
@@ -2381,20 +2383,17 @@ CASE_CODE(SEND_PRIMITIVE_PUT) {
   }
 
   // All values *but* the channel are put into the channel.
-  // TODO: ERROR: DIFFERENCE BETWEEN SUCCESSFUL
-  // AND UNSUCCESSFUL TRY-PUT HERE ISN"T SHOWN
-
   gab_value r = gab_untchnput(GAB(), c, have - 1, SP() - (have - 1),
                               cGAB_VM_CHANNEL_PUT_TRIES);
 
   switch (r) {
   case gab_cinvalid:
     VM_TERM();
-    // The put timed-out (The channel already held values)
   case gab_ctimeout:
+    // The put timed-out (The channel already held values)
     VM_YIELD(r);
-    // The put succeeded, we must yield until it completes.
   default:
+    // The put succeeded, we must yield until it completes.
     VM_YIELD(c);
   }
 }

@@ -54,31 +54,6 @@ void HandleClayErrors(Clay_ErrorData errorData) {
   printf("%s\n", errorData.errorText.chars);
 }
 
-// TODO: Disable TUI on windows, as termbox2 doesn't have windows support yet.
-int terminal_cols();
-int terminal_rows();
-
-#ifdef GAB_PLATFORM_UNIX
-#include <sys/ioctl.h>
-int terminal_cols() {
-  struct winsize w;
-  ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);
-  return w.ws_col;
-}
-int terminal_rows() {
-  struct winsize w;
-  ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);
-  return w.ws_row;
-}
-#elifdef GAB_PLATFORM_WIN
-#error WINDOWS TODO
-#elifdef GAB_PLATFORM_WASI
-int terminal_cols() { return 0; }
-int terminal_rows() { return 0; }
-#else
-#error Invalid GAB_PLATFORM
-#endif
-
 Clay_Vector2 mousePosition;
 bool clay_RGFW_update(RGFW_window *win, double deltaTime) {
   RGFW_event ev = win->event;
@@ -164,10 +139,40 @@ void putevent(const char *type, const char *event, gab_value data1,
   }
 }
 
+#define RGFW_KEY_CASE(key, str)                                                \
+  case RGFW_##key:                                                             \
+    putevent("key", #str, gab_number(key_mod), gab_bool(down),                 \
+             gab_cundefined);                                                  \
+    break;
+
 void onkey(RGFW_window *win, RGFW_key key, unsigned char key_char,
            RGFW_keymod key_mod, RGFW_bool down) {
-  const char ev[] = {key_char, '\0'};
-  putevent("key", ev, gab_number(key_mod), gab_bool(down), gab_cundefined);
+  switch (key) {
+    RGFW_KEY_CASE(enter, enter);
+    RGFW_KEY_CASE(backSpace, backspace);
+    RGFW_KEY_CASE(capsLock, capslock);
+    RGFW_KEY_CASE(insert, insert);
+    RGFW_KEY_CASE(end, end);
+    RGFW_KEY_CASE(home, home);
+    RGFW_KEY_CASE(pageUp, pageup);
+    RGFW_KEY_CASE(pageDown, pagedown);
+    RGFW_KEY_CASE(F1, f1);
+    RGFW_KEY_CASE(F2, f2);
+    RGFW_KEY_CASE(F3, f3);
+    RGFW_KEY_CASE(F4, f4);
+    RGFW_KEY_CASE(F5, f5);
+    RGFW_KEY_CASE(F6, f6);
+    RGFW_KEY_CASE(F7, f7);
+    RGFW_KEY_CASE(F8, f8);
+    RGFW_KEY_CASE(F9, f9);
+    RGFW_KEY_CASE(F10, f10);
+    RGFW_KEY_CASE(F11, f11);
+    RGFW_KEY_CASE(F12, f12);
+  default:
+    const char ev[] = {key_char, '\0'};
+    putevent("key", ev, gab_number(key_mod), gab_bool(down), gab_cundefined);
+    break;
+  }
 }
 
 void onmousebutton(RGFW_window *win, unsigned char b, double dbl,
@@ -205,13 +210,42 @@ void onmousepos(RGFW_window *win, RGFW_point dst, RGFW_point) {
   // }
 }
 
+#define TERMBOX_KEY_CASE(key, str)                                             \
+  case TB_KEY_##key:                                                           \
+    putevent("key", #str, gab_number(e->mod), gab_bool(true), gab_cundefined); \
+    break;
+
 bool clay_termbox_update(struct tb_event *e, double deltaTime) {
   switch (e->type) {
   case TB_EVENT_RESIZE:
     return false;
   case TB_EVENT_KEY:
-    const char ev[] = {e->ch, '\0'};
-    putevent("key", ev, gab_number(e->mod), gab_bool(true), gab_cundefined);
+    switch (e->key) {
+      TERMBOX_KEY_CASE(BACKSPACE, backspace);
+      TERMBOX_KEY_CASE(ENTER, enter);
+      // CAPSLOCK MISSING
+      TERMBOX_KEY_CASE(INSERT, insert);
+      TERMBOX_KEY_CASE(END, end);
+      TERMBOX_KEY_CASE(HOME, home);
+      TERMBOX_KEY_CASE(PGUP, pageup);
+      TERMBOX_KEY_CASE(PGDN, pagedown);
+      TERMBOX_KEY_CASE(F1, f1);
+      TERMBOX_KEY_CASE(F2, f2);
+      TERMBOX_KEY_CASE(F3, f3);
+      TERMBOX_KEY_CASE(F4, f4);
+      TERMBOX_KEY_CASE(F5, f5);
+      TERMBOX_KEY_CASE(F6, f6);
+      TERMBOX_KEY_CASE(F7, f7);
+      TERMBOX_KEY_CASE(F8, f8);
+      TERMBOX_KEY_CASE(F9, f9);
+      TERMBOX_KEY_CASE(F10, f10);
+      TERMBOX_KEY_CASE(F11, f11);
+      TERMBOX_KEY_CASE(F12, f12);
+    default:
+      const char ev[] = {e->ch, '\0'};
+      putevent("key", ev, gab_number(e->mod), gab_bool(true), gab_cundefined);
+      break;
+    }
     return true;
   case TB_EVENT_MOUSE:
     switch (e->key) {
@@ -258,10 +292,95 @@ Clay_Color packedToClayColor(gab_value vcolor) {
   };
 }
 
+Clay_Padding parsePadding(struct gab_triple gab, gab_value props) {
+  gab_value vpadding = gab_mrecat(gab, props, "padding");
+  gab_value vpaddingt = gab_mrecat(gab, props, "padding\\top");
+  gab_value vpaddingb = gab_mrecat(gab, props, "padding\\bottom");
+  gab_value vpaddingl = gab_mrecat(gab, props, "padding\\left");
+  gab_value vpaddingr = gab_mrecat(gab, props, "padding\\right");
+
+  if (gab_valkind(vpadding) == kGAB_NUMBER)
+    return CLAY_PADDING_ALL(gab_valtou(vpadding));
+
+  Clay_Padding p = CLAY_PADDING_ALL(0);
+  if (gab_valkind(vpaddingt) == kGAB_NUMBER)
+    p.top = gab_valtou(vpaddingt);
+  if (gab_valkind(vpaddingb) == kGAB_NUMBER)
+    p.bottom = gab_valtou(vpaddingb);
+  if (gab_valkind(vpaddingl) == kGAB_NUMBER)
+    p.left = gab_valtou(vpaddingl);
+  if (gab_valkind(vpaddingr) == kGAB_NUMBER)
+    p.right = gab_valtou(vpaddingr);
+
+  return p;
+}
+
+Clay_Sizing parseSizing(struct gab_triple gab, gab_value props) {
+  gab_value vfixedwidth = gab_mrecat(gab, props, "width");
+  gab_value vrelwidth = gab_mrecat(gab, props, "width\\relative");
+  gab_value vgrowwidth = gab_mrecat(gab, props, "width\\grow");
+
+  bool hasfixedw = vfixedwidth != gab_cundefined;
+  bool hasrelw = vrelwidth != gab_cundefined;
+  bool hasgroww = vgrowwidth != gab_cundefined;
+
+  Clay_SizingAxis w;
+  if (hasfixedw) {
+    if (gab_valkind(vfixedwidth) != kGAB_NUMBER)
+      return (Clay_Sizing){};
+
+    w = CLAY_SIZING_FIXED(gab_valtof(vfixedwidth));
+  } else if (hasrelw) {
+    if (gab_valkind(vrelwidth) != kGAB_NUMBER)
+      return (Clay_Sizing){};
+    double percent = gab_valtof(vrelwidth) / 100.f;
+    w = CLAY_SIZING_PERCENT(percent);
+  } else if (hasgroww) {
+    if (gab_valkind(vgrowwidth) != kGAB_NUMBER)
+      return (Clay_Sizing){};
+    w = CLAY_SIZING_GROW(gab_valtou(vgrowwidth));
+  } else {
+    // w = (Clay_SizingAxis){0};
+    w = CLAY_SIZING_FIT();
+  }
+
+  gab_value vfixedheight = gab_mrecat(gab, props, "height");
+  gab_value vrelheight = gab_mrecat(gab, props, "height\\relative");
+  gab_value vgrowheight = gab_mrecat(gab, props, "height\\grow");
+
+  bool hasfixedh = vfixedheight != gab_cundefined;
+  bool hasrelh = vrelheight != gab_cundefined;
+  bool hasgrowh = vgrowheight != gab_cundefined;
+
+  Clay_SizingAxis h;
+  if (hasfixedh) {
+    if (gab_valkind(vfixedheight) != kGAB_NUMBER)
+      return (Clay_Sizing){};
+
+    h = CLAY_SIZING_FIXED(gab_valtof(vfixedheight));
+  } else if (hasrelh) {
+    if (gab_valkind(vrelheight) != kGAB_NUMBER)
+      return (Clay_Sizing){};
+    double percent = gab_valtof(vrelheight) / 100.f;
+    h = CLAY_SIZING_PERCENT(percent);
+  } else if (hasgrowh) {
+    if (gab_valkind(vgrowheight) != kGAB_NUMBER)
+      return (Clay_Sizing){};
+    h = CLAY_SIZING_GROW(gab_valtou(vgrowheight));
+  } else {
+    // h = (Clay_SizingAxis){0};
+    h = CLAY_SIZING_FIT();
+  }
+
+  return (Clay_Sizing){.width = w, .height = h};
+}
+
 Clay_LayoutConfig parseLayout(struct gab_triple gab, gab_value props) {
-  // Do some work in parsing universal layout config from props into our
-  // Clay_LayoutConfig
-  return (Clay_LayoutConfig){};
+  return (Clay_LayoutConfig){
+      .layoutDirection = CLAY_TOP_TO_BOTTOM,
+      .padding = parsePadding(gab, props),
+      .sizing = parseSizing(gab, props),
+  };
 }
 
 union gab_value_pair render_componentlist(struct gab_triple gab, gab_value app);
@@ -312,8 +431,14 @@ union gab_value_pair render_box(struct gab_triple gab, gab_value props,
                                         .length = gab_strlen(vid),
                                         .chars = gab_strdata(&vid),
                                     })),
-      .layout = {.layoutDirection = CLAY_TOP_TO_BOTTOM, .padding = {}},
-      .cornerRadius = {cornerRadius, cornerRadius, cornerRadius, cornerRadius},
+      .layout = parseLayout(gab, props),
+      .cornerRadius =
+          {
+              cornerRadius,
+              cornerRadius,
+              cornerRadius,
+              cornerRadius,
+          },
       .border =
           {
               .color = packedToClayColor(vborderColor),
@@ -382,6 +507,7 @@ union gab_value_pair render_rect(struct gab_triple gab, gab_value props) {
                                         .chars = gab_strdata(&vid),
                                     })),
       .backgroundColor = packedToClayColor(vcolor),
+      .layout = parseLayout(gab, props),
       .floating =
           {
               .attachTo = CLAY_ATTACH_TO_ROOT,
@@ -458,8 +584,17 @@ union gab_value_pair render_text(struct gab_triple gab, gab_value props) {
   if (gab_valkind(vtext) != kGAB_STRING)
     return gab_pktypemismatch(gab, vtext, kGAB_STRING);
 
-  Clay_String text = {.length = gab_strlen(vtext),
-                      .chars = gab_strdata(&vtext)};
+  // This leaks every time
+  uint64_t len = gab_strlen(vtext);
+  char *str = malloc(len + 1);
+  assert(str != nullptr);
+  strcpy(str, gab_strdata(&vtext));
+
+  // not guaranteed to work here.
+  Clay_String text = {
+      .length = len,
+      .chars = str,
+  };
 
   gab_value vsize = gab_mrecat(gab, props, "size");
   if (vsize == gab_cundefined)
@@ -495,7 +630,9 @@ union gab_value_pair render_text(struct gab_triple gab, gab_value props) {
 
   gab_uint height = gab_valtou(vheight);
 
-  CLAY() {
+  CLAY({
+      .layout = parseLayout(gab, props),
+  }) {
     CLAY_TEXT(text, CLAY_TEXT_CONFIG({
                         .fontSize = size,
                         .letterSpacing = spacing,
@@ -553,7 +690,17 @@ union gab_value_pair render_componentlist(struct gab_triple gab,
     return gab_panicf(gab, "Expected a list, found $", app);
 
   gab_uint len = gab_reclen(app);
-  CLAY({.layout = {.layoutDirection = CLAY_TOP_TO_BOTTOM}}) {
+  CLAY({
+      .layout =
+          {
+              .layoutDirection = CLAY_TOP_TO_BOTTOM,
+              .sizing =
+                  {
+                      .width = CLAY_SIZING_GROW(1),
+                      .height = CLAY_SIZING_GROW(1),
+                  },
+          },
+  }) {
     for (uint64_t i = 0; i < len; i++) {
       gab_value component = gab_lstat(app, i);
       union gab_value_pair res = render_component(gui.gab, component);
@@ -639,13 +786,21 @@ void tuirenderloop() {
 
     struct tb_event e;
     for (;;) {
-      switch (tb_peek_event(&e, 0)) {
-      case TB_OK:
-        Clay_SetLayoutDimensions((Clay_Dimensions){
-            .height = tb_height(),
-            .width = tb_width(),
-        });
+      Clay_SetLayoutDimensions((Clay_Dimensions){
+          .height = Clay_Termbox_Width(),
+          .width = Clay_Termbox_Height(),
+      });
 
+      switch (tb_peek_event(&e, 0)) {
+      case TB_ERR_NO_EVENT:
+
+        gab_chnput(gui.gab, gui.evch, gab_message(gui.gab, "tick"));
+
+        if (!dotuirender())
+          return;
+
+        continue;
+      case TB_OK:
         if (e.type == TB_EVENT_KEY && e.key == TB_KEY_ESC)
           goto fin;
 
@@ -659,7 +814,6 @@ void tuirenderloop() {
           continue;
       default:
         return;
-      case TB_ERR_NO_EVENT:
         // fallthrough
       }
 
@@ -683,7 +837,7 @@ void tuirenderloop() {
     }
   }
 
-          fin:
+fin:
   if (gui.evch != gab_cundefined)
     gab_chnclose(gui.evch);
 
@@ -790,6 +944,8 @@ GAB_DYNLIB_NATIVE_FN(ui, run_gui) {
 
   Clay_SetMeasureTextFunction(sclay_measure_text, &fonts);
 
+  // Clay_SetDebugModeEnabled(true);
+
   guirenderloop();
 
   return gab_vmpush(gab_thisvm(gab), gab_ok), gab_union_cvalid(gab_nil);
@@ -817,12 +973,15 @@ GAB_DYNLIB_NATIVE_FN(ui, run_tui) {
   Clay_Arena clayMemory = Clay_CreateArenaWithCapacityAndMemory(
       totalMemorySize, malloc(totalMemorySize));
 
-  Clay_Initialize(
-      clayMemory,
-      (Clay_Dimensions){.height = terminal_rows(), .width = terminal_cols()},
-      (Clay_ErrorHandler){HandleClayErrors});
+  Clay_Initialize(clayMemory,
+                  (Clay_Dimensions){.height = Clay_Termbox_Width(),
+                                    .width = Clay_Termbox_Height()},
+                  (Clay_ErrorHandler){HandleClayErrors});
 
   Clay_SetMeasureTextFunction(Clay_Termbox_MeasureText, nullptr);
+
+  Clay_SetLayoutDimensions(
+      (Clay_Dimensions){Clay_Termbox_Width(), Clay_Termbox_Height()});
 
   tuirenderloop();
 

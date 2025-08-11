@@ -488,7 +488,11 @@ GAB_DYNLIB_NATIVE_FN(string, has) {
 }
 
 GAB_DYNLIB_NATIVE_FN(string, tos) {
-  gab_vmpush(gab_thisvm(gab), gab_pvalintos(gab, gab_arg(0)));
+  if (gab_arg(1) == gab_message(gab, "plain"))
+    gab_vmpush(gab_thisvm(gab), gab_valintos(gab, gab_arg(0)));
+  else
+    gab_vmpush(gab_thisvm(gab), gab_pvalintos(gab, gab_arg(0)));
+
   return gab_union_cvalid(gab_nil);
 }
 
@@ -519,6 +523,24 @@ GAB_DYNLIB_NATIVE_FN(string, ton) {
   gab_value res = gab_number(strtod(str, nullptr));
 
   gab_vmpush(gab_thisvm(gab), res);
+  return gab_union_cvalid(gab_nil);
+};
+
+GAB_DYNLIB_NATIVE_FN(string, pop) {
+  const char *str = gab_strdata(argv + 0);
+  uint64_t len = gab_strlen(gab_arg(0));
+
+  if (len == 0) {
+    gab_vmpush(gab_thisvm(gab), gab_string(gab, ""));
+    return gab_union_cvalid(gab_nil);
+  }
+
+  char ch = str[len - 1];
+  gab_value strchar = gab_nstring(gab, 1, &ch);
+  gab_value leftover = gab_nstring(gab, len - 1, str);
+
+  // TODO: Fix this to respect unicode
+  gab_vmpush(gab_thisvm(gab), leftover, strchar);
   return gab_union_cvalid(gab_nil);
 };
 
@@ -674,7 +696,13 @@ GAB_DYNLIB_MAIN_FN {
               gab_message(gab, "trim"),
               t,
               gab_snative(gab, "trim", gab_mod_string_trim),
-          });
+          },
+          {
+              gab_message(gab, "pop"),
+              t,
+              gab_snative(gab, "pop", gab_mod_string_pop),
+          }
+          );
 
   gab_value res[] = {gab_ok, gab_strtomsg(t)};
 
