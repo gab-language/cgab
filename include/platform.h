@@ -46,6 +46,9 @@
  * gab_osfisready(f)
  * Check if a FILE* has data to be read.
  *
+ * gab_osexepath()
+ * return the path of the exe.
+ *
  * %----------------------%
  * | Directory Operations |
  * %----------------------%
@@ -94,6 +97,9 @@
     gab_nosproc(cmd, sizeof(_args) / sizeof(char *), _args);                   \
   })
 
+#define GAB_MAXEXEPATH 2048
+static char _exepath[GAB_MAXEXEPATH];
+
 #ifdef GAB_PLATFORM_UNIX
 #include <dlfcn.h>
 #include <errno.h>
@@ -112,6 +118,31 @@
 GAB_API_INLINE bool gab_osfisready(FILE *f) {
   struct pollfd fd = {.fd = fileno(f), .events = POLL_IN};
   return poll(&fd, 1, 0) > 0;
+}
+
+#ifdef GAB_PLATFORM_MACOS
+#include <mach-o/dyld.h>
+#endif
+
+GAB_API_INLINE const char *gab_osexepath() {
+#ifdef GAB_PLATFORM_MACOS
+  ssize_t size = GAB_MAXEXEPATH;
+  if (_NSGetExecutablePath(&_exepath, &size) != 0)
+    return nullptr;
+
+  return _exepath;
+#elifdef GAB_PLATFORM_LINUX
+  ssize_t len = readlink("/proc/self/exe", _exepath, GAB_MAXEXEPATH);
+
+  if (len <= 0)
+    return nullptr;
+
+  _exepath[len] = '\0';
+
+  return _exepath;
+#else
+#error "INVALID GAB UNIX PLATFORM"
+#endif
 }
 
 #define gab_osdynlib void *
@@ -215,6 +246,27 @@ GAB_API_INLINE int gab_nosproc(char *cmd, size_t nargs, char *args[]) {
 #define gab_oslibfind(dynlib, name)                                            \
   ((void (*)(void))GetProcAddress(dynlib, name))
 #define gab_osmkdirp(path) mkdir(path)
+
+GAB_API_INLINE const char *gab_osexepath() {
+  char buffer[GAB_MAXEXEPATH];
+  DWORD len = GetModuleFileNameA(NULL, buffer, GAB_MAXEXEPATH);
+
+  if (len == 0)
+    return nullptr;
+
+  mbstate_t state = {0};
+  size_t length = wcsrtombs(NULL, &buffer, 0, &state);
+
+  if (length == -1)
+    return nullptr;
+
+  if (length >= GAB_MAXEXEPATH)
+    return nullptr;
+
+  wcsrtombs(_exepath, &buffer, length, &state);
+
+  return _exepath;
+}
 
 GAB_API_INLINE const char *gab_osprefix(const char *v) {
   PWSTR path = NULL;

@@ -75,7 +75,7 @@ $(BUILD_PREFIX)/libcgab.a: $(CGAB_OBJ)
 	zig ar rcs $@ $^
 
 # This rule builds the gab executable, linking with libcgab.a
-$(BUILD_PREFIX)/gab: $(GAB_OBJ) $(BUILD_PREFIX)/libcgab.a $(BUILD_PREFIX)/liblinenoise.a
+$(BUILD_PREFIX)/gab: $(GAB_OBJ) $(BUILD_PREFIX)/libcgab.a $(BUILD_PREFIX)/liblinenoise.a $(VENDOR_PREFIX)/miniz/amalgamation/miniz.h
 	$(CC) $(CFLAGS) $(BINARY_FLAGS) $(GAB_OBJ) -o $@
 
 # This rule builds each c++ module shared library.
@@ -150,6 +150,10 @@ libllhttp_generated:
 	echo "libllhttp generation done." >> libllhttp_generated
 	make clean -s -C $(VENDOR_PREFIX)/llhttp
 
+$(VENDOR_PREFIX)/miniz/amalgamation/miniz.h:
+	cd $(VENDOR_PREFIX)/miniz
+	./amalgamation.sh
+
 $(BUILD_PREFIX)/libgrapheme.a:
 	rm -f $(VENDOR_PREFIX)/libgrapheme/libgrapheme.a $(VENDOR_PREFIX)/libgrapheme/src/*.o
 	make libgrapheme.a CC="$(CC) --target=$(GAB_TARGETS)" -s -C $(VENDOR_PREFIX)/libgrapheme
@@ -188,11 +192,11 @@ clean:
 	make clean -s -C $(VENDOR_PREFIX)/llhttp
 	make clean -s -C $(VENDOR_PREFIX)/BearSSL
 	rm -rf $(BUILD_PREFIX)
-	rm configuration
-	rm libgrapheme_generated
-	rm libllhttp_generated
-	rm cacert.pem
-	rm etag.txt
+	rm -f configuration
+	rm -f libgrapheme_generated
+	rm -f libllhttp_generated
+	rm -f cacert.pem
+	rm -f etag.txt
 
 compile_commands:
 	make clean

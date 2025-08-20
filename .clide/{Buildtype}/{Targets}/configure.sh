@@ -25,10 +25,10 @@ wasmflags="-DGAB_PLATFORM_WASI -D_WASI_EMULATED_SIGNAL -lwasi-emulated-signal -D
 dynlib_fileending=""
 
 if [[ "$targets" =~ "linux" ]]; then
-  cflags="$cflags $unixflags -DQIO_LINUX -DRGFW_USE_XDL -isystem vendor/x11-headers"
+  cflags="$cflags $unixflags -DGAB_PLATFORM_LINUX -DQIO_LINUX -DRGFW_USE_XDL -isystem vendor/x11-headers"
   dynlib_fileending=".so"
 elif [[ "$targets" =~ "mac" ]]; then
-  cflags="$cflags $unixflags -DQIO_MACOS -DRGFW_NO_IOKIT -isystem vendor/xcode-frameworks/include"
+  cflags="$cflags $unixflags -DGAB_PLATFORM_MACOS -DQIO_MACOS -DRGFW_NO_IOKIT -isystem vendor/xcode-frameworks/include"
   dynlib_fileending=".so"
 elif [[ "$targets" =~ "windows" ]]; then
   cflags="$cflags $winflags -DQIO_WINDOWS -DOEMRESOURCE"

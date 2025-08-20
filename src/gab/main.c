@@ -1,7 +1,10 @@
 #include "gab.h"
+#include "miniz/amalgamation/miniz.c"
 #include <locale.h>
 
 #include "linenoise/include/linenoise.h"
+#include "miniz/amalgamation/miniz.h"
+#include "platform.h"
 
 #define TOSTRING(x) #x
 #define STR(x) TOSTRING(x)
@@ -733,6 +736,49 @@ int help(struct command_arguments args) {
   return 1;
 }
 
+bool check_not_gab(const char *name) {
+  printf("COMPARE %s TO GAB\n", name);
+  if (strlen(name) != 3)
+    return true;
+
+  return memcmp(name, "gab", 3);
+}
+
+bool check_valid_zip() {
+  const char *path = gab_osexepath();
+
+  printf("CHECKING PATH %s\n", path);
+
+  mz_zip_archive zip = {0};
+  // mz_zip_zero_struct(&zip);
+
+  assert(&zip);
+  assert(path);
+  if (!mz_zip_reader_init_file(&zip, path, 0)) {
+    mz_zip_error e = mz_zip_get_last_error(&zip);
+    printf("ZIPERROR: %s\n", mz_zip_get_error_string(e));
+    return false;
+  }
+
+  size_t files = mz_zip_reader_get_num_files(&zip);
+
+  printf("See %lu files.\n", files);
+
+  for (size_t i = 0; i < files; i++) {
+    mz_zip_archive_file_stat stat;
+    if (!mz_zip_reader_file_stat(&zip, i, &stat)) {
+      mz_zip_error e = mz_zip_get_last_error(&zip);
+      printf("ZIPERROR: %s\n", mz_zip_get_error_string(e));
+      break;
+    }
+
+    printf("See %s.\n", stat.m_filename);
+  }
+
+  mz_zip_reader_end(&zip);
+  return files;
+}
+
 int main(int argc, const char **argv) {
   /*register_printf_specifier('V', gab_val_printf_handler,*/
   /*                          gab_val_printf_arginfo);*/
@@ -741,6 +787,17 @@ int main(int argc, const char **argv) {
    * Pull locale from ENV
    */
   setlocale(LC_ALL, "");
+
+  if (check_not_gab(argv[0])) {
+    printf("NOT_GAB\n");
+    if (check_valid_zip()) {
+      printf("IS_ZIP\n");
+    } else {
+      printf("NOT_ZIP\n");
+    }
+  } else {
+    printf("IS_GAB\n");
+  }
 
   if (argc < 2)
     goto fin;
