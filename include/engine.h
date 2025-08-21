@@ -270,7 +270,7 @@ struct gab_ofiber {
 struct gab_ochannel {
   struct gab_obj header;
   /* Number of values held at member *data* */
-  uint64_t len;
+  _Atomic(uint64_t) len;
   /* Values held */
   _Atomic(gab_value *) data;
 };
@@ -447,6 +447,8 @@ struct gab_src {
 struct gab_eg {
   _Atomic int8_t njobs;
 
+  uint64_t nresources;
+
   uint64_t hash_seed;
 
   v_gab_value scratch;
@@ -459,6 +461,16 @@ struct gab_eg {
     _Atomic int8_t schedule;
     _Atomic int8_t signal;
   } sig;
+
+  uint64_t nroots;
+  const char *resroots[cGAB_RESOURCE_MAX];
+
+  struct gab_resource {
+    const char *prefix;
+    const char *suffix;
+    gab_loader_f loader;
+    gab_loader_existf exister;
+  } res[cGAB_RESOURCE_MAX];
 
   struct gab_gc gc;
 

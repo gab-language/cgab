@@ -1,3 +1,4 @@
+#include "core.h"
 #include "gab.h"
 #include "miniz/amalgamation/miniz.c"
 #include <locale.h>
@@ -22,6 +23,8 @@
 #endif
 
 struct gab_triple gab;
+
+mz_zip_archive zip = {0};
 
 /*
  * OS Signal handler for when SIGINT is caught
@@ -72,6 +75,208 @@ bool check_and_printerr(union gab_value_pair *res) {
   return true;
 }
 
+typedef union gab_value_pair (*module_f)(struct gab_triple);
+
+union gab_value_pair gab_use_dynlib(struct gab_triple gab, const char *path,
+                                    size_t len, const char **sargs,
+                                    gab_value *vargs) {
+  gab_osdynlib lib = gab_oslibopen(path);
+
+  if (lib == nullptr) {
+#ifdef GAB_PLATFORM_UNIX
+    return gab_panicf(gab, "Failed to load module '$': $",
+                      gab_string(gab, path), gab_string(gab, dlerror()));
+#elifdef GAB_PLATFORM_WASI
+    return gab_panicf(gab, "Failed to load module '$'", gab_string(gab, path));
+#elifdef GAB_PLATFORM_WIN
+    {
+      int error = GetLastError();
+      char buffer[128];
+      if (FormatMessageA(
+              FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_FROM_SYSTEM, NULL,
+              error, 0, buffer, sizeof(buffer) / sizeof(char), NULL))
+        return gab_panicf(gab, "Failed to load module '$': $",
+                          gab_string(gab, path), gab_string(gab, buffer));
+
+      return gab_panicf(gab, "Failed to load module '$'",
+                        gab_string(gab, path));
+    }
+#endif
+  }
+
+  module_f mod = (module_f)gab_oslibfind(lib, GAB_DYNLIB_MAIN);
+
+  if (mod == nullptr)
+#ifdef GAB_PLATFORM_UNIX
+    return gab_panicf(gab, "Failed to load module '$': $",
+                      gab_string(gab, path), gab_string(gab, dlerror()));
+#elifdef GAB_PLATFORM_WASI
+    return gab_panicf(gab, "Failed to load module '$'", gab_string(gab, path));
+#elifdef GAB_PLATFORM_WIN
+  {
+    int error = GetLastError();
+    char buffer[128];
+    if (FormatMessageA(
+            FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_FROM_SYSTEM, NULL,
+            error, 0, buffer, sizeof(buffer) / sizeof(char), NULL))
+      return gab_panicf(gab, "Failed to load module '$': $",
+                        gab_string(gab, path), gab_string(gab, buffer));
+
+    return gab_panicf(gab, "Failed to load module '$'", gab_string(gab, path));
+  }
+#endif
+
+  union gab_value_pair res = mod(gab);
+
+  // At this point, mod should have reported any errors.
+  /*gab.flags |= fGAB_ERR_QUIET;*/
+
+  if (res.status != gab_cvalid)
+    return gab_panicf(gab, "Failed to load c module.");
+
+  if (res.aresult->data[0] != gab_ok)
+    return gab_panicf(gab,
+                      "Failed to load module: module returned $, expected $",
+                      res.aresult->data[0], gab_ok);
+
+  if (gab_segmodput(gab.eg, path, res.aresult) == nullptr)
+    return gab_panicf(gab, "Failed to cache c module.");
+
+  return res;
+}
+
+union gab_value_pair gab_use_zip(struct gab_triple gab, const char *path,
+                                 size_t len, const char **sargs,
+                                 gab_value *vargs) {
+  int idx = mz_zip_reader_locate_file(&zip, path, "", 0);
+  if (idx < 0)
+    return gab_panicf(gab, "Failed to load module");
+
+  mz_zip_archive_file_stat stat;
+  if (!mz_zip_reader_file_stat(&zip, idx, &stat)) {
+    mz_zip_error e = mz_zip_get_last_error(&zip);
+    const char *estr = mz_zip_get_error_string(e);
+    return gab_panicf(gab, "Failed to load module: $", gab_string(gab, estr));
+  };
+
+  size_t sz;
+  void *src = mz_zip_reader_extract_file_to_heap(&zip, stat.m_filename, &sz, 0);
+
+  if (!src) {
+    mz_zip_error e = mz_zip_get_last_error(&zip);
+    const char *estr = mz_zip_get_error_string(e);
+    return gab_panicf(gab, "Failed to load module: $", gab_string(gab, estr));
+  }
+
+  union gab_value_pair fiber = gab_aexec(gab, (struct gab_exec_argt){
+                                                  .name = path,
+                                                  .source_len = sz,
+                                                  .source = (const char *)src,
+                                                  .flags = gab.flags,
+                                                  .len = len,
+                                                  .sargv = sargs,
+                                                  .argv = vargs,
+                                              });
+
+  a_char_destroy(src);
+
+  if (fiber.status != gab_cvalid)
+    return fiber;
+
+  return gab_tfibawait(gab, fiber.vresult, cGAB_WORKER_IDLE_TRIES);
+}
+
+union gab_value_pair gab_use_source(struct gab_triple gab, const char *path,
+                                    size_t len, const char **sargs,
+                                    gab_value *vargs) {
+  a_char *src = gab_osread(path);
+
+  if (src == nullptr) {
+    gab_value reason = gab_string(gab, strerror(errno));
+    return gab_panicf(gab, "Failed to load module: $", reason);
+  }
+
+  union gab_value_pair fiber =
+      gab_aexec(gab, (struct gab_exec_argt){
+                         .name = path,
+                         .source = (const char *)src->data,
+                         .flags = gab.flags,
+                         .len = len,
+                         .sargv = sargs,
+                         .argv = vargs,
+                     });
+
+  a_char_destroy(src);
+
+  if (fiber.status != gab_cvalid)
+    return fiber;
+
+  return gab_tfibawait(gab, fiber.vresult, cGAB_WORKER_IDLE_TRIES);
+}
+
+bool file_exister(const char *path) {
+  FILE *f = fopen(path, "r");
+
+  if (f)
+    fclose(f);
+
+  return f != nullptr;
+}
+
+bool zip_exister(const char *path) {
+  int res = mz_zip_reader_locate_file(&zip, path, nullptr, 0);
+  return res >= 0;
+}
+
+bool add_zip_loaders(struct gab_triple gab) {
+  if (!gab_root(gab, ""))
+    return false;
+
+  if (!gab_loader(gab, "mod/", GAB_DYNLIB_FILEENDING, gab_use_dynlib,
+                  file_exister))
+    return (false);
+
+  if (!gab_loader(gab, "", GAB_DYNLIB_FILEENDING, gab_use_dynlib, file_exister))
+    return (false);
+
+  if (!gab_loader(gab, "", "/mod.gab", gab_use_zip, zip_exister))
+    return false;
+
+  if (!gab_loader(gab, "mod/", ".gab", gab_use_zip, zip_exister))
+    return false;
+
+  if (!gab_loader(gab, "", ".gab", gab_use_zip, zip_exister))
+    return false;
+
+  return true;
+}
+
+bool add_builtin_loaders(struct gab_triple gab) {
+  if (!gab_root(gab, gab_osprefix(GAB_VERSION_TAG)))
+    return (false);
+
+  if (!gab_root(gab, "./"))
+    return (false);
+
+  if (!gab_loader(gab, "mod/", GAB_DYNLIB_FILEENDING, gab_use_dynlib,
+                  file_exister))
+    return (false);
+
+  if (!gab_loader(gab, "", GAB_DYNLIB_FILEENDING, gab_use_dynlib, file_exister))
+    return (false);
+
+  if (!gab_loader(gab, "", "/mod.gab", gab_use_source, file_exister))
+    return (false);
+
+  if (!gab_loader(gab, "mod/", ".gab", gab_use_source, file_exister))
+    return (false);
+
+  if (!gab_loader(gab, "", ".gab", gab_use_source, file_exister))
+    return (false);
+
+  return true;
+}
+
 static const char *default_modules[] = {
     "Strings", "Binaries", "Shapes",  "Messages", "Numbers",
     "Blocks",  "Records",  "Fibers",  "Channels", "__core",
@@ -85,6 +290,7 @@ int run_repl(int flags, size_t nmodules, const char **modules) {
           .flags = flags,
           .len = nmodules,
           .modules = modules,
+          .inithook_f = add_builtin_loaders,
       },
       &gab);
 
@@ -124,6 +330,7 @@ int run_string(const char *string, int flags, size_t jobs, size_t nmodules,
           .jobs = jobs,
           .len = nmodules,
           .modules = modules,
+          .inithook_f = add_builtin_loaders,
       },
       &gab);
 
@@ -151,15 +358,57 @@ int run_string(const char *string, int flags, size_t jobs, size_t nmodules,
   return a_gab_value_destroy(run_res.aresult), gab_destroy(gab), 0;
 }
 
+int run_app(const char *mod) {
+  size_t len = strlen(mod);
+
+  if (len > 4 && !memcmp(mod + len - 4, ".exe", 4))
+    len -= 4;
+
+  size_t modlen = 0;
+  for (size_t i = len - 1; i > 0; i--) {
+    modlen++;
+    if (mod[i - 1] == '\\' || mod[i - 1] == '/') {
+      mod = mod + i;
+      break;
+    }
+  }
+
+  union gab_value_pair res = gab_create(
+      (struct gab_create_argt){
+          .inithook_f = add_zip_loaders,
+          .len = ndefault_modules,
+          .modules = default_modules,
+      },
+      &gab);
+
+  if (!check_and_printerr(&res))
+    return gab_destroy(gab), 1;
+
+  union gab_value_pair run_res =
+      gab_use(gab, (struct gab_use_argt){
+                       .vname = gab_nstring(gab, modlen, mod),
+                       .len = ndefault_modules,
+                       .sargv = default_modules,
+                       .argv = res.aresult->data + 1,
+                   });
+
+  a_gab_value_destroy(res.aresult);
+
+  if (!check_and_printerr(&run_res))
+    return gab_destroy(gab), 1;
+
+  return a_gab_value_destroy(run_res.aresult), gab_destroy(gab), 0;
+}
+
 int run_file(const char *path, int flags, size_t jobs, size_t nmodules,
              const char **modules) {
-
   union gab_value_pair res = gab_create(
       (struct gab_create_argt){
           .flags = flags,
           .jobs = jobs,
           .len = nmodules,
           .modules = modules,
+          .inithook_f = add_builtin_loaders,
       },
       &gab);
 
@@ -211,6 +460,7 @@ int run(struct command_arguments args);
 int exec(struct command_arguments args);
 int repl(struct command_arguments args);
 int help(struct command_arguments args);
+int build(struct command_arguments args);
 
 #define DEFAULT_COMMAND commands[0]
 
@@ -329,6 +579,14 @@ static struct command commands[] = {
                 'j',
             },
         },
+    },
+    {
+        "build",
+        "Build a standalone executable for the module <arg>.",
+        "Bundle the gab binary and source code for the module <arg> into a "
+        "single executable.",
+        .handler = build,
+        {},
     },
     {
         "exec",
@@ -736,8 +994,145 @@ int help(struct command_arguments args) {
   return 1;
 }
 
+int copy_file(FILE *in, FILE *out) {
+  char buffer[8192]; // 8 KB buffer
+  size_t n;
+
+  while ((n = fread(buffer, 1, sizeof(buffer), in)) > 0) {
+    if (fwrite(buffer, 1, n, out) != n) {
+      return -1; // write error
+    }
+  }
+
+  if (ferror(in)) {
+    return -1; // read error
+  }
+
+  return 0; // success
+}
+
+bool add_module(mz_zip_archive *zip_o, const char *module) {
+  const char *prefix, *suffix;
+  const char *path = gab_resolve(gab, module, &prefix, &suffix);
+
+  if (!path) {
+    printf("[gab] cli error: Could not resolve module %s\n", module);
+    return false;
+  }
+
+  size_t lenprefix = strlen(prefix);
+  size_t lensuffix = strlen(suffix);
+  size_t lenpath = strlen(module);
+  char modulename[lenprefix + lenpath + lensuffix + 1];
+
+  memcpy(modulename, prefix, lenprefix);
+  memcpy(modulename + lenprefix, module, lenpath);
+  memcpy(modulename + lenprefix + lenpath, suffix, lensuffix);
+  modulename[lenprefix + lenpath + lensuffix] = '\0';
+
+  printf("[gab] Resolve module %s to %s. Storing in archive as %s.\n", module,
+         path, modulename);
+
+  if (!mz_zip_writer_add_file(zip_o, modulename, path, nullptr, 0, 0)) {
+    mz_zip_error e = mz_zip_get_last_error(zip_o);
+    const char *estr = mz_zip_get_error_string(e);
+    printf("[gab] mz error zipping %s: %s", path, estr);
+    mz_zip_writer_end(zip_o);
+    return false;
+  }
+
+  return true;
+}
+
+int build(struct command_arguments args) {
+  union gab_value_pair res = gab_create(
+      (struct gab_create_argt){
+          .inithook_f = add_builtin_loaders,
+          .len = ndefault_modules,
+          .modules = default_modules,
+      },
+      &gab);
+
+  if (!check_and_printerr(&res))
+    return gab_destroy(gab), 1;
+  if (args.argc < 1) {
+    printf("[gab] CLI ERROR: Missing bundle arguments to build subcommand");
+    return 1;
+  }
+
+  const char *bundle = args.argv[0];
+  size_t bundle_len = strlen(bundle);
+  char bundle_buf[bundle_len + 5];
+  memcpy(bundle_buf, bundle, bundle_len);
+  memcpy(bundle_buf + bundle_len, ".exe", 5);
+  bundle = bundle_buf;
+
+  args.argv++;
+  args.argc--;
+
+  const char *path = gab_osexepath();
+
+  FILE *exe = fopen(path, "r");
+  if (!exe) {
+    printf("[gab] CLI Error: Could not open exe file\n");
+    return 1;
+  }
+
+  FILE *bundle_f = fopen(bundle, "w");
+  if (!bundle_f) {
+    printf("[gab] CLI Error: Could not open bundle file: %s\n", bundle);
+    return 1;
+  }
+
+  copy_file(exe, bundle_f);
+
+  mz_zip_archive zip_o = {0};
+
+  if (!mz_zip_writer_init_cfile(&zip_o, bundle_f, 0)) {
+    mz_zip_error e = mz_zip_get_last_error(&zip_o);
+    const char *estr = mz_zip_get_error_string(e);
+    printf("[gab] mz error: %s", estr);
+    return 1;
+  }
+
+  for (int i = 0; i < ndefault_modules; i++) {
+    const char *module = default_modules[i];
+    if (!add_module(&zip_o, module))
+      return 1;
+  }
+
+  for (int i = 0; i < args.argc; i++) {
+    const char *module = args.argv[i];
+    if (!add_module(&zip_o, module))
+      return 1;
+  }
+
+  if (!mz_zip_writer_finalize_archive(&zip_o)) {
+    mz_zip_error e = mz_zip_get_last_error(&zip_o);
+    const char *estr = mz_zip_get_error_string(e);
+    printf("[gab] mz Error: %s", estr);
+    mz_zip_writer_end(&zip_o);
+    return 1;
+  }
+
+  mz_zip_writer_end(&zip_o);
+
+  fclose(bundle_f);
+  fclose(exe);
+  gab_destroy(gab);
+
+#if GAB_PLATFORM_UNIX
+  if (chmod(bundle, 0755) != 0) {
+    perror("chmod");
+    return -1;
+  }
+#endif
+
+  printf("[gab] Success! Bundled module can be found at: %s\n", bundle);
+  return 0;
+}
+
 bool check_not_gab(const char *name) {
-  printf("COMPARE %s TO GAB\n", name);
   if (strlen(name) != 3)
     return true;
 
@@ -747,9 +1142,6 @@ bool check_not_gab(const char *name) {
 bool check_valid_zip() {
   const char *path = gab_osexepath();
 
-  printf("CHECKING PATH %s\n", path);
-
-  mz_zip_archive zip = {0};
   // mz_zip_zero_struct(&zip);
 
   assert(&zip);
@@ -762,20 +1154,6 @@ bool check_valid_zip() {
 
   size_t files = mz_zip_reader_get_num_files(&zip);
 
-  printf("See %lu files.\n", files);
-
-  for (size_t i = 0; i < files; i++) {
-    mz_zip_archive_file_stat stat;
-    if (!mz_zip_reader_file_stat(&zip, i, &stat)) {
-      mz_zip_error e = mz_zip_get_last_error(&zip);
-      printf("ZIPERROR: %s\n", mz_zip_get_error_string(e));
-      break;
-    }
-
-    printf("See %s.\n", stat.m_filename);
-  }
-
-  mz_zip_reader_end(&zip);
   return files;
 }
 
@@ -789,14 +1167,11 @@ int main(int argc, const char **argv) {
   setlocale(LC_ALL, "");
 
   if (check_not_gab(argv[0])) {
-    printf("NOT_GAB\n");
     if (check_valid_zip()) {
-      printf("IS_ZIP\n");
+      return run_app(argv[0]);
     } else {
-      printf("NOT_ZIP\n");
     }
   } else {
-    printf("IS_GAB\n");
   }
 
   if (argc < 2)

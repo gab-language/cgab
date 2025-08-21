@@ -136,6 +136,10 @@
 #define cGAB_STACK_MAX (cGAB_FRAMES_MAX * 32)
 #endif
 
+#ifndef cGAB_RESOURCE_MAX
+#define cGAB_RESOURCE_MAX 64
+#endif
+
 // Garbage collection increment/decrement buffer size
 // I don't love having these just be static buffers, its very possible
 // for them to overflow

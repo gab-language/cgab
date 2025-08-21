@@ -888,7 +888,8 @@ union gab_value_pair gab_parse(struct gab_triple gab,
   gab_value name = gab_string(gab, args.name);
 
   struct gab_src *src =
-      gab_src(gab, name, (char *)args.source, strlen(args.source) + 1);
+      gab_src(gab, name, (char *)args.source,
+              args.source_len ? args.source_len : strlen(args.source) + 1);
 
   struct parser parser = {.src = src, .err = gab_cundefined};
 

@@ -1587,6 +1587,7 @@ gab_value gab_channel(struct gab_triple gab) {
   struct gab_ochannel *self = GAB_CREATE_OBJ(gab_ochannel, kGAB_CHANNEL);
 
   atomic_init(&self->data, nullptr);
+  atomic_init(&self->len, 0);
   return __gab_obj(self);
 }
 
@@ -1646,6 +1647,14 @@ bool gab_chnmatches(gab_value c, gab_value *ptr) {
 }
 
 /*
+ * Abandon a put by storing nullptr into data.
+ */
+void channel_abandon(struct gab_ochannel *channel) {
+  atomic_store(&channel->len, 0);
+  atomic_store(&channel->data, nullptr);
+}
+
+/*
  * Try to put a slice into a channel. Uses weak atomic exchange, so
  *  must be used in loops.
  *
@@ -1654,17 +1663,11 @@ bool gab_chnmatches(gab_value c, gab_value *ptr) {
 bool channel_put(struct gab_ochannel *channel, uint64_t len, gab_value *vs) {
   static gab_value *null = nullptr;
 
-  if (atomic_compare_exchange_weak(&channel->data, &null, vs))
-    return channel->len = len, true;
+  if (atomic_compare_exchange_weak(&channel->data, &null, vs)) {
+    return atomic_store(&channel->len, len), true;
+  }
 
   return false;
-}
-
-/*
- * Abandon a put by storing nullptr into data.
- */
-void channel_abandon(struct gab_ochannel *channel) {
-  atomic_store(&channel->data, nullptr);
 }
 
 /*
@@ -1674,13 +1677,11 @@ void channel_abandon(struct gab_ochannel *channel) {
  */
 gab_value channel_take(struct gab_ochannel *channel, uint64_t n,
                        gab_value *dest) {
-  // This load of the len scares me. However, we only ever write to channel->len
-  // when we have succeeded with our atomic exchange against nullptr. So I think
-  // it should be fine.
   gab_value *src = atomic_load(&channel->data);
-  uint64_t avail = channel->len;
+  uint64_t avail = atomic_load(&channel->len);
 
-  if (!src)
+  // If we don't have both avail and src yet, the channel is not ready.
+  if (!(avail && src))
     return gab_cundefined;
 
   // No space to complete this take.
@@ -1691,7 +1692,7 @@ gab_value channel_take(struct gab_ochannel *channel, uint64_t n,
   memcpy(dest, src, sizeof(gab_value) * len);
 
   if (atomic_compare_exchange_weak(&channel->data, &src, nullptr))
-    return gab_number(len);
+    return atomic_store(&channel->len, 0), gab_number(len);
   else
     return gab_cundefined;
 }

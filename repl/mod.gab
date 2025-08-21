@@ -3,8 +3,8 @@ ui = 'cgui'.use
 
 (events, app) = (Channels.make, Channels.make)
 
-Fibers.make () => ui.run\tui(events, app)
-#Fibers.make () => ui.run\gui(events, app)
+#Fibers.make () => ui.run\tui(events, app).unwrap
+Fibers.make () => ui.run\gui(events, app).unwrap
 
 model = {
   input: ''
@@ -95,6 +95,7 @@ render\history: .def (
 controller: .def (
   model?
   (type ev*) => do
+    '$  $\n'.printf(type, ev)
     type
       .handle\type(ev self)
   end)

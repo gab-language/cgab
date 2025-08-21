@@ -15,6 +15,8 @@
 
 #define RGFW_IMPLEMENTATION
 #define RGFW_OPENGL
+#define RGFW_PRINT_ERRORS
+#define RGFW_DEBUG
 #include "RGFW/RGFW.h"
 
 #define CLAY_IMPLEMENTATION
@@ -51,50 +53,6 @@ unsigned char fontData[] = {
 
 #include "gab.h"
 
-void HandleClayErrors(Clay_ErrorData errorData) {
-  printf("%s\n", errorData.errorText.chars);
-}
-
-Clay_Vector2 mousePosition;
-bool clay_RGFW_update(RGFW_window *win, double deltaTime) {
-  RGFW_event ev;
-  RGFW_window_checkEvent(win, &ev);
-
-  switch (ev.type) {
-  case RGFW_mouseButtonPressed: {
-    switch (ev.button.type) {
-    case RGFW_mouseScrollUp:
-    case RGFW_mouseScrollDown:
-      Clay_UpdateScrollContainers(false, (Clay_Vector2){0, ev.button.scroll},
-                                  deltaTime);
-      return true;
-    default:
-      Clay_SetPointerState(mousePosition, RGFW_isMousePressed(RGFW_mouseLeft));
-      return true;
-    }
-
-    return false;
-  }
-  case RGFW_mouseButtonReleased:
-    Clay_SetPointerState(mousePosition, RGFW_isMousePressed(RGFW_mouseLeft));
-    return true;
-  case RGFW_mousePosChanged:
-    mousePosition = (Clay_Vector2){(float)ev.mouse.x, (float)ev.mouse.y};
-    Clay_SetPointerState(mousePosition, RGFW_isMousePressed(RGFW_mouseLeft));
-    return false;
-  case RGFW_windowMoved:
-  case RGFW_windowResized:
-    Clay_Dimensions dim = {(float)win->w, (float)win->h};
-    sclay_set_layout_dimensions(dim, 1);
-    return false;
-  case RGFW_keyPressed:
-  case RGFW_keyReleased:
-    return true;
-  default:
-    return false;
-  }
-}
-
 struct gui {
   struct RGFW_window win;
   struct gab_triple gab;
@@ -103,19 +61,9 @@ struct gui {
 };
 
 struct gui gui;
-gab_value clayGetTopmostId() {
-  Clay_ElementIdArray arr = Clay_GetPointerOverIds();
 
-  // Skip the root - we don't care about clicks there.
-  for (size_t i = arr.length; i > 1; i--) {
-    Clay_String str = arr.internalArray[i - 1].stringId;
-    if (!str.length)
-      continue;
-
-    return gab_nmessage(gui.gab, str.length, str.chars);
-  }
-
-  return gab_cundefined;
+void HandleClayErrors(Clay_ErrorData errorData) {
+  printf("%s\n", errorData.errorText.chars);
 }
 
 void putevent(const char *type, const char *event, gab_value data1,
@@ -139,75 +87,108 @@ void putevent(const char *type, const char *event, gab_value data1,
   }
 }
 
-#define RGFW_KEY_CASE(key, str)                                                \
-  case RGFW_##key:                                                             \
-    putevent("key", #str, gab_number(key_mod), gab_bool(press),                \
-             gab_cundefined);                                                  \
+#define RGFW_KEY_CASE(keyname, str)                                            \
+  case RGFW_##keyname:                                                         \
+    putevent("key", #str, gab_number(ev->key.mod),                             \
+             gab_bool(ev->type == RGFW_keyPressed), gab_cundefined);           \
     break;
 
-void onkey(RGFW_window *win, RGFW_key key, unsigned char key_char,
-           RGFW_keymod key_mod, unsigned char repeat, unsigned char press) {
-  switch (key) {
-    RGFW_KEY_CASE(enter, enter);
-    RGFW_KEY_CASE(backSpace, backspace);
-    RGFW_KEY_CASE(capsLock, capslock);
-    RGFW_KEY_CASE(insert, insert);
-    RGFW_KEY_CASE(end, end);
-    RGFW_KEY_CASE(home, home);
-    RGFW_KEY_CASE(pageUp, pageup);
-    RGFW_KEY_CASE(pageDown, pagedown);
-    RGFW_KEY_CASE(F1, f1);
-    RGFW_KEY_CASE(F2, f2);
-    RGFW_KEY_CASE(F3, f3);
-    RGFW_KEY_CASE(F4, f4);
-    RGFW_KEY_CASE(F5, f5);
-    RGFW_KEY_CASE(F6, f6);
-    RGFW_KEY_CASE(F7, f7);
-    RGFW_KEY_CASE(F8, f8);
-    RGFW_KEY_CASE(F9, f9);
-    RGFW_KEY_CASE(F10, f10);
-    RGFW_KEY_CASE(F11, f11);
-    RGFW_KEY_CASE(F12, f12);
-  default:
-    const char ev[] = {key_char, '\0'};
-    putevent("key", ev, gab_number(key_mod), gab_bool(repeat), gab_cundefined);
-    break;
+gab_value clayGetTopmostId() {
+  Clay_ElementIdArray arr = Clay_GetPointerOverIds();
+
+  // Skip the root - we don't care about clicks there.
+  for (size_t i = arr.length; i > 1; i--) {
+    Clay_String str = arr.internalArray[i - 1].stringId;
+    if (!str.length)
+      continue;
+
+    return gab_nmessage(gui.gab, str.length, str.chars);
   }
+
+  return gab_cundefined;
 }
 
-void onmousebutton(RGFW_window *win, unsigned char b, double dbl,
-                   unsigned char down) {
-  gab_value target = clayGetTopmostId();
-  switch (b) {
-  case RGFW_mouseLeft:
-    putevent("mouse", "left", gab_number(dbl), gab_bool(down), target);
-    break;
-  case RGFW_mouseRight:
-    putevent("mouse", "right", gab_number(dbl), gab_bool(down), target);
-    break;
-  case RGFW_mouseScrollDown:
-    putevent("mouse", "scroll\\down", gab_number(dbl), gab_bool(down),
-             gab_cundefined);
-    break;
-  case RGFW_mouseScrollUp:
-    putevent("mouse", "scroll\\up", gab_number(dbl), gab_bool(down),
-             gab_cundefined);
-    break;
-  };
-}
+Clay_Vector2 mousePosition;
+bool clay_RGFW_update(RGFW_window *win, double deltaTime, RGFW_event *ev) {
+  switch (ev->type) {
+  case RGFW_mouseButtonPressed: {
+    gab_value target = clayGetTopmostId();
+    switch (ev->button.type) {
+    case RGFW_mouseScrollUp:
+    case RGFW_mouseScrollDown:
+      Clay_UpdateScrollContainers(false, (Clay_Vector2){0, ev->button.scroll},
+                                  deltaTime);
+      return false;
+    case RGFW_mouseLeft:
+      putevent("mouse", "left", gab_number(ev->button.scroll), true, target);
+      Clay_SetPointerState(mousePosition, true);
+      return true;
+    case RGFW_mouseRight:
+      putevent("mouse", "right", gab_number(ev->button.scroll), true, target);
+      Clay_SetPointerState(mousePosition, true);
+      return true;
+    }
 
-void onmousepos(RGFW_window *win, int x, int y, float, float) {
-  // Mouse position events flood the event channel too much
-  // if (evch != gab_cundefined) {
-  //   gab_value ev[] = {
-  //       gab_message(gui.gab, "mouse"),
-  //       gab_message(gui.gab, "pos"),
-  //       gab_number(dst.x),
-  //       gab_number(dst.y),
-  //   };
-  //
-  //   gab_nchnput(gui.gab, evch, sizeof(ev) / sizeof(gab_value), ev);
-  // }
+    return false;
+  }
+  case RGFW_mouseButtonReleased: {
+    gab_value target = clayGetTopmostId();
+    switch (ev->button.value) {
+    case RGFW_mouseLeft:
+      putevent("mouse", "left", gab_number(ev->button.scroll), true, target);
+      Clay_SetPointerState(mousePosition, true);
+      return true;
+    case RGFW_mouseRight:
+      putevent("mouse", "right", gab_number(ev->button.scroll), true, target);
+      Clay_SetPointerState(mousePosition, true);
+      return true;
+    }
+
+    return false;
+  }
+  case RGFW_mousePosChanged:
+    mousePosition = (Clay_Vector2){(float)ev->mouse.x, (float)ev->mouse.y};
+    Clay_SetPointerState(mousePosition, RGFW_isMousePressed(RGFW_mouseLeft));
+    return false;
+  case RGFW_windowMoved:
+  case RGFW_windowResized:
+    Clay_Dimensions dim = {(float)win->w, (float)win->h};
+    sclay_set_layout_dimensions(dim, 1);
+    return false;
+  case RGFW_keyPressed:
+  case RGFW_keyReleased:
+    switch (ev->key.value) {
+      RGFW_KEY_CASE(return, enter);
+      RGFW_KEY_CASE(escape, escape);
+      RGFW_KEY_CASE(backSpace, backspace);
+      RGFW_KEY_CASE(capsLock, capslock);
+      RGFW_KEY_CASE(insert, insert);
+      RGFW_KEY_CASE(end, end);
+      RGFW_KEY_CASE(home, home);
+      RGFW_KEY_CASE(pageUp, pageup);
+      RGFW_KEY_CASE(pageDown, pagedown);
+      RGFW_KEY_CASE(F1, f1);
+      RGFW_KEY_CASE(F2, f2);
+      RGFW_KEY_CASE(F3, f3);
+      RGFW_KEY_CASE(F4, f4);
+      RGFW_KEY_CASE(F5, f5);
+      RGFW_KEY_CASE(F6, f6);
+      RGFW_KEY_CASE(F7, f7);
+      RGFW_KEY_CASE(F8, f8);
+      RGFW_KEY_CASE(F9, f9);
+      RGFW_KEY_CASE(F10, f10);
+      RGFW_KEY_CASE(F11, f11);
+      RGFW_KEY_CASE(F12, f12);
+    default:
+      const char event[] = {ev->key.sym, '\0'};
+      putevent("key", event, gab_number(ev->key.mod),
+               gab_bool(ev->type == RGFW_keyPressed), gab_cundefined);
+    }
+    return true;
+
+  default:
+    return false;
+  }
 }
 
 #define TERMBOX_KEY_CASE(key, str)                                             \
@@ -223,6 +204,7 @@ bool clay_termbox_update(struct tb_event *e, double deltaTime) {
     switch (e->key) {
       TERMBOX_KEY_CASE(BACKSPACE, backspace);
       TERMBOX_KEY_CASE(ENTER, enter);
+      TERMBOX_KEY_CASE(ESC, escape);
       // CAPSLOCK MISSING
       TERMBOX_KEY_CASE(INSERT, insert);
       TERMBOX_KEY_CASE(END, end);
@@ -860,12 +842,18 @@ void guirenderloop() {
 
     RGFW_event ev;
     while (RGFW_window_checkEvent(&gui.win, &ev)) {
+      if (ev.type == RGFW_quit)
+        break;
+
       Clay_Dimensions dim = {(float)gui.win.w, (float)gui.win.h};
       sclay_set_layout_dimensions(dim, 1);
 
-      if (clay_RGFW_update(&gui.win, 10))
+      if (clay_RGFW_update(&gui.win, 10, &ev)) {
+        printf("RECEIVED UPDATE\n");
+
         if (!doguirender())
           return;
+      }
     }
 
     gab_chnput(gui.gab, gui.evch, gab_message(gui.gab, "tick"));
@@ -895,8 +883,12 @@ void guirenderloop() {
 }
 
 GAB_DYNLIB_NATIVE_FN(ui, run_gui) {
+
   if (!RGFW_createWindowPtr("window", 0, 0, 800, 800,
-                            RGFW_windowCenter | RGFW_windowNoResize, &gui.win))
+
+                            RGFW_windowCenter | RGFW_windowNoResize |
+                                RGFW_windowOpenGL,
+                            &gui.win))
     return gab_vmpush(gab_thisvm(gab), gab_err,
                       gab_string(gab, "Failed to create window")),
            gab_union_cvalid(gab_nil);
@@ -914,9 +906,6 @@ GAB_DYNLIB_NATIVE_FN(ui, run_gui) {
   gui.appch = appch;
   gui.evch = evch;
   gui.win.userPtr = &gui;
-  RGFW_setKeyCallback(onkey);
-  RGFW_setMouseButtonCallback(onmousebutton);
-  RGFW_setMousePosCallback(onmousepos);
 
   if (!gladLoadGL(RGFW_getProcAddress_OpenGL))
     return gab_vmpush(gab_thisvm(gab), gab_err,
@@ -946,7 +935,6 @@ GAB_DYNLIB_NATIVE_FN(ui, run_gui) {
   Clay_SetMeasureTextFunction(sclay_measure_text, &fonts);
 
   // Clay_SetDebugModeEnabled(true);
-
   guirenderloop();
 
   return gab_vmpush(gab_thisvm(gab), gab_ok), gab_union_cvalid(gab_nil);

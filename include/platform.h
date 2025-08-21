@@ -1,7 +1,8 @@
 #ifndef GAB_PLATFORM_H
 #define GAB_PLATFORM_H
 
-#include "core.h"
+#include "gab.h"
+#include <stdio.h>
 
 /**
  * C11 Threads are not well supported cross-platforms.
@@ -18,7 +19,6 @@
  * In the other cases, use our vendored, cthreads submodule as a cross platform
  * replacement until c11 threads is supported.
  */
-#include "threads.h"
 
 /**
  * PLATFORM INTERFACE
@@ -75,27 +75,66 @@
  * Assign a new signal handler *handler* for signal *signal*
  */
 
-#define GAB_DYNLIB_MAIN "gab_lib"
-
-#define GAB_API_INLINE static inline
-
-#ifdef GAB_CORE
-#define GAB_API [[__gnu__::__used__]]
-#else
-#define GAB_API extern
-#endif
-
-#define GAB_DYNLIB_MAIN_FN union gab_value_pair gab_lib(struct gab_triple gab)
-#define GAB_DYNLIB_NATIVE_FN(module, name)                                     \
-  union gab_value_pair gab_mod_##module##_##name(                              \
-      struct gab_triple gab, uint64_t argc, gab_value *argv,                   \
-      gab_value reentrant)
-
 #define gab_osproc(cmd, ...)                                                   \
   ({                                                                           \
     char *_args[] = {__VA_ARGS__};                                             \
     gab_nosproc(cmd, sizeof(_args) / sizeof(char *), _args);                   \
   })
+
+a_char *gab_fosread(FILE *fd) {
+  v_char buffer = {0};
+
+  while (1) {
+    int c = fgetc(fd);
+
+    if (c == EOF)
+      break;
+
+    v_char_push(&buffer, c);
+  }
+
+  v_char_push(&buffer, '\0');
+
+  a_char *data = a_char_create(buffer.data, buffer.len);
+
+  v_char_destroy(&buffer);
+
+  return data;
+}
+
+a_char *gab_osread(const char *path) {
+  FILE *file = fopen(path, "rb");
+
+  if (file == nullptr)
+    return nullptr;
+
+  a_char *data = gab_fosread(file);
+
+  fclose(file);
+  return data;
+}
+
+a_char *gab_fosreadl(FILE *fd) {
+  v_char buffer;
+  v_char_create(&buffer, 1024);
+
+  for (;;) {
+    int c = fgetc(fd);
+
+    v_char_push(&buffer, c);
+
+    if (c == '\n' || c == EOF)
+      break;
+  }
+
+  v_char_push(&buffer, '\0');
+
+  a_char *data = a_char_create(buffer.data, buffer.len);
+
+  v_char_destroy(&buffer);
+
+  return data;
+}
 
 #define GAB_MAXEXEPATH 2048
 static char _exepath[GAB_MAXEXEPATH];
@@ -174,6 +213,7 @@ GAB_API_INLINE const char *gab_osprefix(const char *v) {
   v_char_spush(&str, s_char_cstr(home));
   v_char_spush(&str, s_char_cstr("/gab/"));
   v_char_spush(&str, s_char_cstr(v));
+  v_char_push(&str, '/');
   v_char_push(&str, '\0');
 
   return str.data;

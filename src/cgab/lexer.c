@@ -1,5 +1,5 @@
-#include "gab.h"
 #include "engine.h"
+#include "gab.h"
 #include <ctype.h>
 
 bool can_start_operator(uint8_t c) {
@@ -292,6 +292,9 @@ static inline void parse_comment(gab_lx *self) {
 }
 
 gab_token gab_lexnext(gab_lx *self) {
+  if (self->cursor - self->source->source->data >= self->source->source->len)
+    goto eof;
+
   while (isblank(peek(self)) || is_comment(peek(self))) {
     if (is_comment(peek(self)))
       parse_comment(self);
@@ -306,6 +309,7 @@ gab_token gab_lexnext(gab_lx *self) {
   start_token(self);
 
   if (peek(self) == '\0' || peek(self) == EOF) {
+  eof:
     advance(self);
     tok = TOKEN_EOF;
     v_gab_token_push(&self->source->tokens, tok);

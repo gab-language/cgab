@@ -18,7 +18,22 @@
 #include <wchar.h>
 
 #include "core.h"
-#include "platform.h"
+
+#define GAB_DYNLIB_MAIN "gab_lib"
+
+#define GAB_API_INLINE static inline
+
+#ifdef GAB_CORE
+#define GAB_API [[__gnu__::__used__]]
+#else
+#define GAB_API extern
+#endif
+
+#define GAB_DYNLIB_MAIN_FN union gab_value_pair gab_lib(struct gab_triple gab)
+#define GAB_DYNLIB_NATIVE_FN(module, name)                                     \
+  union gab_value_pair gab_mod_##module##_##name(                              \
+      struct gab_triple gab, uint64_t argc, gab_value *argv,                   \
+      gab_value reentrant)
 
 #ifdef __cplusplus
 extern "C" {
@@ -497,6 +512,7 @@ enum gab_flags {
 struct gab_create_argt {
   uint32_t flags, jobs;
 
+  bool (*inithook_f)(struct gab_triple gab);
   /* A list of modules to load automatically into the engine.
    * The name of the variable will match the name of the module.
    *
@@ -517,6 +533,34 @@ struct gab_create_argt {
  */
 GAB_API union gab_value_pair gab_create(struct gab_create_argt args,
                                         struct gab_triple *gab_out);
+
+typedef union gab_value_pair (*gab_loader_f)(struct gab_triple, const char *,
+                                             size_t len, const char *sargs[len],
+                                             gab_value vargs[len]);
+
+typedef bool (*gab_loader_existf)(const char *);
+
+/**
+ * @brief Register a loader. Loaders added *later* take precedence.
+ * @param gab The Engine
+ * @param prefix A prefix string
+ * @param suffix A suffix string
+ * @param loader The loading function to call
+ */
+GAB_API bool gab_loader(struct gab_triple gab, const char *prefix,
+                        const char *suffix, gab_loader_f loader,
+                        gab_loader_existf exister);
+
+/**
+ * @brief Register a root for matching loaders.
+ */
+GAB_API bool gab_root(struct gab_triple gab, const char *root);
+
+/**
+ * @brief resolve a module with the engine's given loaders and roots.
+ */
+GAB_API const char *gab_resolve(struct gab_triple gab, const char *mod,
+                                const char **prefix, const char **suffix);
 
 /**
  * @brief Free the memory owned by this triple.
@@ -845,6 +889,11 @@ struct gab_parse_argt {
    */
   const char *name;
   /**
+   * The number of bytes in source to consider as source code.
+   * If 0, strlen(source) is used.
+   */
+  uint64_t source_len;
+  /**
    * The source code to compile.
    */
   const char *source;
@@ -1078,6 +1127,11 @@ struct gab_exec_argt {
    * The name of the module - defaults to "gab\main".
    */
   const char *name;
+  /**
+   * The number of bytes in source to consider as source code.
+   * If 0, strlen(source) is used.
+   */
+  uint64_t source_len;
   /**
    * The source code to execute.
    */

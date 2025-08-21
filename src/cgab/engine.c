@@ -27,61 +27,6 @@ gab_value *gab_egerrs(struct gab_eg *eg) {
   return errs.data;
 };
 
-a_char *gab_fosread(FILE *fd) {
-  v_char buffer = {0};
-
-  while (1) {
-    int c = fgetc(fd);
-
-    if (c == EOF)
-      break;
-
-    v_char_push(&buffer, c);
-  }
-
-  v_char_push(&buffer, '\0');
-
-  a_char *data = a_char_create(buffer.data, buffer.len);
-
-  v_char_destroy(&buffer);
-
-  return data;
-}
-
-a_char *gab_osread(const char *path) {
-  FILE *file = fopen(path, "rb");
-
-  if (file == nullptr)
-    return nullptr;
-
-  a_char *data = gab_fosread(file);
-
-  fclose(file);
-  return data;
-}
-
-a_char *gab_fosreadl(FILE *fd) {
-  v_char buffer;
-  v_char_create(&buffer, 1024);
-
-  for (;;) {
-    int c = fgetc(fd);
-
-    v_char_push(&buffer, c);
-
-    if (c == '\n' || c == EOF)
-      break;
-  }
-
-  v_char_push(&buffer, '\0');
-
-  a_char *data = a_char_create(buffer.data, buffer.len);
-
-  v_char_destroy(&buffer);
-
-  return data;
-}
-
 struct primitive {
   const char *name;
   union {
@@ -571,6 +516,8 @@ union gab_value_pair gab_create(struct gab_create_argt args,
   struct gab_eg *eg = malloc(egsize);
   memset(eg, 0, egsize);
 
+  eg->nresources = 0;
+  eg->nroots = 0;
   eg->len = njobs + 1;
   eg->njobs = 0;
   eg->hash_seed = time(nullptr);
@@ -628,6 +575,9 @@ union gab_value_pair gab_create(struct gab_create_argt args,
 
   eg->work_channel = gab_channel(gab);
   gab_iref(gab, eg->work_channel);
+
+  if (args.inithook_f && !args.inithook_f(gab))
+    return gab_union_cinvalid;
 
   for (int i = 0; i < LEN_CARRAY(kind_primitives); i++) {
     gab_egkeep(
@@ -994,6 +944,7 @@ union gab_value_pair gab_aexec(struct gab_triple gab,
 
   union gab_value_pair main = gab_build(gab, (struct gab_parse_argt){
                                                  .name = args.name,
+                                                 .source_len = args.source_len,
                                                  .source = args.source,
                                                  .len = args.len,
                                                  .argv = args.sargv,
@@ -1472,180 +1423,70 @@ const char *gab_errtocs(struct gab_triple gab, gab_value err) {
 
 #define MODULE_SYMBOL "gab_lib"
 
-typedef union gab_value_pair (*handler_f)(struct gab_triple, const char *,
-                                          size_t len, const char *sargs[len],
-                                          gab_value vargs[len]);
+bool gab_loader(struct gab_triple gab, const char *prefix, const char *suffix,
+                gab_loader_f loader, gab_loader_existf exister) {
+  if (gab.eg->nresources >= cGAB_RESOURCE_MAX)
+    return false;
 
-typedef union gab_value_pair (*module_f)(struct gab_triple);
+  uint64_t idx = gab.eg->nresources++;
+  gab.eg->res[idx].prefix = prefix;
+  gab.eg->res[idx].suffix = suffix;
+  gab.eg->res[idx].loader = loader;
+  gab.eg->res[idx].exister = exister;
 
-typedef struct {
-  const char *prefix;
-  const char *suffix;
-
-  const handler_f handler;
-} resource;
-
-union gab_value_pair gab_use_dynlib(struct gab_triple gab, const char *path,
-                                    size_t len, const char **sargs,
-                                    gab_value *vargs) {
-  gab_osdynlib lib = gab_oslibopen(path);
-
-  if (lib == nullptr) {
-#ifdef GAB_PLATFORM_UNIX
-    return gab_panicf(gab, "Failed to load module '$': $",
-                      gab_string(gab, path), gab_string(gab, dlerror()));
-#elifdef GAB_PLATFORM_WASI
-    return gab_panicf(gab, "Failed to load module '$'", gab_string(gab, path));
-#elifdef GAB_PLATFORM_WIN
-    {
-      int error = GetLastError();
-      char buffer[128];
-      if (FormatMessageA(
-              FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_FROM_SYSTEM, NULL,
-              error, 0, buffer, sizeof(buffer) / sizeof(char), NULL))
-        return gab_panicf(gab, "Failed to load module '$': $",
-                          gab_string(gab, path), gab_string(gab, buffer));
-
-      return gab_panicf(gab, "Failed to load module '$'",
-                        gab_string(gab, path));
-    }
-#endif
-  }
-
-  module_f mod = (module_f)gab_oslibfind(lib, GAB_DYNLIB_MAIN);
-
-  if (mod == nullptr)
-#ifdef GAB_PLATFORM_UNIX
-    return gab_panicf(gab, "Failed to load module '$': $",
-                      gab_string(gab, path), gab_string(gab, dlerror()));
-#elifdef GAB_PLATFORM_WASI
-    return gab_panicf(gab, "Failed to load module '$'", gab_string(gab, path));
-#elifdef GAB_PLATFORM_WIN
-  {
-    int error = GetLastError();
-    char buffer[128];
-    if (FormatMessageA(
-            FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_FROM_SYSTEM, NULL,
-            error, 0, buffer, sizeof(buffer) / sizeof(char), NULL))
-      return gab_panicf(gab, "Failed to load module '$': $",
-                        gab_string(gab, path), gab_string(gab, buffer));
-
-    return gab_panicf(gab, "Failed to load module '$'", gab_string(gab, path));
-  }
-#endif
-
-  union gab_value_pair res = mod(gab);
-
-  // At this point, mod should have reported any errors.
-  /*gab.flags |= fGAB_ERR_QUIET;*/
-
-  if (res.status != gab_cvalid)
-    return gab_panicf(gab, "Failed to load c module.");
-
-  if (res.aresult->data[0] != gab_ok)
-    return gab_panicf(gab,
-                      "Failed to load module: module returned $, expected $",
-                      res.aresult->data[0], gab_ok);
-
-  if (gab_segmodput(gab.eg, path, res.aresult) == nullptr)
-    return gab_panicf(gab, "Failed to cache c module.");
-
-  return res;
+  return true;
 }
 
-union gab_value_pair gab_use_source(struct gab_triple gab, const char *path,
-                                    size_t len, const char **sargs,
-                                    gab_value *vargs) {
-  a_char *src = gab_osread(path);
+bool gab_root(struct gab_triple gab, const char *root) {
+  if (gab.eg->nroots >= cGAB_RESOURCE_MAX)
+    return false;
 
-  if (src == nullptr) {
-    gab_value reason = gab_string(gab, strerror(errno));
-    return gab_panicf(gab, "Failed to load module: $", reason);
-  }
-
-  union gab_value_pair fiber =
-      gab_aexec(gab, (struct gab_exec_argt){
-                         .name = path,
-                         .source = (const char *)src->data,
-                         .flags = gab.flags,
-                         .len = len,
-                         .sargv = sargs,
-                         .argv = vargs,
-                     });
-
-  a_char_destroy(src);
-
-  if (fiber.status != gab_cvalid)
-    return fiber;
-
-  return gab_tfibawait(gab, fiber.vresult, cGAB_WORKER_IDLE_TRIES);
+  gab.eg->resroots[gab.eg->nroots++] = root;
+  return true;
 }
 
-resource resources[] = {
-    {
-        // [PREFIX]/<module>.gab
-        .prefix = "/",
-        .suffix = ".gab",
-        .handler = gab_use_source,
-    },
-    {
-        // [PREFIX]/mod/<module>.gab
-        .prefix = "/mod/",
-        .suffix = ".gab",
-        .handler = gab_use_source,
-    },
-    {
-        // [PREFIX]/mod/<module>/mod.gab
-        .prefix = "/",
-        .suffix = "/mod.gab",
-        .handler = gab_use_source,
-    },
-    {
-        // [PREFIX]/<module>.[so | dylib | dll]
-        .prefix = "/",
-        .suffix = GAB_DYNLIB_FILEENDING,
-        .handler = gab_use_dynlib,
-    },
-    {
-        // [PREFIX]/mod/<module>.[so | dylib | dll]
-        .prefix = "/mod/",
-        .suffix = GAB_DYNLIB_FILEENDING,
-        .handler = gab_use_dynlib,
-    },
-};
-
-a_char *match_resource(resource *res, const char *name, uint64_t len) {
-  const char *prefix = gab_osprefix(GAB_VERSION_TAG);
-
-  const char *roots[] = {".", prefix};
-
-  for (int i = 0; i < LEN_CARRAY(roots); i++) {
-    if (roots[i] == nullptr)
+a_char *match_resource(struct gab_triple gab, struct gab_resource *res,
+                       const char *name, uint64_t len) {
+  for (int i = gab.eg->nroots - 1; i >= 0; i--) {
+    if (gab.eg->resroots[i] == nullptr)
       continue;
 
-    const uint64_t r_len = strlen(roots[i]);
+    const uint64_t r_len = strlen(gab.eg->resroots[i]);
     const uint64_t p_len = strlen(res->prefix);
     const uint64_t s_len = strlen(res->suffix);
     const uint64_t total_len = r_len + p_len + len + s_len + 1;
 
     char buffer[total_len];
 
-    memcpy(buffer, roots[i], r_len);
+    memcpy(buffer, gab.eg->resroots[i], r_len);
     memcpy(buffer + r_len, res->prefix, p_len);
     memcpy(buffer + r_len + p_len, name, len);
     memcpy(buffer + r_len + p_len + len, res->suffix, s_len + 1);
 
-    FILE *f = fopen(buffer, "r");
-
-    if (!f)
-      continue;
-
-    fclose(f);
-    free((void *)prefix);
-    return a_char_create(buffer, total_len);
+    assert(res->exister != nullptr);
+    if (res->exister(buffer))
+      return a_char_create(buffer, total_len);
   }
 
-  free((void *)prefix);
+  return nullptr;
+}
+
+const char *gab_resolve(struct gab_triple gab, const char *mod, const char **prefix,
+                        const char **suffix) {
+  for (int i = gab.eg->nresources - 1; i >= 0; i--) {
+    struct gab_resource *res = gab.eg->res + i;
+    a_char *module_path = match_resource(gab, res, mod, strlen(mod));
+    if (module_path) {
+      if (prefix)
+        *prefix = res->prefix;
+
+      if (suffix)
+        *suffix = res->suffix;
+
+      return module_path->data;
+    }
+  }
+
   return nullptr;
 }
 
@@ -1655,9 +1496,9 @@ union gab_value_pair gab_use(struct gab_triple gab, struct gab_use_argt args) {
 
   const char *name = gab_strdata(&path);
 
-  for (int j = 0; j < sizeof(resources) / sizeof(resource); j++) {
-    resource *res = resources + j;
-    a_char *module_path = match_resource(res, name, strlen(name));
+  for (int i = gab.eg->nresources - 1; i >= 0; i--) {
+    struct gab_resource *res = gab.eg->res + i;
+    a_char *module_path = match_resource(gab, res, name, strlen(name));
 
     if (module_path) {
       a_gab_value *cached = gab_segmodat(gab.eg, (char *)module_path->data);
@@ -1671,8 +1512,9 @@ union gab_value_pair gab_use(struct gab_triple gab, struct gab_use_argt args) {
         };
       }
 
+      assert(res->loader != nullptr);
       union gab_value_pair result =
-          res->handler(gab, module_path->data, args.len, args.sargv, args.argv);
+          res->loader(gab, module_path->data, args.len, args.sargv, args.argv);
 
       if (result.status != gab_cvalid)
         return result;

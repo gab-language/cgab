@@ -188,9 +188,6 @@ test: gab cmodules cxxmodules
 	$(BUILD_PREFIX)/gab run test
 
 clean:
-	make clean -s -C $(VENDOR_PREFIX)/libgrapheme
-	make clean -s -C $(VENDOR_PREFIX)/llhttp
-	make clean -s -C $(VENDOR_PREFIX)/BearSSL
 	rm -rf $(BUILD_PREFIX)
 	rm -f configuration
 	rm -f libgrapheme_generated
