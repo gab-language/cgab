@@ -165,8 +165,8 @@ GAB_API_INLINE bool gab_osfisready(FILE *f) {
 
 GAB_API_INLINE const char *gab_osexepath() {
 #ifdef GAB_PLATFORM_MACOS
-  ssize_t size = GAB_MAXEXEPATH;
-  if (_NSGetExecutablePath(&_exepath, &size) != 0)
+  uint32_t size = GAB_MAXEXEPATH;
+  if (_NSGetExecutablePath((char*) &_exepath, &size) != 0)
     return nullptr;
 
   return _exepath;

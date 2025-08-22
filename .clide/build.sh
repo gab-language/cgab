@@ -6,9 +6,9 @@ if ! test -e "configuration"; then
   clide configure || exit 1
 fi
 
-export GAB_BUILDTYPE=
 export GAB_CCFLAGS=
 export GAB_TARGETS=
+export GAB_DYNLIB_FILEENDING=
 source configuration || exit 1
 
 make 

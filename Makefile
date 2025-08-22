@@ -58,13 +58,13 @@ GAB_OBJ = $(GAB_SRC:src/gab/%.c=$(BUILD_PREFIX)/%.o)
 # Source files in src/mod/ are individual c-modules, importable from gab code.
 # They are compiled individually into dynamic libraries, loaded at runtime.
 CMOD_SRC 	 = $(wildcard src/mod/*.c)
-CMOD_SHARED = $(CMOD_SRC:src/mod/%.c=$(BUILD_PREFIX)/mod/%.so)
+CMOD_SHARED = $(CMOD_SRC:src/mod/%.c=$(BUILD_PREFIX)/mod/%$(GAB_DYNLIB_FILEENDING))
 
 CXXMOD_SRC 	 = $(wildcard src/mod/*.cc)
-CXXMOD_SHARED = $(CXXMOD_SRC:src/mod/%.cc=$(BUILD_PREFIX)/mod/%.so)
+CXXMOD_SHARED = $(CXXMOD_SRC:src/mod/%.cc=$(BUILD_PREFIX)/mod/%$(GAB_DYNLIB_FILEENDING))
 all: gab cmodules cxxmodules
 
--include $(CGAB_OBJ:.o=.d) $(GAB_OBJ:.o=.d) $(CMOD_SHARED:.so=.d)
+-include $(CGAB_OBJ:.o=.d) $(GAB_OBJ:.o=.d) $(CMOD_SHARED:$(GAB_DYNLIB_FILEENDING)=.d)
 
 # This rule builds object files out of c source files
 $(BUILD_PREFIX)/%.o: $(SRC_PREFIX)/%.c
@@ -79,12 +79,12 @@ $(BUILD_PREFIX)/gab: $(GAB_OBJ) $(BUILD_PREFIX)/libcgab.a $(BUILD_PREFIX)/liblin
 	$(CC) $(CFLAGS) $(BINARY_FLAGS) $(GAB_OBJ) -o $@
 
 # This rule builds each c++ module shared library.
-$(BUILD_PREFIX)/mod/%.so: $(SRC_PREFIX)/%.cc \
+$(BUILD_PREFIX)/mod/%$(GAB_DYNLIB_FILEENDING): $(SRC_PREFIX)/%.cc \
 							$(BUILD_PREFIX)/libarrow.a
 	$(CXX) $(CXXFLAGS) $(CXXSHARED_FLAGS) $< -o $@
 
 # This rule builds each c module shared library.
-$(BUILD_PREFIX)/mod/%.so: $(SRC_PREFIX)/%.c \
+$(BUILD_PREFIX)/mod/%$(GAB_DYNLIB_FILEENDING): $(SRC_PREFIX)/%.c \
 							$(BUILD_PREFIX)/libbearssl.a 	\
 							$(BUILD_PREFIX)/libllhttp.a  	\
 							$(BUILD_PREFIX)/libgrapheme.a

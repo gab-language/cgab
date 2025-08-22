@@ -28,8 +28,8 @@ if [[ "$targets" =~ "linux" ]]; then
   cflags="$cflags $unixflags -DGAB_PLATFORM_LINUX -DQIO_LINUX -DRGFW_USE_XDL -isystem vendor/x11-headers"
   dynlib_fileending=".so"
 elif [[ "$targets" =~ "mac" ]]; then
-  cflags="$cflags $unixflags -DGAB_PLATFORM_MACOS -DQIO_MACOS -DRGFW_NO_IOKIT -isystem vendor/xcode-frameworks/include"
-  dynlib_fileending=".so"
+  cflags="$cflags $unixflags -D_DARWIN_C_SOURCE=1 -DGAB_PLATFORM_MACOS -DQIO_MACOS -DRGFW_NO_IOKIT -isystem vendor/xcode-frameworks/include"
+  dynlib_fileending=".dylib"
 elif [[ "$targets" =~ "windows" ]]; then
   cflags="$cflags $winflags -DQIO_WINDOWS -DOEMRESOURCE"
   dynlib_fileending=".dll"

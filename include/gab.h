@@ -503,7 +503,7 @@ enum gab_flags {
    * @see gab_errtocs will convert errors into structured
    * strings as opposed to pretty errors.
    */
-  fGAB_ERR_STRUCTURED = 1 << 5,
+  fGAB_ERR_STRUCTURED = 1 << 4,
 };
 
 /**

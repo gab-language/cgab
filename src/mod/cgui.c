@@ -22,6 +22,8 @@
 #define CLAY_IMPLEMENTATION
 #include "Clay/clay.h"
 
+#ifdef GAB_PLATFORM_UNIX
+
 // #include <wchar.h>
 // #define TB_OPT_LIBC_WCHAR
 #define TB_OPT_EGC
@@ -29,6 +31,7 @@
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_RESIZE_IMPLEMENTATION
 #include "Clay/renderers/termbox2/clay_renderer_termbox2.c"
+#endif
 
 #include <stdio.h>
 #define FONTSTASH_IMPLEMENTATION
@@ -191,6 +194,8 @@ bool clay_RGFW_update(RGFW_window *win, double deltaTime, RGFW_event *ev) {
   }
 }
 
+#ifdef GAB_PLATFORM_UNIX
+
 #define TERMBOX_KEY_CASE(key, str)                                             \
   case TB_KEY_##key:                                                           \
     putevent("key", #str, gab_number(e->mod), gab_bool(true), gab_cundefined); \
@@ -262,6 +267,8 @@ err:
   assert(false && "UNREACHABLE");
   return false;
 }
+
+#endif
 
 Clay_Color packedToClayColor(gab_value vcolor) {
   gab_uint color = gab_valtou(vcolor);
@@ -720,6 +727,7 @@ bool render(Clay_RenderCommandArray *array_out) {
   return true;
 }
 
+#ifdef GAB_PLATFORM_UNIX
 bool dotuirender() {
   Clay_RenderCommandArray renderCommands;
   if (!render(&renderCommands))
@@ -730,6 +738,7 @@ bool dotuirender() {
   tb_present();
   return true;
 }
+#endif
 
 bool doguirender() {
   Clay_RenderCommandArray renderCommands;
@@ -758,6 +767,7 @@ bool doguirender() {
   return true;
 }
 
+#ifdef GAB_PLATFORM_UNIX
 void tuirenderloop() {
   for (;;) {
     if (gab_chnisclosed(gui.appch))
@@ -828,6 +838,7 @@ fin:
 
   Clay_Termbox_Close();
 }
+#endif
 
 void guirenderloop() {
   for (;;) {
@@ -940,6 +951,7 @@ GAB_DYNLIB_NATIVE_FN(ui, run_gui) {
   return gab_vmpush(gab_thisvm(gab), gab_ok), gab_union_cvalid(gab_nil);
 }
 
+#ifdef GAB_PLATFORM_UNIX
 GAB_DYNLIB_NATIVE_FN(ui, run_tui) {
   gab_value evch = gab_arg(1);
   gab_value appch = gab_arg(2);
@@ -976,6 +988,7 @@ GAB_DYNLIB_NATIVE_FN(ui, run_tui) {
 
   return gab_vmpush(gab_thisvm(gab), gab_ok), gab_union_cvalid(gab_nil);
 }
+#endif
 
 GAB_DYNLIB_MAIN_FN {
   gab_value mod = gab_message(gab, "ui");
@@ -985,11 +998,14 @@ GAB_DYNLIB_MAIN_FN {
               mod,
               gab_snative(gab, "run\\gui", gab_mod_ui_run_gui),
           },
+#ifdef GAB_PLATFORM_UNIX
           {
               gab_message(gab, "run\\tui"),
               mod,
               gab_snative(gab, "run\\tui", gab_mod_ui_run_tui),
-          }, );
+          },
+#endif
+  );
 
   gab_value res[] = {gab_ok, mod};
 

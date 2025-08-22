@@ -41,6 +41,12 @@ handle\keydown: .defcase {
   backspace: (ev model) => do
     model.put_by(input: pop:)
   end
+  escape: (ev model) => do
+    events.close
+    app.close
+
+    model
+  end
   enter: (ev model) => do
     source = model.input
 
