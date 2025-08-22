@@ -159,6 +159,7 @@ union gab_value_pair gab_use_zip_dynlib(struct gab_triple gab, const char *path,
     return gab_panicf(gab, "Failed to load module: $", gab_string(gab, estr));
   };
 
+#ifdef GAB_PLATFORM_UNIX
   if (!gab_osmkdirp("/tmp/gab"))
     return gab_panicf(gab, "Failed to create temporary file folder.");
 
@@ -169,6 +170,11 @@ union gab_value_pair gab_use_zip_dynlib(struct gab_triple gab, const char *path,
   v_char_spush(&dst, s_char_cstr("/tmp/gab/"));
   v_char_spush(&dst, s_char_cstr(stat.m_filename));
   v_char_push(&dst, '\0');
+#elifdef GAB_PLATFORM_WIN
+#error WINDOWS NOT IMPLEMENTED YET
+#else
+#error UNKNOWN PLATFORM
+#endif
 
   if (!mz_zip_reader_extract_file_to_file(&zip, stat.m_filename, dst.data, 0)) {
     mz_zip_error e = mz_zip_get_last_error(&zip);
@@ -177,7 +183,7 @@ union gab_value_pair gab_use_zip_dynlib(struct gab_triple gab, const char *path,
                       gab_string(gab, estr));
   }
 
-  union gab_value_pair res =  gab_use_dynlib(gab, dst.data, len, sargs, vargs);
+  union gab_value_pair res = gab_use_dynlib(gab, dst.data, len, sargs, vargs);
 
   v_char_destroy(&dst);
 
