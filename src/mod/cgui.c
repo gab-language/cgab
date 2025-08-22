@@ -15,8 +15,6 @@
 
 #define RGFW_IMPLEMENTATION
 #define RGFW_OPENGL
-#define RGFW_PRINT_ERRORS
-#define RGFW_DEBUG
 #include "RGFW/RGFW.h"
 
 #define CLAY_IMPLEMENTATION

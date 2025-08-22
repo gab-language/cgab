@@ -145,9 +145,48 @@ union gab_value_pair gab_use_dynlib(struct gab_triple gab, const char *path,
   return res;
 }
 
-union gab_value_pair gab_use_zip(struct gab_triple gab, const char *path,
-                                 size_t len, const char **sargs,
-                                 gab_value *vargs) {
+union gab_value_pair gab_use_zip_dynlib(struct gab_triple gab, const char *path,
+                                        size_t len, const char **sargs,
+                                        gab_value *vargs) {
+  int idx = mz_zip_reader_locate_file(&zip, path, "", 0);
+  if (idx < 0)
+    return gab_panicf(gab, "Failed to load module");
+
+  mz_zip_archive_file_stat stat;
+  if (!mz_zip_reader_file_stat(&zip, idx, &stat)) {
+    mz_zip_error e = mz_zip_get_last_error(&zip);
+    const char *estr = mz_zip_get_error_string(e);
+    return gab_panicf(gab, "Failed to load module: $", gab_string(gab, estr));
+  };
+
+  if (!gab_osmkdirp("/tmp/gab"))
+    return gab_panicf(gab, "Failed to create temporary file folder.");
+
+  if (!gab_osmkdirp("/tmp/gab/mod"))
+    return gab_panicf(gab, "Failed to create temporary file folder.");
+
+  v_char dst = {};
+  v_char_spush(&dst, s_char_cstr("/tmp/gab/"));
+  v_char_spush(&dst, s_char_cstr(stat.m_filename));
+  v_char_push(&dst, '\0');
+
+  if (!mz_zip_reader_extract_file_to_file(&zip, stat.m_filename, dst.data, 0)) {
+    mz_zip_error e = mz_zip_get_last_error(&zip);
+    const char *estr = mz_zip_get_error_string(e);
+    return gab_panicf(gab, "Failed to load zipped module: $",
+                      gab_string(gab, estr));
+  }
+
+  union gab_value_pair res =  gab_use_dynlib(gab, dst.data, len, sargs, vargs);
+
+  v_char_destroy(&dst);
+
+  return res;
+}
+
+union gab_value_pair gab_use_zip_source(struct gab_triple gab, const char *path,
+                                        size_t len, const char **sargs,
+                                        gab_value *vargs) {
   int idx = mz_zip_reader_locate_file(&zip, path, "", 0);
   if (idx < 0)
     return gab_panicf(gab, "Failed to load module");
@@ -232,20 +271,21 @@ bool add_zip_loaders(struct gab_triple gab) {
   if (!gab_root(gab, ""))
     return false;
 
-  if (!gab_loader(gab, "mod/", GAB_DYNLIB_FILEENDING, gab_use_dynlib,
-                  file_exister))
+  if (!gab_loader(gab, "mod/", GAB_DYNLIB_FILEENDING, gab_use_zip_dynlib,
+                  zip_exister))
     return (false);
 
-  if (!gab_loader(gab, "", GAB_DYNLIB_FILEENDING, gab_use_dynlib, file_exister))
+  if (!gab_loader(gab, "", GAB_DYNLIB_FILEENDING, gab_use_zip_dynlib,
+                  zip_exister))
     return (false);
 
-  if (!gab_loader(gab, "", "/mod.gab", gab_use_zip, zip_exister))
+  if (!gab_loader(gab, "", "/mod.gab", gab_use_zip_source, zip_exister))
     return false;
 
-  if (!gab_loader(gab, "mod/", ".gab", gab_use_zip, zip_exister))
+  if (!gab_loader(gab, "mod/", ".gab", gab_use_zip_source, zip_exister))
     return false;
 
-  if (!gab_loader(gab, "", ".gab", gab_use_zip, zip_exister))
+  if (!gab_loader(gab, "", ".gab", gab_use_zip_source, zip_exister))
     return false;
 
   return true;
