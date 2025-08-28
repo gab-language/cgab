@@ -16,7 +16,7 @@ export cflags
 case "$buildtype" in
   debug)          cflags="-g -O0 -fsanitize=address,undefined,leak,memory" ;;
   debugoptimized) cflags="-g -O2" ;;
-  release)        cflags="-O3 -DNDEBUG"    ;;
+  release)        cflags="-Os -DNDEBUG"    ;;
 esac
 
 unixflags="-DGAB_PLATFORM_UNIX -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE"

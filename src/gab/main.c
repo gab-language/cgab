@@ -159,14 +159,21 @@ union gab_value_pair gab_use_zip_dynlib(struct gab_triple gab, const char *path,
     return gab_panicf(gab, "Failed to load module: $", gab_string(gab, estr));
   };
 
+  v_char dst = {};
+
 #ifdef GAB_PLATFORM_UNIX
+  // TODO: This should really be organized per-process, as multiple gab-apps
+  // can be opened at the same time, and we don't want them to stomp over each
+  // other.
+  // TODO: Properly create directories that are nested.
+  // The filename here can be something like 'mod/other_lib/sub/example'
+  // We need to walk down this path, creating directories in /tmp/gab
   if (!gab_osmkdirp("/tmp/gab"))
     return gab_panicf(gab, "Failed to create temporary file folder.");
 
   if (!gab_osmkdirp("/tmp/gab/mod"))
     return gab_panicf(gab, "Failed to create temporary file folder.");
 
-  v_char dst = {};
   v_char_spush(&dst, s_char_cstr("/tmp/gab/"));
   v_char_spush(&dst, s_char_cstr(stat.m_filename));
   v_char_push(&dst, '\0');
@@ -1106,7 +1113,8 @@ bool add_module(mz_zip_archive *zip_o, const char *module) {
   printf("[gab] Resolve module %s to %s. Storing in archive as %s.\n", module,
          path, modulename);
 
-  if (!mz_zip_writer_add_file(zip_o, modulename, path, nullptr, 0, 0)) {
+  if (!mz_zip_writer_add_file(zip_o, modulename, path, nullptr, 0,
+                              MZ_BEST_COMPRESSION)) {
     mz_zip_error e = mz_zip_get_last_error(zip_o);
     const char *estr = mz_zip_get_error_string(e);
     printf("[gab] mz error zipping %s: %s", path, estr);

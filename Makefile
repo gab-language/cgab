@@ -188,7 +188,7 @@ test: gab cmodules cxxmodules
 	$(BUILD_PREFIX)/gab run test
 
 clean:
-	rm -rf $(BUILD_PREFIX)
+	rm -rf $(BUILD_PREFIX)*
 	rm -f configuration
 	rm -f libgrapheme_generated
 	rm -f libllhttp_generated
