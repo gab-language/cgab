@@ -280,56 +280,6 @@ bool zip_exister(const char *path) {
   return res >= 0;
 }
 
-bool add_zip_loaders(struct gab_triple gab) {
-  if (!gab_root(gab, ""))
-    return false;
-
-  if (!gab_loader(gab, "mod/", GAB_DYNLIB_FILEENDING, gab_use_zip_dynlib,
-                  zip_exister))
-    return (false);
-
-  if (!gab_loader(gab, "", GAB_DYNLIB_FILEENDING, gab_use_zip_dynlib,
-                  zip_exister))
-    return (false);
-
-  if (!gab_loader(gab, "", "/mod.gab", gab_use_zip_source, zip_exister))
-    return false;
-
-  if (!gab_loader(gab, "mod/", ".gab", gab_use_zip_source, zip_exister))
-    return false;
-
-  if (!gab_loader(gab, "", ".gab", gab_use_zip_source, zip_exister))
-    return false;
-
-  return true;
-}
-
-bool add_builtin_loaders(struct gab_triple gab) {
-  if (!gab_root(gab, gab_osprefix(GAB_VERSION_TAG "." GAB_TARGET_TRIPLE)))
-    return (false);
-
-  if (!gab_root(gab, "./"))
-    return (false);
-
-  if (!gab_loader(gab, "mod/", GAB_DYNLIB_FILEENDING, gab_use_dynlib,
-                  file_exister))
-    return (false);
-
-  if (!gab_loader(gab, "", GAB_DYNLIB_FILEENDING, gab_use_dynlib, file_exister))
-    return (false);
-
-  if (!gab_loader(gab, "", "/mod.gab", gab_use_source, file_exister))
-    return (false);
-
-  if (!gab_loader(gab, "mod/", ".gab", gab_use_source, file_exister))
-    return (false);
-
-  if (!gab_loader(gab, "", ".gab", gab_use_source, file_exister))
-    return (false);
-
-  return true;
-}
-
 static const char *default_modules[] = {
     "Strings", "Binaries", "Shapes",  "Messages", "Numbers",
     "Blocks",  "Records",  "Fibers",  "Channels", "__core",
@@ -343,7 +293,21 @@ int run_repl(int flags, size_t nmodules, const char **modules) {
           .flags = flags,
           .len = nmodules,
           .modules = modules,
-          .inithook_f = add_builtin_loaders,
+          .roots =
+              (const char *[]){
+                  gab_osprefix(GAB_VERSION_TAG "." GAB_TARGET_TRIPLE),
+                  "./",
+                  nullptr, // List terminator.
+              },
+          .resources =
+              (struct gab_resource[]){
+                  {"mod/", GAB_DYNLIB_FILEENDING, gab_use_dynlib, file_exister},
+                  {"", GAB_DYNLIB_FILEENDING, gab_use_dynlib, file_exister},
+                  {"", "/mod.gab", gab_use_source, file_exister},
+                  {"mod/", ".gab", gab_use_source, file_exister},
+                  {"", ".gab", gab_use_source, file_exister},
+                  {}, // List terminator.
+              },
       },
       &gab);
 
@@ -383,7 +347,21 @@ int run_string(const char *string, int flags, size_t jobs, size_t nmodules,
           .jobs = jobs,
           .len = nmodules,
           .modules = modules,
-          .inithook_f = add_builtin_loaders,
+          .roots =
+              (const char *[]){
+                  gab_osprefix(GAB_VERSION_TAG "." GAB_TARGET_TRIPLE),
+                  "./",
+                  nullptr, // List terminator.
+              },
+          .resources =
+              (struct gab_resource[]){
+                  {"mod/", GAB_DYNLIB_FILEENDING, gab_use_dynlib, file_exister},
+                  {"", GAB_DYNLIB_FILEENDING, gab_use_dynlib, file_exister},
+                  {"", "/mod.gab", gab_use_source, file_exister},
+                  {"mod/", ".gab", gab_use_source, file_exister},
+                  {"", ".gab", gab_use_source, file_exister},
+                  {}, // List terminator.
+              },
       },
       &gab);
 
@@ -428,9 +406,23 @@ int run_app(const char *mod) {
 
   union gab_value_pair res = gab_create(
       (struct gab_create_argt){
-          .inithook_f = add_zip_loaders,
           .len = ndefault_modules,
           .modules = default_modules,
+          .roots =
+              (const char *[]){
+                  "",
+                  nullptr,
+              },
+          .resources =
+              (struct gab_resource[]){
+                  {"mod/", GAB_DYNLIB_FILEENDING, gab_use_zip_dynlib,
+                   zip_exister},
+                  {"", GAB_DYNLIB_FILEENDING, gab_use_zip_dynlib, zip_exister},
+                  {"", "/mod.gab", gab_use_zip_source, zip_exister},
+                  {"mod/", ".gab", gab_use_zip_source, zip_exister},
+                  {"", ".gab", gab_use_zip_source, zip_exister},
+                  {},
+              },
       },
       &gab);
 
@@ -461,7 +453,21 @@ int run_file(const char *path, int flags, size_t jobs, size_t nmodules,
           .jobs = jobs,
           .len = nmodules,
           .modules = modules,
-          .inithook_f = add_builtin_loaders,
+          .roots =
+              (const char *[]){
+                  gab_osprefix(GAB_VERSION_TAG "." GAB_TARGET_TRIPLE),
+                  "./",
+                  nullptr, // List terminator.
+              },
+          .resources =
+              (struct gab_resource[]){
+                  {"mod/", GAB_DYNLIB_FILEENDING, gab_use_dynlib, file_exister},
+                  {"", GAB_DYNLIB_FILEENDING, gab_use_dynlib, file_exister},
+                  {"", "/mod.gab", gab_use_source, file_exister},
+                  {"mod/", ".gab", gab_use_source, file_exister},
+                  {"", ".gab", gab_use_source, file_exister},
+                  {}, // List terminator.
+              },
       },
       &gab);
 
@@ -641,6 +647,7 @@ static struct command commands[] = {
         "single executable.",
         .handler = build,
         {
+            modules_option,
             {
                 "target",
                 "Set the os-target of build.",
@@ -1128,39 +1135,6 @@ bool add_module(mz_zip_archive *zip_o, const char *module) {
 const char *target = GAB_TARGET_TRIPLE;
 const char *dynlib_fileending = GAB_DYNLIB_FILEENDING;
 
-bool add_target_loaders(struct gab_triple gab) {
-
-  if (!gab_root(gab, "./"))
-    return (false);
-
-  v_char location = {};
-  v_char_spush(&location, s_char_cstr(GAB_VERSION_TAG));
-  v_char_push(&location, '.');
-  v_char_spush(&location, s_char_cstr(target));
-
-  if (!gab_root(gab, gab_osprefix(location.data)))
-    return (false);
-
-  v_char_destroy(&location);
-
-  if (!gab_loader(gab, "mod/", dynlib_fileending, gab_use_dynlib, file_exister))
-    return (false);
-
-  if (!gab_loader(gab, "", dynlib_fileending, gab_use_dynlib, file_exister))
-    return (false);
-
-  if (!gab_loader(gab, "", "/mod.gab", gab_use_source, file_exister))
-    return (false);
-
-  if (!gab_loader(gab, "mod/", ".gab", gab_use_source, file_exister))
-    return (false);
-
-  if (!gab_loader(gab, "", ".gab", gab_use_source, file_exister))
-    return (false);
-
-  return true;
-}
-
 int build(struct command_arguments args) {
   if (args.flags & FLAG_BUILD_TARGET) {
     if (args.argc == 0) {
@@ -1195,11 +1169,37 @@ int build(struct command_arguments args) {
       return 1;
   }
 
+  size_t nmodules = args.modules.len;
+  assert(nmodules > 0);
+  const char *modules[nmodules];
+  for (int i = 0; i < nmodules; i++)
+    modules[i] = v_s_char_ref_at(&args.modules, i)->data;
+
+  v_char location = {};
+  v_char_spush(&location, s_char_cstr(GAB_VERSION_TAG));
+  v_char_push(&location, '.');
+  v_char_spush(&location, s_char_cstr(target));
+  v_char_push(&location, '\0');
+
   union gab_value_pair res = gab_create(
       (struct gab_create_argt){
-          .inithook_f = add_target_loaders,
-          // .len = ndefault_modules,
-          // .modules = default_modules,
+          .len = nmodules,
+          .modules = modules,
+          .roots =
+              (const char *[]){
+                "./",
+                  gab_osprefix(location.data),
+                  nullptr,
+              },
+          .resources =
+              (struct gab_resource[]){
+                  {"mod/", dynlib_fileending, gab_use_dynlib, file_exister},
+                  {"", dynlib_fileending, gab_use_dynlib, file_exister},
+                  {"", "/mod.gab", gab_use_source, file_exister},
+                  {"mod/", ".gab", gab_use_source, file_exister},
+                  {"", ".gab", gab_use_source, file_exister},
+                  {},
+              },
       },
       &gab);
 
@@ -1306,7 +1306,7 @@ bool check_not_gab(const char *name) {
 bool check_valid_zip() {
   const char *path = gab_osexepath();
 
-  // mz_zip_zero_struct(&zip);
+  mz_zip_zero_struct(&zip);
 
   assert(&zip);
   assert(path);

@@ -576,8 +576,22 @@ union gab_value_pair gab_create(struct gab_create_argt args,
   eg->work_channel = gab_channel(gab);
   gab_iref(gab, eg->work_channel);
 
-  if (args.inithook_f && !args.inithook_f(gab))
-    return gab_union_cinvalid;
+  for (int i = 0; args.roots[i] != nullptr; i++) {
+    assert(gab.eg->nroots < cGAB_RESOURCE_MAX);
+    gab.eg->resroots[gab.eg->nroots++] = args.roots[i];
+  }
+
+  for (int i = 0; args.resources[i].prefix != nullptr; i++) {
+    assert(gab.eg->nresources < cGAB_RESOURCE_MAX);
+
+    struct gab_resource *res = args.resources + i;
+
+    uint64_t idx = gab.eg->nresources++;
+    gab.eg->res[idx].prefix = res->prefix;
+    gab.eg->res[idx].suffix = res->suffix;
+    gab.eg->res[idx].loader = res->loader;
+    gab.eg->res[idx].exister = res->exister;
+  }
 
   for (int i = 0; i < LEN_CARRAY(kind_primitives); i++) {
     gab_egkeep(
@@ -1423,28 +1437,6 @@ const char *gab_errtocs(struct gab_triple gab, gab_value err) {
 
 #define MODULE_SYMBOL "gab_lib"
 
-bool gab_loader(struct gab_triple gab, const char *prefix, const char *suffix,
-                gab_loader_f loader, gab_loader_existf exister) {
-  if (gab.eg->nresources >= cGAB_RESOURCE_MAX)
-    return false;
-
-  uint64_t idx = gab.eg->nresources++;
-  gab.eg->res[idx].prefix = prefix;
-  gab.eg->res[idx].suffix = suffix;
-  gab.eg->res[idx].loader = loader;
-  gab.eg->res[idx].exister = exister;
-
-  return true;
-}
-
-bool gab_root(struct gab_triple gab, const char *root) {
-  if (gab.eg->nroots >= cGAB_RESOURCE_MAX)
-    return false;
-
-  gab.eg->resroots[gab.eg->nroots++] = root;
-  return true;
-}
-
 a_char *match_resource(struct gab_triple gab, struct gab_resource *res,
                        const char *name, uint64_t len) {
   for (int i = gab.eg->nroots - 1; i >= 0; i--) {
@@ -1471,8 +1463,8 @@ a_char *match_resource(struct gab_triple gab, struct gab_resource *res,
   return nullptr;
 }
 
-const char *gab_resolve(struct gab_triple gab, const char *mod, const char **prefix,
-                        const char **suffix) {
+const char *gab_resolve(struct gab_triple gab, const char *mod,
+                        const char **prefix, const char **suffix) {
   for (int i = gab.eg->nresources - 1; i >= 0; i--) {
     struct gab_resource *res = gab.eg->res + i;
     a_char *module_path = match_resource(gab, res, mod, strlen(mod));
@@ -1798,20 +1790,16 @@ GAB_API inline bool gab_signext(struct gab_triple gab, int wkid) {
 #if cGAB_LOG_EG
     fprintf(stderr, "[WORKER %i] WRAP NEXT %i\n", gab.wkid, 0);
 #endif
-
     return atomic_compare_exchange_strong(&gab.eg->sig.schedule, &current, 0);
   }
 
   // If the worker we're scheduling for isn't alive, skip it
   if (!gab.eg->jobs[wkid].alive) {
-
     if (gab.eg->sig.signal == sGAB_COLL)
       gab.eg->jobs[wkid].epoch++;
-
 #if cGAB_LOG_EG
     fprintf(stderr, "[WORKER %i] SKIP NEXT %i\n", gab.wkid, wkid);
 #endif
-
     assert(!gab.eg->jobs[wkid].alive);
     return gab_signext(gab, wkid + 1);
   }
@@ -1837,6 +1825,7 @@ GAB_API inline void gab_sigclear(struct gab_triple gab) {
 // This needs to become atomic
 GAB_API inline bool gab_signal(struct gab_triple gab, enum gab_signal s,
                                int wkid) {
+  assert(wkid >=0);
   // You can't send signals to 0th worker - that is user's thread.
   if (wkid == 0)
     return false;

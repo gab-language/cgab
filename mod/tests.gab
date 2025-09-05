@@ -1,3 +1,10 @@
+'cgab'.use
+ui = 'cgui'.use
+
+(events, app) = (Channels.make, Channels.make)
+
+ui.run\tui(events, app)
+
 is\unittest:.def(
   Messages.t
   () => self.to\s.has\ending "\test")
@@ -90,26 +97,67 @@ Behavior = test\behavior:.defclass(
     behavior\render: () => self.behavior\outcome.behavior\render self
   })
 
-appch = Channels.make
+handle\keydown: .defcase {
+  Messages.t
+  (ev model) => model
+}
+
+handle\keyup: .defcase {
+  Messages.t
+  (ev model) => model
+}
+
+handle\key: .defcase {
+  true: (msg ev model) => msg.handle\keydown(ev model)
+  false: (msg ev model) => msg.handle\keyup(ev model)
+}
+
+handle\type: .defcase {
+  tick:  (ev model) => do
+    # Tick time
+    model
+  end
+  mouse: (ev model) => do
+    model
+  end
+  key:   (ev model) => do
+    keymsg = ev.at 0 .unwrap
+    down = ev.at 2 .unwrap
+    down.handle\key(keymsg ev model)
+  end
+  suite: (ev model) => do
+    suite = ev .at 0 .unwrap
+    model.app\push_suite(suite)
+  end
+  behavior: (ev model) => do
+    behavior = ev .at 0 .unwrap
+    model.app\push_behavior(behavior)
+  end
+  resolve: (ev model) => do
+    model.app\resolve_behavior(ev*)
+  end
+}
 
 App = test\app:.defclass(
   test\suites: test\tests:
   default:
   {
-    app\draw: () => do
-      appch <! self
-      self
+    app\controller: (type ev*) => do
+      #'$  $\n'.printf(type, ev)
+      type.handle\type(ev self)
     end
-    app\render: () => do
-      clear_screen.()
-      self
-        .test\suites
-        .each suite\render:
+    app\view: () => do
+      [
+        [
+          box:
+          { width\relative: 100 padding: 32 }
+          [[text: { size: 32 content: "Hello" }]]
+        ]
+      ]
     end
     app\push_suite: (suite) => do
       self
         .put_via(test\suites:, suite.suite\name, suite)
-        .app\draw
     end
     app\push_behavior: (behavior) => do
       suite = behavior.behavior\path.at 0 .unwrap
@@ -117,7 +165,6 @@ App = test\app:.defclass(
 
       self
         .put_via(test\suites: suite suite\behaviors: bhv behavior)
-        .app\draw
     end
     app\resolve_behavior: (outcome path meta) => do
       suite = path.at 0 .unwrap
@@ -125,27 +172,18 @@ App = test\app:.defclass(
       self
         .put_via(test\suites: suite suite\behaviors: bhv behavior\outcome: outcome)
         .put_via(test\suites: suite suite\behaviors: bhv behavior\meta: meta)
-        .app\draw
     end
   })
 
-renderfib = Fibers.make () => appch.each app => do 
-  app.app\render
-end
-
-Atoms = 'Atom'.use
-
-() => do
-  test\app = Atoms.make(App.make({} {}))
-
+Fibers.make () => do
   fibers = tests\all.map (behaviors suite) => do 
-      test\app.swap(app\push_suite:  Suite.make([] suite))
+      events <! (suite: Suite.make([] suite))
 
       Fibers.make () => do
         behaviors.each (runnable behavior) => do 
           (path body) = runnable*
 
-          test\app.swap(app\push_behavior: Behavior.make(path nil: nil:))
+          events <! (behavior: Behavior.make(path nil: nil:))
 
           body.each(t r) => do
             t.{ test\path: path, test\receiver: r }
@@ -162,11 +200,27 @@ Atoms = 'Atom'.use
   watchers = suites\all .map (c s) => do
     Fibers.make () => do 
       c.collect(Streams.map (outcome path meta) => do
-        test\app.swap(app\resolve_behavior: outcome path meta)
+        events <! (resolve: outcome path meta)
       end)
     end
   end
-
-  (fibers + watchers).each await:
 end
 
+model = App.make({} {})
+
+events
+  .pipe(
+    app,
+    Streams.take_until((e, key) => do
+      [e, key].eprintln
+
+      (e == key:) & (key == escape:)
+    end)
+    |> Streams.reduce(model app\controller:)
+    #|> Streams.tap(eprintln:)
+    |> Streams.map(app\view:)
+    #|> Streams.tap(eprintln:)
+  )
+
+app.close
+events.close

@@ -221,8 +221,9 @@ int sinspectval(char **dest, size_t *n, gab_value self, int depth) {
            sshape_dumpkeys(dest, n, self, depth) +
            snprintf_through(dest, n, ">");
   case kGAB_CHANNEL:
-  case kGAB_CHANNELCLOSED:
     return snprintf_through(dest, n, "<" tGAB_CHANNEL ">");
+  case kGAB_CHANNELCLOSED:
+    return snprintf_through(dest, n, "<" tGAB_CHANNEL " closed>");
   case kGAB_FIBER:
   case kGAB_FIBERRUNNING:
   case kGAB_FIBERDONE: {

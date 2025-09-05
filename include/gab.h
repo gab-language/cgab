@@ -512,7 +512,27 @@ enum gab_flags {
 struct gab_create_argt {
   uint32_t flags, jobs;
 
-  bool (*inithook_f)(struct gab_triple gab);
+  /*
+   * A list of roots. Each resource is checked at
+   * each root.
+   */
+  const char **roots;
+
+  /*
+   * A list of resources. At each root, these
+   * will be tested (in reverse order), until
+   * they a module is found.
+   */
+  struct gab_resource {
+    const char *prefix;
+    const char *suffix;
+    union gab_value_pair (*loader)(struct gab_triple, const char *, size_t len,
+                                   const char *sargs[len],
+                                   gab_value vargs[len]);
+
+    bool (*exister)(const char *);
+  } *resources;
+
   /* A list of modules to load automatically into the engine.
    * The name of the variable will match the name of the module.
    *
@@ -533,28 +553,6 @@ struct gab_create_argt {
  */
 GAB_API union gab_value_pair gab_create(struct gab_create_argt args,
                                         struct gab_triple *gab_out);
-
-typedef union gab_value_pair (*gab_loader_f)(struct gab_triple, const char *,
-                                             size_t len, const char *sargs[len],
-                                             gab_value vargs[len]);
-
-typedef bool (*gab_loader_existf)(const char *);
-
-/**
- * @brief Register a loader. Loaders added *later* take precedence.
- * @param gab The Engine
- * @param prefix A prefix string
- * @param suffix A suffix string
- * @param loader The loading function to call
- */
-GAB_API bool gab_loader(struct gab_triple gab, const char *prefix,
-                        const char *suffix, gab_loader_f loader,
-                        gab_loader_existf exister);
-
-/**
- * @brief Register a root for matching loaders.
- */
-GAB_API bool gab_root(struct gab_triple gab, const char *root);
 
 /**
  * @brief resolve a module with the engine's given loaders and roots.

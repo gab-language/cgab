@@ -2191,6 +2191,9 @@ CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE_PRIMITIVE) {
   //
   // Sadly, I can't think of a reasonable way to make dispatch work
   // here without memmove
+  //
+  // This is okay for now, as we only make this modification once, and
+  // reentries assume it has already been made.
 
   if (REENTRANT() == gab_cundefined) {
     // Guard that our callee is still a message

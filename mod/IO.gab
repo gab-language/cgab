@@ -1,5 +1,6 @@
 io = 'cio'.use
 
+eprintln:.def () => io.stderr.write('$\n'.sprintf(self))
 println:.def () => io.stdout.write('$\n'.sprintf(self))
 
 printf:.def(

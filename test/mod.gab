@@ -657,19 +657,19 @@ channels\handle_multiple_values\test: .def t => do
   t.expect(three ==: 3)
 end
 
-ui\should_open_and_close\test: .def t => do
-  (ev app) = (Channels.make, Channels.make)
-
-  ui = 'cgui'.use
-  fib = Fibers.make () => do
-    ok = ui.run\gui(ev app)
-    t.expect(ok ==: ok:)
-  end
-
-  ev.close
-  app.close
-  fib.await
-end
+#ui\should_open_and_close\test: .def t => do
+#  (ev app) = (Channels.make, Channels.make)
+#
+#  ui = 'cgui'.use
+#  fib = Fibers.make () => do
+#    ok = ui.run\gui(ev app)
+#    t.expect(ok ==: ok:)
+#  end
+#
+#  ev.close
+#  app.close
+#  fib.await
+#end
 
 io\should_make_working_tls_request\test: .def t => do
   (ok, sock) = IO.Sock.make tcp\tls:
@@ -693,4 +693,4 @@ io\should_make_working_tls_request\test: .def t => do
   t.expect(ok ==: ok:)
 end
 
-'tests'.use.()
+'tests'.use

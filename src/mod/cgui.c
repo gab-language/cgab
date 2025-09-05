@@ -1,4 +1,6 @@
+#include "core.h"
 #include <stdint.h>
+#include <threads.h>
 #include <unistd.h>
 
 // GL/gl.h won't work because some OS's have files which override.
@@ -56,7 +58,6 @@ unsigned char fontData[] = {
 
 struct gui {
   struct RGFW_window win;
-  struct gab_triple gab;
   gab_value appch, evch;
   uint64_t n;
 };
@@ -67,34 +68,30 @@ void HandleClayErrors(Clay_ErrorData errorData) {
   printf("%s\n", errorData.errorText.chars);
 }
 
-void putevent(const char *type, const char *event, gab_value data1,
-              gab_value data2, gab_value data3) {
+void putevent(struct gab_triple gab, const char *type, const char *event,
+              gab_value data1, gab_value data2, gab_value data3) {
   if (gui.evch != gab_cundefined) {
     gab_value ev[] = {
-        gab_message(gui.gab, type),
-        gab_message(gui.gab, event),
-        data1,
-        data2,
-        data3,
+        gab_message(gab, type), gab_message(gab, event), data1, data2, data3,
     };
 
     size_t len = sizeof(ev) / sizeof(gab_value) - (data3 == gab_cundefined);
 
-    gab_niref(gui.gab, 1, LEN_CARRAY(ev), ev);
+    gab_niref(gab, 1, LEN_CARRAY(ev), ev);
 
-    gab_nchnput(gui.gab, gui.evch, len, ev);
+    gab_nchnput(gab, gui.evch, len, ev);
 
-    gab_ndref(gui.gab, 1, LEN_CARRAY(ev), ev);
+    gab_ndref(gab, 1, LEN_CARRAY(ev), ev);
   }
 }
 
 #define RGFW_KEY_CASE(keyname, str)                                            \
   case RGFW_##keyname:                                                         \
-    putevent("key", #str, gab_number(ev->key.mod),                             \
+    putevent(gab, "key", #str, gab_number(ev->key.mod),                        \
              gab_bool(ev->type == RGFW_keyPressed), gab_cundefined);           \
     break;
 
-gab_value clayGetTopmostId() {
+gab_value clayGetTopmostId(struct gab_triple gab) {
   Clay_ElementIdArray arr = Clay_GetPointerOverIds();
 
   // Skip the root - we don't care about clicks there.
@@ -103,17 +100,18 @@ gab_value clayGetTopmostId() {
     if (!str.length)
       continue;
 
-    return gab_nmessage(gui.gab, str.length, str.chars);
+    return gab_nmessage(gab, str.length, str.chars);
   }
 
   return gab_cundefined;
 }
 
 Clay_Vector2 mousePosition;
-bool clay_RGFW_update(RGFW_window *win, double deltaTime, RGFW_event *ev) {
+bool clay_RGFW_update(struct gab_triple gab, RGFW_window *win, double deltaTime,
+                      RGFW_event *ev) {
   switch (ev->type) {
   case RGFW_mouseButtonPressed: {
-    gab_value target = clayGetTopmostId();
+    gab_value target = clayGetTopmostId(gab);
     switch (ev->button.type) {
     case RGFW_mouseScrollUp:
     case RGFW_mouseScrollDown:
@@ -121,11 +119,13 @@ bool clay_RGFW_update(RGFW_window *win, double deltaTime, RGFW_event *ev) {
                                   deltaTime);
       return false;
     case RGFW_mouseLeft:
-      putevent("mouse", "left", gab_number(ev->button.scroll), true, target);
+      putevent(gab, "mouse", "left", gab_number(ev->button.scroll), true,
+               target);
       Clay_SetPointerState(mousePosition, true);
       return true;
     case RGFW_mouseRight:
-      putevent("mouse", "right", gab_number(ev->button.scroll), true, target);
+      putevent(gab, "mouse", "right", gab_number(ev->button.scroll), true,
+               target);
       Clay_SetPointerState(mousePosition, true);
       return true;
     }
@@ -133,14 +133,16 @@ bool clay_RGFW_update(RGFW_window *win, double deltaTime, RGFW_event *ev) {
     return false;
   }
   case RGFW_mouseButtonReleased: {
-    gab_value target = clayGetTopmostId();
+    gab_value target = clayGetTopmostId(gab);
     switch (ev->button.value) {
     case RGFW_mouseLeft:
-      putevent("mouse", "left", gab_number(ev->button.scroll), true, target);
+      putevent(gab, "mouse", "left", gab_number(ev->button.scroll), true,
+               target);
       Clay_SetPointerState(mousePosition, true);
       return true;
     case RGFW_mouseRight:
-      putevent("mouse", "right", gab_number(ev->button.scroll), true, target);
+      putevent(gab, "mouse", "right", gab_number(ev->button.scroll), true,
+               target);
       Clay_SetPointerState(mousePosition, true);
       return true;
     }
@@ -182,7 +184,7 @@ bool clay_RGFW_update(RGFW_window *win, double deltaTime, RGFW_event *ev) {
       RGFW_KEY_CASE(F12, f12);
     default:
       const char event[] = {ev->key.sym, '\0'};
-      putevent("key", event, gab_number(ev->key.mod),
+      putevent(gab, "key", event, gab_number(ev->key.mod),
                gab_bool(ev->type == RGFW_keyPressed), gab_cundefined);
     }
     return true;
@@ -196,10 +198,12 @@ bool clay_RGFW_update(RGFW_window *win, double deltaTime, RGFW_event *ev) {
 
 #define TERMBOX_KEY_CASE(key, str)                                             \
   case TB_KEY_##key:                                                           \
-    putevent("key", #str, gab_number(e->mod), gab_bool(true), gab_cundefined); \
+    putevent(gab, "key", #str, gab_number(e->mod), gab_bool(true),             \
+             gab_cundefined);                                                  \
     break;
 
-bool clay_termbox_update(struct tb_event *e, double deltaTime) {
+bool clay_termbox_update(struct gab_triple gab, struct tb_event *e,
+                         double deltaTime) {
   switch (e->type) {
   case TB_EVENT_RESIZE:
     return false;
@@ -228,7 +232,8 @@ bool clay_termbox_update(struct tb_event *e, double deltaTime) {
       TERMBOX_KEY_CASE(F12, f12);
     default:
       const char ev[] = {e->ch, '\0'};
-      putevent("key", ev, gab_number(e->mod), gab_bool(true), gab_cundefined);
+      putevent(gab, "key", ev, gab_number(e->mod), gab_bool(true),
+               gab_cundefined);
       break;
     }
     return true;
@@ -236,25 +241,28 @@ bool clay_termbox_update(struct tb_event *e, double deltaTime) {
     switch (e->key) {
     case TB_KEY_MOUSE_RELEASE:
       Clay_SetPointerState((Clay_Vector2){e->x, e->y}, false);
-      putevent("mouse", "left", gab_number(0), gab_false, clayGetTopmostId());
+      putevent(gab, "mouse", "left", gab_number(0), gab_false,
+               clayGetTopmostId(gab));
       return true;
     case TB_KEY_MOUSE_RIGHT:
       Clay_SetPointerState((Clay_Vector2){e->x, e->y}, false);
-      putevent("mouse", "right", gab_number(0), gab_true, clayGetTopmostId());
+      putevent(gab, "mouse", "right", gab_number(0), gab_true,
+               clayGetTopmostId(gab));
       return true;
     case TB_KEY_MOUSE_LEFT:
       Clay_SetPointerState((Clay_Vector2){e->x, e->y}, true);
-      putevent("mouse", "left", gab_number(0), gab_true, clayGetTopmostId());
+      putevent(gab, "mouse", "left", gab_number(0), gab_true,
+               clayGetTopmostId(gab));
       return true;
     case TB_KEY_MOUSE_WHEEL_UP:
       Clay_UpdateScrollContainers(false, (Clay_Vector2){0, e->y}, deltaTime);
-      putevent("mouse", "scroll\\up", gab_number(0), gab_false,
-               clayGetTopmostId());
+      putevent(gab, "mouse", "scroll\\up", gab_number(0), gab_false,
+               clayGetTopmostId(gab));
       return true;
     case TB_KEY_MOUSE_WHEEL_DOWN:
       Clay_UpdateScrollContainers(false, (Clay_Vector2){0, e->y}, deltaTime);
-      putevent("mouse", "scroll\\down", gab_number(0), gab_false,
-               clayGetTopmostId());
+      putevent(gab, "mouse", "scroll\\down", gab_number(0), gab_false,
+               clayGetTopmostId(gab));
       return true;
     default:
       goto err;
@@ -690,7 +698,7 @@ union gab_value_pair render_componentlist(struct gab_triple gab,
   }) {
     for (uint64_t i = 0; i < len; i++) {
       gab_value component = gab_lstat(app, i);
-      union gab_value_pair res = render_component(gui.gab, component);
+      union gab_value_pair res = render_component(gab, component);
 
       if (res.status != gab_cundefined)
         return res; // TODO: Put an error event into the channel
@@ -702,11 +710,12 @@ union gab_value_pair render_componentlist(struct gab_triple gab,
 
 sclay_font_t fonts[1];
 
-bool render(Clay_RenderCommandArray *array_out) {
+bool render(struct gab_triple gab, Clay_RenderCommandArray *array_out) {
   // Reset our id counter;
   gui.n = 0;
 
-  gab_value app = gab_chntake(gui.gab, gui.appch);
+  assert(!gab_chnisclosed(gui.appch));
+  gab_value app = gab_chntake(gab, gui.appch);
 
   if (app == gab_cundefined)
     return false;
@@ -716,7 +725,7 @@ bool render(Clay_RenderCommandArray *array_out) {
 
   Clay_BeginLayout();
 
-  union gab_value_pair res = render_componentlist(gui.gab, app);
+  union gab_value_pair res = render_componentlist(gab, app);
 
   if (res.status != gab_cundefined)
     return false; // Put an error event into the channel
@@ -726,9 +735,9 @@ bool render(Clay_RenderCommandArray *array_out) {
 }
 
 #ifdef GAB_PLATFORM_UNIX
-bool dotuirender() {
+bool dotuirender(struct gab_triple gab) {
   Clay_RenderCommandArray renderCommands;
-  if (!render(&renderCommands))
+  if (!render(gab, &renderCommands))
     return false;
 
   tb_clear();
@@ -738,9 +747,9 @@ bool dotuirender() {
 }
 #endif
 
-bool doguirender() {
+bool doguirender(struct gab_triple gab) {
   Clay_RenderCommandArray renderCommands;
-  if (!render(&renderCommands))
+  if (!render(gab, &renderCommands))
     return false;
 
   sg_begin_pass(&(sg_pass){
@@ -766,13 +775,15 @@ bool doguirender() {
 }
 
 #ifdef GAB_PLATFORM_UNIX
-void tuirenderloop() {
+GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
   for (;;) {
-    if (gab_chnisclosed(gui.appch))
-      break;
+    if (gab_chnisclosed(gui.appch)) {
+      goto fin;
+    }
 
-    if (gab_chnisclosed(gui.evch))
-      break;
+    if (gab_chnisclosed(gui.evch)) {
+      goto fin;
+    }
 
     struct tb_event e;
     for (;;) {
@@ -783,62 +794,47 @@ void tuirenderloop() {
 
       switch (tb_peek_event(&e, 0)) {
       case TB_ERR_NO_EVENT:
-
-        gab_chnput(gui.gab, gui.evch, gab_message(gui.gab, "tick"));
-
-        if (!dotuirender())
-          return;
-
-        continue;
+        break;
       case TB_OK:
-        if (e.type == TB_EVENT_KEY && e.key == TB_KEY_ESC)
-          goto fin;
-
-        if (clay_termbox_update(&e, 10))
-          if (!dotuirender())
-            return;
-
+        clay_termbox_update(gab, &e, 10);
         continue;
       case TB_ERR_POLL:
         if (tb_last_errno() == EINTR)
           continue;
       default:
-        return;
-        // fallthrough
+        goto fin;
       }
 
       break;
     }
 
-    gab_chnput(gui.gab, gui.evch, gab_message(gui.gab, "tick"));
-
-    if (!dotuirender())
-      return;
-
-    switch (gab_yield(gui.gab)) {
-    case sGAB_TERM:
-      return;
-    case sGAB_COLL:
-      gab_gcepochnext(gui.gab);
-      gab_sigpropagate(gui.gab);
-      break;
-    default:
-      break;
-    }
+    gab_chnput(gab, gui.evch, gab_message(gab, "tick"));
   }
 
 fin:
-  if (gui.evch != gab_cundefined)
-    gab_chnclose(gui.evch);
+  return gab_union_cvalid(gab_ok);
+}
 
-  if (gui.appch != gab_cundefined)
-    gab_chnclose(gui.appch);
+GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
+  for (;;) {
+    if (gab_chnisclosed(gui.appch)) {
+      goto fin;
+    }
 
+    if (gab_chnisclosed(gui.evch)) {
+      goto fin;
+    }
+
+    dotuirender(gab);
+  }
+
+fin:
   Clay_Termbox_Close();
+  return gab_union_cinvalid;
 }
 #endif
 
-void guirenderloop() {
+void guirenderloop(struct gab_triple gab) {
   for (;;) {
     if (RGFW_window_shouldClose(&gui.win) == RGFW_TRUE)
       break;
@@ -857,25 +853,23 @@ void guirenderloop() {
       Clay_Dimensions dim = {(float)gui.win.w, (float)gui.win.h};
       sclay_set_layout_dimensions(dim, 1);
 
-      if (clay_RGFW_update(&gui.win, 10, &ev)) {
-        printf("RECEIVED UPDATE\n");
-
-        if (!doguirender())
+      if (clay_RGFW_update(gab, &gui.win, 10, &ev)) {
+        if (!doguirender(gab))
           return;
       }
     }
 
-    gab_chnput(gui.gab, gui.evch, gab_message(gui.gab, "tick"));
+    gab_chnput(gab, gui.evch, gab_message(gab, "tick"));
 
-    if (!doguirender())
+    if (!doguirender(gab))
       return;
 
-    switch (gab_yield(gui.gab)) {
+    switch (gab_yield(gab)) {
     case sGAB_TERM:
       return;
     case sGAB_COLL:
-      gab_gcepochnext(gui.gab);
-      gab_sigpropagate(gui.gab);
+      gab_gcepochnext(gab);
+      gab_sigpropagate(gab);
       break;
     default:
       break;
@@ -888,11 +882,10 @@ void guirenderloop() {
   if (gui.appch != gab_cundefined)
     gab_chnclose(gui.appch);
 
-  RGFW_window_close(&gui.win);
+  RGFW_window_closePtr(&gui.win);
 }
 
 GAB_DYNLIB_NATIVE_FN(ui, run_gui) {
-
   if (!RGFW_createWindowPtr("window", 0, 0, 800, 800,
 
                             RGFW_windowCenter | RGFW_windowNoResize |
@@ -911,7 +904,6 @@ GAB_DYNLIB_NATIVE_FN(ui, run_gui) {
   if (!gab_valisch(appch))
     return gab_pktypemismatch(gab, evch, kGAB_CHANNEL);
 
-  gui.gab = gab;
   gui.appch = appch;
   gui.evch = evch;
   gui.win.userPtr = &gui;
@@ -944,7 +936,7 @@ GAB_DYNLIB_NATIVE_FN(ui, run_gui) {
   Clay_SetMeasureTextFunction(sclay_measure_text, &fonts);
 
   // Clay_SetDebugModeEnabled(true);
-  guirenderloop();
+  guirenderloop(gab);
 
   return gab_vmpush(gab_thisvm(gab), gab_ok), gab_union_cvalid(gab_nil);
 }
@@ -960,7 +952,9 @@ GAB_DYNLIB_NATIVE_FN(ui, run_tui) {
   if (!gab_valisch(appch))
     return gab_pktypemismatch(gab, evch, kGAB_CHANNEL);
 
-  gui.gab = gab;
+  gab_iref(gab, evch);
+  gab_iref(gab, appch);
+
   gui.appch = appch;
   gui.evch = evch;
 
@@ -982,7 +976,28 @@ GAB_DYNLIB_NATIVE_FN(ui, run_tui) {
   Clay_SetLayoutDimensions(
       (Clay_Dimensions){Clay_Termbox_Width(), Clay_Termbox_Height()});
 
-  tuirenderloop();
+  union gab_value_pair res =
+      gab_asend(gab, (struct gab_send_argt){
+                         .message = gab_message(gab, mGAB_CALL),
+                         .receiver = gab_snative(gab, "ui\\tui\\loop\\render",
+                                                 gab_mod_ui_tui_render),
+                     });
+
+  if (res.status != gab_cvalid) {
+    Clay_Termbox_Close();
+    return gab_panicf(gab, "Couldn't start render thread");
+  }
+
+  res = gab_asend(gab, (struct gab_send_argt){
+                           .message = gab_message(gab, mGAB_CALL),
+                           .receiver = gab_snative(gab, "ui\\tui\\loop\\event",
+                                                   gab_mod_ui_tui_event),
+                       });
+
+  if (res.status != gab_cvalid) {
+    Clay_Termbox_Close();
+    return gab_panicf(gab, "Couldn't start event thread");
+  }
 
   return gab_vmpush(gab_thisvm(gab), gab_ok), gab_union_cvalid(gab_nil);
 }

@@ -465,12 +465,7 @@ struct gab_eg {
   uint64_t nroots;
   const char *resroots[cGAB_RESOURCE_MAX];
 
-  struct gab_resource {
-    const char *prefix;
-    const char *suffix;
-    gab_loader_f loader;
-    gab_loader_existf exister;
-  } res[cGAB_RESOURCE_MAX];
+  struct gab_resource res[cGAB_RESOURCE_MAX];
 
   struct gab_gc gc;
 
