@@ -1,5 +1,4 @@
 #include "gab.h"
-#include "platform.h"
 
 GAB_DYNLIB_NATIVE_FN(rec, at) {
   gab_value rec = gab_arg(0);
@@ -33,7 +32,7 @@ GAB_DYNLIB_NATIVE_FN(rec, slice) {
       return gab_panicf(gab, "&:slice expects a number as the second argument");
     }
 
-    double a = gab_valtof(argv[1]);
+    gab_uint a = gab_valtou(argv[1]);
     end = MIN(a, len);
     break;
   }

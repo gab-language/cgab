@@ -1,9 +1,7 @@
 #include "../vendor/libgrapheme/grapheme.h"
 #include "core.h"
 #include "gab.h"
-#include "platform.h"
 #include <ctype.h>
-#include <stdint.h>
 
 static inline bool instr(char c, const char *set) {
   while (*set != '\0')

@@ -65,8 +65,15 @@ struct gui {
 struct gui gui;
 
 void HandleClayErrors(Clay_ErrorData errorData) {
-  printf("%s\n", errorData.errorText.chars);
+  fprintf(stderr, "%s\n", errorData.errorText.chars);
 }
+
+/*
+ * TODO: The channel put/take on the event and app channels don't yield here.
+ * This blocks two threads on these channels, and if the user queues up a lot
+ * of other fibers, the UI can appear to lock-up, as the user-fiber operating on these
+ * channels *does* yield.
+ */
 
 void putevent(struct gab_triple gab, const char *type, const char *event,
               gab_value data1, gab_value data2, gab_value data3) {
@@ -113,19 +120,16 @@ bool clay_RGFW_update(struct gab_triple gab, RGFW_window *win, double deltaTime,
   case RGFW_mouseButtonPressed: {
     gab_value target = clayGetTopmostId(gab);
     switch (ev->button.type) {
-    case RGFW_mouseScrollUp:
-    case RGFW_mouseScrollDown:
-      Clay_UpdateScrollContainers(false, (Clay_Vector2){0, ev->button.scroll},
+    case RGFW_mouseScroll:
+      Clay_UpdateScrollContainers(false, (Clay_Vector2){0, ev->scroll.y},
                                   deltaTime);
       return false;
     case RGFW_mouseLeft:
-      putevent(gab, "mouse", "left", gab_number(ev->button.scroll), true,
-               target);
+      putevent(gab, "mouse", "left", target, gab_nil, gab_nil);
       Clay_SetPointerState(mousePosition, true);
       return true;
     case RGFW_mouseRight:
-      putevent(gab, "mouse", "right", gab_number(ev->button.scroll), true,
-               target);
+      putevent(gab, "mouse", "right", target, gab_nil, gab_nil);
       Clay_SetPointerState(mousePosition, true);
       return true;
     }
@@ -136,13 +140,11 @@ bool clay_RGFW_update(struct gab_triple gab, RGFW_window *win, double deltaTime,
     gab_value target = clayGetTopmostId(gab);
     switch (ev->button.value) {
     case RGFW_mouseLeft:
-      putevent(gab, "mouse", "left", gab_number(ev->button.scroll), true,
-               target);
+      putevent(gab, "mouse", "left", target, gab_nil, gab_nil);
       Clay_SetPointerState(mousePosition, true);
       return true;
     case RGFW_mouseRight:
-      putevent(gab, "mouse", "right", gab_number(ev->button.scroll), true,
-               target);
+      putevent(gab, "mouse", "right", target, gab_nil, gab_nil);
       Clay_SetPointerState(mousePosition, true);
       return true;
     }
@@ -240,27 +242,27 @@ bool clay_termbox_update(struct gab_triple gab, struct tb_event *e,
   case TB_EVENT_MOUSE:
     switch (e->key) {
     case TB_KEY_MOUSE_RELEASE:
-      Clay_SetPointerState((Clay_Vector2){e->x, e->y}, false);
+      // Clay_SetPointerState((Clay_Vector2){e->x, e->y}, false);
       putevent(gab, "mouse", "left", gab_number(0), gab_false,
                clayGetTopmostId(gab));
       return true;
     case TB_KEY_MOUSE_RIGHT:
-      Clay_SetPointerState((Clay_Vector2){e->x, e->y}, false);
+      // Clay_SetPointerState((Clay_Vector2){e->x, e->y}, false);
       putevent(gab, "mouse", "right", gab_number(0), gab_true,
                clayGetTopmostId(gab));
       return true;
     case TB_KEY_MOUSE_LEFT:
-      Clay_SetPointerState((Clay_Vector2){e->x, e->y}, true);
+      // Clay_SetPointerState((Clay_Vector2){e->x, e->y}, true);
       putevent(gab, "mouse", "left", gab_number(0), gab_true,
                clayGetTopmostId(gab));
       return true;
     case TB_KEY_MOUSE_WHEEL_UP:
-      Clay_UpdateScrollContainers(false, (Clay_Vector2){0, e->y}, deltaTime);
+      // Clay_UpdateScrollContainers(false, (Clay_Vector2){0, e->y}, deltaTime);
       putevent(gab, "mouse", "scroll\\up", gab_number(0), gab_false,
                clayGetTopmostId(gab));
       return true;
     case TB_KEY_MOUSE_WHEEL_DOWN:
-      Clay_UpdateScrollContainers(false, (Clay_Vector2){0, e->y}, deltaTime);
+      // Clay_UpdateScrollContainers(false, (Clay_Vector2){0, e->y}, deltaTime);
       putevent(gab, "mouse", "scroll\\down", gab_number(0), gab_false,
                clayGetTopmostId(gab));
       return true;
@@ -285,6 +287,18 @@ Clay_Color packedToClayColor(gab_value vcolor) {
       color >> 8 & 0xff,
       color & 0xff,
   };
+}
+
+Clay_LayoutDirection parseDirection(struct gab_triple gab, gab_value props) {
+  gab_value vlayout = gab_mrecat(gab, props, "layout");
+
+  if (gab_valkind(vlayout) != kGAB_STRING)
+    return CLAY_TOP_TO_BOTTOM;
+
+  if (vlayout == gab_string(gab, "horizontal"))
+    return CLAY_LEFT_TO_RIGHT;
+  else
+    return CLAY_TOP_TO_BOTTOM;
 }
 
 Clay_Padding parsePadding(struct gab_triple gab, gab_value props) {
@@ -372,13 +386,14 @@ Clay_Sizing parseSizing(struct gab_triple gab, gab_value props) {
 
 Clay_LayoutConfig parseLayout(struct gab_triple gab, gab_value props) {
   return (Clay_LayoutConfig){
-      .layoutDirection = CLAY_TOP_TO_BOTTOM,
+      .layoutDirection = parseDirection(gab, props),
       .padding = parsePadding(gab, props),
       .sizing = parseSizing(gab, props),
   };
 }
 
-union gab_value_pair render_componentlist(struct gab_triple gab, gab_value app);
+union gab_value_pair render_componentlist(struct gab_triple gab, gab_value app,
+                                          Clay_LayoutDirection dir);
 
 union gab_value_pair render_box(struct gab_triple gab, gab_value props,
                                 gab_value children) {
@@ -420,13 +435,15 @@ union gab_value_pair render_box(struct gab_triple gab, gab_value props,
   if (vid != gab_cundefined && gab_valkind(vid) != kGAB_MESSAGE)
     return gab_pktypemismatch(gab, vid, kGAB_MESSAGE);
 
+  Clay_LayoutConfig layout = parseLayout(gab, props);
+
   CLAY({
       .id = vid == gab_cundefined ? CLAY_IDI("", gui.n++)
                                   : CLAY_SID(((Clay_String){
                                         .length = gab_strlen(vid),
                                         .chars = gab_strdata(&vid),
                                     })),
-      .layout = parseLayout(gab, props),
+      .layout = layout,
       .cornerRadius =
           {
               cornerRadius,
@@ -446,7 +463,7 @@ union gab_value_pair render_box(struct gab_triple gab, gab_value props,
                   },
           },
   }) {
-    render_componentlist(gab, children);
+    render_componentlist(gab, children, layout.layoutDirection);
   };
 
   return gab_union_cvalid(gab_nil);
@@ -676,8 +693,8 @@ union gab_value_pair render_component(struct gab_triple gab,
   return gab_panicf(gab, "Unknown component type $", kind);
 }
 
-union gab_value_pair render_componentlist(struct gab_triple gab,
-                                          gab_value app) {
+union gab_value_pair render_componentlist(struct gab_triple gab, gab_value app,
+                                          Clay_LayoutDirection dir) {
   if (gab_valkind(app) != kGAB_RECORD)
     return gab_pktypemismatch(gab, app, kGAB_RECORD);
 
@@ -688,7 +705,7 @@ union gab_value_pair render_componentlist(struct gab_triple gab,
   CLAY({
       .layout =
           {
-              .layoutDirection = CLAY_TOP_TO_BOTTOM,
+              .layoutDirection = dir,
               .sizing =
                   {
                       .width = CLAY_SIZING_GROW(1),
@@ -725,7 +742,7 @@ bool render(struct gab_triple gab, Clay_RenderCommandArray *array_out) {
 
   Clay_BeginLayout();
 
-  union gab_value_pair res = render_componentlist(gab, app);
+  union gab_value_pair res = render_componentlist(gab, app, CLAY_TOP_TO_BOTTOM);
 
   if (res.status != gab_cundefined)
     return false; // Put an error event into the channel
@@ -777,22 +794,17 @@ bool doguirender(struct gab_triple gab) {
 #ifdef GAB_PLATFORM_UNIX
 GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
   for (;;) {
-    if (gab_chnisclosed(gui.appch)) {
-      goto fin;
-    }
-
-    if (gab_chnisclosed(gui.evch)) {
-      goto fin;
-    }
-
     struct tb_event e;
-    for (;;) {
-      Clay_SetLayoutDimensions((Clay_Dimensions){
-          .height = Clay_Termbox_Width(),
-          .width = Clay_Termbox_Height(),
-      });
 
-      switch (tb_peek_event(&e, 0)) {
+    for (;;) {
+      if (gab_chnisclosed(gui.appch))
+        goto fin;
+
+      if (gab_chnisclosed(gui.evch))
+        goto fin;
+
+      int res = tb_peek_event(&e, 0);
+      switch (res) {
       case TB_ERR_NO_EVENT:
         break;
       case TB_OK:
@@ -801,10 +813,23 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
       case TB_ERR_POLL:
         if (tb_last_errno() == EINTR)
           continue;
-      default:
+
         goto fin;
+      default:
+        break;
       }
 
+      break;
+    }
+
+    switch (gab_yield(gab)) {
+    case sGAB_TERM:
+      goto fin;
+    case sGAB_COLL:
+      gab_gcepochnext(gab);
+      gab_sigpropagate(gab);
+      break;
+    default:
       break;
     }
 
@@ -812,23 +837,43 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
   }
 
 fin:
+  gab_chnclose(gui.appch);
+  gab_chnclose(gui.evch);
   return gab_union_cvalid(gab_ok);
 }
 
 GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
   for (;;) {
-    if (gab_chnisclosed(gui.appch)) {
+    if (gab_chnisclosed(gui.appch))
+      goto fin;
+
+    if (gab_chnisclosed(gui.evch))
+      goto fin;
+
+    Clay_SetLayoutDimensions((Clay_Dimensions){
+        .height = Clay_Termbox_Width(),
+        .width = Clay_Termbox_Height(),
+    });
+
+    if (!dotuirender(gab)) {
       goto fin;
     }
 
-    if (gab_chnisclosed(gui.evch)) {
+    switch (gab_yield(gab)) {
+    case sGAB_TERM:
       goto fin;
+    case sGAB_COLL:
+      gab_gcepochnext(gab);
+      gab_sigpropagate(gab);
+      break;
+    default:
+      break;
     }
-
-    dotuirender(gab);
   }
 
 fin:
+  gab_chnclose(gui.appch);
+  gab_chnclose(gui.evch);
   Clay_Termbox_Close();
   return gab_union_cinvalid;
 }
@@ -898,10 +943,10 @@ GAB_DYNLIB_NATIVE_FN(ui, run_gui) {
   gab_value evch = gab_arg(1);
   gab_value appch = gab_arg(2);
 
-  if (!gab_valisch(evch))
+  if (!gab_valischn(evch))
     return gab_pktypemismatch(gab, appch, kGAB_CHANNEL);
 
-  if (!gab_valisch(appch))
+  if (!gab_valischn(appch))
     return gab_pktypemismatch(gab, evch, kGAB_CHANNEL);
 
   gui.appch = appch;
@@ -946,10 +991,10 @@ GAB_DYNLIB_NATIVE_FN(ui, run_tui) {
   gab_value evch = gab_arg(1);
   gab_value appch = gab_arg(2);
 
-  if (!gab_valisch(evch))
+  if (!gab_valischn(evch))
     return gab_pktypemismatch(gab, appch, kGAB_CHANNEL);
 
-  if (!gab_valisch(appch))
+  if (!gab_valischn(appch))
     return gab_pktypemismatch(gab, evch, kGAB_CHANNEL);
 
   gab_iref(gab, evch);

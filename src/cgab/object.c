@@ -1511,6 +1511,7 @@ gab_value gab_fiber(struct gab_triple gab, struct gab_fiber_argt args) {
   self->flags = gab.flags | args.flags;
 
   // Setup main and args
+  *self->vm.sp++ = 0; // A Below-Have
   *self->vm.sp++ = args.receiver;
   for (uint8_t i = 0; i < args.argc; i++)
     *self->vm.sp++ = args.argv[i];
@@ -1752,14 +1753,6 @@ gab_value channel_block_while_empty(struct gab_triple gab,
   return gab_cvalid;
 }
 
-/*
- * The current implementation of
- *  - channel_blocking_put
- *  - channel_blocking_take
- *  are flawed. They require a *handshake* two occur between two threads *at the
- * same time*.
- *
- */
 gab_value unsafe_channel_blocking_put(struct gab_triple gab,
                                       struct gab_ochannel *channel, gab_value c,
                                       uint64_t len, gab_value *vs,
@@ -1776,7 +1769,6 @@ gab_value unsafe_channel_blocking_put(struct gab_triple gab,
       return res;
   }
 
-  assert(false && "Unreachable");
   return gab_cinvalid;
 }
 

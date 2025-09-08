@@ -333,52 +333,56 @@ int32_t worker_job(void *data) {
 
   while (!gab_chnisclosed(gab.eg->work_channel) ||
          !q_gab_value_is_empty(&job->queue)) {
+
+    // If there is room in our local queue to take jobs off the global channel,
+    // we should do that.
+    if (!q_gab_value_is_full(&job->queue)) {
 #if cGAB_LOG_EG
-    gab_fprintf(stderr, "[WORKER $] TAKING WITH $ tries\n",
-                gab_number(gab.wkid), gab_number(cGAB_WORKER_IDLE_TRIES));
+      gab_fprintf(stderr, "[WORKER $] TAKING WITH $ tries\n",
+                  gab_number(gab.wkid), gab_number(cGAB_WORKER_IDLE_TRIES));
 #endif
 
-    assert(!q_gab_value_is_full(&job->queue));
-    gab_value fiber =
-        gab_tchntake(gab, gab.eg->work_channel, cGAB_WORKER_IDLE_TRIES);
+      assert(!q_gab_value_is_full(&job->queue));
+      gab_value fiber =
+          gab_tchntake(gab, gab.eg->work_channel, cGAB_WORKER_IDLE_TRIES);
 
 #if cGAB_LOG_EG
-    gab_fprintf(stderr, "[WORKER $] chntake succeeded: $\n",
-                gab_number(gab.wkid), fiber);
-#endif
-
-    if (fiber == gab_cinvalid)
-      goto bail;
-
-    if (fiber == gab_ctimeout || fiber == gab_cundefined) {
-      // Our global take timed out and our internal queue is empty.
-      // our work is done.
-      // TWO IMPLEMENTATION OPTIONS HERE:
-      // GOTO FIN: => exit this worker thread.
-      // CONTINUE: => loop until we have work.
-      if (q_gab_value_is_empty(&job->queue))
-        continue;
-      // goto fin;
-
-#if cGAB_LOG_EG
-      gab_fprintf(stderr, "[WORKER $] RESORTING TO LOCALQUEUE $\n",
+      gab_fprintf(stderr, "[WORKER $] chntake succeeded: $\n",
                   gab_number(gab.wkid), fiber);
-
-      size_t i = 0;
-      for (size_t h = job->queue.head; h < job->queue.tail; h++, i++) {
-        gab_value d = job->queue.data[h & (job->queue.size - 1)];
-        gab_fprintf(stderr, "[WORKER $] $ is waiting at $\n",
-                    gab_number(gab.wkid), d, gab_number(i));
-      }
 #endif
-    } else {
-      // Our global take succeeded - append to our local queue.
-      if (!q_gab_value_push(&job->queue, fiber))
-        assert(false && "PUSH FAILED");
+
+      if (fiber == gab_cinvalid)
+        goto bail;
+
+      if (fiber == gab_ctimeout || fiber == gab_cundefined) {
+        // Our global take timed out and our internal queue is empty.
+        // our work is done.
+        // TWO IMPLEMENTATION OPTIONS HERE:
+        // GOTO FIN: => exit this worker thread.
+        // CONTINUE: => loop until we have work.
+        if (q_gab_value_is_empty(&job->queue))
+          continue;
+
+#if cGAB_LOG_EG
+        gab_fprintf(stderr, "[WORKER $] RESORTING TO LOCALQUEUE $\n",
+                    gab_number(gab.wkid), fiber);
+
+        size_t i = 0;
+        for (size_t h = job->queue.head; h < job->queue.tail; h++, i++) {
+          gab_value d = job->queue.data[h & (job->queue.size - 1)];
+          gab_fprintf(stderr, "[WORKER $] $ is waiting at $\n",
+                      gab_number(gab.wkid), d, gab_number(i));
+        }
+#endif
+      } else {
+        // Our global take succeeded - append to our local queue.
+        if (!q_gab_value_push(&job->queue, fiber))
+          assert(false && "PUSH FAILED");
+      }
     }
 
     // Peek at job to do on the queue.
-    fiber = q_gab_value_peek(&job->queue);
+    gab_value fiber = q_gab_value_peek(&job->queue);
 
 #if cGAB_LOG_EG
     gab_fprintf(stderr, "[WORKER $] EXECUTING $\n", gab_number(gab.wkid),
@@ -1017,6 +1021,7 @@ bool gab_ndef(struct gab_triple gab, uint64_t len,
               struct gab_def_argt args[static len]) {
   gab_value messages = gab.eg->messages;
 
+  // TODO: Do atomic swaps of eg->messages.
   gab_value m = dodef(gab, messages, len, args);
 
   gab.eg->messages = m;
@@ -1825,7 +1830,7 @@ GAB_API inline void gab_sigclear(struct gab_triple gab) {
 // This needs to become atomic
 GAB_API inline bool gab_signal(struct gab_triple gab, enum gab_signal s,
                                int wkid) {
-  assert(wkid >=0);
+  assert(wkid >= 0);
   // You can't send signals to 0th worker - that is user's thread.
   if (wkid == 0)
     return false;

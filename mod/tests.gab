@@ -45,7 +45,7 @@ test\result\t = { test\path: nil: test\receiver: nil: }?
     suite = self.test\path .at 0 .unwrap
     chan = suites\all .at suite .unwrap
     # Queue up the outcome of the comparison
-    chan <! (behavior\outcome, self.test\path, { lhs: lhs, cmp: cmp, rhs: rhs })
+    events <! (resolve: behavior\outcome, self.test\path, { lhs: lhs, cmp: cmp, rhs: rhs })
   end,
 }
 
@@ -97,7 +97,60 @@ Behavior = test\behavior:.defclass(
     behavior\render: () => self.behavior\outcome.behavior\render self
   })
 
+queue_tests = (filter_by_suite) => do
+  Fibers.make () => do
+    xf = Streams.map (behaviors suite) => do
+        events <! (suite: Suite.make([] suite))
+
+        Fibers.make () => do
+          behaviors.each (runnable behavior) => do 
+            (path body) = runnable*
+
+            events <! (behavior: Behavior.make(path nil: nil:))
+
+            body.each(t r) => do
+              t.{ test\path: path, test\receiver: r }
+            end
+          end
+
+          suites\all
+            .at suite
+            .unwrap
+            .close
+        end
+    end
+
+    xf = filter_by_suite.== nil: .!
+        .then(() => do
+          Streams.filter((_, suite) => filter_by_suite == suite)
+          |> xf
+        end)
+        .or xf
+    
+    fibers = tests\all.collect xf
+  end
+end
+
 handle\keydown: .defcase {
+  r: (ev model) => do
+    queue_tests.()
+    model.app\reset
+  end
+  k: (ev model) => do
+    model.put_by(selected: (old) => do
+      (old == 0)
+        .and old
+        .or(old--)
+    end)
+  end
+  j: (ev model) => do
+    len = suites\all.len
+    model.put_by(selected: (old) => do
+      (old == (len - 1))
+        .and old
+        .or(old++)
+    end)
+  end
   Messages.t
   (ev model) => model
 }
@@ -115,7 +168,7 @@ handle\key: .defcase {
 handle\type: .defcase {
   tick:  (ev model) => do
     # Tick time
-    model
+    model.put_via_by(time: ++:)
   end
   mouse: (ev model) => do
     model
@@ -138,22 +191,19 @@ handle\type: .defcase {
   end
 }
 
+spinner = "⣾⣾⣽⣽⣻⣻⢿⢿⡿⡿⣟⣟⣯⣯⣷⣷".collect
+
 App = test\app:.defclass(
-  test\suites: test\tests:
+  test\suites: test\tests: time: selected:
   default:
   {
     app\controller: (type ev*) => do
-      #'$  $\n'.printf(type, ev)
       type.handle\type(ev self)
     end
-    app\view: () => do
-      [
-        [
-          box:
-          { width\relative: 100 padding: 32 }
-          [[text: { size: 32 content: "Hello" }]]
-        ]
-      ]
+    app\reset: () => do
+      self
+        .put(test\suites: {})
+        .put(test\tests: {})
     end
     app\push_suite: (suite) => do
       self
@@ -172,54 +222,78 @@ App = test\app:.defclass(
       self
         .put_via(test\suites: suite suite\behaviors: bhv behavior\outcome: outcome)
         .put_via(test\suites: suite suite\behaviors: bhv behavior\meta: meta)
+        .put_via(test\suites: suite suite\behaviors: bhv behavior\path: path)
+    end
+    app\view: () => do
+      app = self
+
+      (ok, selected_key) = app.test\suites.?.at(app.selected)
+      (has_selected, selected) = ok.then () => app.test\suites.at(selected_key)
+      [
+        [
+          box:
+          { height\grow: 1 width\grow: 1 layout: "horizontal" }
+          [
+            [
+              box:
+              { padding\top: 16 height\grow: 1 width\relative: 50 border: { width: 1 } }
+              self.test\suites.map (suite, name) => do
+                pass_behaviors = suite
+                  .suite\behaviors
+                  .collect(Streams.filter (b => b.behavior\outcome == true:))
+
+                fail_behaviors = suite
+                  .suite\behaviors
+                  .collect(Streams.filter(b => b.behavior\outcome == false:))
+
+                waiting = suites\all .at name .unwrap .is\closed.!
+
+                spinner_char = (waiting)
+                  .then(() => spinner.at(app.time % spinner.len).unwrap)
+                  .or " "
+
+                color = (selected == suite).and('0xff0000ff'.as\n).or('0xffffffff'.as\n)
+
+                [
+                  box:
+                  { width\grow: 1 padding\left: 16 }
+                  [
+                    [text: { color: color size: 32 content: "$ $ $ ✔  $ ✘".sprintf(spinner_char, name, pass_behaviors.len, fail_behaviors.len) }]
+                  ]
+                ]
+              end
+            ]
+            [
+              box:
+              { padding: 8 height\grow: 1 width\grow: 1 border: { width: 1 } }
+              has_selected
+                .then(() => do
+                  selected
+                    .suite\behaviors
+                    .map((bhv) => do
+                      [text: { size: 32 content: bhv.behavior\path.join(Streams.interpose "should" |> Streams.interpose " ") }]
+                    end)
+                end)
+                .or([[text: { size: 32 content: "none" }]])
+            ]
+          ]
+        ]
+      ]
     end
   })
 
-Fibers.make () => do
-  fibers = tests\all.map (behaviors suite) => do 
-      events <! (suite: Suite.make([] suite))
+model = App.make({} {} 0 0)
 
-      Fibers.make () => do
-        behaviors.each (runnable behavior) => do 
-          (path body) = runnable*
-
-          events <! (behavior: Behavior.make(path nil: nil:))
-
-          body.each(t r) => do
-            t.{ test\path: path, test\receiver: r }
-          end
-        end
-
-        suites\all
-          .at suite
-          .unwrap
-          .close
-      end
-  end
-
-  watchers = suites\all .map (c s) => do
-    Fibers.make () => do 
-      c.collect(Streams.map (outcome path meta) => do
-        events <! (resolve: outcome path meta)
-      end)
-    end
-  end
-end
-
-model = App.make({} {})
+queue_tests.()
 
 events
   .pipe(
     app,
     Streams.take_until((e, key) => do
-      [e, key].eprintln
-
       (e == key:) & (key == escape:)
     end)
     |> Streams.reduce(model app\controller:)
-    #|> Streams.tap(eprintln:)
     |> Streams.map(app\view:)
-    #|> Streams.tap(eprintln:)
   )
 
 app.close

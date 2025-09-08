@@ -245,6 +245,7 @@ GAB_API_INLINE gab_value __gab_dtoval(gab_float value) {
 }
 
 #define __gab_valisn(val) (((val) & __GAB_QNAN) != __GAB_QNAN)
+#define gab_valisnum(val) (__gab_valisn(val))
 
 #define __gab_valisb(val)                                                      \
   (gab_valeq(val, gab_true) || gab_valeq(val, gab_false))
@@ -1492,7 +1493,12 @@ GAB_API uint64_t gab_srcline(struct gab_src *src, uint64_t offset);
  */
 GAB_API enum gab_kind gab_valkind(gab_value value);
 
-GAB_API_INLINE bool gab_valisch(gab_value value) {
+GAB_API_INLINE bool gab_valisshp(gab_value value) {
+  enum gab_kind k = gab_valkind(value);
+  return k == kGAB_SHAPE | k == kGAB_SHAPELIST;
+};
+
+GAB_API_INLINE bool gab_valischn(gab_value value) {
   enum gab_kind k = gab_valkind(value);
   return k == kGAB_CHANNEL | k == kGAB_CHANNELCLOSED;
 };
@@ -1753,6 +1759,15 @@ GAB_API_INLINE gab_value gab_ushpat(gab_value shp, uint64_t idx) {
   assert(gab_valkind(shp) == kGAB_SHAPE || gab_valkind(shp) == kGAB_SHAPELIST);
   assert(idx < gab_shplen(shp));
   return gab_shpdata(shp)[idx];
+}
+
+GAB_API_INLINE gab_value gab_shpat(gab_value shp, uint64_t idx) {
+  assert(gab_valkind(shp) == kGAB_SHAPE || gab_valkind(shp) == kGAB_SHAPELIST);
+
+  if (idx >= gab_shplen(shp))
+    return gab_cundefined;
+
+  return gab_ushpat(shp, idx);
 }
 
 GAB_API_INLINE uint64_t gab_shpfind(gab_value shp, gab_value key) {

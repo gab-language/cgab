@@ -558,7 +558,15 @@ union gab_value_pair vm_givenerr(struct gab_triple gab,
 
   assert(GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERRUNNING);
   GAB_VAL_TO_FIBER(fiber)->res_values = given;
-  GAB_VAL_TO_FIBER(fiber)->res_env = env;
+  if (frame_block(vm->fp)) {
+    gab_value p = frame_block(vm->fp)->p;
+    gab_value shape = gab_prtshp(p);
+
+    gab_value env =
+        gab_recordfrom(gab, shape, 1, gab_shplen(shape), vm->fp, nullptr);
+    gab_egkeep(gab.eg, gab_iref(gab, env));
+    GAB_VAL_TO_FIBER(fiber)->res_env = env;
+  }
   GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERDONE;
 
   return given;
@@ -587,17 +595,19 @@ union gab_value_pair vvm_error(struct gab_triple gab, enum gab_status s,
 
   union gab_value_pair res = {.status = gab_cvalid, .aresult = results};
 
-  gab_value p = frame_block(vm->fp)->p;
-  gab_value shape = gab_prtshp(p);
-  gab_value env =
-      gab_recordfrom(gab, shape, 1, gab_shplen(shape), vm->fp, nullptr);
-  gab_egkeep(gab.eg, gab_iref(gab, env));
-
   v_gab_value_thrd_push(&gab.eg->err, err);
 
   assert(GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERRUNNING);
   GAB_VAL_TO_FIBER(fiber)->res_values = res;
-  GAB_VAL_TO_FIBER(fiber)->res_env = env;
+  if (frame_block(vm->fp)) {
+    gab_value p = frame_block(vm->fp)->p;
+    gab_value shape = gab_prtshp(p);
+
+    gab_value env =
+        gab_recordfrom(gab, shape, 1, gab_shplen(shape), vm->fp, nullptr);
+    gab_egkeep(gab.eg, gab_iref(gab, env));
+    GAB_VAL_TO_FIBER(fiber)->res_env = env;
+  }
   GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERDONE;
 
   return res;
@@ -889,7 +899,10 @@ inline uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc,
   ({                                                                           \
     STORE();                                                                   \
                                                                                \
+    gab_value *returnptr = RETURN_FB();                                        \
+                                                                               \
     gab_value *to = SP() - (have + 1);                                         \
+    assert(to >= FB());                                                        \
                                                                                \
     gab_value *before = SP();                                                  \
                                                                                \
@@ -920,6 +933,7 @@ inline uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc,
                                                                                \
     SET_VAR(below_have + have);                                                \
                                                                                \
+    assert(returnptr == RETURN_FB());                                          \
     NEXT();                                                                    \
   })
 
@@ -961,16 +975,20 @@ union gab_value_pair vm_ok(OP_HANDLER_ARGS) {
 
   VM()->sp = VM()->sb;
 
-  gab_value p = frame_block(VM()->fp)->p;
-  gab_value shape = gab_prtshp(p);
-
-  gab_value env =
-      gab_recordfrom(GAB(), shape, 1, gab_shplen(shape), VM()->fp, nullptr);
-  gab_egkeep(EG(), gab_iref(GAB(), env));
-
   assert(FIBER()->header.kind = kGAB_FIBERRUNNING);
+
   FIBER()->res_values = res;
-  FIBER()->res_env = env;
+
+  if (frame_block(VM()->fp)) {
+    gab_value p = frame_block(VM()->fp)->p;
+    gab_value shape = gab_prtshp(p);
+
+    gab_value env =
+        gab_recordfrom(GAB(), shape, 1, gab_shplen(shape), VM()->fp, nullptr);
+    gab_egkeep(EG(), gab_iref(GAB(), env));
+    FIBER()->res_env = env;
+  }
+
   FIBER()->header.kind = kGAB_FIBERDONE;
 
   return res;
@@ -980,7 +998,8 @@ union gab_value_pair do_vmexecfiber(struct gab_triple gab, gab_value f) {
   assert(gab_valkind(f) == kGAB_FIBER);
   struct gab_ofiber *fiber = GAB_VAL_TO_FIBER(f);
 
-  /*assert(*fiber->vm.sp > 0);*/
+  // Just a sanity bounds check here.
+  assert(*fiber->vm.sp > 0 && *fiber->vm.sp < 32);
 
   assert(fiber->header.kind != kGAB_FIBERDONE);
 
@@ -1407,6 +1426,9 @@ CASE_CODE(SEND_PRIMITIVE_CALL_NATIVE) {
   gab_value *ks = READ_SENDCONSTANTS;
   uint64_t have = COMPUTE_TUPLE();
   uint64_t below_have = PEEK_N(have + 1);
+
+  // Sanity check
+  assert(have > 0 && have < 32);
 
   gab_value r = PEEK_N(have);
 
@@ -2187,7 +2209,7 @@ CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE_PRIMITIVE) {
   // As the op we dispatch to *may* yield.
   //
   // In the case where it does yield, we still reenter
-  // into *this* opcode. 
+  // into *this* opcode.
   //
   // Sadly, I can't think of a reasonable way to make dispatch work
   // here without memmove
