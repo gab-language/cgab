@@ -469,7 +469,8 @@ struct gab_eg {
 
   struct gab_gc gc;
 
-  gab_value messages, work_channel;
+  _Atomic gab_value messages;
+  gab_value work_channel;
 
   mtx_t shapes_mtx;
   gab_value shapes;

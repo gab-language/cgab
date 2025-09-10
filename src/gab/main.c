@@ -1312,7 +1312,6 @@ bool check_valid_zip() {
   assert(path);
   if (!mz_zip_reader_init_file(&zip, path, 0)) {
     mz_zip_error e = mz_zip_get_last_error(&zip);
-    printf("ZIPERROR: %s\n", mz_zip_get_error_string(e));
     return false;
   }
 

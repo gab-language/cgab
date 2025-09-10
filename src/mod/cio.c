@@ -3,7 +3,6 @@
 #define QIO_INTERNAL_QUEUE_INITIAL_LEN 2056
 #include "qio/qio.h"
 
-#include "BearSSL/inc/bearssl.h"
 #include "ta.h"
 
 #include "gab.h"
@@ -344,10 +343,12 @@ union gab_value_pair complete_sockbind(struct gab_triple gab,
                                        struct gab_sock *sock,
                                        const char *hostname, gab_int port) {
   struct qio_addr addr = {};
-  if (qio_addrfrom(hostname, port, &addr) < 0)
+  if (qio_addrfrom(hostname, port, &addr) < 0) {
+    atomic_store(&sock->k, IO_SOCK_UNSPECIFIED);
     return gab_vmpush(gab_thisvm(gab), gab_err,
                       gab_string(gab, "Invalid address")),
            gab_union_cvalid(gab_nil);
+  }
 
   qd_t qd = qbind(sock->fd, &addr);
 
@@ -365,10 +366,12 @@ union gab_value_pair complete_sockbind(struct gab_triple gab,
 
   int64_t result = qd_destroy(qd);
 
-  if (result < 0)
+  if (result < 0) {
+    atomic_store(&sock->k, IO_SOCK_UNSPECIFIED);
     gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, strerror(-result)));
-  else
+  } else {
     gab_vmpush(gab_thisvm(gab), gab_ok);
+  }
 
   return gab_union_cvalid(gab_nil);
 };
@@ -377,10 +380,12 @@ union gab_value_pair complete_sockconnect(struct gab_triple gab,
                                           struct gab_sock *sock,
                                           const char *hostname, gab_int port) {
   struct qio_addr addr = {};
-  if (qio_addrfrom(hostname, port, &addr) < 0)
+  if (qio_addrfrom(hostname, port, &addr) < 0) {
+    atomic_store(&sock->k, IO_SOCK_UNSPECIFIED);
     return gab_vmpush(gab_thisvm(gab), gab_err,
                       gab_string(gab, "Invalid address")),
            gab_union_cvalid(gab_nil);
+  }
 
   qd_t qd = qconnect(sock->fd, &addr);
 
@@ -398,10 +403,12 @@ union gab_value_pair complete_sockconnect(struct gab_triple gab,
 
   int64_t result = qd_destroy(qd);
 
-  if (result <= 0)
+  if (result <= 0) {
+    atomic_store(&sock->k, IO_SOCK_UNSPECIFIED);
     return gab_vmpush(gab_thisvm(gab), gab_err,
                       gab_string(gab, strerror(-result))),
            gab_union_cvalid(gab_nil);
+  }
 
   return gab_vmpush(gab_thisvm(gab), gab_ok), gab_union_cvalid(gab_nil);
 }
@@ -523,6 +530,8 @@ union gab_value_pair complete_socksend(struct gab_triple gab,
   }
 }
 
+// TODO: All this BearSSL stuff isn't thread-safe. Should I add a mutex around this?
+// Also, These functions need to properly yield instead of blocking the thread forever.
 union gab_value_pair complete_sslsocksend(struct gab_triple gab,
                                           struct gab_ssl_sock *sock,
                                           const char *data, size_t len) {
@@ -553,10 +562,13 @@ union gab_value_pair complete_sslsockconnect(struct gab_triple gab,
                                              const char *hostname,
                                              gab_int port) {
   struct qio_addr addr = {};
-  if (qio_addrfrom(hostname, port, &addr) < 0)
+  if (qio_addrfrom(hostname, port, &addr) < 0) {
+    // When the connect, fails, reset the socket
+    atomic_store(&sock->sock.k, IO_SOCK_SSLUNSPECIFIED);
     return gab_vmpush(gab_thisvm(gab), gab_err,
                       gab_string(gab, "Invalid address")),
            gab_union_cvalid(gab_nil);
+  }
 
   qd_t qd = qconnect(sock->sock.fd, &addr);
 
@@ -574,10 +586,13 @@ union gab_value_pair complete_sslsockconnect(struct gab_triple gab,
 
   int64_t result = qd_destroy(qd);
 
-  if (result < 0)
+  if (result < 0) {
+    // When the connect, fails, reset the socket
+    atomic_store(&sock->sock.k, IO_SOCK_SSLUNSPECIFIED);
     return gab_vmpush(gab_thisvm(gab), gab_err,
                       gab_string(gab, strerror(-result))),
            gab_union_cvalid(gab_nil);
+  }
 
   /*
    * Initialise the client context:

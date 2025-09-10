@@ -529,7 +529,7 @@ union gab_value_pair vvm_terminate(struct gab_triple gab, const char *fmt,
 
   gab_egkeep(gab.eg, gab_iref(gab, env));
 
-  v_gab_value_thrd_push(&gab.eg->err, err);
+  // v_gab_value_thrd_push(&gab.eg->err, err);
 
   assert(GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERRUNNING);
   GAB_VAL_TO_FIBER(fiber)->res_values = res;

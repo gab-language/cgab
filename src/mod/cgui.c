@@ -17,6 +17,8 @@
 
 #define RGFW_IMPLEMENTATION
 #define RGFW_OPENGL
+#define RGFW_DEBUG
+#define RGFW_PRINT_ERRORS
 #include "RGFW/RGFW.h"
 
 #define CLAY_IMPLEMENTATION
@@ -41,6 +43,7 @@ unsigned char fontData[] = {
 #embed "resources/SauceCodeProNerdFont-Regular.ttf"
 };
 
+#define SOKOL_DEBUG
 #define SOKOL_IMPL
 #define SOKOL_GLCORE
 #define SOKOL_EXTERNAL_GL_LOADER
@@ -71,10 +74,9 @@ void HandleClayErrors(Clay_ErrorData errorData) {
 /*
  * TODO: The channel put/take on the event and app channels don't yield here.
  * This blocks two threads on these channels, and if the user queues up a lot
- * of other fibers, the UI can appear to lock-up, as the user-fiber operating on these
- * channels *does* yield.
+ * of other fibers, the UI can appear to lock-up, as the user-fiber operating on
+ * these channels *does* yield.
  */
-
 void putevent(struct gab_triple gab, const char *type, const char *event,
               gab_value data1, gab_value data2, gab_value data3) {
   if (gui.evch != gab_cundefined) {
@@ -121,16 +123,16 @@ bool clay_RGFW_update(struct gab_triple gab, RGFW_window *win, double deltaTime,
     gab_value target = clayGetTopmostId(gab);
     switch (ev->button.type) {
     case RGFW_mouseScroll:
-      Clay_UpdateScrollContainers(false, (Clay_Vector2){0, ev->scroll.y},
-                                  deltaTime);
+      // Clay_UpdateScrollContainers(false, (Clay_Vector2){0, ev->scroll.y},
+      //                             deltaTime);
       return false;
     case RGFW_mouseLeft:
       putevent(gab, "mouse", "left", target, gab_nil, gab_nil);
-      Clay_SetPointerState(mousePosition, true);
+      // Clay_SetPointerState(mousePosition, true);
       return true;
     case RGFW_mouseRight:
       putevent(gab, "mouse", "right", target, gab_nil, gab_nil);
-      Clay_SetPointerState(mousePosition, true);
+      // Clay_SetPointerState(mousePosition, true);
       return true;
     }
 
@@ -141,11 +143,11 @@ bool clay_RGFW_update(struct gab_triple gab, RGFW_window *win, double deltaTime,
     switch (ev->button.value) {
     case RGFW_mouseLeft:
       putevent(gab, "mouse", "left", target, gab_nil, gab_nil);
-      Clay_SetPointerState(mousePosition, true);
+      // Clay_SetPointerState(mousePosition, true);
       return true;
     case RGFW_mouseRight:
       putevent(gab, "mouse", "right", target, gab_nil, gab_nil);
-      Clay_SetPointerState(mousePosition, true);
+      // Clay_SetPointerState(mousePosition, true);
       return true;
     }
 
@@ -153,12 +155,10 @@ bool clay_RGFW_update(struct gab_triple gab, RGFW_window *win, double deltaTime,
   }
   case RGFW_mousePosChanged:
     mousePosition = (Clay_Vector2){(float)ev->mouse.x, (float)ev->mouse.y};
-    Clay_SetPointerState(mousePosition, RGFW_isMousePressed(RGFW_mouseLeft));
+    // Clay_SetPointerState(mousePosition, RGFW_isMousePressed(RGFW_mouseLeft));
     return false;
   case RGFW_windowMoved:
   case RGFW_windowResized:
-    Clay_Dimensions dim = {(float)win->w, (float)win->h};
-    sclay_set_layout_dimensions(dim, 1);
     return false;
   case RGFW_keyPressed:
   case RGFW_keyReleased:
@@ -280,6 +280,13 @@ err:
 
 Clay_Color packedToClayColor(gab_value vcolor) {
   gab_uint color = gab_valtou(vcolor);
+
+  // return (Clay_Color){
+  //   255,
+  //   255,
+  //   255,
+  //   255,
+  // };
 
   return (Clay_Color){
       color >> 24 & 0xff,
@@ -765,11 +772,26 @@ bool dotuirender(struct gab_triple gab) {
 #endif
 
 bool doguirender(struct gab_triple gab) {
+
   Clay_RenderCommandArray renderCommands;
   if (!render(gab, &renderCommands))
     return false;
 
+  Clay_Dimensions dim = {
+      .width = gui.win.w,
+      .height = gui.win.h,
+  };
+  sclay_set_layout_dimensions(dim, 1);
+
   sg_begin_pass(&(sg_pass){
+      .action =
+          {
+              .colors[0] =
+                  {
+                      .load_action = SG_LOADACTION_CLEAR,
+                      .clear_value = {1.0f, 1.0f, 1.0f, 1.0f},
+                  },
+          },
       .swapchain =
           {
               .width = gui.win.w,
@@ -777,12 +799,19 @@ bool doguirender(struct gab_triple gab) {
               .sample_count = 1, // or 4 for MSAA
               .color_format = SG_PIXELFORMAT_RGBA8,
               .depth_format = SG_PIXELFORMAT_DEPTH_STENCIL,
+              .gl.framebuffer = 0,
           },
   });
 
   sgl_matrix_mode_modelview();
   sgl_load_identity();
+
   sclay_render(renderCommands, fonts);
+
+  GLenum err = glGetError();
+  if (err != GL_NO_ERROR)
+    fprintf(stderr, "GL error: 0x%04X\n", err);
+
   sgl_draw();
   sg_end_pass();
   sg_commit();
@@ -851,13 +880,12 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
       goto fin;
 
     Clay_SetLayoutDimensions((Clay_Dimensions){
-        .height = Clay_Termbox_Width(),
-        .width = Clay_Termbox_Height(),
+        .width = Clay_Termbox_Width(),
+        .height = Clay_Termbox_Height(),
     });
 
-    if (!dotuirender(gab)) {
+    if (!dotuirender(gab))
       goto fin;
-    }
 
     switch (gab_yield(gab)) {
     case sGAB_TERM:
@@ -878,40 +906,20 @@ fin:
   return gab_union_cinvalid;
 }
 #endif
-
-void guirenderloop(struct gab_triple gab) {
+GAB_DYNLIB_NATIVE_FN(ui, gui_render) {
   for (;;) {
-    if (RGFW_window_shouldClose(&gui.win) == RGFW_TRUE)
-      break;
-
     if (gab_chnisclosed(gui.appch))
-      break;
+      goto fin;
 
     if (gab_chnisclosed(gui.evch))
-      break;
-
-    RGFW_event ev;
-    while (RGFW_window_checkEvent(&gui.win, &ev)) {
-      if (ev.type == RGFW_quit)
-        break;
-
-      Clay_Dimensions dim = {(float)gui.win.w, (float)gui.win.h};
-      sclay_set_layout_dimensions(dim, 1);
-
-      if (clay_RGFW_update(gab, &gui.win, 10, &ev)) {
-        if (!doguirender(gab))
-          return;
-      }
-    }
-
-    gab_chnput(gab, gui.evch, gab_message(gab, "tick"));
+      goto fin;
 
     if (!doguirender(gab))
-      return;
+      goto fin;
 
     switch (gab_yield(gab)) {
     case sGAB_TERM:
-      return;
+      goto fin;
     case sGAB_COLL:
       gab_gcepochnext(gab);
       gab_sigpropagate(gab);
@@ -921,20 +929,61 @@ void guirenderloop(struct gab_triple gab) {
     }
   }
 
-  if (gui.evch != gab_cundefined)
-    gab_chnclose(gui.evch);
-
-  if (gui.appch != gab_cundefined)
-    gab_chnclose(gui.appch);
-
+fin:
+  gab_chnclose(gui.appch);
+  gab_chnclose(gui.evch);
+  // sclay_shutdown();
   RGFW_window_closePtr(&gui.win);
+  return gab_union_cinvalid;
+}
+
+GAB_DYNLIB_NATIVE_FN(ui, gui_event) {
+  for (;;) {
+    if (RGFW_window_shouldClose(&gui.win) == RGFW_TRUE)
+      goto fin;
+
+    if (gab_chnisclosed(gui.appch))
+      goto fin;
+
+    if (gab_chnisclosed(gui.evch))
+      goto fin;
+
+    RGFW_event ev;
+    while (RGFW_window_checkEvent(&gui.win, &ev)) {
+      if (gab_chnisclosed(gui.appch))
+        goto fin;
+
+      if (gab_chnisclosed(gui.evch))
+        goto fin;
+
+      if (ev.type == RGFW_quit)
+        goto fin;
+
+      clay_RGFW_update(gab, &gui.win, 10, &ev);
+    }
+
+    gab_chnput(gab, gui.evch, gab_message(gab, "tick"));
+
+    switch (gab_yield(gab)) {
+    case sGAB_TERM:
+      goto fin;
+    case sGAB_COLL:
+      gab_gcepochnext(gab);
+      gab_sigpropagate(gab);
+      break;
+    default:
+      break;
+    }
+  }
+
+fin:
+  gab_chnclose(gui.appch);
+  gab_chnclose(gui.evch);
+  return gab_union_cinvalid;
 }
 
 GAB_DYNLIB_NATIVE_FN(ui, run_gui) {
-  if (!RGFW_createWindowPtr("window", 0, 0, 800, 800,
-
-                            RGFW_windowCenter | RGFW_windowNoResize |
-                                RGFW_windowOpenGL,
+  if (!RGFW_createWindowPtr("window", 0, 0, 800, 800, RGFW_windowOpenGL,
                             &gui.win))
     return gab_vmpush(gab_thisvm(gab), gab_err,
                       gab_string(gab, "Failed to create window")),
@@ -960,9 +1009,21 @@ GAB_DYNLIB_NATIVE_FN(ui, run_gui) {
 
   sg_setup(&(sg_desc){
       .logger.func = slog_func,
+      .environment =
+          {
+              .defaults =
+                  {
+                      .color_format = SG_PIXELFORMAT_RGBA8,
+                      .depth_format = SG_PIXELFORMAT_DEPTH_STENCIL,
+                      .sample_count = 1,
+                  },
+          },
   });
 
   sgl_setup(&(sgl_desc_t){
+      .color_format = SG_PIXELFORMAT_RGBA8,
+      .depth_format = SG_PIXELFORMAT_DEPTH_STENCIL,
+      .sample_count = 1,
       .logger.func = slog_func,
   });
 
@@ -970,20 +1031,56 @@ GAB_DYNLIB_NATIVE_FN(ui, run_gui) {
 
   fonts[0] = sclay_add_font_mem(fontData, sizeof(fontData));
 
+  if (fonts[0] == FONS_INVALID) {
+    return gab_vmpush(gab_thisvm(gab), gab_err,
+                      gab_string(gab, "Failed to load Font")),
+           gab_union_cvalid(gab_nil);
+  }
+
   uint64_t totalMemorySize = Clay_MinMemorySize();
   Clay_Arena clayMemory = Clay_CreateArenaWithCapacityAndMemory(
       totalMemorySize, malloc(totalMemorySize));
 
   Clay_Initialize(clayMemory,
-                  (Clay_Dimensions){(float)gui.win.w, (float)gui.win.h},
-                  (Clay_ErrorHandler){HandleClayErrors});
+                  (Clay_Dimensions){
+                      .width = gui.win.w,
+                      .height = gui.win.h,
+                  },
+                  (Clay_ErrorHandler){
+                      HandleClayErrors,
+                  });
 
   Clay_SetMeasureTextFunction(sclay_measure_text, &fonts);
 
-  // Clay_SetDebugModeEnabled(true);
-  guirenderloop(gab);
+  Clay_SetDebugModeEnabled(true);
+  // union gab_value_pair res =
+  //     gab_asend(gab, (struct gab_send_argt){
+  //                        .message = gab_message(gab, mGAB_CALL),
+  //                        .receiver = gab_snative(gab,
+  //                        "ui\\gui\\loop\\render",
+  //                                                gab_mod_ui_gui_render),
+  //                    });
+  //
 
-  return gab_vmpush(gab_thisvm(gab), gab_ok), gab_union_cvalid(gab_nil);
+  union gab_value_pair res =
+      gab_asend(gab, (struct gab_send_argt){
+                         .message = gab_message(gab, mGAB_CALL),
+                         .receiver = gab_snative(gab, "ui\\gui\\loop\\event",
+                                                 gab_mod_ui_gui_event),
+                     });
+
+  if (res.status != gab_cvalid) {
+    RGFW_window_closePtr(&gui.win);
+    return gab_panicf(gab, "Couldn't start render thread");
+  }
+  return gab_mod_ui_gui_render(gab, 0, nullptr, gab_cundefined);
+
+  // if (res.status != gab_cvalid) {
+  //   RGFW_window_closePtr(&gui.win);
+  //   return gab_panicf(gab, "Couldn't start event thread");
+  // }
+  //
+  // return gab_vmpush(gab_thisvm(gab), gab_ok), gab_union_cvalid(gab_nil);
 }
 
 #ifdef GAB_PLATFORM_UNIX
@@ -1018,8 +1115,10 @@ GAB_DYNLIB_NATIVE_FN(ui, run_tui) {
 
   Clay_SetMeasureTextFunction(Clay_Termbox_MeasureText, nullptr);
 
-  Clay_SetLayoutDimensions(
-      (Clay_Dimensions){Clay_Termbox_Width(), Clay_Termbox_Height()});
+  Clay_SetLayoutDimensions((Clay_Dimensions){
+      .width = Clay_Termbox_Width(),
+      .height = Clay_Termbox_Height(),
+  });
 
   union gab_value_pair res =
       gab_asend(gab, (struct gab_send_argt){

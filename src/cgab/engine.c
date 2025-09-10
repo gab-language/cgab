@@ -1019,14 +1019,16 @@ gab_value swapdef(struct gab_triple gab, gab_value messages, va_list va) {
 
 bool gab_ndef(struct gab_triple gab, uint64_t len,
               struct gab_def_argt args[static len]) {
-  gab_value messages = gab.eg->messages;
+  for (;;) {
+    gab_value messages = atomic_load(&gab.eg->messages);
 
-  // TODO: Do atomic swaps of eg->messages.
-  gab_value m = dodef(gab, messages, len, args);
+    gab_value m = dodef(gab, messages, len, args);
 
-  gab.eg->messages = m;
+    if (atomic_compare_exchange_weak(&gab.eg->messages, &messages, m))
+      return true;
+  }
 
-  return m != gab_cinvalid;
+  return false;
 }
 
 struct gab_ostring *gab_egstrfind(struct gab_eg *self, uint64_t hash,
