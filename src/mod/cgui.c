@@ -63,9 +63,7 @@ struct gui {
   struct RGFW_window win;
   gab_value appch, evch;
   uint64_t n;
-};
-
-struct gui gui;
+} gui;
 
 void HandleClayErrors(Clay_ErrorData errorData) {
   fprintf(stderr, "%s\n", errorData.errorText.chars);
@@ -772,34 +770,32 @@ bool dotuirender(struct gab_triple gab) {
 #endif
 
 bool doguirender(struct gab_triple gab) {
-
-  Clay_RenderCommandArray renderCommands;
-  if (!render(gab, &renderCommands))
-    return false;
-
   Clay_Dimensions dim = {
       .width = gui.win.w,
       .height = gui.win.h,
   };
   sclay_set_layout_dimensions(dim, 1);
 
+  Clay_RenderCommandArray renderCommands;
+  if (!render(gab, &renderCommands))
+    return false;
+
   sg_begin_pass(&(sg_pass){
-      .action =
-          {
-              .colors[0] =
-                  {
-                      .load_action = SG_LOADACTION_CLEAR,
-                      .clear_value = {1.0f, 1.0f, 1.0f, 1.0f},
-                  },
-          },
+      // .action =
+      //     {
+      //         .colors[0] =
+      //             {
+      //                 .load_action = SG_LOADACTION_CLEAR,
+      //                 .clear_value = {1.0f, 1.0f, 1.0f, 1.0f},
+      //             },
+      //     },
       .swapchain =
           {
-              .width = gui.win.w,
-              .height = gui.win.h,
-              .sample_count = 1, // or 4 for MSAA
-              .color_format = SG_PIXELFORMAT_RGBA8,
-              .depth_format = SG_PIXELFORMAT_DEPTH_STENCIL,
-              .gl.framebuffer = 0,
+              .width = gui.win.w, .height = gui.win.h,
+              // .sample_count = 1, // or 4 for MSAA
+              // .color_format = SG_PIXELFORMAT_RGBA8,
+              // .depth_format = SG_PIXELFORMAT_DEPTH_STENCIL,
+              // .gl.framebuffer = 0,
           },
   });
 
@@ -809,12 +805,32 @@ bool doguirender(struct gab_triple gab) {
   sclay_render(renderCommands, fonts);
 
   GLenum err = glGetError();
-  if (err != GL_NO_ERROR)
+  if (err != GL_NO_ERROR) {
     fprintf(stderr, "GL error: 0x%04X\n", err);
+    return false;
+  }
 
   sgl_draw();
+  err = glGetError();
+  if (err != GL_NO_ERROR) {
+    fprintf(stderr, "GL error: 0x%04X\n", err);
+    return false;
+  }
   sg_end_pass();
+
+  err = glGetError();
+  if (err != GL_NO_ERROR) {
+    fprintf(stderr, "GL error: 0x%04X\n", err);
+    return false;
+  }
+
   sg_commit();
+
+  err = glGetError();
+  if (err != GL_NO_ERROR) {
+    fprintf(stderr, "GL error: 0x%04X\n", err);
+    return false;
+  }
 
   RGFW_window_swapBuffers_OpenGL(&gui.win);
   return true;
@@ -932,7 +948,7 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_render) {
 fin:
   gab_chnclose(gui.appch);
   gab_chnclose(gui.evch);
-  // sclay_shutdown();
+  sclay_shutdown();
   RGFW_window_closePtr(&gui.win);
   return gab_union_cinvalid;
 }
@@ -982,6 +998,41 @@ fin:
   return gab_union_cinvalid;
 }
 
+void test() {
+
+  RGFW_setClassName("RGFW Example");
+  RGFW_window *win =
+      RGFW_createWindow("RGFW Example Window", 500, 500, 500, 500,
+                        RGFW_windowCenter | RGFW_windowOpenGL);
+  RGFW_window_setExitKey(win, RGFW_escape);
+
+  if (!gladLoadGL(RGFW_getProcAddress_OpenGL))
+    return;
+
+  RGFW_window_makeCurrentContext_OpenGL(win);
+
+  while (!RGFW_window_shouldClose(win)) {
+    RGFW_pollEvents();
+
+    glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    glBegin(GL_TRIANGLES);
+    glColor3f(1.0f, 0.0f, 0.0f);
+    glVertex2f(-0.6f, -0.75f);
+    glColor3f(0.0f, 1.0f, 0.0f);
+    glVertex2f(0.6f, -0.75f);
+    glColor3f(0.0f, 0.0f, 1.0f);
+    glVertex2f(0.0f, 0.75f);
+    glEnd();
+
+    RGFW_window_swapBuffers_OpenGL(win);
+    glFlush();
+  }
+
+  RGFW_window_close(win);
+}
+
 GAB_DYNLIB_NATIVE_FN(ui, run_gui) {
   if (!RGFW_createWindowPtr("window", 0, 0, 800, 800, RGFW_windowOpenGL,
                             &gui.win))
@@ -1006,6 +1057,8 @@ GAB_DYNLIB_NATIVE_FN(ui, run_gui) {
     return gab_vmpush(gab_thisvm(gab), gab_err,
                       gab_string(gab, "Failed to load OpenGL")),
            gab_union_cvalid(gab_nil);
+
+  RGFW_window_makeCurrentContext_OpenGL(&gui.win);
 
   sg_setup(&(sg_desc){
       .logger.func = slog_func,
