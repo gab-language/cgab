@@ -1612,12 +1612,45 @@ bool gab_chnisclosed(gab_value c) {
   return channel->header.kind == kGAB_CHANNELCLOSED;
 };
 
+bool gab_chnmatches(gab_value c, gab_value *ptr) {
+  assert(gab_valkind(c) >= kGAB_CHANNEL &&
+         gab_valkind(c) <= kGAB_CHANNELCLOSED);
+  struct gab_ochannel *channel = GAB_VAL_TO_CHANNEL(c);
+  return atomic_load(&channel->data) == ptr;
+}
+
+/*
+ * The channel implementation is subtle here. There are two atomic components:
+ *  - data (An atomic gab_value* which points to the beginning of the slice of values in the channel)
+ *  - len (An atomic uint64 which contains the number of values in the channel's slice)
+ *
+ * Because there are *two* pieces of atomic state that need to be synced, the implementation is a little
+ * more nuanced.
+ *
+ * "Putters" need to wait until the *data* ptr is null. This is how gab_chnisfull() works. Therefore, "putters" wait in a loop like this:
+ *
+ * while(gab_chnisfull(channel))
+ *  yield()
+ *
+ *  "Takers" need to wait until the *len*  is not zero. This is how gab_chnisempty() works. Therefore, "takers" wait in a loop liek this:
+ *
+ *  while(gab_chnisempty(channel))
+ *    yield()
+ *
+ * This way, Putters don't stomp over other putters, and they also don't stomp over other takers.
+ * THis is because other putters are prevented from acting as they don't have the data ptr, and takers cant act until they have the len.
+ * This guarantees that no one sees the channel (Other than the putter who succeeded) until the data is completely ready.
+ *
+ * The inverse is true for takers. Once a taker succeeds in taking the len, no other takers will try. And no putters can act until the taker
+ * restores the *data* atomic.
+ */
+
 bool gab_chnisempty(gab_value c) {
   assert(gab_valkind(c) >= kGAB_CHANNEL &&
          gab_valkind(c) <= kGAB_CHANNELCLOSED);
 
   struct gab_ochannel *channel = GAB_VAL_TO_CHANNEL(c);
-  return atomic_load(&channel->data) == nullptr;
+  return atomic_load(&channel->len) == 0;
 };
 
 bool gab_chnisfull(gab_value c) {
@@ -1627,13 +1660,6 @@ bool gab_chnisfull(gab_value c) {
   struct gab_ochannel *channel = GAB_VAL_TO_CHANNEL(c);
   return atomic_load(&channel->data) != nullptr;
 };
-
-bool gab_chnmatches(gab_value c, gab_value *ptr) {
-  assert(gab_valkind(c) >= kGAB_CHANNEL &&
-         gab_valkind(c) <= kGAB_CHANNELCLOSED);
-  struct gab_ochannel *channel = GAB_VAL_TO_CHANNEL(c);
-  return atomic_load(&channel->data) == ptr;
-}
 
 /*
  * Abandon a put by storing nullptr into data.
@@ -1680,12 +1706,8 @@ gab_value channel_take(struct gab_ochannel *channel, uint64_t n,
   uint64_t len = n < avail ? n : avail;
   memcpy(dest, src, sizeof(gab_value) * len);
 
-  if (atomic_compare_exchange_weak(&channel->data, &src, nullptr))
-    // We do an atomic compare exchange here because after we put nullptr in the channel,
-    // it is empty to be put into. If we just stored here, we could accidentally write
-    // over our len value with zero. By storing the zero with the atomic compare exchange,
-    // we either keep the new len's value, or return the channel to the valid empty state of 0.
-    return atomic_compare_exchange_strong(&channel->len, &avail, 0), gab_number(len);
+  if (atomic_compare_exchange_weak(&channel->len, &avail, 0))
+    return atomic_store(&channel->data, nullptr), gab_number(len);
   else
     return gab_cundefined;
 }
