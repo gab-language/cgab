@@ -317,6 +317,7 @@ GAB_API_INLINE gab_value __gab_dtoval(gab_float value) {
 #define gab_cvalid (gab_primitive(INT32_MAX) - 3)
 
 #define gab_union_cinvalid ((union gab_value_pair){{gab_cinvalid}})
+#define gab_union_ctimeout(r) ((union gab_value_pair){{gab_ctimeout, r}})
 
 #define gab_union_cvalid(v)                                                    \
   (union gab_value_pair) { .status = gab_cundefined, .vresult = v }

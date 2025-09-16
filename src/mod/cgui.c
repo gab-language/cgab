@@ -834,64 +834,50 @@ bool doguirender(struct gab_triple gab) {
 
 #ifdef GAB_PLATFORM_UNIX
 
-// I think there is an issue with this solution.
-// Sometimes, the tui freezes up in release mode.
-// I think this is because some fibers are stuck in the queue behind the
-// tui_event or tui_render, and will never be run. Write up an assertin for this
-// and check if thats the issue
-//
-// This is *an* issue, but not *the* issue. There is a deadlock somewhere.
-
 GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
   for (;;) {
-    uint64_t len = q_gab_value_len(&gab.eg->jobs[gab.wkid].queue);
+    if (gab_chnisclosed(gui.appch))
+      goto fin;
 
-    if (len != 1)
-      return gab_panicf(gab, "QUEUE IS WRONG");
+    if (gab_chnisclosed(gui.evch))
+      goto fin;
 
     struct tb_event e;
+    int res = tb_peek_event(&e, 0);
 
-    for (;;) {
-      if (gab_chnisclosed(gui.appch))
+    switch (res) {
+    case TB_ERR_NO_EVENT:
+      break;
+    case TB_OK:
+      if (clay_termbox_update(gab, &e, 10))
         goto fin;
 
-      if (gab_chnisclosed(gui.evch))
-        goto fin;
-
-      int res = tb_peek_event(&e, 0);
-      switch (res) {
-      case TB_ERR_NO_EVENT:
-        break;
-      case TB_OK:
-        if (clay_termbox_update(gab, &e, 10))
-          goto fin;
-
+      continue;
+    case TB_ERR_POLL:
+      if (tb_last_errno() == EINTR)
         continue;
-      case TB_ERR_POLL:
-        if (tb_last_errno() == EINTR)
-          continue;
 
-        goto fin;
-      default:
-        break;
-      }
-
-      break;
-    }
-
-    switch (gab_yield(gab)) {
-    case sGAB_TERM:
       goto fin;
-    case sGAB_COLL:
-      gab_gcepochnext(gab);
-      gab_sigpropagate(gab);
-      break;
     default:
       break;
     }
 
-    gab_chnput(gab, gui.evch, gab_message(gab, "tick"));
+    break;
   }
+
+  switch (gab_yield(gab)) {
+  case sGAB_TERM:
+    goto fin;
+  case sGAB_COLL:
+    gab_gcepochnext(gab);
+    gab_sigpropagate(gab);
+    break;
+  default:
+    break;
+  }
+
+  gab_chnput(gab, gui.evch, gab_message(gab, "tick"));
+  return gab_union_ctimeout(gab_cundefined);
 
 fin:
   gab_chnclose(gui.appch);
@@ -926,6 +912,8 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
       break;
     }
   }
+
+  return gab_union_ctimeout(gab_cundefined);
 
 fin:
   gab_chnclose(gui.appch);

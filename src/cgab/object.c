@@ -1672,8 +1672,6 @@ void channel_abandon(struct gab_ochannel *channel) {
 /*
  * Try to put a slice into a channel. Uses weak atomic exchange, so
  *  must be used in loops.
- *
- * If the compare-exchange succeeds, also writes the len into the channel.
  */
 bool channel_put(struct gab_ochannel *channel, uint64_t len, gab_value *vs) {
   static gab_value *null = nullptr;
