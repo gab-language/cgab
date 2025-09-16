@@ -98,9 +98,8 @@ bool putevent(struct gab_triple gab, const char *type, const char *event,
 
 #define RGFW_KEY_CASE(keyname, str)                                            \
   case RGFW_##keyname:                                                         \
-    putevent(gab, "key", #str, gab_number(ev->key.mod),                        \
-             gab_bool(ev->type == RGFW_keyPressed), gab_cundefined);           \
-    break;
+    return putevent(gab, "key", #str, gab_number(ev->key.mod),                 \
+                    gab_bool(ev->type == RGFW_keyPressed), gab_cundefined);
 
 gab_value clayGetTopmostId(struct gab_triple gab) {
   Clay_ElementIdArray arr = Clay_GetPointerOverIds();
@@ -129,13 +128,11 @@ bool clay_RGFW_update(struct gab_triple gab, RGFW_window *win, double deltaTime,
       //                             deltaTime);
       return false;
     case RGFW_mouseLeft:
-      putevent(gab, "mouse", "left", target, gab_nil, gab_nil);
+      return putevent(gab, "mouse", "left", target, gab_nil, gab_nil);
       // Clay_SetPointerState(mousePosition, true);
-      return true;
     case RGFW_mouseRight:
-      putevent(gab, "mouse", "right", target, gab_nil, gab_nil);
+      return putevent(gab, "mouse", "right", target, gab_nil, gab_nil);
       // Clay_SetPointerState(mousePosition, true);
-      return true;
     }
 
     return false;
@@ -144,13 +141,11 @@ bool clay_RGFW_update(struct gab_triple gab, RGFW_window *win, double deltaTime,
     gab_value target = clayGetTopmostId(gab);
     switch (ev->button.value) {
     case RGFW_mouseLeft:
-      putevent(gab, "mouse", "left", target, gab_nil, gab_nil);
+      return putevent(gab, "mouse", "left", target, gab_nil, gab_nil);
       // Clay_SetPointerState(mousePosition, true);
-      return true;
     case RGFW_mouseRight:
-      putevent(gab, "mouse", "right", target, gab_nil, gab_nil);
+      return putevent(gab, "mouse", "right", target, gab_nil, gab_nil);
       // Clay_SetPointerState(mousePosition, true);
-      return true;
     }
 
     return false;
@@ -188,10 +183,9 @@ bool clay_RGFW_update(struct gab_triple gab, RGFW_window *win, double deltaTime,
       RGFW_KEY_CASE(F12, f12);
     default:
       const char event[] = {ev->key.sym, '\0'};
-      putevent(gab, "key", event, gab_number(ev->key.mod),
-               gab_bool(ev->type == RGFW_keyPressed), gab_cundefined);
+      return putevent(gab, "key", event, gab_number(ev->key.mod),
+                      gab_bool(ev->type == RGFW_keyPressed), gab_cundefined);
     }
-    return true;
 
   default:
     return false;
@@ -923,27 +917,27 @@ fin:
 }
 #endif
 GAB_DYNLIB_NATIVE_FN(ui, gui_render) {
-  for (;;) {
-    if (gab_chnisclosed(gui.appch))
-      goto fin;
+  if (gab_chnisclosed(gui.appch))
+    goto fin;
 
-    if (gab_chnisclosed(gui.evch))
-      goto fin;
+  if (gab_chnisclosed(gui.evch))
+    goto fin;
 
-    if (!doguirender(gab))
-      goto fin;
+  if (!doguirender(gab))
+    goto fin;
 
-    switch (gab_yield(gab)) {
-    case sGAB_TERM:
-      goto fin;
-    case sGAB_COLL:
-      gab_gcepochnext(gab);
-      gab_sigpropagate(gab);
-      break;
-    default:
-      break;
-    }
+  switch (gab_yield(gab)) {
+  case sGAB_TERM:
+    goto fin;
+  case sGAB_COLL:
+    gab_gcepochnext(gab);
+    gab_sigpropagate(gab);
+    break;
+  default:
+    break;
   }
+
+  return gab_union_ctimeout(gab_cundefined);
 
 fin:
   gab_chnclose(gui.appch);
@@ -954,43 +948,43 @@ fin:
 }
 
 GAB_DYNLIB_NATIVE_FN(ui, gui_event) {
-  for (;;) {
-    if (RGFW_window_shouldClose(&gui.win) == RGFW_TRUE)
-      goto fin;
+  if (RGFW_window_shouldClose(&gui.win) == RGFW_TRUE)
+    goto fin;
 
+  if (gab_chnisclosed(gui.appch))
+    goto fin;
+
+  if (gab_chnisclosed(gui.evch))
+    goto fin;
+
+  RGFW_event ev;
+  while (RGFW_window_checkEvent(&gui.win, &ev)) {
     if (gab_chnisclosed(gui.appch))
       goto fin;
 
     if (gab_chnisclosed(gui.evch))
       goto fin;
 
-    RGFW_event ev;
-    while (RGFW_window_checkEvent(&gui.win, &ev)) {
-      if (gab_chnisclosed(gui.appch))
-        goto fin;
-
-      if (gab_chnisclosed(gui.evch))
-        goto fin;
-
-      if (ev.type == RGFW_quit)
-        goto fin;
-
-      clay_RGFW_update(gab, &gui.win, 10, &ev);
-    }
-
-    gab_chnput(gab, gui.evch, gab_message(gab, "tick"));
-
-    switch (gab_yield(gab)) {
-    case sGAB_TERM:
+    if (ev.type == RGFW_quit)
       goto fin;
-    case sGAB_COLL:
-      gab_gcepochnext(gab);
-      gab_sigpropagate(gab);
-      break;
-    default:
-      break;
-    }
+
+    if (clay_RGFW_update(gab, &gui.win, 10, &ev))
+      goto fin;
   }
+
+  switch (gab_yield(gab)) {
+  case sGAB_TERM:
+    goto fin;
+  case sGAB_COLL:
+    gab_gcepochnext(gab);
+    gab_sigpropagate(gab);
+    break;
+  default:
+    break;
+  }
+
+  gab_chnput(gab, gui.evch, gab_message(gab, "tick"));
+  return gab_union_ctimeout(gab_cundefined);
 
 fin:
   gab_chnclose(gui.appch);
@@ -1203,11 +1197,11 @@ GAB_DYNLIB_NATIVE_FN(ui, run_tui) {
 GAB_DYNLIB_MAIN_FN {
   gab_value mod = gab_message(gab, "ui");
   gab_def(gab,
-          {
-              gab_message(gab, "run\\gui"),
-              mod,
-              gab_snative(gab, "run\\gui", gab_mod_ui_run_gui),
-          },
+          // {
+          //     gab_message(gab, "run\\gui"),
+          //     mod,
+          //     gab_snative(gab, "run\\gui", gab_mod_ui_run_gui),
+          // },
 #ifdef GAB_PLATFORM_UNIX
           {
               gab_message(gab, "run\\tui"),
