@@ -506,7 +506,7 @@ union gab_value_pair render_rect(struct gab_triple gab, gab_value props) {
   if (vid != gab_cundefined && gab_valkind(vid) != kGAB_MESSAGE)
     return gab_pktypemismatch(gab, vid, kGAB_MESSAGE);
 
-  CLAY(vid == gab_cundefined ? (Clay_ElementId){0}
+  CLAY(vid == gab_cundefined ? CLAY_IDI("", gui.n++)
                              : CLAY_SID(((Clay_String){
                                    .length = gab_strlen(vid),
                                    .chars = gab_strdata(&vid),
@@ -555,7 +555,7 @@ union gab_value_pair render_image(struct gab_triple gab, gab_value props) {
   if (vid != gab_cundefined && gab_valkind(vid) != kGAB_MESSAGE)
     return gab_pktypemismatch(gab, vid, kGAB_MESSAGE);
 
-  CLAY(vid == gab_cundefined ? (Clay_ElementId){0}
+  CLAY(vid == gab_cundefined ? CLAY_IDI("", gui.n++)
                              : CLAY_SID(((Clay_String){
                                    .length = gab_strlen(vid),
                                    .chars = gab_strdata(&vid),
