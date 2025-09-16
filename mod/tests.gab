@@ -47,7 +47,6 @@ test\result\t = { test\path: nil: test\receiver: nil: }?
     behavior\outcome = cmp .test\compare (lhs, rhs)
     # Get the suite we're executing
     suite = self.test\path .at 0 .unwrap
-    chan = suites\all .at suite .unwrap
     # Queue up the outcome of the comparison
     events <! (resolve: behavior\outcome, self.test\path, { lhs: lhs, cmp: cmp, rhs: rhs })
   end,
@@ -80,25 +79,12 @@ Suite = test\suite:.defclass(
   suite\behaviors: suite\name:
   default:
   {
-    suite\render: () => do
-      '\t$\n'.printf(self.suite\name.to\s) 
-      self
-        .suite\behaviors
-        .each behavior\render:
-    end
   })
-
-behavior\render: .defcase {
-  true:  t => 'P   $\n'.printf(t.behavior\path.at 1 .unwrap)
-  nil:   t => '... $\n'.printf(t.behavior\path.at 1 .unwrap)
-  false: t => 'F   $\n'.printf(t.behavior\path.at 1 .unwrap)
-}
 
 Behavior = test\behavior:.defclass(
   behavior\path: behavior\meta: behavior\outcome:
   default:
   {
-    behavior\render: () => self.behavior\outcome.behavior\render self
   })
 
 queue_tests = (filter_by_suite) => do
@@ -115,6 +101,8 @@ queue_tests = (filter_by_suite) => do
             body.each(t r) => do
               t.{ test\path: path, test\receiver: r }
             end
+
+            ok:
           end
 
           suites\all

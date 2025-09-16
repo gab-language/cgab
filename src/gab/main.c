@@ -31,6 +31,26 @@ mz_zip_archive zip = {0};
  */
 void propagate_term(int) { gab_sigterm(gab); }
 
+void clierror(const char *fmt, ...) {
+  va_list args;
+  va_start(args, fmt);
+
+  fprintf(stderr, "[gab] ");
+  vfprintf(stderr, fmt, args);
+
+  va_end(args);
+}
+
+void clisuccess(const char *fmt, ...) {
+  va_list args;
+  va_start(args, fmt);
+
+  fprintf(stderr, "[gab] ");
+  vfprintf(stderr, fmt, args);
+
+  va_end(args);
+}
+
 void print_err(struct gab_triple gab, gab_value err) {
   const char *str = gab_errtocs(gab, err);
   fprintf(stderr, "%s\n", str);
@@ -295,8 +315,7 @@ int run_repl(int flags, size_t nmodules, const char **modules) {
           .modules = modules,
           .roots =
               (const char *[]){
-                  gab_osprefix(GAB_VERSION_TAG "." GAB_TARGET_TRIPLE),
-                  "./",
+                  gab_osprefix(GAB_VERSION_TAG "." GAB_TARGET_TRIPLE), "./",
                   nullptr, // List terminator.
               },
           .resources =
@@ -349,8 +368,7 @@ int run_string(const char *string, int flags, size_t jobs, size_t nmodules,
           .modules = modules,
           .roots =
               (const char *[]){
-                  gab_osprefix(GAB_VERSION_TAG "." GAB_TARGET_TRIPLE),
-                  "./",
+                  gab_osprefix(GAB_VERSION_TAG "." GAB_TARGET_TRIPLE), "./",
                   nullptr, // List terminator.
               },
           .resources =
@@ -455,8 +473,7 @@ int run_file(const char *path, int flags, size_t jobs, size_t nmodules,
           .modules = modules,
           .roots =
               (const char *[]){
-                  gab_osprefix(GAB_VERSION_TAG "." GAB_TARGET_TRIPLE),
-                  "./",
+                  gab_osprefix(GAB_VERSION_TAG "." GAB_TARGET_TRIPLE), "./",
                   nullptr, // List terminator.
               },
           .resources =
@@ -562,7 +579,7 @@ bool module_handler(struct command_arguments *args) {
   args->argc--;
 
   if (args->argc <= 0) {
-    printf("[gab] CLI Error: no argument to flag '%s'\n", flag);
+    clierror("cli error: no argument to flag '%s'.\n", flag);
     return false;
   }
 
@@ -719,7 +736,7 @@ struct command_arguments parse_options(int argc, const char **argv,
         }
       }
 
-      printf("[gab] CLI Error: unrecognized flag '%s'\n", arg);
+      clierror("cli error: unrecognized flag '%s'.\n", arg);
       exit(1);
     } else {
       for (int j = 0; j < MAX_OPTIONS; j++) {
@@ -737,7 +754,7 @@ struct command_arguments parse_options(int argc, const char **argv,
         }
       }
 
-      printf("[gab] CLI Error: unrecognized flag '%s'\n", arg);
+      clierror("cli error: unrecognized flag '%s'.\n", arg);
       exit(1);
     }
 
@@ -774,13 +791,13 @@ int download_gab(const char *pkg, const char *triple) {
   const char *tag = split_pkg(pkgbuf);
 
   if (!tag) {
-    printf("[gab] CLI Error: Could not resolve package and tag for '%s'\n",
+    clierror("cli error: Could not resolve package and tag for '%s'.\n",
            pkgbuf);
     return false;
   }
 
   if (!strlen(tag)) {
-    printf("[gab] No tag specified. Defaulting to '" GAB_VERSION_TAG "'\n");
+    clisuccess("No tag specified. Defaulting to '" GAB_VERSION_TAG "'.\n");
     tag = GAB_VERSION_TAG;
   }
 
@@ -791,22 +808,22 @@ int download_gab(const char *pkg, const char *triple) {
   tagbuf[taglen] = '\0';
 
   if (!strlen(pkgbuf)) {
-    printf("[gab] No package specified. Defaulting to 'Gab'\n");
+    clisuccess("No package specified. Defaulting to 'Gab'.\n");
     strncpy(pkgbuf, "Gab", 4);
   }
 
-  printf("[gab] Resolved package '%s'\n", pkgbuf);
-  printf("[gab] Resolved tag '%s'\n", tagbuf);
+  clisuccess("Resolved package '%s'.\n", pkgbuf);
+  clisuccess("Resolved tag '%s'.\n", tagbuf);
 
   const char *gab_prefix = gab_osprefix("");
 
   if (gab_prefix == nullptr) {
-    printf("[gab] CLI Error: could not determine installation prefix\n");
+    clierror("cli error: could not determine installation prefix.\n");
     return false;
   }
 
   if (!gab_osmkdirp(gab_prefix)) {
-    printf("[gab] CLI Error: Failed to create directory at %s\n", gab_prefix);
+    clierror("cli error: Failed to create directory at %s.\n", gab_prefix);
     return false;
   };
 
@@ -820,14 +837,14 @@ int download_gab(const char *pkg, const char *triple) {
   const char *location_prefix = gab_osprefix(locbuf);
 
   if (location_prefix == nullptr) {
-    printf("[gab] CLI Error: could not determine installation prefix\n");
+    clierror("cli error: could not determine installation prefix.\n");
     return false;
   }
 
-  printf("[gab] Resolved installation prefix: %s\n", location_prefix);
+  clisuccess("Resolved installation prefix: %s.\n", location_prefix);
 
   if (!gab_osmkdirp(location_prefix)) {
-    printf("[gab] CLI Error: Failed to create directory at %s\n",
+    clierror("cli error: Failed to create directory at %s.\n",
            location_prefix);
     return false;
   };
@@ -851,8 +868,8 @@ int download_gab(const char *pkg, const char *triple) {
                          url.data);
 
     if (res) {
-      printf("[gab] CLI Error: failed to download release %s for target %s.\n",
-             tagbuf, triple);
+      clierror("cli error: failed to download release %s for target %s.\n",
+               tagbuf, triple);
       return false;
     }
 
@@ -860,8 +877,8 @@ int download_gab(const char *pkg, const char *triple) {
     res = gab_osproc("chmod", "+x", location.data);
 
     if (res) {
-      printf("[gab] CLI Error: failed to change permissions of binary %s.",
-             location.data);
+      clierror("cli error: failed to change permissions of binary %s.",
+               location.data);
       return false;
     }
 #endif
@@ -869,7 +886,7 @@ int download_gab(const char *pkg, const char *triple) {
     v_char_destroy(&location);
     v_char_destroy(&url);
 
-    printf("[gab] Downloaded binary for release: %s.\n", tagbuf);
+    clisuccess("Downloaded binary for release: %s.\n", tagbuf);
 
     v_char_spush(&url, s_char_cstr(GAB_RELEASE_DOWNLOAD_URL));
     v_char_spush(&url, s_char_cstr(tagbuf));
@@ -884,13 +901,13 @@ int download_gab(const char *pkg, const char *triple) {
 
     // Fetch release modules
     res = gab_osproc("curl", "-L", "-#", "-o", location.data, url.data);
-    printf("[gab] Downloaded modules for release: %s.\n", tagbuf);
+    clisuccess("Downloaded modules for release: %s.\n", tagbuf);
 
     v_char_destroy(&location);
     v_char_destroy(&url);
 
     if (res) {
-      printf("[gab] CLI Error: failed to download release %s", tagbuf);
+      clierror("cli error: failed to download release %s", tagbuf);
       return false;
     }
 
@@ -905,11 +922,11 @@ int download_gab(const char *pkg, const char *triple) {
     res = gab_osproc("tar", "xzf", location.data, "-C", url.data);
 
     if (res) {
-      printf("[gab] CLI Error: failed to download release %s", tagbuf);
+      clierror("cli error: failed to download release %s", tagbuf);
       return false;
     }
 
-    printf("[gab] Extracted modules.\n");
+    clisuccess("Extracted modules.\n");
 
     v_char_destroy(&location);
     v_char_destroy(&url);
@@ -927,13 +944,13 @@ int download_gab(const char *pkg, const char *triple) {
     v_char_push(&location, '\0');
 
     res = gab_osproc("curl", "-L", "-#", "-o", location.data, url.data);
-    printf("[gab] Downloaded development files for release: %s.\n", tagbuf);
+    clisuccess("Downloaded development files for release: %s.\n", tagbuf);
 
     v_char_destroy(&location);
     v_char_destroy(&url);
 
     if (res) {
-      printf("[gab] CLI Error: failed to download release %s", tagbuf);
+      clierror("cli error: failed to download release %s", tagbuf);
       return false;
     }
 
@@ -948,14 +965,14 @@ int download_gab(const char *pkg, const char *triple) {
     res = gab_osproc("tar", "xzf", location.data, "-C", url.data);
 
     if (res) {
-      printf("[gab] CLI Error: failed to download release %s", tagbuf);
+      clierror("cli error: failed to download release %s", tagbuf);
       return v_char_destroy(&location), v_char_destroy(&url), false;
     }
 
-    printf("[gab] Extracted development files.\n");
+    clisuccess("Extracted development files.\n");
 
     if (!strcmp(triple, GAB_TARGET_TRIPLE)) {
-      printf(
+      clisuccess(
           "\nCongratulations! %s@%s successfully installed.\n\n"
           "However, the binary is likely not available in your PATH yet.\n"
           "It is not recommended to add '%s' to PATH directly.\n\nInstead:\n "
@@ -977,13 +994,14 @@ int get(struct command_arguments args) {
   if (download_gab(pkg, GAB_TARGET_TRIPLE))
     return 0;
 
-  printf("[gab] CLI Error: Installing packages not yet supported\n");
+  clierror("cli error: The 'get' subcommand does not support downloading other "
+           "packages yet.\n");
   return 1;
 }
 
 int run(struct command_arguments args) {
   if (args.argc < 1) {
-    printf("[gab] CLI Error: not enough arguments\n");
+    clierror("cli error: Insufficient arguments to subcommand 'run'.\n");
     return 1;
   }
 
@@ -1001,7 +1019,7 @@ int run(struct command_arguments args) {
 
 int exec(struct command_arguments args) {
   if (args.argc < 1) {
-    printf("[gab] CLI Error: not enough arguments\n");
+    clierror("cli error: Insufficient arguments to subcommand 'exec'.\n");
     return 1;
   }
 
@@ -1034,7 +1052,7 @@ void cmd_summary(int i) {
     if (!opt.name)
       break;
 
-    printf("\t--%-5s\t-%c\t%s\n", opt.name, opt.shorthand, opt.desc);
+    printf("\t--%-5s\t-%c\t%s.\n", opt.name, opt.shorthand, opt.desc);
   }
 }
 
@@ -1052,13 +1070,13 @@ void cmd_details(int i) {
     if (!opt.name)
       break;
 
-    printf("\t--%-5s\t-%c\t%s\n", opt.name, opt.shorthand, opt.desc);
+    printf("\t--%-5s\t-%c\t%s.\n", opt.name, opt.shorthand, opt.desc);
   }
 }
 
 int help(struct command_arguments args) {
   if (args.argc < 1) {
-    printf("gab\\cli version %s\n", GAB_VERSION_TAG);
+    printf("gab\\cli version %s.\n", GAB_VERSION_TAG);
 
     // Print command summaries
     for (int i = 0; i < N_COMMANDS; i++)
@@ -1077,7 +1095,7 @@ int help(struct command_arguments args) {
     }
   }
 
-  printf("[gab] CLI Error: unrecognized subcommand '%s'\n", subcommand);
+  clierror("cli error: Unrecognized subcommand '%s'.\n", subcommand);
   return 1;
 }
 
@@ -1103,7 +1121,7 @@ bool add_module(mz_zip_archive *zip_o, const char *module) {
   const char *path = gab_resolve(gab, module, &prefix, &suffix);
 
   if (!path) {
-    printf("[gab] cli error: Could not resolve module %s\n", module);
+    clierror("cli error: Could not resolve module %s.\n", module);
     return false;
   }
 
@@ -1117,14 +1135,14 @@ bool add_module(mz_zip_archive *zip_o, const char *module) {
   memcpy(modulename + lenprefix + lenpath, suffix, lensuffix);
   modulename[lenprefix + lenpath + lensuffix] = '\0';
 
-  printf("[gab] Resolve module %s to %s. Storing in archive as %s.\n", module,
-         path, modulename);
+  clisuccess("Resolve module %s to %s. Storing in archive as %s.\n", module,
+             path, modulename);
 
   if (!mz_zip_writer_add_file(zip_o, modulename, path, nullptr, 0,
                               MZ_BEST_COMPRESSION)) {
     mz_zip_error e = mz_zip_get_last_error(zip_o);
     const char *estr = mz_zip_get_error_string(e);
-    printf("[gab] mz error zipping %s: %s", path, estr);
+    clierror("zip error: While zipping '%s' - %s.\n", path, estr);
     mz_zip_writer_end(zip_o);
     return false;
   }
@@ -1138,7 +1156,7 @@ const char *dynlib_fileending = GAB_DYNLIB_FILEENDING;
 int build(struct command_arguments args) {
   if (args.flags & FLAG_BUILD_TARGET) {
     if (args.argc == 0) {
-      printf("[gab] CLI ERROR: Expected argument\n");
+      clierror("cli error: Expected argument to build command.\n");
       return 1;
     }
 
@@ -1157,14 +1175,14 @@ int build(struct command_arguments args) {
     } else if (!strcmp(target, "aarch64-windows-gnu")) {
       dynlib_fileending = ".dll";
     } else {
-      printf("[gab] CLI ERROR: Unrecognized target %s\n", target);
+      clierror("cli error: Unrecognized target '%s'.\n", target);
       return 1;
     }
 
     args.argv++;
     args.argc--;
 
-    printf("[gab] Build target is %s: %s\n", target, dynlib_fileending);
+    clisuccess("Build target is %s: %s.\n", target, dynlib_fileending);
     if (!download_gab("@", target))
       return 1;
   }
@@ -1187,7 +1205,7 @@ int build(struct command_arguments args) {
           .modules = modules,
           .roots =
               (const char *[]){
-                "./",
+                  "./",
                   gab_osprefix(location.data),
                   nullptr,
               },
@@ -1207,7 +1225,7 @@ int build(struct command_arguments args) {
     return gab_destroy(gab), 1;
 
   if (args.argc < 1) {
-    printf("[gab] CLI ERROR: Missing bundle arguments to build subcommand");
+    clierror("app error: missing bundle argument to build subcommand.\n");
     return 1;
   }
 
@@ -1237,14 +1255,15 @@ int build(struct command_arguments args) {
 
   FILE *exe = fopen(exepath.data, "r");
   if (!exe) {
-    printf("[gab] CLI Error: Could not open exe file at: %s\n", exepath.data);
+    clierror("app error: could not open gab executable at '%s'.\n",
+             exepath.data);
     return 1;
   }
   v_char_destroy(&exepath);
 
   FILE *bundle_f = fopen(bundle, "w");
   if (!bundle_f) {
-    printf("[gab] CLI Error: Could not open bundle file: %s\n", bundle);
+    clierror("app error: could not open bundle file '%s'.\n", bundle);
     return 1;
   }
 
@@ -1255,7 +1274,7 @@ int build(struct command_arguments args) {
   if (!mz_zip_writer_init_cfile(&zip_o, bundle_f, 0)) {
     mz_zip_error e = mz_zip_get_last_error(&zip_o);
     const char *estr = mz_zip_get_error_string(e);
-    printf("[gab] mz error: %s", estr);
+    clierror("zip error: %s.\n", estr);
     return 1;
   }
 
@@ -1274,7 +1293,7 @@ int build(struct command_arguments args) {
   if (!mz_zip_writer_finalize_archive(&zip_o)) {
     mz_zip_error e = mz_zip_get_last_error(&zip_o);
     const char *estr = mz_zip_get_error_string(e);
-    printf("[gab] mz Error: %s", estr);
+    clierror("zip error: %s.\n", estr);
     mz_zip_writer_end(&zip_o);
     return 1;
   }
@@ -1292,7 +1311,7 @@ int build(struct command_arguments args) {
   }
 #endif
 
-  printf("[gab] Success! Bundled module can be found at: %s\n", bundle);
+  printf("[gab] Success! Bundled module can be found at: %s.\n", bundle);
   return 0;
 }
 

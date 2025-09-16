@@ -1,5 +1,6 @@
 #include "colors.h"
 #include "core.h"
+#include <stdatomic.h>
 #define GAB_COLORS_IMPL
 #include "colors.h"
 #define GAB_OPCODE_NAMES_IMPL
@@ -1616,14 +1617,7 @@ bool gab_chnisempty(gab_value c) {
          gab_valkind(c) <= kGAB_CHANNELCLOSED);
 
   struct gab_ochannel *channel = GAB_VAL_TO_CHANNEL(c);
-  switch (channel->header.kind) {
-  case kGAB_CHANNELCLOSED:
-    return true;
-  case kGAB_CHANNEL:
-    return atomic_load(&channel->data) == nullptr;
-  }
-  assert(false && "unreachable");
-  return false;
+  return atomic_load(&channel->data) == nullptr;
 };
 
 bool gab_chnisfull(gab_value c) {
@@ -1631,14 +1625,7 @@ bool gab_chnisfull(gab_value c) {
          gab_valkind(c) <= kGAB_CHANNELCLOSED);
 
   struct gab_ochannel *channel = GAB_VAL_TO_CHANNEL(c);
-  switch (channel->header.kind) {
-  case kGAB_CHANNELCLOSED:
-    return false;
-  case kGAB_CHANNEL:
-    return atomic_load(&channel->data) != nullptr;
-  }
-  assert(false && "unreachable");
-  return false;
+  return atomic_load(&channel->data) != nullptr;
 };
 
 bool gab_chnmatches(gab_value c, gab_value *ptr) {
@@ -1694,7 +1681,11 @@ gab_value channel_take(struct gab_ochannel *channel, uint64_t n,
   memcpy(dest, src, sizeof(gab_value) * len);
 
   if (atomic_compare_exchange_weak(&channel->data, &src, nullptr))
-    return atomic_store(&channel->len, 0), gab_number(len);
+    // We do an atomic compare exchange here because after we put nullptr in the channel,
+    // it is empty to be put into. If we just stored here, we could accidentally write
+    // over our len value with zero. By storing the zero with the atomic compare exchange,
+    // we either keep the new len's value, or return the channel to the valid empty state of 0.
+    return atomic_compare_exchange_strong(&channel->len, &avail, 0), gab_number(len);
   else
     return gab_cundefined;
 }

@@ -57,6 +57,7 @@ unsigned char fontData[] = {
 #define SOKOL_CLAY_IMPL
 #include "Clay/renderers/sokol/sokol_clay.h"
 
+#include "engine.h"
 #include "gab.h"
 
 struct gui {
@@ -75,7 +76,7 @@ void HandleClayErrors(Clay_ErrorData errorData) {
  * of other fibers, the UI can appear to lock-up, as the user-fiber operating on
  * these channels *does* yield.
  */
-void putevent(struct gab_triple gab, const char *type, const char *event,
+bool putevent(struct gab_triple gab, const char *type, const char *event,
               gab_value data1, gab_value data2, gab_value data3) {
   if (gui.evch != gab_cundefined) {
     gab_value ev[] = {
@@ -86,10 +87,13 @@ void putevent(struct gab_triple gab, const char *type, const char *event,
 
     gab_niref(gab, 1, LEN_CARRAY(ev), ev);
 
-    gab_nchnput(gab, gui.evch, len, ev);
+    if (gab_nchnput(gab, gui.evch, len, ev) == gab_cinvalid)
+      return true;
 
     gab_ndref(gab, 1, LEN_CARRAY(ev), ev);
   }
+
+  return false;
 }
 
 #define RGFW_KEY_CASE(keyname, str)                                            \
@@ -198,9 +202,8 @@ bool clay_RGFW_update(struct gab_triple gab, RGFW_window *win, double deltaTime,
 
 #define TERMBOX_KEY_CASE(key, str)                                             \
   case TB_KEY_##key:                                                           \
-    putevent(gab, "key", #str, gab_number(e->mod), gab_bool(true),             \
-             gab_cundefined);                                                  \
-    break;
+    return putevent(gab, "key", #str, gab_number(e->mod), gab_bool(true),      \
+                    gab_cundefined);
 
 bool clay_termbox_update(struct gab_triple gab, struct tb_event *e,
                          double deltaTime) {
@@ -232,38 +235,31 @@ bool clay_termbox_update(struct gab_triple gab, struct tb_event *e,
       TERMBOX_KEY_CASE(F12, f12);
     default:
       const char ev[] = {e->ch, '\0'};
-      putevent(gab, "key", ev, gab_number(e->mod), gab_bool(true),
-               gab_cundefined);
-      break;
+      return putevent(gab, "key", ev, gab_number(e->mod), gab_bool(true),
+                      gab_cundefined);
     }
-    return true;
   case TB_EVENT_MOUSE:
     switch (e->key) {
     case TB_KEY_MOUSE_RELEASE:
       // Clay_SetPointerState((Clay_Vector2){e->x, e->y}, false);
-      putevent(gab, "mouse", "left", gab_number(0), gab_false,
-               clayGetTopmostId(gab));
-      return true;
+      return putevent(gab, "mouse", "left", gab_number(0), gab_false,
+                      clayGetTopmostId(gab));
     case TB_KEY_MOUSE_RIGHT:
       // Clay_SetPointerState((Clay_Vector2){e->x, e->y}, false);
-      putevent(gab, "mouse", "right", gab_number(0), gab_true,
-               clayGetTopmostId(gab));
-      return true;
+      return putevent(gab, "mouse", "right", gab_number(0), gab_true,
+                      clayGetTopmostId(gab));
     case TB_KEY_MOUSE_LEFT:
       // Clay_SetPointerState((Clay_Vector2){e->x, e->y}, true);
-      putevent(gab, "mouse", "left", gab_number(0), gab_true,
-               clayGetTopmostId(gab));
-      return true;
+      return putevent(gab, "mouse", "left", gab_number(0), gab_true,
+                      clayGetTopmostId(gab));
     case TB_KEY_MOUSE_WHEEL_UP:
       // Clay_UpdateScrollContainers(false, (Clay_Vector2){0, e->y}, deltaTime);
-      putevent(gab, "mouse", "scroll\\up", gab_number(0), gab_false,
-               clayGetTopmostId(gab));
-      return true;
+      return putevent(gab, "mouse", "scroll\\up", gab_number(0), gab_false,
+                      clayGetTopmostId(gab));
     case TB_KEY_MOUSE_WHEEL_DOWN:
       // Clay_UpdateScrollContainers(false, (Clay_Vector2){0, e->y}, deltaTime);
-      putevent(gab, "mouse", "scroll\\down", gab_number(0), gab_false,
-               clayGetTopmostId(gab));
-      return true;
+      return putevent(gab, "mouse", "scroll\\down", gab_number(0), gab_false,
+                      clayGetTopmostId(gab));
     default:
       goto err;
     }
@@ -837,8 +833,22 @@ bool doguirender(struct gab_triple gab) {
 }
 
 #ifdef GAB_PLATFORM_UNIX
+
+// I think there is an issue with this solution.
+// Sometimes, the tui freezes up in release mode.
+// I think this is because some fibers are stuck in the queue behind the
+// tui_event or tui_render, and will never be run. Write up an assertin for this
+// and check if thats the issue
+//
+// This is *an* issue, but not *the* issue. There is a deadlock somewhere.
+
 GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
   for (;;) {
+    uint64_t len = q_gab_value_len(&gab.eg->jobs[gab.wkid].queue);
+
+    if (len != 1)
+      return gab_panicf(gab, "QUEUE IS WRONG");
+
     struct tb_event e;
 
     for (;;) {
@@ -853,7 +863,9 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
       case TB_ERR_NO_EVENT:
         break;
       case TB_OK:
-        clay_termbox_update(gab, &e, 10);
+        if (clay_termbox_update(gab, &e, 10))
+          goto fin;
+
         continue;
       case TB_ERR_POLL:
         if (tb_last_errno() == EINTR)

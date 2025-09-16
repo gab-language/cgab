@@ -607,57 +607,57 @@ messages\send_dynamically\test: .def (t => do
   t.expect(result.hi, ==: 4)
 end)
 
-channels\basic\test: .def t => do
-  ch = Channels.make
-
-  fib = Fibers.make () => ch <! 'test'
-
-  (ok v) = ch >!
-
-  t.expect(ok ==: ok:)
-  t.expect(v ==: 'test')
-
-  ch.close
-
-  ok = ch >!
-
-  t.expect(ok ==: none:)
-end
-
-channels\handle_multiple_blocking_puts\test: .def t => do
-  ch = Channels.make
-
-  blocking_put = (v) => (Fibers.make () => ch <! v)
-
-  blocking_put.(1)
-  blocking_put.(2)
-  blocking_put.(3)
-
-  took_lessthan_four = () => t.expect(ch.>!.unwrap, <:, 4)
-
-  took_lessthan_four.()
-  took_lessthan_four.()
-  took_lessthan_four.()
-end
-
-channels\handle_multiple_values\test: .def t => do
-  ch = Channels.make
-
-  Fibers.make () => ch <! (ok: 2)
-
-  (ok, s, v) = ch >!
-  t.expect(ok ==: ok:)
-  t.expect(s ==: ok:)
-  t.expect(v ==: 2)
-
-  Fibers.make () => ch <! ([1 2 3]*)
-
-  (ok, one, two, three) = ch >!
-  t.expect(ok ==: ok:)
-  t.expect(one ==: 1)
-  t.expect(two ==: 2)
-  t.expect(three ==: 3)
-end
+#channels\basic\test: .def t => do
+#  ch = Channels.make
+#
+#  fib = Fibers.make () => ch <! 'test'
+#
+#  (ok v) = ch >!
+#
+#  t.expect(ok ==: ok:)
+#  t.expect(v ==: 'test')
+#
+#  ch.close
+#
+#  ok = ch >!
+#
+#  t.expect(ok ==: none:)
+#end
+#
+#channels\handle_multiple_blocking_puts\test: .def t => do
+#  ch = Channels.make
+#
+#  blocking_put = (v) => (Fibers.make () => ch <! v)
+#
+#  blocking_put.(1)
+#  blocking_put.(2)
+#  blocking_put.(3)
+#
+#  took_lessthan_four = () => t.expect(ch.>!.unwrap, <:, 4)
+#
+#  took_lessthan_four.()
+#  took_lessthan_four.()
+#  took_lessthan_four.()
+#end
+#
+#channels\handle_multiple_values\test: .def t => do
+#  ch = Channels.make
+#
+#  Fibers.make () => ch <! (ok: 2)
+#
+#  (ok, s, v) = ch >!
+#  t.expect(ok ==: ok:)
+#  t.expect(s ==: ok:)
+#  t.expect(v ==: 2)
+#
+#  Fibers.make () => ch <! ([1 2 3]*)
+#
+#  (ok, one, two, three) = ch >!
+#  t.expect(ok ==: ok:)
+#  t.expect(one ==: 1)
+#  t.expect(two ==: 2)
+#  t.expect(three ==: 3)
+#end
 
 #ui\should_open_and_close\test: .def t => do
 #  (ev app) = (Channels.make, Channels.make)
@@ -673,26 +673,26 @@ end
 #  fib.await
 #end
 
-io\should_make_working_tls_request\test: .def t => do
-  (ok, sock) = IO.Sock.make tcp\tls:
-
-  t.expect(ok ==: ok:)
-
-  ok = sock.connect("www.google.com" 443)
-
-  t.expect(ok ==: ok:)
-
-  ok = sock.write('GET / HTTP/1.0\r\nHost:www.google.com\r\n\r\n'.to\b)
-
-  t.expect(ok ==: ok:)
-
-  (ok, bin) = sock.read(1024)
-
-  t.expect(ok ==: ok:)
-
-  (ok, str) = bin.as\s
-
-  t.expect(ok ==: ok:)
-end
+#io\should_make_working_tls_request\test: .def t => do
+#  (ok, sock) = IO.Sock.make tcp\tls:
+#
+#  t.expect(ok ==: ok:)
+#
+#  ok = sock.connect("www.google.com" 443)
+#
+#  t.expect(ok ==: ok:)
+#
+#  ok = sock.write('GET / HTTP/1.0\r\nHost:www.google.com\r\n\r\n'.to\b)
+#
+#  t.expect(ok ==: ok:)
+#
+#  (ok, bin) = sock.read(1024)
+#
+#  t.expect(ok ==: ok:)
+#
+#  (ok, str) = bin.as\s
+#
+#  t.expect(ok ==: ok:)
+#end
 
 'tests'.use

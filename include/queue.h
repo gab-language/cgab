@@ -50,6 +50,10 @@ LINKAGE bool METHOD(is_full)(TYPENAME *self) {
   return self->tail - self->head >= SIZE;
 }
 
+LINKAGE uint64_t METHOD(len)(TYPENAME *self) {
+  return self->tail - self->head;
+}
+
 LINKAGE bool METHOD(push)(TYPENAME *self, T value) {
   if (METHOD(is_full)(self))
     return false;
