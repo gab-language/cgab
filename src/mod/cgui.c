@@ -57,7 +57,6 @@ unsigned char fontData[] = {
 #define SOKOL_CLAY_IMPL
 #include "Clay/renderers/sokol/sokol_clay.h"
 
-#include "engine.h"
 #include "gab.h"
 
 struct gui {
@@ -432,32 +431,32 @@ union gab_value_pair render_box(struct gab_triple gab, gab_value props,
 
   Clay_LayoutConfig layout = parseLayout(gab, props);
 
-  CLAY({
-      .id = vid == gab_cundefined ? CLAY_IDI("", gui.n++)
-                                  : CLAY_SID(((Clay_String){
-                                        .length = gab_strlen(vid),
-                                        .chars = gab_strdata(&vid),
-                                    })),
-      .layout = layout,
-      .cornerRadius =
-          {
-              cornerRadius,
-              cornerRadius,
-              cornerRadius,
-              cornerRadius,
-          },
-      .border =
-          {
-              .color = packedToClayColor(vborderColor),
-              .width =
-                  {
-                      gab_valtou(vborderWidth),
-                      gab_valtou(vborderWidth),
-                      gab_valtou(vborderWidth),
-                      gab_valtou(vborderWidth),
-                  },
-          },
-  }) {
+  CLAY(vid == gab_cundefined ? CLAY_IDI("", gui.n++)
+                             : CLAY_SID(((Clay_String){
+                                   .length = gab_strlen(vid),
+                                   .chars = gab_strdata(&vid),
+                               })),
+       {
+           .layout = layout,
+           .cornerRadius =
+               {
+                   cornerRadius,
+                   cornerRadius,
+                   cornerRadius,
+                   cornerRadius,
+               },
+           .border =
+               {
+                   .color = packedToClayColor(vborderColor),
+                   .width =
+                       {
+                           gab_valtou(vborderWidth),
+                           gab_valtou(vborderWidth),
+                           gab_valtou(vborderWidth),
+                           gab_valtou(vborderWidth),
+                       },
+               },
+       }) {
     render_componentlist(gab, children, layout.layoutDirection);
   };
 
@@ -507,21 +506,21 @@ union gab_value_pair render_rect(struct gab_triple gab, gab_value props) {
   if (vid != gab_cundefined && gab_valkind(vid) != kGAB_MESSAGE)
     return gab_pktypemismatch(gab, vid, kGAB_MESSAGE);
 
-  CLAY({
-      .id = vid == gab_cundefined ? (Clay_ElementId){0}
-                                  : CLAY_SID(((Clay_String){
-                                        .length = gab_strlen(vid),
-                                        .chars = gab_strdata(&vid),
-                                    })),
-      .backgroundColor = packedToClayColor(vcolor),
-      .layout = parseLayout(gab, props),
-      .floating =
-          {
-              .attachTo = CLAY_ATTACH_TO_ROOT,
-              .offset = {.x = x, .y = y},
-              .expand = {.height = h, .width = w},
-          },
-  });
+  CLAY(vid == gab_cundefined ? (Clay_ElementId){0}
+                             : CLAY_SID(((Clay_String){
+                                   .length = gab_strlen(vid),
+                                   .chars = gab_strdata(&vid),
+                               })),
+       {
+           .backgroundColor = packedToClayColor(vcolor),
+           .layout = parseLayout(gab, props),
+           .floating =
+               {
+                   .attachTo = CLAY_ATTACH_TO_ROOT,
+                   .offset = {.x = x, .y = y},
+                   .expand = {.height = h, .width = w},
+               },
+       });
 
   return gab_union_cvalid(gab_nil);
 }
@@ -556,25 +555,25 @@ union gab_value_pair render_image(struct gab_triple gab, gab_value props) {
   if (vid != gab_cundefined && gab_valkind(vid) != kGAB_MESSAGE)
     return gab_pktypemismatch(gab, vid, kGAB_MESSAGE);
 
-  CLAY({
-      .id = vid == gab_cundefined ? (Clay_ElementId){0}
-                                  : CLAY_SID(((Clay_String){
-                                        .length = gab_strlen(vid),
-                                        .chars = gab_strdata(&vid),
-                                    })),
-      .layout =
-          {
-              .sizing =
-                  {
-                      .height = CLAY_SIZING_FIXED(h),
-                      .width = CLAY_SIZING_FIXED(w),
-                  },
-          },
-      .image =
-          {
-              .imageData = (void *)gab_strdata(&vimage),
-          },
-  });
+  CLAY(vid == gab_cundefined ? (Clay_ElementId){0}
+                             : CLAY_SID(((Clay_String){
+                                   .length = gab_strlen(vid),
+                                   .chars = gab_strdata(&vid),
+                               })),
+       {
+           .layout =
+               {
+                   .sizing =
+                       {
+                           .height = CLAY_SIZING_FIXED(h),
+                           .width = CLAY_SIZING_FIXED(w),
+                       },
+               },
+           .image =
+               {
+                   .imageData = (void *)gab_strdata(&vimage),
+               },
+       });
 
   return gab_union_cvalid(gab_nil);
 }
@@ -637,9 +636,9 @@ union gab_value_pair render_text(struct gab_triple gab, gab_value props) {
 
   gab_uint height = gab_valtou(vheight);
 
-  CLAY({
-      .layout = parseLayout(gab, props),
-  }) {
+  CLAY(CLAY_IDI("", gui.n++), {
+                                  .layout = parseLayout(gab, props),
+                              }) {
     CLAY_TEXT(text, CLAY_TEXT_CONFIG({
                         .fontSize = size,
                         .letterSpacing = spacing,
@@ -697,17 +696,17 @@ union gab_value_pair render_componentlist(struct gab_triple gab, gab_value app,
     return gab_panicf(gab, "Expected a list, found $", app);
 
   gab_uint len = gab_reclen(app);
-  CLAY({
-      .layout =
-          {
-              .layoutDirection = dir,
-              .sizing =
-                  {
-                      .width = CLAY_SIZING_GROW(1),
-                      .height = CLAY_SIZING_GROW(1),
-                  },
-          },
-  }) {
+  CLAY(CLAY_IDI("", gui.n++), {
+                                  .layout =
+                                      {
+                                          .layoutDirection = dir,
+                                          .sizing =
+                                              {
+                                                  .width = CLAY_SIZING_GROW(1),
+                                                  .height = CLAY_SIZING_GROW(1),
+                                              },
+                                      },
+                              }) {
     for (uint64_t i = 0; i < len; i++) {
       gab_value component = gab_lstat(app, i);
       union gab_value_pair res = render_component(gab, component);
@@ -1197,11 +1196,11 @@ GAB_DYNLIB_NATIVE_FN(ui, run_tui) {
 GAB_DYNLIB_MAIN_FN {
   gab_value mod = gab_message(gab, "ui");
   gab_def(gab,
-          // {
-          //     gab_message(gab, "run\\gui"),
-          //     mod,
-          //     gab_snative(gab, "run\\gui", gab_mod_ui_run_gui),
-          // },
+          {
+              gab_message(gab, "run\\gui"),
+              mod,
+              gab_snative(gab, "run\\gui", gab_mod_ui_run_gui),
+          },
 #ifdef GAB_PLATFORM_UNIX
           {
               gab_message(gab, "run\\tui"),
