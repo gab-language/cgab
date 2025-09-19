@@ -594,7 +594,7 @@ bool module_handler(struct command_arguments *args) {
 
 const struct option modules_option = {
     "mods",
-    "Change the modules loaded as the gab is initializing"
+    "Change the modules loaded as Gab is initializing "
     "modules",
     'm',
     .handler_f = module_handler,
@@ -666,9 +666,9 @@ static struct command commands[] = {
         {
             modules_option,
             {
-                "target",
-                "Set the os-target of build.",
-                't',
+                "plat",
+                "Set the platform of the build.",
+                'p',
                 .flag = FLAG_BUILD_TARGET,
             },
         },

@@ -38,7 +38,7 @@ BINARY_FLAGS 	= -rdynamic -DGAB_CORE $(GAB_LINK_DEPS)
 # that these modules require will already exist,
 # as they will be in the gab executable
 CMOD_LINK_DEPS   = -lgrapheme -lllhttp -lbearssl
-CXXMOD_LINK_DEPS = -larrow -larrow_bundled_dependencies
+CXXMOD_LINK_DEPS = -larrow -larrow_compute -larrow_acero -larrow_bundled_dependencies
 CXXMOD_INCLUDE   = -I$(VENDOR_PREFIX)/apache-arrow/cpp/$(BUILD_PREFIX)/src/
 
 CSHARED_FLAGS 	= -shared -undefined dynamic_lookup $(CMOD_LINK_DEPS)

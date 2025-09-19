@@ -3,8 +3,6 @@ ui = 'cgui'.use
 
 (events, app) = (Channels.make, Channels.make)
 
-#Fibers.make() => ui.run\gui(events, app).unwrap
-
 ui
   .run\tui(events, app)
   .unwrap

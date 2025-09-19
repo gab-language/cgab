@@ -1,7 +1,7 @@
 #include "arrow/api.h"
+#include "arrow/compute/api.h"
 #include "arrow/csv/api.h"
 #include "arrow/io/api.h"
-#include "arrow/compute/api.h"
 
 #include "gab.h"
 #include "platform.h"
@@ -555,6 +555,9 @@ GAB_DYNLIB_NATIVE_FN(array, create) {
 
 extern "C" {
 GAB_DYNLIB_MAIN_FN {
+  if (!arrow::compute::Initialize().ok())
+    return gab_panicf(gab, "Failed to intialize apache-arrow");
+
   gab_value mod = gab_message(gab, GAB_DATAMOD);
 
   gab_value array_mod = gab_message(gab, GAB_ARRAY);

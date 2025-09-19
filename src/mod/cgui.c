@@ -63,6 +63,7 @@ struct gui {
   struct RGFW_window win;
   gab_value appch, evch;
   uint64_t n;
+  bool ready;
 } gui;
 
 void HandleClayErrors(Clay_ErrorData errorData) {
@@ -672,8 +673,8 @@ union gab_value_pair render_component(struct gab_triple gab,
     return render_rect(gab, props);
 
   // Currently unsupported by sokol_clay.h
-  // if (kind == gab_message(gab, "img"))
-  //   return render_image(gab, props);
+  if (kind == gab_message(gab, "img"))
+    return render_image(gab, props);
 
   if (gab_reclen(component) < 3)
     return gab_panicf(gab, "Expected a list of at least 3 elements, found $",
@@ -763,6 +764,7 @@ bool doguirender(struct gab_triple gab) {
       .width = gui.win.w,
       .height = gui.win.h,
   };
+
   sclay_set_layout_dimensions(dim, 1);
 
   Clay_RenderCommandArray renderCommands;
@@ -770,52 +772,43 @@ bool doguirender(struct gab_triple gab) {
     return false;
 
   sg_begin_pass(&(sg_pass){
-      // .action =
-      //     {
-      //         .colors[0] =
-      //             {
-      //                 .load_action = SG_LOADACTION_CLEAR,
-      //                 .clear_value = {1.0f, 1.0f, 1.0f, 1.0f},
-      //             },
-      //     },
+      .action =
+          {
+              .colors[0] =
+                  {
+                      .load_action = SG_LOADACTION_CLEAR,
+                      .clear_value = {1.0f, 1.0f, 1.0f, 1.0f},
+                  },
+          },
       .swapchain =
           {
-              .width = gui.win.w, .height = gui.win.h,
-              // .sample_count = 1, // or 4 for MSAA
-              // .color_format = SG_PIXELFORMAT_RGBA8,
-              // .depth_format = SG_PIXELFORMAT_DEPTH_STENCIL,
-              // .gl.framebuffer = 0,
+              .width = dim.width,
+              .height = dim.height,
           },
   });
+
+  sgl_defaults();
 
   sgl_matrix_mode_modelview();
   sgl_load_identity();
 
-  sclay_render(renderCommands, fonts);
+  sgl_begin_triangles();
 
-  GLenum err = glGetError();
-  if (err != GL_NO_ERROR) {
-    fprintf(stderr, "GL error: 0x%04X\n", err);
-    return false;
-  }
+  sgl_c3f(1.0f, 0.0f, 0.0f);
+  sgl_v2f(-0.5f, -0.5f);
+  sgl_c3f(0.0f, 1.0f, 0.0f);
+  sgl_v2f(0.5f, -0.5f);
+  sgl_c3f(0.0f, 0.0f, 1.0f);
+  sgl_v2f(0.0f, 0.5f);
 
+  sgl_end();
+
+  // sclay_render(renderCommands, fonts);
   sgl_draw();
-  err = glGetError();
-  if (err != GL_NO_ERROR) {
-    fprintf(stderr, "GL error: 0x%04X\n", err);
-    return false;
-  }
   sg_end_pass();
-
-  err = glGetError();
-  if (err != GL_NO_ERROR) {
-    fprintf(stderr, "GL error: 0x%04X\n", err);
-    return false;
-  }
-
   sg_commit();
 
-  err = glGetError();
+  GLenum err = glGetError();
   if (err != GL_NO_ERROR) {
     fprintf(stderr, "GL error: 0x%04X\n", err);
     return false;
@@ -916,6 +909,69 @@ fin:
 }
 #endif
 GAB_DYNLIB_NATIVE_FN(ui, gui_render) {
+  if (!gui.ready) {
+    RGFW_glHints *hints = RGFW_getGlobalHints_OpenGL();
+    hints->samples = 1;
+    hints->major = 3;
+    hints->minor = 3;
+    hints->debug = true;
+    RGFW_setGlobalHints_OpenGL(hints);
+
+    gui.win.userPtr = &gui;
+    if (!RGFW_createWindowPtr("window", 500, 500, 500, 500, RGFW_windowOpenGL,
+                              &gui.win))
+      return gab_vmpush(gab_thisvm(gab), gab_err,
+                        gab_string(gab, "Failed to create window")),
+             gab_union_cvalid(gab_nil);
+
+    if (!gladLoadGL(RGFW_getProcAddress_OpenGL))
+      return gab_vmpush(gab_thisvm(gab), gab_err,
+                        gab_string(gab, "Failed to load OpenGL")),
+             gab_union_cvalid(gab_nil);
+
+    RGFW_window_makeCurrentContext_OpenGL(&gui.win);
+
+    sg_setup(&(sg_desc){
+        .logger.func = slog_func,
+    });
+
+    sgl_setup(&(sgl_desc_t){
+        .logger.func = slog_func,
+    });
+
+    printf("GL_VERSION: %s\n", glGetString(GL_VERSION));
+    printf("GL_VENDOR: %s\n", glGetString(GL_VENDOR));
+    printf("GL_RENDERER: %s\n", glGetString(GL_RENDERER));
+
+    sclay_setup();
+
+    fonts[0] = sclay_add_font_mem(fontData, sizeof(fontData));
+
+    if (fonts[0] == FONS_INVALID) {
+      return gab_vmpush(gab_thisvm(gab), gab_err,
+                        gab_string(gab, "Failed to load Font")),
+             gab_union_cvalid(gab_nil);
+    }
+
+    uint64_t totalMemorySize = Clay_MinMemorySize();
+    Clay_Arena clayMemory = Clay_CreateArenaWithCapacityAndMemory(
+        totalMemorySize, malloc(totalMemorySize));
+
+    Clay_Initialize(clayMemory,
+                    (Clay_Dimensions){
+                        .width = gui.win.w,
+                        .height = gui.win.h,
+                    },
+                    (Clay_ErrorHandler){
+                        HandleClayErrors,
+                    });
+
+    Clay_SetMeasureTextFunction(sclay_measure_text, &fonts);
+
+    Clay_SetDebugModeEnabled(true);
+    gui.ready = true;
+  }
+
   if (gab_chnisclosed(gui.appch))
     goto fin;
 
@@ -947,6 +1003,9 @@ fin:
 }
 
 GAB_DYNLIB_NATIVE_FN(ui, gui_event) {
+  if (!gui.ready)
+    return gab_union_ctimeout(gab_cundefined);
+
   if (RGFW_window_shouldClose(&gui.win) == RGFW_TRUE)
     goto fin;
 
@@ -991,48 +1050,126 @@ fin:
   return gab_union_cinvalid;
 }
 
-void test() {
+// Define a simple vertex shader that passes through vertex colors
+static const char *vs_source =
+    "#version 330 core\n"
+    "layout(location = 0) in vec2 aPos;\n"
+    "layout(location = 1) in vec3 aColor;\n"
+    "out vec3 vColor;\n"
+    "uniform mat4 uModelViewProj;\n"
+    "void main() {\n"
+    "    gl_Position = uModelViewProj * vec4(aPos, 0.0, 1.0);\n"
+    "    vColor = aColor;\n"
+    "}\n";
+
+// Define a fragment shader that uses the vertex color
+static const char *fs_source = "#version 330 core\n"
+                               "in vec3 vColor;\n"
+                               "out vec4 fragColor;\n"
+                               "void main() {\n"
+                               "    fragColor = vec4(vColor, 1.0);\n"
+                               "}\n";
+
+GAB_DYNLIB_NATIVE_FN(ui, gui_test) {
+  RGFW_glHints *hints = RGFW_getGlobalHints_OpenGL();
+  hints->samples = 2;
+  hints->debug = true;
+  RGFW_setGlobalHints_OpenGL(hints);
 
   RGFW_setClassName("RGFW Example");
   RGFW_window *win =
       RGFW_createWindow("RGFW Example Window", 500, 500, 500, 500,
                         RGFW_windowCenter | RGFW_windowOpenGL);
-  RGFW_window_setExitKey(win, RGFW_escape);
 
-  if (!gladLoadGL(RGFW_getProcAddress_OpenGL))
-    return;
+  RGFW_window_setExitKey(win, RGFW_escape);
 
   RGFW_window_makeCurrentContext_OpenGL(win);
 
+  if (!gladLoadGL(RGFW_getProcAddress_OpenGL))
+    return gab_panicf(gab, "Failed to load OpenGL");
+
+  sg_setup(&(sg_desc){
+      .logger.func = slog_func,
+      .environment =
+          {
+              .defaults =
+                  {
+                      .sample_count = 2,
+                      .color_format = SG_PIXELFORMAT_RGBA8,
+                      .depth_format = SG_PIXELFORMAT_DEPTH_STENCIL,
+                  },
+          },
+  });
+
+  sgl_setup(&(sgl_desc_t){
+      .logger.func = slog_func,
+      .sample_count = 2,
+      .color_format = SG_PIXELFORMAT_RGBA8,
+      .depth_format = SG_PIXELFORMAT_DEPTH_STENCIL,
+  });
+
+  printf("GL_VERSION: %s\n", glGetString(GL_VERSION));
+
   while (!RGFW_window_shouldClose(win)) {
+    if (!sg_isvalid())
+      printf("INVLAID SG\n");
+
     RGFW_pollEvents();
 
-    glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    sgl_viewport(0, 0, win->w, win->h, true);
+    sgl_defaults();
+    sgl_load_default_pipeline();
 
-    glBegin(GL_TRIANGLES);
-    glColor3f(1.0f, 0.0f, 0.0f);
-    glVertex2f(-0.6f, -0.75f);
-    glColor3f(0.0f, 1.0f, 0.0f);
-    glVertex2f(0.6f, -0.75f);
-    glColor3f(0.0f, 0.0f, 1.0f);
-    glVertex2f(0.0f, 0.75f);
-    glEnd();
+    sgl_matrix_mode_modelview();
+    sgl_load_identity();
+
+    sgl_begin_triangle_strip();
+
+    sgl_v2f_c4f(-0.5f, -0.5f, 1.0f, 0.0f, 0.0f, 1.f);
+    sgl_v2f_c4f(0.5f, -0.5f, 0.0f, 1.0f, 0.0f, 1.f);
+    sgl_v2f_c4f(0.0f, 0.5f, 0.0f, 0.0f, 1.0f, 1.f);
+
+    sgl_end();
+
+    sg_begin_pass(&(sg_pass){
+        .action =
+            {
+                .colors[0] =
+                    {
+                        .load_action = SG_LOADACTION_CLEAR,
+                        .clear_value = {1.0f, 1.0f, 1.0f, 0.0f},
+                    },
+            },
+        .swapchain =
+            {
+                .width = win->w,
+                .height = win->h,
+            },
+    });
+
+    sgl_error_t err = sgl_error();
+    if (err.any) {
+      printf("vs full: %i\n", err.vertices_full);
+      printf("us full: %i\n", err.uniforms_full);
+      printf("cs full: %i\n", err.commands_full);
+      printf("stack overflow %i\n", err.stack_overflow);
+      printf("stack underflow: %i\n", err.stack_underflow);
+      printf("no ctx: %i\n", err.no_context);
+    }
+
+    sgl_draw();
+
+    sg_end_pass();
+    sg_commit();
 
     RGFW_window_swapBuffers_OpenGL(win);
-    glFlush();
   }
 
   RGFW_window_close(win);
+  return gab_union_cvalid(gab_ok);
 }
 
 GAB_DYNLIB_NATIVE_FN(ui, run_gui) {
-  if (!RGFW_createWindowPtr("window", 0, 0, 800, 800, RGFW_windowOpenGL,
-                            &gui.win))
-    return gab_vmpush(gab_thisvm(gab), gab_err,
-                      gab_string(gab, "Failed to create window")),
-           gab_union_cvalid(gab_nil);
-
   gab_value evch = gab_arg(1);
   gab_value appch = gab_arg(2);
 
@@ -1044,69 +1181,6 @@ GAB_DYNLIB_NATIVE_FN(ui, run_gui) {
 
   gui.appch = appch;
   gui.evch = evch;
-  gui.win.userPtr = &gui;
-
-  if (!gladLoadGL(RGFW_getProcAddress_OpenGL))
-    return gab_vmpush(gab_thisvm(gab), gab_err,
-                      gab_string(gab, "Failed to load OpenGL")),
-           gab_union_cvalid(gab_nil);
-
-  RGFW_window_makeCurrentContext_OpenGL(&gui.win);
-
-  sg_setup(&(sg_desc){
-      .logger.func = slog_func,
-      .environment =
-          {
-              .defaults =
-                  {
-                      .color_format = SG_PIXELFORMAT_RGBA8,
-                      .depth_format = SG_PIXELFORMAT_DEPTH_STENCIL,
-                      .sample_count = 1,
-                  },
-          },
-  });
-
-  sgl_setup(&(sgl_desc_t){
-      .color_format = SG_PIXELFORMAT_RGBA8,
-      .depth_format = SG_PIXELFORMAT_DEPTH_STENCIL,
-      .sample_count = 1,
-      .logger.func = slog_func,
-  });
-
-  sclay_setup();
-
-  fonts[0] = sclay_add_font_mem(fontData, sizeof(fontData));
-
-  if (fonts[0] == FONS_INVALID) {
-    return gab_vmpush(gab_thisvm(gab), gab_err,
-                      gab_string(gab, "Failed to load Font")),
-           gab_union_cvalid(gab_nil);
-  }
-
-  uint64_t totalMemorySize = Clay_MinMemorySize();
-  Clay_Arena clayMemory = Clay_CreateArenaWithCapacityAndMemory(
-      totalMemorySize, malloc(totalMemorySize));
-
-  Clay_Initialize(clayMemory,
-                  (Clay_Dimensions){
-                      .width = gui.win.w,
-                      .height = gui.win.h,
-                  },
-                  (Clay_ErrorHandler){
-                      HandleClayErrors,
-                  });
-
-  Clay_SetMeasureTextFunction(sclay_measure_text, &fonts);
-
-  Clay_SetDebugModeEnabled(true);
-  // union gab_value_pair res =
-  //     gab_asend(gab, (struct gab_send_argt){
-  //                        .message = gab_message(gab, mGAB_CALL),
-  //                        .receiver = gab_snative(gab,
-  //                        "ui\\gui\\loop\\render",
-  //                                                gab_mod_ui_gui_render),
-  //                    });
-  //
 
   union gab_value_pair res =
       gab_asend(gab, (struct gab_send_argt){
@@ -1116,17 +1190,20 @@ GAB_DYNLIB_NATIVE_FN(ui, run_gui) {
                      });
 
   if (res.status != gab_cvalid) {
-    RGFW_window_closePtr(&gui.win);
     return gab_panicf(gab, "Couldn't start render thread");
   }
-  return gab_mod_ui_gui_render(gab, 0, nullptr, gab_cundefined);
 
-  // if (res.status != gab_cvalid) {
-  //   RGFW_window_closePtr(&gui.win);
-  //   return gab_panicf(gab, "Couldn't start event thread");
-  // }
-  //
-  // return gab_vmpush(gab_thisvm(gab), gab_ok), gab_union_cvalid(gab_nil);
+  res = gab_asend(gab, (struct gab_send_argt){
+                           .message = gab_message(gab, mGAB_CALL),
+                           .receiver = gab_snative(gab, "ui\\gui\\loop\\render",
+                                                   gab_mod_ui_gui_test),
+                       });
+
+  if (res.status != gab_cvalid) {
+    return gab_panicf(gab, "Couldn't start event thread");
+  }
+
+  return gab_vmpush(gab_thisvm(gab), gab_ok), gab_union_cvalid(gab_nil);
 }
 
 #ifdef GAB_PLATFORM_UNIX

@@ -1,0 +1,9 @@
+dc = 'carrow'.use
+
+nums = dc.Arrays.make(i8: 1 2 3)
+other_nums = dc.Arrays.make(i8: 3 2 1)
+
+nums.to\s.println
+other_nums.to\s.println
+
+(nums + other_nums ).to\s.println
