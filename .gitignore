@@ -15,3 +15,5 @@ libgrapheme_generated
 libllhttp_generated
 vendor/llhttp.h
 cacert.pem
+vendor/duckdb.cc
+vendor/sqlite3.c

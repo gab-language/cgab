@@ -88,3 +88,9 @@
 [submodule "vendor/miniz"]
 	path = vendor/miniz
 	url = https://github.com/richgel999/miniz.git
+[submodule "vendor/sqlite"]
+	path = vendor/sqlite
+	url = https://github.com/sqlite/sqlite.git
+[submodule "vendor/duckdb"]
+	path = vendor/duckdb
+	url = https://github.com/duckdb/duckdb.git

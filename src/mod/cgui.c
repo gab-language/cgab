@@ -1072,8 +1072,6 @@ static const char *fs_source = "#version 330 core\n"
 
 GAB_DYNLIB_NATIVE_FN(ui, gui_test) {
   RGFW_glHints *hints = RGFW_getGlobalHints_OpenGL();
-  hints->samples = 2;
-  hints->debug = true;
   RGFW_setGlobalHints_OpenGL(hints);
 
   RGFW_setClassName("RGFW Example");
@@ -1125,9 +1123,9 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_test) {
 
     sgl_begin_triangle_strip();
 
-    sgl_v2f_c4f(-0.5f, -0.5f, 1.0f, 0.0f, 0.0f, 1.f);
-    sgl_v2f_c4f(0.5f, -0.5f, 0.0f, 1.0f, 0.0f, 1.f);
-    sgl_v2f_c4f(0.0f, 0.5f, 0.0f, 0.0f, 1.0f, 1.f);
+    sgl_v2f_c4f(-0.5f, -0.5f, 0.0f, 0.0f, 0.0f, 1.f);
+    sgl_v2f_c4f(0.5f, -0.5f, 0.0f, 0.0f, 0.0f, 1.f);
+    sgl_v2f_c4f(0.0f, 0.5f, 0.0f, 0.0f, 0.0f, 1.f);
 
     sgl_end();
 

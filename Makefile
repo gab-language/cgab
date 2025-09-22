@@ -38,8 +38,9 @@ BINARY_FLAGS 	= -rdynamic -DGAB_CORE $(GAB_LINK_DEPS)
 # that these modules require will already exist,
 # as they will be in the gab executable
 CMOD_LINK_DEPS   = -lgrapheme -lllhttp -lbearssl
-CXXMOD_LINK_DEPS = -larrow -larrow_compute -larrow_acero -larrow_bundled_dependencies
-CXXMOD_INCLUDE   = -I$(VENDOR_PREFIX)/apache-arrow/cpp/$(BUILD_PREFIX)/src/
+
+CXXMOD_LINK_DEPS = 
+CXXMOD_INCLUDE   = 
 
 CSHARED_FLAGS 	= -shared -undefined dynamic_lookup $(CMOD_LINK_DEPS)
 CXXSHARED_FLAGS = -shared -undefined dynamic_lookup $(CXXMOD_LINK_DEPS) $(CXXMOD_INCLUDE)
@@ -79,15 +80,16 @@ $(BUILD_PREFIX)/gab: $(GAB_OBJ) $(BUILD_PREFIX)/libcgab.a $(BUILD_PREFIX)/liblin
 	$(CC) $(CFLAGS) $(BINARY_FLAGS) $(GAB_OBJ) -o $@
 
 # This rule builds each c++ module shared library.
-$(BUILD_PREFIX)/mod/%$(GAB_DYNLIB_FILEENDING): $(SRC_PREFIX)/%.cc \
-							$(BUILD_PREFIX)/libarrow.a
+$(BUILD_PREFIX)/mod/%$(GAB_DYNLIB_FILEENDING): $(SRC_PREFIX)/%.cc
 	$(CXX) $(CXXFLAGS) $(CXXSHARED_FLAGS) $< -o $@
 
 # This rule builds each c module shared library.
 $(BUILD_PREFIX)/mod/%$(GAB_DYNLIB_FILEENDING): $(SRC_PREFIX)/%.c \
 							$(BUILD_PREFIX)/libbearssl.a 	\
 							$(BUILD_PREFIX)/libllhttp.a  	\
-							$(BUILD_PREFIX)/libgrapheme.a
+							$(BUILD_PREFIX)/libgrapheme.a \
+							$(VENDOR_PREFIX)/sqlite3.c    \
+							$(VENDOR_PREFIX)/duckdb.cc
 	$(CC) $(CFLAGS) $(CSHARED_FLAGS) $< -o $@
 
 # This curls a mozilla cert used for TLS clients.
@@ -114,25 +116,19 @@ $(VENDOR_PREFIX)/linenoise/$(BUILD_PREFIX)/Makefile:
 
 $(BUILD_PREFIX)/liblinenoise.a: $(VENDOR_PREFIX)/linenoise/$(BUILD_PREFIX)/Makefile
 	make -s -C $(VENDOR_PREFIX)/linenoise/$(BUILD_PREFIX)
-	mv $(VENDOR_PREFIX)/linenoise/$(BUILD_PREFIX)/liblinenoise.a $(BUILD_PREFIX)/
+	cp $(VENDOR_PREFIX)/linenoise/$(BUILD_PREFIX)/liblinenoise.a $(BUILD_PREFIX)/
 
-# This rule uses cmake to generate a Makefile for apache-arrow.
-# This is used to build libarrow.a and libarrow_bundled_dependencies.a
-$(VENDOR_PREFIX)/apache-arrow/cpp/$(BUILD_PREFIX)/Makefile:
-	mkdir -p $(VENDOR_PREFIX)/apache-arrow/cpp/$(BUILD_PREFIX)
-	cd $(VENDOR_PREFIX)/apache-arrow/cpp/$(BUILD_PREFIX) && \
-		CC="$(CC)" 													 									\
-		CXX="$(CXX)" 												 									\
-		cmake .. 														 									\
-		-DCMAKE_CXX_FLAGS=--target=$(GAB_TARGETS)	 						\
-		-DCMAKE_C_FLAGS=--target=$(GAB_TARGETS) 		 				 	\
-		-DARROW_MIMALLOC=OFF 								 									\
-		-DARROW_ENABLE_THREADING=OFF 				 									\
-		-DARROW_DEPENDENCY_SOURCE=BUNDLED 	 									\
-		-DARROW_ACERO=ON 										 									\
-		-DARROW_BUILD_SHARED=OFF 						 									\
-		-DARROW_COMPUTE=ON 									 									\
-		-DARROW_CSV=ON
+$(VENDOR_PREFIX)/sqlite3.c:
+	mkdir -p $(VENDOR_PREFIX)/sqlite/$(BUILD_PREFIX)
+	cd $(VENDOR_PREFIX)/sqlite/$(BUILD_PREFIX) && \
+		../configure --enable-all
+	make -s -C $(VENDOR_PREFIX)/sqlite/$(BUILD_PREFIX) sqlite3.c
+	cp $(VENDOR_PREFIX)/sqlite/$(BUILD_PREFIX)/sqlite3.c $(VENDOR_PREFIX)/
+
+$(VENDOR_PREFIX)/duckdb.cc:
+	cd $(VENDOR_PREFIX)/duckdb && \
+		python scripts/amalgamation.py
+	cp $(VENDOR_PREFIX)/duckdb/src/amalgamation/duckdb.cpp $(VENDOR_PREFIX)/duckdb.cc
 
 # This rule generates libgraphemes code to be later compiled
 # to specific targets
@@ -168,10 +164,6 @@ $(BUILD_PREFIX)/libbearssl.a:
 	make clean -s -C $(VENDOR_PREFIX)/BearSSL
 	make lib AR="zig ar" LD="$(CC) --target=$(GAB_TARGETS)" CC="$(CC) --target=$(GAB_TARGETS)" -s -C $(VENDOR_PREFIX)/BearSSL
 	mv $(VENDOR_PREFIX)/BearSSL/build/libbearssl.a $(BUILD_PREFIX)/
-
-$(BUILD_PREFIX)/libarrow.a: $(VENDOR_PREFIX)/apache-arrow/cpp/$(BUILD_PREFIX)/Makefile
-	make -j 4 -s -C $(VENDOR_PREFIX)/apache-arrow/cpp/$(BUILD_PREFIX)
-	mv $(VENDOR_PREFIX)/apache-arrow/cpp/$(BUILD_PREFIX)/release/*.a $(BUILD_PREFIX)/
 
 # These are some convenience rules for making the cli simpler.
 
