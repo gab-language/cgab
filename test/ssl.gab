@@ -16,27 +16,40 @@ sock
   .unwrap
 
 res = sock.read.unwrap.as\s.unwrap
-
-res.len.println
 res.println
 
-#data = sock
-#  .read
-#  .unwrap
-#  .as\s
+#sock = Socket
+#  .make tcp:
 #  .unwrap
 #
-#http_res = data
-#  .as\http
+#sock
+#  .connect("www.google.com" 80)
 #  .unwrap
 #
-#'STATUS: $\nHEADERS:\n$\nBODY:\n$'
-#  .sprintf(
-#    http_res.http\status
-#    http_res.http\headers.join(
-#      Streams.map((value field) => do
-#        '$: $'.sprintf(field value)
-#      end)
-#      |> Streams.interpose '\n')
-#    http_res.http\body)
-#  .println
+#sock
+#  .write(req.to\b)
+#  .unwrap
+#
+#res = sock.read.unwrap.as\s.unwrap
+#res.println
+#
+##data = sock
+##  .read
+##  .unwrap
+##  .as\s
+##  .unwrap
+##
+##http_res = data
+##  .as\http
+##  .unwrap
+##
+##'STATUS: $\nHEADERS:\n$\nBODY:\n$'
+##  .sprintf(
+##    http_res.http\status
+##    http_res.http\headers.join(
+##      Streams.map((value field) => do
+##        '$: $'.sprintf(field value)
+##      end)
+##      |> Streams.interpose '\n')
+##    http_res.http\body)
+##  .println

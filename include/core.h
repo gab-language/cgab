@@ -44,9 +44,9 @@
 // Workers (os threads that can actually run gab code)
 // will wait this long before exiting, if they haven't received work.
 // New workers are spawned as needed up until a maximum is reached (specified at
-// runtime) Worker threads wait about half a second before spinning down.
+// runtime)
 #ifndef cGAB_WORKER_IDLE_TRIES
-#define cGAB_WORKER_IDLE_TRIES ((size_t)100)
+#define cGAB_WORKER_IDLE_TRIES ((size_t)64)
 #endif
 
 #ifndef cGAB_VM_CHANNEL_PUT_TRIES
