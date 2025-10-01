@@ -57,6 +57,13 @@
  *
  */
 
+#define BR_SSL_WRITE_INCOMPLETE ((int64_t)1 << 31)
+
+enum {
+  BR_SSL_SENDREC_CHANNEL,
+  BR_SSL_RECVREC_CHANNEL,
+};
+
 enum gab_io_k {
   IO_,
   IO_FILE,
@@ -68,38 +75,76 @@ enum gab_io_k {
   IO_SOCK_SSLSERVER,
 };
 
-struct gab_sock {
+/*
+ * Generic struct that all IO objects have at the top
+ * of their definition. This way, a (struct gab_io*) is valid
+ * to point to any io object, and the k can be used to
+ * determine the rest of the structure.
+ */
+struct gab_io {
   qfd_t fd;
   _Atomic enum gab_io_k k;
+};
+
+#define BUFFER_SIZE (1 << 15)
+
+/*
+ * Wrap a file on disk, or std in/out/err.
+ * Reads are buffered.
+ *
+ * Maybe the mutex can be dropped in favor of
+ * atomic bfront, bback on the queue.
+ */
+struct gab_file {
+  struct gab_io io;
+
+  mtx_t mtx;
+
+  uint16_t bfront, bback;
+  unsigned char buffer[BUFFER_SIZE];
+};
+
+/*
+ * Wrap an OS socket.
+ *
+ * Reads are buffered. See above.
+ *
+ * The *addr* struct is used for connect, accept, listen, etc.
+ * It needs to be on the struct here so that the memory stays alive
+ * as the functions yield back to the runtime.
+ */
+struct gab_sock {
+  struct gab_io io;
+
   struct qio_addr addr;
+
+  mtx_t mtx;
+
+  uint16_t bfront, bback;
+  unsigned char buffer[BUFFER_SIZE];
 };
 
-#define BR_SSL_WRITE_INCOMPLETE ((int64_t)1 << 31)
-
-enum {
-  BR_SSL_SENDREC_CHANNEL,
-  BR_SSL_RECVREC_CHANNEL,
-};
-
+/*
+ * Wrap an OS socket, with added transport-layer-security.
+ */
 struct gab_ssl_sock {
-  struct gab_sock sock;
-  struct gab_triple gab;
+  struct gab_io io;
 
-  mtx_t ssl_mutex;
+  struct qio_addr addr;
+
+  mtx_t mtx;
+
+  qd_t io_operations[2];
 
   br_sslio_context ioc;
 
-  qd_t ioc_channels[2];
-
   union {
     struct {
-      br_ssl_client_context sc;
+      br_ssl_client_context cc;
       br_x509_minimal_context xc;
       unsigned char iobuf[BR_SSL_BUFSIZE_BIDI];
     } client;
 
-    // These are really *connections*, when an ssl_server socket *accepts* a
-    // client.
     struct {
       br_ssl_server_context sc;
       unsigned char iobuf[BR_SSL_BUFSIZE_BIDI];
@@ -107,33 +152,22 @@ struct gab_ssl_sock {
   };
 };
 
-int io_loop_cb(void *initialized) {
-  _Atomic int *init = initialized;
-
-  int res = qio_init(256);
-  if (res < 0)
-    return atomic_store(init, res), 1;
-
-  atomic_store(init, 1);
-
-  if (qio_loop() < 0)
-    return qio_destroy(), 1;
-
-  return qio_destroy(), 0;
-}
-
+// This function runs in the gc thread, and only during a gc. we can block.
 void file_cb(struct gab_triple, uint64_t len, char data[static len]) {
   qfd_t qfd = *(qfd_t *)data;
   // Block for the file to close
   qd_destroy(qclose(qfd));
 }
 
+// This function runs in the gc thread, and only during a gc. we can block.
 void sock_cb(struct gab_triple, uint64_t len, char data[static len]) {
   qfd_t qfd = *(qfd_t *)data;
   // Shutdown here
   qd_destroy(qshutdown(qfd));
   qd_destroy(qclose(qfd));
 }
+
+// Some convenient tables which map the IO kind t osome other data.
 
 const char *io_tname[] = {
     [IO_] = tGAB_IO,
@@ -152,8 +186,25 @@ const gab_boxdestroy_f io_tdestroy[] = {
     [IO_SOCK_SSLCLIENT] = sock_cb, [IO_SOCK_SSLSERVER] = sock_cb,
 };
 
-gab_value wrap_qfd(struct gab_triple gab, qfd_t qd, enum gab_io_k t,
-                   bool owning) {
+gab_value wrap_qfdfd(struct gab_triple gab, qfd_t qd, enum gab_io_k t,
+                     bool owning) {
+  gab_value vbox =
+      gab_box(gab, (struct gab_box_argt){
+                       .type = gab_string(gab, io_tname[t]),
+                       .size = sizeof(struct gab_file),
+                       .destructor = owning ? io_tdestroy[t] : nullptr,
+                   });
+
+  struct gab_file *f = gab_boxdata(vbox);
+  f->io.k = t;
+  f->io.fd = qd;
+  f->bfront = 0;
+  f->bback = 0;
+
+  return vbox;
+}
+gab_value wrap_qfdsock(struct gab_triple gab, qfd_t qd, enum gab_io_k t,
+                       bool owning) {
   gab_value vbox =
       gab_box(gab, (struct gab_box_argt){
                        .type = gab_string(gab, io_tname[t]),
@@ -161,17 +212,17 @@ gab_value wrap_qfd(struct gab_triple gab, qfd_t qd, enum gab_io_k t,
                        .destructor = owning ? io_tdestroy[t] : nullptr,
                    });
 
-  struct gab_ssl_sock *sk = gab_boxdata(vbox);
-  sk->sock.k = t;
-  sk->sock.fd = qd;
-  sk->ioc_channels[0] = -1;
-  sk->ioc_channels[1] = -1;
+  struct gab_sock *sk = gab_boxdata(vbox);
+  sk->io.k = t;
+  sk->io.fd = qd;
+  sk->bfront = 0;
+  sk->bback = 0;
 
   return vbox;
 }
 
-gab_value wrap_qfdssl(struct gab_triple gab, qfd_t qd, enum gab_io_k t,
-                      bool owning) {
+gab_value wrap_qfdsockssl(struct gab_triple gab, qfd_t qd, enum gab_io_k t,
+                          bool owning) {
   gab_value vbox =
       gab_box(gab, (struct gab_box_argt){
                        .type = gab_string(gab, io_tname[t]),
@@ -180,10 +231,10 @@ gab_value wrap_qfdssl(struct gab_triple gab, qfd_t qd, enum gab_io_k t,
                    });
 
   struct gab_ssl_sock *sk = gab_boxdata(vbox);
-  sk->sock.k = t;
-  sk->sock.fd = qd;
-  sk->ioc_channels[0] = -1;
-  sk->ioc_channels[1] = -1;
+  sk->io.k = t;
+  sk->io.fd = qd;
+  sk->io_operations[0] = -1;
+  sk->io_operations[1] = -1;
 
   return vbox;
 }
@@ -204,11 +255,11 @@ static int run_until(struct gab_ssl_sock *sock, unsigned target) {
     if (state & BR_SSL_CLOSED)
       return -1;
 
-    if (sock->ioc_channels[BR_SSL_SENDREC_CHANNEL] >= 0) {
+    if (sock->io_operations[BR_SSL_SENDREC_CHANNEL] >= 0) {
       /*
        * We are already sending a record for this
        */
-      qd_t qd = sock->ioc_channels[BR_SSL_SENDREC_CHANNEL];
+      qd_t qd = sock->io_operations[BR_SSL_SENDREC_CHANNEL];
 
       if (!qd_status(qd))
         return target;
@@ -221,25 +272,25 @@ static int run_until(struct gab_ssl_sock *sock, unsigned target) {
       if (wlen > 0)
         br_ssl_engine_sendrec_ack(ctx->engine, wlen);
 
-      sock->ioc_channels[BR_SSL_SENDREC_CHANNEL] = -1;
+      sock->io_operations[BR_SSL_SENDREC_CHANNEL] = -1;
       continue;
     }
 
-    if (sock->ioc_channels[BR_SSL_RECVREC_CHANNEL] >= 0) {
-      qd_t qd = sock->ioc_channels[BR_SSL_RECVREC_CHANNEL];
+    if (sock->io_operations[BR_SSL_RECVREC_CHANNEL] >= 0) {
+      qd_t qd = sock->io_operations[BR_SSL_RECVREC_CHANNEL];
 
       if (!qd_status(qd))
         return target;
 
       int wlen = qd_destroy(qd);
 
-      if (wlen < 0)
+      if (wlen <= 0)
         return br_ssl_engine_close(ctx->engine), -1;
 
       if (wlen > 0)
         br_ssl_engine_recvrec_ack(ctx->engine, wlen);
 
-      sock->ioc_channels[BR_SSL_RECVREC_CHANNEL] = -1;
+      sock->io_operations[BR_SSL_RECVREC_CHANNEL] = -1;
       continue;
     }
 
@@ -251,8 +302,8 @@ static int run_until(struct gab_ssl_sock *sock, unsigned target) {
       size_t len;
       unsigned char *buf = br_ssl_engine_sendrec_buf(ctx->engine, &len);
 
-      qd_t qd = qsend(sock->sock.fd, len, buf);
-      sock->ioc_channels[BR_SSL_SENDREC_CHANNEL] = qd;
+      qd_t qd = qsend(sock->io.fd, len, buf);
+      sock->io_operations[BR_SSL_SENDREC_CHANNEL] = qd;
 
       return target;
     }
@@ -283,8 +334,8 @@ static int run_until(struct gab_ssl_sock *sock, unsigned target) {
       size_t len;
       unsigned char *buf = br_ssl_engine_recvrec_buf(ctx->engine, &len);
 
-      qd_t qd = qrecv(sock->sock.fd, len, buf);
-      sock->ioc_channels[BR_SSL_RECVREC_CHANNEL] = qd;
+      qd_t qd = qrecv(sock->io.fd, len, buf);
+      sock->io_operations[BR_SSL_RECVREC_CHANNEL] = qd;
 
       return target;
     }
@@ -306,7 +357,7 @@ typedef struct {
 } io_op_res;
 
 io_op_res sslio_read_available(struct gab_triple gab, struct gab_ssl_sock *sock,
-                               gab_value *out) {
+                               s_char *out, uint64_t len) {
   br_sslio_context *ctx = &sock->ioc;
 
   int res = run_until(sock, BR_SSL_RECVAPP);
@@ -322,66 +373,15 @@ io_op_res sslio_read_available(struct gab_triple gab, struct gab_ssl_sock *sock,
   size_t alen;
   unsigned char *buf = br_ssl_engine_recvapp_buf(ctx->engine, &alen);
 
-  gab_value bin = gab_nbinary(gab, alen, (const char *)buf);
-  *out = bin;
+  if (alen < len)
+    len = alen;
 
-  br_ssl_engine_recvapp_ack(ctx->engine, alen);
+  out->len = len;
+  out->data = (char *)buf;
 
-  return (io_op_res){.amount = alen};
-}
+  br_ssl_engine_recvapp_ack(ctx->engine, len);
 
-/*
- * This is not thread safe!
- *
- * The same br_sslio_context can be accessed from multiple threads at the same
- * time. This is no bueno.
- * */
-io_op_res sslio_read(struct gab_ssl_sock *sock, uint8_t *dst, size_t len) {
-  br_sslio_context *ctx = &sock->ioc;
-
-  if (len == 0)
-    return (io_op_res){0};
-
-  int res = run_until(sock, BR_SSL_RECVAPP);
-
-  /*
-   * On a non-zero return value from run_until, we either:
-   *  1. saw an error (-1)
-   *  2. need to yield, io is in progress (1)
-   */
-  if (res)
-    return (io_op_res){.status = res};
-
-  size_t alen;
-  unsigned char *buf = br_ssl_engine_recvapp_buf(ctx->engine, &alen);
-
-  if (alen > len)
-    alen = len;
-
-  assert(dst != nullptr);
-
-  memcpy(dst, buf, alen);
-  br_ssl_engine_recvapp_ack(ctx->engine, alen);
-
-  return (io_op_res){.amount = alen};
-}
-
-io_op_res sslio_read_all(struct gab_ssl_sock *ctx, void *dst, size_t len) {
-  uint8_t *buf = dst;
-
-  size_t wantlen = len;
-
-  while (len > 0) {
-    io_op_res result = sslio_read(ctx, buf, len);
-
-    if (result.status)
-      return (io_op_res){.status = result.status, .amount = wantlen - len};
-
-    buf += result.amount;
-    len -= (size_t)result.amount;
-  }
-
-  return (io_op_res){0};
+  return (io_op_res){.amount = len};
 }
 
 io_op_res sslio_write(struct gab_ssl_sock *sock, const void *src, size_t len) {
@@ -436,62 +436,6 @@ int sslio_flush(struct gab_ssl_sock *sock) {
   return run_until(sock, BR_SSL_SENDAPP | BR_SSL_RECVAPP);
 }
 
-/*
- * BearSSL Read/Write callbacks, using QIO.
- */
-static int sock_read(void *context, unsigned char *buf, size_t len) {
-  struct gab_ssl_sock *ctx = context;
-
-  qd_t qd = qrecv(ctx->sock.fd, len, buf);
-
-  while (!qd_status(qd))
-    switch (gab_yield(ctx->gab)) {
-    case sGAB_TERM:
-      return -1;
-    case sGAB_COLL:
-      gab_gcepochnext(ctx->gab);
-      gab_sigpropagate(ctx->gab);
-      break;
-    default:
-      break;
-    }
-
-  int64_t result = qd_destroy(qd);
-
-  if (result <= 0)
-    return -1;
-
-  return result;
-}
-
-/*
- * Low-level data write callback for the simplified SSL I/O API.
- */
-static int sock_write(void *context, const unsigned char *buf, size_t len) {
-  struct gab_ssl_sock *ctx = context;
-
-  qd_t qd = qsend(ctx->sock.fd, len, buf);
-
-  while (!qd_status(qd))
-    switch (gab_yield(ctx->gab)) {
-    case sGAB_TERM:
-      return -1;
-    case sGAB_COLL:
-      gab_gcepochnext(ctx->gab);
-      gab_sigpropagate(ctx->gab);
-      break;
-    default:
-      break;
-    }
-
-  int64_t result = qd_destroy(qd);
-
-  if (result <= 0)
-    return -1;
-
-  return result;
-}
-
 gab_value complete_sockcreate(struct gab_triple gab, qd_t socket_qd, wrap_fn fn,
                               enum gab_io_k k) {
   while (!qd_status(socket_qd))
@@ -526,7 +470,7 @@ union gab_value_pair resume_sslsockaccept(struct gab_triple gab,
     return gab_union_cvalid(gab_nil);
   }
 
-  gab_value vclient = wrap_qfdssl(gab, result, IO_SOCK_SSLCLIENT, true);
+  gab_value vclient = wrap_qfdsockssl(gab, result, IO_SOCK_SSLCLIENT, true);
   struct gab_ssl_sock *client = gab_boxdata(vclient);
 
   // TODO: Somehow initialize RSA and chains here?
@@ -541,10 +485,11 @@ union gab_value_pair resume_sslsockaccept(struct gab_triple gab,
   br_ssl_server_reset(&client->server.sc);
 
   /*
-   * Initialise the simplified I/O wrapper context.
+   * Initialize this with nullptrs for all the callbacks, as we write a custom
+   * engine.
    */
-  br_sslio_init(&client->ioc, &client->server.sc.eng, sock_read,
-                &client->sock.fd, sock_write, client);
+  br_sslio_init(&sock->ioc, &sock->client.cc.eng, nullptr, nullptr, nullptr,
+                nullptr);
 
   gab_vmpush(gab_thisvm(gab), gab_ok, vclient);
   return gab_union_cvalid(gab_nil);
@@ -552,7 +497,7 @@ union gab_value_pair resume_sslsockaccept(struct gab_triple gab,
 
 union gab_value_pair complete_sslsockaccept(struct gab_triple gab,
                                             struct gab_ssl_sock *sock) {
-  qd_t qd = qaccept(sock->sock.fd, &sock->sock.addr);
+  qd_t qd = qaccept(sock->io.fd, &sock->addr);
   return gab_union_ctimeout(qd);
 };
 
@@ -568,14 +513,14 @@ union gab_value_pair resume_sockaccept(struct gab_triple gab,
     gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, strerror(-result)));
   else
     gab_vmpush(gab_thisvm(gab), gab_ok,
-               wrap_qfd(gab, result, IO_SOCK_CLIENT, true));
+               wrap_qfdsock(gab, result, IO_SOCK_CLIENT, true));
 
   return gab_union_cvalid(gab_nil);
 }
 
 union gab_value_pair complete_sockaccept(struct gab_triple gab,
                                          struct gab_sock *sock) {
-  qd_t qd = qaccept(sock->fd, &sock->addr);
+  qd_t qd = qaccept(sock->io.fd, &sock->addr);
   return gab_union_ctimeout(qd);
 };
 
@@ -589,7 +534,7 @@ union gab_value_pair resume_sockbind(struct gab_triple gab,
   int64_t result = qd_destroy(reentrant);
 
   if (result < 0) {
-    atomic_store(&sock->k, IO_SOCK_UNSPECIFIED);
+    atomic_store(&sock->io.k, IO_SOCK_UNSPECIFIED);
     gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, strerror(-result)));
   } else {
     gab_vmpush(gab_thisvm(gab), gab_ok);
@@ -602,51 +547,26 @@ union gab_value_pair complete_sockbind(struct gab_triple gab,
                                        struct gab_sock *sock,
                                        const char *hostname, gab_int port) {
   if (qio_addrfrom(hostname, port, &sock->addr) < 0) {
-    atomic_store(&sock->k, IO_SOCK_UNSPECIFIED);
+    atomic_store(&sock->io.k, IO_SOCK_UNSPECIFIED);
     return gab_vmpush(gab_thisvm(gab), gab_err,
                       gab_string(gab, "Invalid address")),
            gab_union_cvalid(gab_nil);
   }
 
-  qd_t qd = qbind(sock->fd, &sock->addr);
+  qd_t qd = qbind(sock->io.fd, &sock->addr);
   return gab_union_ctimeout(qd);
 };
 
 union gab_value_pair resume_sockconnect(struct gab_triple gab,
-                                        struct gab_ssl_sock *sock,
+                                        struct gab_sock *sock,
                                         gab_value reentrant) {
-  return gab_panicf(gab, "NOT IMPLEMENTED");
-}
+  if (!qd_status(reentrant))
+    return gab_union_ctimeout(reentrant);
 
-union gab_value_pair complete_sockconnect(struct gab_triple gab,
-                                          struct gab_sock *sock,
-                                          const char *hostname, gab_int port) {
-  struct qio_addr addr = {};
-  if (qio_addrfrom(hostname, port, &addr) < 0) {
-    atomic_store(&sock->k, IO_SOCK_UNSPECIFIED);
-    return gab_vmpush(gab_thisvm(gab), gab_err,
-                      gab_string(gab, "Invalid address")),
-           gab_union_cvalid(gab_nil);
-  }
-
-  qd_t qd = qconnect(sock->fd, &addr);
-
-  while (!qd_status(qd))
-    switch (gab_yield(gab)) {
-    case sGAB_TERM:
-      return gab_union_cvalid(gab_nil);
-    case sGAB_COLL:
-      gab_gcepochnext(gab);
-      gab_sigpropagate(gab);
-      break;
-    default:
-      break;
-    }
-
-  int64_t result = qd_destroy(qd);
+  int64_t result = qd_destroy(reentrant);
 
   if (result < 0) {
-    atomic_store(&sock->k, IO_SOCK_UNSPECIFIED);
+    atomic_store(&sock->io.k, IO_SOCK_UNSPECIFIED);
     return gab_vmpush(gab_thisvm(gab), gab_err,
                       gab_string(gab, strerror(-result))),
            gab_union_cvalid(gab_nil);
@@ -655,94 +575,146 @@ union gab_value_pair complete_sockconnect(struct gab_triple gab,
   return gab_vmpush(gab_thisvm(gab), gab_ok), gab_union_cvalid(gab_nil);
 }
 
-union gab_value_pair resume_sockrecv(struct gab_triple gab,
-                                     struct gab_sock *sock) {}
-
-union gab_value_pair complete_sockrecv(struct gab_triple gab,
-                                       struct gab_sock *sock) {
-  v_uint8_t buff;
-  v_uint8_t_create(&buff, 1024);
-
-  for (;;) {
-    uint8_t temp[1024];
-
-    qd_t qd = qrecv(sock->fd, sizeof(temp), temp);
-
-    while (!qd_status(qd))
-      switch (gab_yield(gab)) {
-      case sGAB_TERM:
-        return gab_union_cvalid(gab_nil);
-      case sGAB_COLL:
-        gab_gcepochnext(gab);
-        gab_sigpropagate(gab);
-        break;
-      default:
-        break;
-      }
-
-    int64_t result = qd_destroy(qd);
-
-    if (result < 0)
-      return gab_vmpush(gab_thisvm(gab), gab_err,
-                        gab_string(gab, strerror(-result))),
-             gab_union_cvalid(gab_nil);
-
-    v_uint8_t_npush(&buff, result, temp);
-
-    if (result < sizeof temp)
-      break;
+union gab_value_pair complete_sockconnect(struct gab_triple gab,
+                                          struct gab_sock *sock,
+                                          const char *hostname, gab_int port) {
+  if (qio_addrfrom(hostname, port, &sock->addr) < 0) {
+    atomic_store(&sock->io.k, IO_SOCK_UNSPECIFIED);
+    return gab_vmpush(gab_thisvm(gab), gab_err,
+                      gab_string(gab, "Invalid address")),
+           gab_union_cvalid(gab_nil);
   }
 
-  gab_vmpush(gab_thisvm(gab), gab_ok,
-             gab_nbinary(gab, buff.len, (char *)buff.data));
+  qd_t qd = qconnect(sock->io.fd, &sock->addr);
+  return gab_union_ctimeout(qd);
+}
 
-  v_uint8_t_destroy(&buff);
+#define BUFFER_MASK (BUFFER_SIZE - 1)
+#define buffer_back(b) (b->bback & BUFFER_MASK)
+#define buffer_front(b) (b->bfront & BUFFER_MASK)
 
+#define buffer_data(b) (b->buffer + buffer_front(b))
+#define buffer_datasplit(b) (buffer_front(b) > buffer_back(b))
+#define buffer_len(b)                                                          \
+  (buffer_datasplit(b) ? BUFFER_SIZE - buffer_front(b) : b->bback - b->bfront)
+
+#define buffer_space(b) (b->buffer + buffer_back(b))
+#define buffer_spacesplit(b) (buffer_back(b) > buffer_front(b))
+#define buffer_avail(b) (BUFFER_SIZE - buffer_back(b))
+
+union gab_value_pair complete_filerecv(struct gab_triple gab,
+                                       struct gab_file *file, gab_uint len,
+                                       s_char *out) {
+  gab_uint available = buffer_len(file);
+
+  if (!len || len > available)
+    len = available;
+
+  if (!len) {
+    // Yield while we queue up a read
+    qd_t qd = qread(file->io.fd, buffer_avail(file), buffer_space(file));
+    return gab_union_ctimeout(qd);
+  }
+
+  out->len = len;
+  out->data = (char *)buffer_data(file);
+
+  /* mark this data as consumed */
+  file->bfront += len;
   return gab_union_cvalid(gab_nil);
 }
 
-union gab_value_pair resume_sslsockrecv(struct gab_triple gab,
-                                        struct gab_ssl_sock *sock) {
-  gab_value binary = gab_cundefined;
-  io_op_res result = sslio_read_available(gab, sock, &binary);
+union gab_value_pair resume_filerecv(struct gab_triple gab,
+                                     struct gab_file *file, gab_uint len,
+                                     s_char *out, gab_value reentrant) {
+  if (!qd_status(reentrant))
+    return gab_union_ctimeout(reentrant);
 
-  if (result.status < 0)
-    if (br_ssl_engine_current_state(&sock->client.sc.eng) != BR_SSL_CLOSED)
-      return gab_vmpush(
-                 gab_thisvm(gab), gab_err,
-                 gab_string(gab, "Socket closed without proper termination")),
-             gab_union_cvalid(gab_nil);
+  int64_t res = qd_destroy(reentrant);
+
+  if (res < 0)
+    return gab_vmpush(gab_thisvm(gab), gab_err,
+                      gab_string(gab, strerror(-res))),
+           gab_union_cvalid(gab_nil);
+
+  file->bback += res;
+  return complete_filerecv(gab, file, len, out);
+}
+
+union gab_value_pair complete_sockrecv(struct gab_triple gab,
+                                       struct gab_sock *sock, gab_uint len,
+                                       s_char *out) {
+  gab_uint available = buffer_len(sock);
+
+  if (!len || len > available)
+    len = available;
+
+  if (!len) {
+    // Yield while we queue up a read
+    qd_t qd = qrecv(sock->io.fd, buffer_avail(sock), buffer_space(sock));
+    return gab_union_ctimeout(qd);
+  }
+
+  out->len = len;
+  out->data = (char *)buffer_data(sock);
+
+  /* mark this data as consumed */
+  sock->bfront += len;
+  return gab_union_cvalid(gab_nil);
+}
+
+union gab_value_pair resume_sockrecv(struct gab_triple gab,
+                                     struct gab_sock *sock, gab_uint len,
+                                     s_char *out, gab_value reentrant) {
+  if (!qd_status(reentrant))
+    return gab_union_ctimeout(reentrant);
+
+  int64_t res = qd_destroy(reentrant);
+
+  if (res < 0)
+    return gab_vmpush(gab_thisvm(gab), gab_err,
+                      gab_string(gab, strerror(-res))),
+           gab_union_cvalid(gab_nil);
+
+  if (res == 0)
+    return gab_union_cvalid(gab_nil);
+
+  sock->bback += res;
+
+  return complete_sockrecv(gab, sock, len, out);
+}
+
+union gab_value_pair resume_sslsockrecv(struct gab_triple gab,
+                                        struct gab_ssl_sock *sock, gab_uint len,
+                                        s_char *out) {
+  io_op_res result = sslio_read_available(gab, sock, out, len);
+
+  if (result.status < 0) {
+    // TODO: Handle an SSL error gracefully
+    // int err = br_ssl_engine_last_error(&sock->client.cc.eng);
+    //
+    // if (err)
+    //   gab_vmpush(gab_thisvm(gab), gab_string(gab, "Internal SSL Error"));
+
+    return gab_union_cvalid(gab_nil);
+  }
 
   if (result.status > 0)
     return gab_union_ctimeout(result.status);
 
-  assert(binary != gab_cundefined);
 
-  // int err = br_ssl_engine_last_error(&sock->client.sc.eng);
-  // // End of stream sends ERR_IO
-  // if (err != 0 && err != BR_ERR_IO)
-  //   return v_uint8_t_destroy(&buff),
-  //          gab_vmpush(gab_thisvm(gab), gab_err, gab_number(err)),
-  //          gab_union_cvalid(gab_nil);
-
-  return gab_vmpush(gab_thisvm(gab), gab_ok, binary), gab_union_cvalid(gab_nil);
+  return gab_union_cvalid(gab_nil);
 }
 
 union gab_value_pair complete_sslsockrecv(struct gab_triple gab,
-                                          struct gab_ssl_sock *sock) {
-  return resume_sslsockrecv(gab, sock);
-}
-
-union gab_value_pair complete_socksend(struct gab_triple gab,
-                                       struct gab_sock *sock, const char *data,
-                                       size_t len) {
-  qd_t qd = qsend(sock->fd, len, (uint8_t *)data);
-  return gab_union_ctimeout(gab_number(qd));
+                                          struct gab_ssl_sock *sock,
+                                          gab_uint len, s_char *out) {
+  return resume_sslsockrecv(gab, sock, len, out);
 }
 
 union gab_value_pair resume_sslsocksend(struct gab_triple gab,
                                         struct gab_ssl_sock *sock,
-                                        const char *data, size_t len,
+                                        const char *data, gab_uint len,
                                         gab_value reentrant) {
   if (reentrant & BR_SSL_WRITE_INCOMPLETE) {
     // we didn't finish writing this amount.
@@ -759,7 +731,7 @@ union gab_value_pair resume_sslsocksend(struct gab_triple gab,
     }
 
     if (result.status < 0) {
-      int err = br_ssl_engine_last_error(&sock->client.sc.eng);
+      int err = br_ssl_engine_last_error(&sock->client.cc.eng);
       gab_vmpush(gab_thisvm(gab), gab_err,
                  gab_string(gab, "Error during write"), gab_number(err));
       return gab_union_cvalid(gab_nil);
@@ -800,7 +772,7 @@ union gab_value_pair resume_sslsocksend(struct gab_triple gab,
 
 union gab_value_pair complete_sslsocksend(struct gab_triple gab,
                                           struct gab_ssl_sock *sock,
-                                          const char *data, size_t len) {
+                                          const char *data, gab_uint len) {
   // This may yield as the ssl_engine may need to flush out (send) records
   // in order to make room in the buffer for this write.
   io_op_res result = sslio_write_all(sock, data, len);
@@ -812,7 +784,7 @@ union gab_value_pair complete_sslsocksend(struct gab_triple gab,
   }
 
   if (result.status < 0) {
-    int err = br_ssl_engine_last_error(&sock->client.sc.eng);
+    int err = br_ssl_engine_last_error(&sock->client.cc.eng);
     gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, "Error during write"),
                gab_number(err));
     return gab_union_cvalid(gab_nil);
@@ -845,7 +817,7 @@ union gab_value_pair resume_sslsockconnect(struct gab_triple gab,
 
   if (result < 0) {
     // When the connect, fails, reset the socket
-    atomic_store(&sock->sock.k, IO_SOCK_SSLUNSPECIFIED);
+    atomic_store(&sock->io.k, IO_SOCK_SSLUNSPECIFIED);
     return gab_vmpush(gab_thisvm(gab), gab_err,
                       gab_string(gab, strerror(-result))),
            gab_union_cvalid(gab_nil);
@@ -857,7 +829,7 @@ union gab_value_pair resume_sslsockconnect(struct gab_triple gab,
    * -- The provided X.509 validation engine is initialised, with
    *    the hardcoded trust anchor.
    */
-  br_ssl_client_init_full(&sock->client.sc, &sock->client.xc, TAs, TAs_NUM);
+  br_ssl_client_init_full(&sock->client.cc, &sock->client.xc, TAs, TAs_NUM);
 
   /*
    * Set the I/O buffer to the provided array. We allocated a
@@ -866,7 +838,7 @@ union gab_value_pair resume_sslsockconnect(struct gab_triple gab,
    * to 1 (which means "split the buffer into separate input and
    * output areas").
    */
-  br_ssl_engine_set_buffer(&sock->client.sc.eng, sock->client.iobuf,
+  br_ssl_engine_set_buffer(&sock->client.cc.eng, sock->client.iobuf,
                            sizeof(sock->client.iobuf), true);
 
   /*
@@ -874,14 +846,14 @@ union gab_value_pair resume_sslsockconnect(struct gab_triple gab,
    * target host name: it will be used for the SNI extension. The
    * last parameter is 0: we are not trying to resume a session.
    */
-  br_ssl_client_reset(&sock->client.sc, hostname, 0);
+  br_ssl_client_reset(&sock->client.cc, hostname, 0);
 
   /*
-   * Initialise the simplified I/O wrapper context, to use our
-   * SSL client context, and the two callbacks for socket I/O.
+   * Initialize this with nullptrs for all the callbacks, as we write a custom
+   * engine.
    */
-  br_sslio_init(&sock->ioc, &sock->client.sc.eng, sock_read, &sock->sock.fd,
-                sock_write, sock);
+  br_sslio_init(&sock->ioc, &sock->client.cc.eng, nullptr, nullptr, nullptr,
+                nullptr);
 
   return gab_vmpush(gab_thisvm(gab), gab_ok), gab_union_cvalid(gab_nil);
 }
@@ -891,35 +863,35 @@ union gab_value_pair complete_sslsockconnect(struct gab_triple gab,
                                              const char *hostname,
                                              gab_int port) {
   // We immediately yield, so this becomes corrupted immediately.
-  if (qio_addrfrom(hostname, port, &sock->sock.addr) < 0) {
+  if (qio_addrfrom(hostname, port, &sock->addr) < 0) {
     // When the connect, fails, reset the socket
-    atomic_store(&sock->sock.k, IO_SOCK_SSLUNSPECIFIED);
+    atomic_store(&sock->io.k, IO_SOCK_SSLUNSPECIFIED);
     return gab_vmpush(gab_thisvm(gab), gab_err,
                       gab_string(gab, "Invalid address")),
            gab_union_cvalid(gab_nil);
   }
 
-  qd_t qd = qconnect(sock->sock.fd, &sock->sock.addr);
+  qd_t qd = qconnect(sock->io.fd, &sock->addr);
   return gab_union_ctimeout(qd);
 };
 
 gab_value create_tcp(struct gab_triple gab) {
-  return complete_sockcreate(gab, qsocket(QSOCK_TCP), wrap_qfd,
+  return complete_sockcreate(gab, qsocket(QSOCK_TCP), wrap_qfdsock,
                              IO_SOCK_UNSPECIFIED);
 }
 
 gab_value create_udp(struct gab_triple gab) {
-  return complete_sockcreate(gab, qsocket(QSOCK_UDP), wrap_qfd,
+  return complete_sockcreate(gab, qsocket(QSOCK_UDP), wrap_qfdsock,
                              IO_SOCK_UNSPECIFIED);
 }
 
 gab_value create_tcpssl(struct gab_triple gab) {
-  return complete_sockcreate(gab, qsocket(QSOCK_TCP), wrap_qfdssl,
+  return complete_sockcreate(gab, qsocket(QSOCK_TCP), wrap_qfdsockssl,
                              IO_SOCK_SSLUNSPECIFIED);
 }
 
 gab_value create_udpssl(struct gab_triple gab) {
-  return complete_sockcreate(gab, qsocket(QSOCK_UDP), wrap_qfdssl,
+  return complete_sockcreate(gab, qsocket(QSOCK_UDP), wrap_qfdsockssl,
                              IO_SOCK_SSLUNSPECIFIED);
 }
 
@@ -956,170 +928,10 @@ GAB_DYNLIB_NATIVE_FN(io, open) {
   if (qfd < 0)
     gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, strerror(-qfd)));
   else
-    gab_vmpush(gab_thisvm(gab), gab_ok, wrap_qfd(gab, qfd, IO_FILE, true));
+    gab_vmpush(gab_thisvm(gab), gab_ok, wrap_qfdsock(gab, qfd, IO_FILE, true));
 
   return gab_union_cvalid(gab_nil);
 }
-
-int64_t osfgetc(struct gab_triple gab, qfd_t qfd, int *c) {
-  qd_t qd = qread(qfd, 1, (uint8_t *)c);
-
-  while (!qd_status(qd))
-    switch (gab_yield(gab)) {
-    case sGAB_TERM:
-      return -1;
-    case sGAB_COLL:
-      gab_gcepochnext(gab);
-      gab_sigpropagate(gab);
-      break;
-    default:
-      break;
-    }
-
-  int64_t res = qd_result(qd);
-  qd_destroy(qd);
-
-  return res;
-}
-
-/* Awful - read one byte at a time */
-int osfread(struct gab_triple gab, qfd_t qfd, v_char *sb) {
-  for (;;) {
-    int c = -1;
-
-    int64_t res = osfgetc(gab, qfd, &c);
-
-    if (res < 0)
-      return res;
-
-    if (c == EOF)
-      return sb->len;
-
-    v_char_push(sb, c);
-  }
-}
-
-int osnfread(struct gab_triple gab, qfd_t qfd, size_t n, uint8_t buf[n]) {
-  qd_t qd = qread(qfd, n, buf);
-
-  while (!qd_status(qd))
-    switch (gab_yield(gab)) {
-    case sGAB_TERM:
-      return -1;
-    case sGAB_COLL:
-      gab_gcepochnext(gab);
-      gab_sigpropagate(gab);
-      break;
-    default:
-      break;
-    }
-
-  int bytes_read = qd_result(qd);
-  qd_destroy(qd);
-
-  if (bytes_read < 0)
-    return bytes_read;
-
-  if (bytes_read == 0)
-    return strlen((const char *)buf);
-
-  return bytes_read;
-}
-
-GAB_DYNLIB_NATIVE_FN(io, until) {
-  gab_value iostream = gab_arg(0);
-  gab_value delim = gab_arg(1);
-
-  if (gab_valkind(iostream) != kGAB_BOX)
-    return gab_ptypemismatch(gab, iostream, gab_string(gab, tGAB_IOFILE));
-
-  if (delim == gab_nil)
-    delim = gab_binary(gab, "\n");
-
-  if (gab_valkind(delim) != kGAB_BINARY)
-    return gab_pktypemismatch(gab, delim, kGAB_BINARY);
-
-  if (gab_strlen(delim) > 1)
-    return gab_panicf(gab, "Expected delimiter '$' to be one byte long", delim);
-
-  char delim_byte = gab_binat(delim, 0);
-
-  v_char buffer;
-  v_char_create(&buffer, 1024);
-
-  int c = 0;
-  qfd_t stream = *(qfd_t *)gab_boxdata(argv[0]);
-
-  for (;;) {
-    if (osfgetc(gab, stream, &c) < 0)
-      return gab_union_cvalid(gab_nil);
-
-    if (c == EOF)
-      break;
-
-    v_char_push(&buffer, c);
-
-    if (c == delim_byte)
-      break;
-  }
-
-  gab_vmpush(gab_thisvm(gab), gab_ok,
-             gab_nstring(gab, buffer.len, buffer.data));
-
-  return gab_union_cvalid(gab_nil);
-}
-
-GAB_DYNLIB_NATIVE_FN(io, scan) {
-  gab_value iostream = gab_arg(0);
-  gab_value bytesToRead = gab_arg(1);
-
-  if (gab_valkind(iostream) != kGAB_BOX)
-    return gab_ptypemismatch(gab, iostream, gab_string(gab, tGAB_IOFILE));
-
-  if (gab_valkind(bytesToRead) != kGAB_NUMBER)
-    return gab_pktypemismatch(gab, bytesToRead, kGAB_NUMBER);
-
-  uint64_t bytes = gab_valtou(bytesToRead);
-
-  if (bytes == 0) {
-    gab_vmpush(gab_thisvm(gab), gab_string(gab, ""));
-    return gab_union_cvalid(gab_nil);
-  }
-
-  char buffer[bytes];
-
-  qfd_t stream = *(qfd_t *)gab_boxdata(iostream);
-
-  // Try to read bytes number of bytes into buffer
-  int result = osnfread(gab, stream, bytes, (uint8_t *)buffer);
-
-  if (result < bytes)
-    gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, strerror(-result)));
-  else
-    gab_vmpush(gab_thisvm(gab), gab_ok, gab_nstring(gab, bytes, buffer));
-
-  return gab_union_cvalid(gab_nil);
-}
-
-GAB_DYNLIB_NATIVE_FN(io, read) {
-  if (argc != 1 || gab_valkind(argv[0]) != kGAB_BOX)
-    return gab_panicf(gab, "&:read expects a file handle");
-
-  qfd_t stream = *(qfd_t *)gab_boxdata(argv[0]);
-
-  v_char sb = {0};
-  int bytes_read = osfread(gab, stream, &sb);
-
-  if (bytes_read < sb.len) {
-    gab_vmpush(gab_thisvm(gab), gab_string(gab, "File was not fully read"));
-    return gab_union_cvalid(gab_nil);
-  }
-
-  gab_vmpush(gab_thisvm(gab), gab_ok, gab_nbinary(gab, sb.len, sb.data));
-
-  return gab_union_cvalid(gab_nil);
-}
-
 GAB_DYNLIB_NATIVE_FN(io, sock) {
   gab_value type = gab_arg(1);
   if (gab_valkind(type) != kGAB_MESSAGE)
@@ -1150,27 +962,52 @@ GAB_DYNLIB_NATIVE_FN(io, sock) {
   return gab_vmpush(gab_thisvm(gab), gab_ok, sock), gab_union_cvalid(gab_nil);
 }
 
-union gab_value_pair resume_socksend(struct gab_triple gab,
+union gab_value_pair resume_filesend(struct gab_triple gab,
                                      gab_value reentrant) {
-  assert(gab_valisnum(reentrant));
+  if (!qd_status(reentrant))
+    return gab_union_ctimeout(gab_number(reentrant));
 
-  qd_t qd = gab_valtou(reentrant);
+  int64_t result = qd_destroy(reentrant);
 
-  if (qd_status(qd)) {
-    int64_t result = qd_destroy(qd);
-
-    if (result < 0) {
-      gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, strerror(-result)));
-      return gab_union_cvalid(gab_nil);
-    }
-
-    assert(result > 0);
-
-    gab_vmpush(gab_thisvm(gab), gab_ok);
+  if (result < 0) {
+    gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, strerror(-result)));
     return gab_union_cvalid(gab_nil);
   }
 
-  return gab_union_ctimeout(gab_number(qd));
+  assert(result > 0);
+
+  gab_vmpush(gab_thisvm(gab), gab_ok);
+  return gab_union_cvalid(gab_nil);
+}
+
+union gab_value_pair complete_filesend(struct gab_triple gab, struct gab_io *io,
+                                       const char *data, size_t len) {
+  qd_t qd = qwrite(io->fd, len, (uint8_t *)data);
+  return gab_union_ctimeout(qd);
+}
+
+union gab_value_pair resume_socksend(struct gab_triple gab,
+                                     gab_value reentrant) {
+  if (!qd_status(reentrant))
+    return gab_union_ctimeout(gab_number(reentrant));
+
+  int64_t result = qd_destroy(reentrant);
+
+  if (result < 0) {
+    gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, strerror(-result)));
+    return gab_union_cvalid(gab_nil);
+  }
+
+  assert(result > 0);
+
+  gab_vmpush(gab_thisvm(gab), gab_ok);
+  return gab_union_cvalid(gab_nil);
+}
+
+union gab_value_pair complete_socksend(struct gab_triple gab, struct gab_io *io,
+                                       const char *data, size_t len) {
+  qd_t qd = qsend(io->fd, len, (uint8_t *)data);
+  return gab_union_ctimeout(qd);
 }
 
 GAB_DYNLIB_NATIVE_FN(io, send) {
@@ -1184,23 +1021,28 @@ GAB_DYNLIB_NATIVE_FN(io, send) {
   if (gab_valkind(str) != kGAB_BINARY)
     return gab_pktypemismatch(gab, str, kGAB_BINARY);
 
-  struct gab_sock *sock = gab_boxdata(vsock);
+  struct gab_io *io = gab_boxdata(vsock);
 
   const char *data = gab_strdata(&str);
   size_t len = gab_strlen(str);
 
-  switch (sock->k) {
+  switch (io->k) {
+  case IO_FILE:
+    if (reentrant != gab_cundefined)
+      return resume_filesend(gab, reentrant);
+    else
+      return complete_filesend(gab, io, data, len);
   case IO_SOCK_CLIENT:
     if (reentrant != gab_cundefined)
       return resume_socksend(gab, reentrant);
     else
-      return complete_socksend(gab, sock, data, len);
+      return complete_socksend(gab, io, data, len);
   case IO_SOCK_SSLCLIENT:
     if (reentrant != gab_cundefined)
-      return resume_sslsocksend(gab, (struct gab_ssl_sock *)sock, data, len,
+      return resume_sslsocksend(gab, (struct gab_ssl_sock *)io, data, len,
                                 reentrant);
     else
-      return complete_sslsocksend(gab, (struct gab_ssl_sock *)sock, data, len);
+      return complete_sslsocksend(gab, (struct gab_ssl_sock *)io, data, len);
   default:
     return gab_panicf(gab, "$ may not send", vsock);
   }
@@ -1208,28 +1050,128 @@ GAB_DYNLIB_NATIVE_FN(io, send) {
   return gab_panicf(gab, "Reached unreachable codepath");
 }
 
+union gab_value_pair gab_io_read(struct gab_triple gab, struct gab_io *io,
+                                 gab_value reentrant, gab_uint len,
+                                 s_char *out) {
+  switch (io->k) {
+  case IO_FILE:
+    if (reentrant != gab_cundefined)
+      return resume_filerecv(gab, (struct gab_file *)io, len, out, reentrant);
+    else
+      return complete_filerecv(gab, (struct gab_file *)io, len, out);
+  case IO_SOCK_CLIENT:
+    if (reentrant != gab_cundefined)
+      return resume_sockrecv(gab, (struct gab_sock *)io, len, out, reentrant);
+    else
+      return complete_sockrecv(gab, (struct gab_sock *)io, len, out);
+  case IO_SOCK_SSLCLIENT:
+    if (reentrant != gab_cundefined)
+      return resume_sslsockrecv(gab, (struct gab_ssl_sock *)io, len, out);
+    else
+      return complete_sslsockrecv(gab, (struct gab_ssl_sock *)io, len, out);
+  default:
+    return gab_panicf(gab, "IO object may not recv");
+  }
+}
+
 GAB_DYNLIB_NATIVE_FN(io, recv) {
   gab_value vsock = gab_arg(0);
+  gab_value vlen = gab_arg(1);
 
   if (gab_valkind(vsock) != kGAB_BOX)
     return gab_ptypemismatch(gab, vsock, gab_string(gab, tGAB_IOSOCK));
 
-  struct gab_sock *sock = gab_boxdata(vsock);
+  gab_uint len = 0;
+  if (gab_valisnum(vlen))
+    len = gab_valtou(vlen);
 
-  switch (sock->k) {
-  case IO_SOCK_CLIENT:
-    if (reentrant != gab_cundefined)
-      return resume_sockrecv(gab, sock);
-    else
-      return complete_sockrecv(gab, sock);
-  case IO_SOCK_SSLCLIENT:
-    if (reentrant != gab_cundefined)
-      return resume_sslsockrecv(gab, (struct gab_ssl_sock *)sock);
-    else
-      return complete_sslsockrecv(gab, (struct gab_ssl_sock *)sock);
-  default:
-    return gab_panicf(gab, "$ may not recv", vsock);
+  if (vlen != gab_nil)
+    return gab_pktypemismatch(gab, vlen, kGAB_NUMBER);
+
+  struct gab_io *io = gab_boxdata(vsock);
+
+  s_char out;
+  union gab_value_pair res = gab_io_read(gab, io, reentrant, len, &out);
+
+  // If we error or yield, do that.
+  if (res.status != gab_cvalid)
+    return res;
+
+  // Else we succeeded, so create a binary and push it up.
+  assert(out.data && out.len);
+  assert(out.len == len);
+  return gab_vmpush(gab_thisvm(gab), gab_ok,
+                    gab_nbinary(gab, out.len, (const uint8_t *)out.data)),
+         gab_union_cvalid(gab_nil);
+}
+
+GAB_DYNLIB_NATIVE_FN(io, until) {
+  gab_value vio = gab_arg(0);
+  gab_value vdelim = gab_arg(1);
+
+  if (gab_valkind(vio) != kGAB_BOX)
+    return gab_ptypemismatch(gab, vio, gab_string(gab, tGAB_IOFILE));
+
+  if (vdelim == gab_nil)
+    vdelim = gab_binary(gab, "\n");
+
+  if (gab_valkind(vdelim) != kGAB_BINARY)
+    return gab_pktypemismatch(gab, vdelim, kGAB_BINARY);
+
+  s_char delim = {
+      .data = gab_strdata(&vdelim),
+      .len = gab_strlen(vdelim),
+  };
+
+  struct gab_io *io = gab_boxdata(vio);
+
+  for (;;) {
+    /** looping with the reentrant here is dangerous.
+     * The io_read can 'consume' the reentrant (ie, destroy the qid).
+     * If this happens, then this is basically a dangling pointer.
+     */
+    s_char out = {0};
+    union gab_value_pair res = gab_io_read(gab, io, reentrant, 1, &out);
+
+    // If we saw an error or yielded, return it.
+    if (res.status == gab_ctimeout) {
+      return res;
+    }
+
+    if (res.status == gab_cinvalid)
+      return res;
+
+    assert(res.status == gab_cundefined);
+
+    /**
+     * This clears up the reentrant if we made it past the io_read above.
+     */
+    reentrant = gab_cundefined;
+
+    if (!out.len)
+      break;
+
+    if (delim.len && out.data[0] == delim.data[delim.len - 1]) {
+      s_char acc = {
+          .data = gab_fibat(gab_thisfiber(gab), 0),
+          .len = gab_fibsize(gab_thisfiber(gab)),
+      };
+
+      if (acc.len > delim.len) {
+        uint64_t back = acc.len - (delim.len - 1);
+
+        if (!memcmp(acc.data + back, delim.data, delim.len - 1))
+          break;
+      }
+    }
+
+    gab_fibpush(gab_thisfiber(gab), out.data[0]);
   }
+
+  gab_vmpush(gab_thisvm(gab), gab_ok,
+             gab_nbinary(gab, gab_fibsize(gab_thisfiber(gab)),
+                         gab_fibat(gab_thisfiber(gab), 0)));
+  return gab_union_cvalid(gab_nil);
 }
 
 GAB_DYNLIB_NATIVE_FN(io, connect) {
@@ -1251,10 +1193,10 @@ GAB_DYNLIB_NATIVE_FN(io, connect) {
 
   struct gab_sock *sock = gab_boxdata(vsock);
 
-  switch (sock->k) {
+  switch (sock->io.k) {
   case IO_SOCK_UNSPECIFIED: {
     enum gab_io_k unspec = IO_SOCK_UNSPECIFIED;
-    if (!atomic_compare_exchange_strong(&sock->k, &unspec, IO_SOCK_CLIENT))
+    if (!atomic_compare_exchange_strong(&sock->io.k, &unspec, IO_SOCK_CLIENT))
       return gab_vmpush(
                  gab_thisvm(gab), gab_err,
                  gab_string(gab, "Socket is already connected or bound")),
@@ -1264,7 +1206,8 @@ GAB_DYNLIB_NATIVE_FN(io, connect) {
   }
   case IO_SOCK_SSLUNSPECIFIED: {
     enum gab_io_k unspec = IO_SOCK_SSLUNSPECIFIED;
-    if (!atomic_compare_exchange_strong(&sock->k, &unspec, IO_SOCK_SSLCLIENT))
+    if (!atomic_compare_exchange_strong(&sock->io.k, &unspec,
+                                        IO_SOCK_SSLCLIENT))
       return gab_vmpush(
                  gab_thisvm(gab), gab_err,
                  gab_string(gab, "Socket is already connected or bound")),
@@ -1276,7 +1219,7 @@ GAB_DYNLIB_NATIVE_FN(io, connect) {
   case IO_SOCK_CLIENT:
   case IO_SOCK_SERVER:
     if (reentrant != gab_cundefined)
-      return resume_sockconnect(gab, (struct gab_ssl_sock *)sock, reentrant);
+      return resume_sockconnect(gab, (struct gab_sock *)sock, reentrant);
   case IO_SOCK_SSLCLIENT:
   case IO_SOCK_SSLSERVER:
     if (reentrant != gab_cundefined)
@@ -1296,7 +1239,7 @@ GAB_DYNLIB_NATIVE_FN(io, accept) {
     return gab_ptypemismatch(gab, vsock, gab_string(gab, tGAB_IOSOCK));
 
   struct gab_sock *sock = gab_boxdata(vsock);
-  switch (sock->k) {
+  switch (sock->io.k) {
   case IO_SOCK_SERVER:
     return complete_sockaccept(gab, sock);
   case IO_SOCK_SSLUNSPECIFIED:
@@ -1361,29 +1304,34 @@ GAB_DYNLIB_NATIVE_FN(io, bind) {
   if (gab_valkind(ip) != kGAB_STRING)
     return gab_pktypemismatch(gab, ip, kGAB_STRING);
 
-  struct gab_sock *sock = gab_boxdata(vsock);
+  struct gab_io *io = gab_boxdata(vsock);
 
-  switch (sock->k) {
+  switch (io->k) {
   case IO_SOCK_UNSPECIFIED: {
     enum gab_io_k unspec = IO_SOCK_UNSPECIFIED;
-    if (!atomic_compare_exchange_strong(&sock->k, &unspec, IO_SOCK_SERVER))
+    if (!atomic_compare_exchange_strong(&io->k, &unspec, IO_SOCK_SERVER))
       return gab_vmpush(
                  gab_thisvm(gab), gab_err,
                  gab_string(gab, "Socket is already connected or bound")),
              gab_union_cvalid(gab_nil);
 
-    return complete_sockbind(gab, sock, gab_strdata(&ip), gab_valtoi(port));
+    return complete_sockbind(gab, (struct gab_sock *)io, gab_strdata(&ip),
+                             gab_valtoi(port));
   }
   case IO_SOCK_SSLUNSPECIFIED: {
     enum gab_io_k unspec = IO_SOCK_SSLUNSPECIFIED;
-    if (!atomic_compare_exchange_strong(&sock->k, &unspec, IO_SOCK_SSLSERVER))
+    if (!atomic_compare_exchange_strong(&io->k, &unspec, IO_SOCK_SSLSERVER))
       return gab_vmpush(
                  gab_thisvm(gab), gab_err,
                  gab_string(gab, "Socket is already connected or bound")),
              gab_union_cvalid(gab_nil);
 
-    return complete_sockbind(gab, sock, gab_strdata(&ip), gab_valtoi(port));
+    return complete_sockbind(gab, (struct gab_sock *)io, gab_strdata(&ip),
+                             gab_valtoi(port));
   }
+  case IO_SOCK_SSLSERVER:
+  case IO_SOCK_SERVER:
+    return resume_sockbind(gab, (struct gab_sock *)io, reentrant);
   default:
     return gab_vmpush(gab_thisvm(gab), gab_err,
                       gab_string(gab, "Socket is in invalid state")),
@@ -1391,69 +1339,19 @@ GAB_DYNLIB_NATIVE_FN(io, bind) {
   }
 }
 
-GAB_DYNLIB_NATIVE_FN(io, write) {
-  gab_value stream = gab_arg(0);
+int io_loop_cb(void *initialized) {
+  _Atomic int *init = initialized;
 
-  if (gab_valkind(stream) != kGAB_BOX)
-    return gab_ptypemismatch(gab, stream, gab_string(gab, tGAB_IOFILE));
+  int res = qio_init(256);
+  if (res < 0)
+    return atomic_store(init, res), 1;
 
-  qfd_t fs = *(qfd_t *)gab_boxdata(stream);
+  atomic_store(init, 1);
 
-  gab_value str = gab_arg(1);
+  if (qio_loop() < 0)
+    return qio_destroy(), 1;
 
-  if (gab_valkind(str) != kGAB_STRING)
-    return gab_pktypemismatch(gab, str, kGAB_STRING);
-
-  const char *data = gab_strdata(&str);
-  size_t len = gab_strlen(str);
-
-  /*
-   * For nonblocking IO, we need to wrap our writes in a retry-loop.
-   *
-   * Try to write *len* of *data* to *fs*.
-   *
-   * If we get result < 0, the write failed. Bubble up the error.
-   * If we got result < len, the write was incomplete. Bump our data ptr and
-   * drop the written bytes from len. If we got result >= len (really should
-   * just be =, but use >= for safety's sake), write was completed. return ok.
-   */
-  for (;;) {
-    if (!len) {
-      gab_vmpush(gab_thisvm(gab), gab_ok);
-      return gab_union_cvalid(gab_nil);
-    }
-
-    qd_t qd = qwrite(fs, len, (uint8_t *)data);
-
-    while (!qd_status(qd))
-      switch (gab_yield(gab)) {
-      case sGAB_TERM:
-        return gab_union_cvalid(gab_nil);
-      case sGAB_COLL:
-        gab_gcepochnext(gab);
-        gab_sigpropagate(gab);
-        break;
-      default:
-        break;
-      }
-
-    int64_t result = qd_destroy(qd);
-
-    if (result < 0) {
-      gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, strerror(-result)));
-      return gab_union_cvalid(gab_nil);
-    }
-
-    if (result >= len) {
-      gab_vmpush(gab_thisvm(gab), gab_ok);
-      return gab_union_cvalid(gab_nil);
-    }
-
-    len -= result;
-    data += result;
-  }
-
-  return gab_panicf(gab, "Reached unreachable codepath");
+  return qio_destroy(), 0;
 }
 
 GAB_DYNLIB_MAIN_FN {
@@ -1507,17 +1405,17 @@ GAB_DYNLIB_MAIN_FN {
           {
               gab_message(gab, "stdin"),
               mod,
-              wrap_qfd(gab, gab_osfileno(stdin), IO_FILE, false),
+              wrap_qfdsock(gab, gab_osfileno(stdin), IO_FILE, false),
           },
           {
               gab_message(gab, "stdout"),
               mod,
-              wrap_qfd(gab, gab_osfileno(stdout), IO_FILE, false),
+              wrap_qfdsock(gab, gab_osfileno(stdout), IO_FILE, false),
           },
           {
               gab_message(gab, "stderr"),
               mod,
-              wrap_qfd(gab, gab_osfileno(stderr), IO_FILE, false),
+              wrap_qfdsock(gab, gab_osfileno(stderr), IO_FILE, false),
           },
           {
               gab_message(gab, "make"),
@@ -1535,19 +1433,19 @@ GAB_DYNLIB_MAIN_FN {
               gab_snative(gab, "until", gab_mod_io_until),
           },
           {
-              gab_message(gab, "read"),
-              file_t,
-              gab_snative(gab, "read", gab_mod_io_read),
+              gab_message(gab, "until"),
+              sock_t,
+              gab_snative(gab, "until", gab_mod_io_until),
           },
           {
-              gab_message(gab, "scan"),
+              gab_message(gab, "read"),
               file_t,
-              gab_snative(gab, "scan", gab_mod_io_scan),
+              gab_snative(gab, "read", gab_mod_io_recv),
           },
           {
               gab_message(gab, "write"),
               file_t,
-              gab_snative(gab, "write", gab_mod_io_write),
+              gab_snative(gab, "write", gab_mod_io_send),
           },
           {
               gab_message(gab, "write"),

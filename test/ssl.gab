@@ -15,8 +15,11 @@ sock
   .write(req.to\b)
   .unwrap
 
-res = sock.read.unwrap.as\s.unwrap
-res.println
+head = sock.until('\0'.to\b).unwrap.as\s.unwrap
+
+http_res = head.as\http.unwrap
+
+http_res.to\s.println
 
 #sock = Socket
 #  .make tcp:
@@ -30,14 +33,18 @@ res.println
 #  .write(req.to\b)
 #  .unwrap
 #
-#res = sock.read.unwrap.as\s.unwrap
-#res.println
+## In practice, this reads until the socket is closed.
+#head = sock.until('\0'.to\b).unwrap.as\s.unwrap
 #
-##data = sock
-##  .read
-##  .unwrap
-##  .as\s
-##  .unwrap
+#http_res = head.as\http.unwrap
+#
+#http_res.to\s.println
+
+#data = sock
+#  .read
+#  .unwrap
+#  .as\s
+#  .unwrap
 ##
 ##http_res = data
 ##  .as\http

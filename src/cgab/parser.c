@@ -226,8 +226,14 @@ static a_char *parse_raw_str(struct parser *parser, s_char raw_str) {
       case '"':
         buffer[buf_end++] = '"';
         break;
+      case '0':
+        buffer[buf_end++] = '\0';
+        break;
       case '\'':
         buffer[buf_end++] = '\'';
+        break;
+      case '\\':
+        buffer[buf_end++] = '\\';
         break;
       case 'e':
         buffer[buf_end++] = '\033';
@@ -260,9 +266,6 @@ static a_char *parse_raw_str(struct parser *parser, s_char raw_str) {
 
         buf_end += result;
 
-        break;
-      case '\\':
-        buffer[buf_end++] = '\\';
         break;
       default:
         return nullptr;

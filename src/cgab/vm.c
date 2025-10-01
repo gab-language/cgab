@@ -87,6 +87,7 @@ static handler handlers[] = {
 #define FIBER() (GAB_VAL_TO_FIBER(gab_thisfiber(GAB())))
 #define REENTRANT() (FIBER()->reentrant)
 #define RESET_REENTRANT() (FIBER()->reentrant = gab_cundefined)
+#define RESET_BUMP() (FIBER()->allocator.len = 0)
 #define GC() (GAB().eg->gc)
 #define VM() (gab_thisvm(GAB()))
 #define SET_BLOCK(b) (FB()[-3] = (uintptr_t)(b));
@@ -790,15 +791,35 @@ static inline bool has_stackspace(gab_value *sp, gab_value *sb,
   return true;
 }
 
-inline uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc,
-                            gab_value argv[argc]) {
+gab_value gab_vmpop(struct gab_vm *vm) {
+  if (__gab_unlikely(vm->sp == vm->sb))
+    return gab_cundefined;
+
+  uint64_t have = *vm->sp;
+  gab_value popped = *(--vm->sp);
+  *vm->sp = have - 1;
+  return popped;
+}
+
+gab_value gab_vmpeek(struct gab_vm *vm, uint64_t dist) {
+  if (__gab_unlikely(vm->sp - dist < vm->sb))
+    return gab_cundefined;
+
+  return vm->sp[-(int64_t)(dist + 1)];
+}
+
+uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc, gab_value argv[argc]) {
   if (__gab_unlikely(argc == 0 || !has_stackspace(vm->sp, vm->sb, argc))) {
     return 0;
   }
 
+  uint64_t have = *vm->sp;
+
   for (uint8_t n = 0; n < argc; n++) {
     *vm->sp++ = argv[n];
   }
+
+  *vm->sp = have + argc;
 
   return argc;
 }
@@ -913,16 +934,17 @@ inline uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc,
                                                                                \
     RESET_REENTRANT();                                                         \
                                                                                \
-    if (__gab_unlikely(res.status != gab_cundefined)) {                        \
-      if (res.status == gab_ctimeout)                                          \
-        VM_YIELD(res.vresult);                                                 \
-      else                                                                     \
-        return res;                                                            \
-    }                                                                          \
-                                                                               \
+    assert(SP() >= before);                                                    \
     SP() = VM()->sp;                                                           \
                                                                                \
-    assert(SP() >= before);                                                    \
+    if (__gab_unlikely(res.status == gab_ctimeout))                            \
+      VM_YIELD(res.vresult);                                                   \
+                                                                               \
+    RESET_BUMP();                                                              \
+                                                                               \
+    if (__gab_unlikely(res.status == gab_cvalid))                              \
+      return res;                                                              \
+                                                                               \
     uint64_t have = SP() - before;                                             \
                                                                                \
     if (!have)                                                                 \

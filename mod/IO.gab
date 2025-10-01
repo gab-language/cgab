@@ -1,12 +1,12 @@
 io = 'cio'.use
 
-eprintln:.def () => io.stderr.write('$\n'.sprintf(self))
-println:.def () => io.stdout.write('$\n'.sprintf(self))
+eprintln:.def () => io.stderr.write('$\n'.sprintf(self).to\b)
+println:.def () => io.stdout.write('$\n'.sprintf(self).to\b)
 
 printf:.def(
   Strings.t
   (args*) => do
-    io.stdout.write(self.sprintf(args*))
+    io.stdout.write(self.sprintf(args*).to\b)
   end)
 
 #Socket = io.Sock

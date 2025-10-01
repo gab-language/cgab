@@ -307,10 +307,12 @@ void gab_objdestroy(struct gab_triple gab, struct gab_obj *self) {
   case kGAB_FIBER:
   case kGAB_FIBERRUNNING:
   case kGAB_FIBERDONE: {
-    /*struct gab_ofiber *fib = (struct gab_ofiber *)self;*/
+    struct gab_ofiber *fib = (struct gab_ofiber *)self;
+
     /*if (fib->res_values != nullptr)*/
     /*  a_gab_value_destroy(fib->res_values);*/
 
+    v_uint8_t_destroy(&fib->allocator);
     break;
   };
   case kGAB_SHAPE:
@@ -358,9 +360,9 @@ gab_value gab_shorstr(uint64_t len, const char *data) {
   return v;
 }
 
-gab_value gab_shortstrcat(gab_value _a, gab_value _b) {
-  assert(gab_valkind(_a) == kGAB_STRING || gab_valkind(_a) == kGAB_MESSAGE);
-  assert(gab_valkind(_b) == kGAB_STRING || gab_valkind(_b) == kGAB_MESSAGE);
+gab_value __gab_shortstrcat(gab_value _a, gab_value _b) {
+  assert(gab_valkind(_a) == kGAB_STRING || gab_valkind(_a) == kGAB_BINARY);
+  assert(gab_valkind(_b) == kGAB_STRING || gab_valkind(_a) == kGAB_BINARY);
 
   uint64_t alen = gab_strlen(_a);
   uint64_t blen = gab_strlen(_b);
@@ -488,8 +490,8 @@ GAB_API inline int gab_binat(gab_value str, size_t idx) {
   Given two strings, create a third which is the concatenation a+b
 */
 gab_value gab_strcat(struct gab_triple gab, gab_value _a, gab_value _b) {
-  assert(gab_valkind(_a) == kGAB_STRING || gab_valkind(_a) == kGAB_MESSAGE);
-  assert(gab_valkind(_b) == kGAB_STRING || gab_valkind(_b) == kGAB_MESSAGE);
+  assert(gab_valkind(_a) == kGAB_STRING);
+  assert(gab_valkind(_b) == kGAB_STRING);
 
   uint64_t alen = gab_strlen(_a);
   uint64_t blen = gab_strlen(_b);
@@ -503,7 +505,7 @@ gab_value gab_strcat(struct gab_triple gab, gab_value _a, gab_value _b) {
   uint64_t len = alen + blen;
 
   if (len <= 5)
-    return gab_shortstrcat(_a, _b);
+    return __gab_shortstrcat(_a, _b);
 
   a_char *buff = a_char_empty(len + 1);
 
@@ -1566,6 +1568,36 @@ union gab_value_pair gab_fibawait(struct gab_triple gab, gab_value f) {
   return gab_tfibawait(gab, f, (size_t)-1);
 }
 
+void *gab_fibmalloc(gab_value f, uint64_t n) {
+  assert(gab_valkind(f) >= kGAB_FIBER && gab_valkind(f) <= kGAB_FIBERRUNNING);
+  struct gab_ofiber *fiber = GAB_VAL_TO_FIBER(f);
+
+  if (fiber->allocator.cap - fiber->allocator.len < n)
+    v_uint8_t_cap(&fiber->allocator, fiber->allocator.cap * 2);
+
+  uint8_t *ptr = v_uint8_t_ref_at(&fiber->allocator, fiber->allocator.len);
+  fiber->allocator.len += n;
+  return ptr;
+}
+
+void gab_fibpush(gab_value f, uint8_t b) {
+  assert(gab_valkind(f) >= kGAB_FIBER && gab_valkind(f) <= kGAB_FIBERRUNNING);
+  struct gab_ofiber *fiber = GAB_VAL_TO_FIBER(f);
+  v_uint8_t_push(&fiber->allocator, b);
+}
+
+void *gab_fibat(gab_value f, uint64_t n) {
+  assert(gab_valkind(f) >= kGAB_FIBER && gab_valkind(f) <= kGAB_FIBERRUNNING);
+  struct gab_ofiber *fiber = GAB_VAL_TO_FIBER(f);
+  return v_uint8_t_ref_at(&fiber->allocator, n);
+}
+
+uint64_t gab_fibsize(gab_value f) {
+  assert(gab_valkind(f) >= kGAB_FIBER && gab_valkind(f) <= kGAB_FIBERRUNNING);
+  struct gab_ofiber *fiber = GAB_VAL_TO_FIBER(f);
+  return fiber->allocator.len;
+}
+
 gab_value gab_fibawaite(struct gab_triple gab, gab_value f) {
   assert(gab_valkind(f) >= kGAB_FIBER && gab_valkind(f) <= kGAB_FIBERRUNNING);
 
@@ -1621,28 +1653,35 @@ bool gab_chnmatches(gab_value c, gab_value *ptr) {
 
 /*
  * The channel implementation is subtle here. There are two atomic components:
- *  - data (An atomic gab_value* which points to the beginning of the slice of values in the channel)
- *  - len (An atomic uint64 which contains the number of values in the channel's slice)
+ *  - data (An atomic gab_value* which points to the beginning of the slice of
+ * values in the channel)
+ *  - len (An atomic uint64 which contains the number of values in the channel's
+ * slice)
  *
- * Because there are *two* pieces of atomic state that need to be synced, the implementation is a little
- * more nuanced.
+ * Because there are *two* pieces of atomic state that need to be synced, the
+ * implementation is a little more nuanced.
  *
- * "Putters" need to wait until the *data* ptr is null. This is how gab_chnisfull() works. Therefore, "putters" wait in a loop like this:
+ * "Putters" need to wait until the *data* ptr is null. This is how
+ * gab_chnisfull() works. Therefore, "putters" wait in a loop like this:
  *
  * while(gab_chnisfull(channel))
  *  yield()
  *
- *  "Takers" need to wait until the *len*  is not zero. This is how gab_chnisempty() works. Therefore, "takers" wait in a loop liek this:
+ *  "Takers" need to wait until the *len*  is not zero. This is how
+ * gab_chnisempty() works. Therefore, "takers" wait in a loop liek this:
  *
  *  while(gab_chnisempty(channel))
  *    yield()
  *
- * This way, Putters don't stomp over other putters, and they also don't stomp over other takers.
- * THis is because other putters are prevented from acting as they don't have the data ptr, and takers cant act until they have the len.
- * This guarantees that no one sees the channel (Other than the putter who succeeded) until the data is completely ready.
+ * This way, Putters don't stomp over other putters, and they also don't stomp
+ * over other takers. THis is because other putters are prevented from acting as
+ * they don't have the data ptr, and takers cant act until they have the len.
+ * This guarantees that no one sees the channel (Other than the putter who
+ * succeeded) until the data is completely ready.
  *
- * The inverse is true for takers. Once a taker succeeds in taking the len, no other takers will try. And no putters can act until the taker
- * restores the *data* atomic.
+ * The inverse is true for takers. Once a taker succeeds in taking the len, no
+ * other takers will try. And no putters can act until the taker restores the
+ * *data* atomic.
  */
 
 bool gab_chnisempty(gab_value c) {
@@ -2392,6 +2431,7 @@ void pprint_binary(v_gab_pprint *self, gab_value bin) {
   push_pprint_s(self, tGAB_BINARY);
   push_pprint_k(self, kPPRINT_SPACE);
   push_pprint_s(self, "0x");
+  /* TODO: PROPERLY CONVERT THIS TO BINARY, NOT JUST PRINT AS UTF8 */
   push_pprint_v(self, gab_bintostr(bin));
   push_pprint_kd(self, kPPRINT_DEDENT, (union gab_pprint_d){'>'});
 }

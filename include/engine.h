@@ -230,13 +230,27 @@ struct gab_ofiber {
   /* Flags copied from the gab-triple when this fiber was created. */
   uint32_t flags;
 
+  /* This value is managed by native-c functions that yield back to the
+   * scheduler so that they don't block. It is what notifies said function that
+   * it is re-entering.*/
   gab_value reentrant;
 
+  /*
+   * TODO: Give native c-functions an allocator here. This can be a very simple bumpallocator.
+   * When a native fn returns, if it yielded we keep the bump,
+   * if it fully returns we reset the bump allocator. This is safe because the
+   * c-function can never nest and call into another c-native in the same fiber.
+   */
+  v_uint8_t allocator;
+
   /* When a user creates a fiber, A frame is setup on the stack using these
-   * arrays as the moduile bytescode and constants.*/
+   * arrays as the module bytescode and constants.*/
   uint8_t virtual_frame_bc[4];
   gab_value virtual_frame_ks[7];
 
+  /*
+   * The vm structure which contains the data for executing bytecode.
+   */
   struct gab_vm vm;
 
   /**

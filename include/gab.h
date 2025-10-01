@@ -792,6 +792,13 @@ GAB_API struct gab_impl_rest gab_impl(struct gab_triple gab, gab_value message,
 GAB_API uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t len, gab_value *argv);
 
 /**
+ * @brief Peek into the stack of the vm.
+ */
+GAB_API gab_value gab_vmpeek(struct gab_vm *vm, uint64_t dist);
+
+GAB_API gab_value gab_vmpop(struct gab_vm *vm);
+
+/**
  * @brief Inspect the frame in the vm at depth N in the callstack.
  *
  * @param stream The stream to print to.
@@ -1563,6 +1570,11 @@ GAB_API_INLINE gab_value gab_string(struct gab_triple gab, const char *data) {
  */
 GAB_API gab_value gab_strcat(struct gab_triple gab, gab_value a, gab_value b);
 
+GAB_API_INLINE gab_value gab_sstrcat(struct gab_triple gab, gab_value a,
+                                     const char *b) {
+  return gab_strcat(gab, a, gab_string(gab, b));
+}
+
 /**
  * @brief Get a pointer to the start of the string.
  *
@@ -1658,6 +1670,11 @@ GAB_API_INLINE gab_value gab_msgtostr(gab_value msg) {
   return msg & ~((uint64_t)kGAB_MESSAGE << __GAB_TAGOFFSET);
 }
 
+GAB_API_INLINE gab_value gab_ubintostr(gab_value bin) {
+  assert(gab_valkind(bin) == kGAB_BINARY);
+  return bin & ~((uint64_t)kGAB_BINARY << __GAB_TAGOFFSET);
+}
+
 /**
  * @brief Convert a binary into a string. This *can* fail, as a binary is not
  * guaranteed to be valid utf8.
@@ -1671,7 +1688,20 @@ GAB_API_INLINE gab_value gab_bintostr(gab_value bin) {
   if (gab_strmblen(bin) == -1)
     return gab_cinvalid;
 
-  return bin & ~((uint64_t)kGAB_BINARY << __GAB_TAGOFFSET);
+  return gab_ubintostr(bin);
+}
+
+GAB_API_INLINE gab_value gab_bincat(struct gab_triple gab, gab_value a,
+                                    gab_value b) {
+  assert(gab_valkind(a) == kGAB_BINARY);
+  assert(gab_valkind(b) == kGAB_BINARY);
+  assert(gab_valkind(gab_ubintostr(a)) == kGAB_STRING);
+  assert(gab_valkind(gab_ubintostr(b)) == kGAB_STRING);
+
+  gab_value astr = gab_ubintostr(a);
+  gab_value bstr = gab_ubintostr(b);
+
+  return gab_strtobin(gab_strcat(gab, astr, bstr));
 }
 
 /**
@@ -1685,8 +1715,14 @@ GAB_API_INLINE gab_value gab_binary(struct gab_triple gab, const char *data) {
 }
 
 GAB_API_INLINE gab_value gab_nbinary(struct gab_triple gab, size_t len,
-                                     const char *data) {
-  return gab_strtobin(gab_nstring(gab, len, data));
+                                     const uint8_t *data) {
+  return gab_strtobin(gab_nstring(gab, len, (const char *)data));
+}
+
+GAB_API_INLINE gab_value gab_nbincat(struct gab_triple gab, gab_value a,
+                                     uint64_t len, const uint8_t *b) {
+  assert(gab_valkind(a) == kGAB_BINARY);
+  return gab_bincat(gab, a, gab_nbinary(gab, len, b));
 }
 
 /* Cast a value to a (gab_onative*) */
@@ -2206,6 +2242,26 @@ GAB_API gab_value gab_fibawaite(struct gab_triple gab, gab_value fiber);
 
 GAB_API gab_value gab_fibstacktrace(struct gab_triple gab, gab_value fiber);
 
+/*
+ * @brief Using the fiber's bump allocator, allocate n bytes and return a pointer to it
+ */
+GAB_API void* gab_fibmalloc(gab_value fiber, uint64_t n);
+
+/*
+ * @brief Push a byte onto the fiber's bump allocator.
+ */
+GAB_API void gab_fibpush(gab_value fiber, uint8_t b);
+
+/*
+ * @brief Get a pointer into the bump allocator, at offset n.
+ */
+GAB_API void* gab_fibat(gab_value fiber, uint64_t n);
+
+/*
+ * @brief Get the size of the arena.
+ */
+GAB_API uint64_t gab_fibsize(gab_value fiber);
+
 GAB_API_INLINE bool gab_fibisrunning(gab_value fiber) {
   return gab_valkind(fiber) == kGAB_FIBERRUNNING;
 }
@@ -2214,6 +2270,9 @@ GAB_API_INLINE bool gab_fibisdone(gab_value fiber) {
   return gab_valkind(fiber) == kGAB_FIBERDONE;
 }
 
+/*
+ * @brief Return the fiber running in this thread.
+ */
 GAB_API gab_value gab_thisfiber(struct gab_triple gab);
 
 /*
