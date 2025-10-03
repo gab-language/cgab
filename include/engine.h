@@ -233,7 +233,7 @@ struct gab_ofiber {
   /* This value is managed by native-c functions that yield back to the
    * scheduler so that they don't block. It is what notifies said function that
    * it is re-entering.*/
-  gab_value reentrant;
+  uintptr_t reentrant;
 
   /*
    * TODO: Give native c-functions an allocator here. This can be a very simple bumpallocator.
@@ -461,8 +461,6 @@ struct gab_src {
 struct gab_eg {
   _Atomic int8_t njobs;
 
-  uint64_t nresources;
-
   uint64_t hash_seed;
 
   v_gab_value scratch;
@@ -476,7 +474,6 @@ struct gab_eg {
     _Atomic int8_t signal;
   } sig;
 
-  uint64_t nroots;
   const char *resroots[cGAB_RESOURCE_MAX];
 
   struct gab_resource res[cGAB_RESOURCE_MAX];

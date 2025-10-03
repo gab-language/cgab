@@ -459,11 +459,11 @@ gab_value complete_sockcreate(struct gab_triple gab, qd_t socket_qd, wrap_fn fn,
 }
 union gab_value_pair resume_sslsockaccept(struct gab_triple gab,
                                           struct gab_ssl_sock *sock,
-                                          gab_value reentrant) {
-  if (!qd_status(reentrant))
+                                          uintptr_t reentrant) {
+  if (!qd_status(reentrant - 1))
     return gab_union_ctimeout(reentrant);
 
-  int64_t result = qd_destroy(reentrant);
+  int64_t result = qd_destroy(reentrant - 1);
 
   if (result < 0) {
     gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, strerror(-result)));
@@ -498,16 +498,16 @@ union gab_value_pair resume_sslsockaccept(struct gab_triple gab,
 union gab_value_pair complete_sslsockaccept(struct gab_triple gab,
                                             struct gab_ssl_sock *sock) {
   qd_t qd = qaccept(sock->io.fd, &sock->addr);
-  return gab_union_ctimeout(qd);
+  return gab_union_ctimeout(qd + 1);
 };
 
 union gab_value_pair resume_sockaccept(struct gab_triple gab,
                                        struct gab_sock *sock,
-                                       gab_value reentrant) {
-  if (!qd_status(reentrant))
+                                       uintptr_t reentrant) {
+  if (!qd_status(reentrant - 1))
     return gab_union_ctimeout(reentrant);
 
-  int64_t result = qd_destroy(reentrant);
+  int64_t result = qd_destroy(reentrant - 1);
 
   if (result < 0)
     gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, strerror(-result)));
@@ -521,17 +521,17 @@ union gab_value_pair resume_sockaccept(struct gab_triple gab,
 union gab_value_pair complete_sockaccept(struct gab_triple gab,
                                          struct gab_sock *sock) {
   qd_t qd = qaccept(sock->io.fd, &sock->addr);
-  return gab_union_ctimeout(qd);
+  return gab_union_ctimeout(qd + 1);
 };
 
 union gab_value_pair resume_sockbind(struct gab_triple gab,
                                      struct gab_sock *sock,
-                                     gab_value reentrant) {
+                                     uintptr_t reentrant) {
 
-  if (!qd_status(reentrant))
+  if (!qd_status(reentrant - 1))
     return gab_union_ctimeout(reentrant);
 
-  int64_t result = qd_destroy(reentrant);
+  int64_t result = qd_destroy(reentrant - 1);
 
   if (result < 0) {
     atomic_store(&sock->io.k, IO_SOCK_UNSPECIFIED);
@@ -554,16 +554,16 @@ union gab_value_pair complete_sockbind(struct gab_triple gab,
   }
 
   qd_t qd = qbind(sock->io.fd, &sock->addr);
-  return gab_union_ctimeout(qd);
+  return gab_union_ctimeout(qd + 1);
 };
 
 union gab_value_pair resume_sockconnect(struct gab_triple gab,
                                         struct gab_sock *sock,
-                                        gab_value reentrant) {
-  if (!qd_status(reentrant))
+                                        uintptr_t reentrant) {
+  if (!qd_status(reentrant - 1))
     return gab_union_ctimeout(reentrant);
 
-  int64_t result = qd_destroy(reentrant);
+  int64_t result = qd_destroy(reentrant - 1);
 
   if (result < 0) {
     atomic_store(&sock->io.k, IO_SOCK_UNSPECIFIED);
@@ -586,7 +586,7 @@ union gab_value_pair complete_sockconnect(struct gab_triple gab,
   }
 
   qd_t qd = qconnect(sock->io.fd, &sock->addr);
-  return gab_union_ctimeout(qd);
+  return gab_union_ctimeout(qd + 1);
 }
 
 #define BUFFER_MASK (BUFFER_SIZE - 1)
@@ -613,7 +613,7 @@ union gab_value_pair complete_filerecv(struct gab_triple gab,
   if (!len) {
     // Yield while we queue up a read
     qd_t qd = qread(file->io.fd, buffer_avail(file), buffer_space(file));
-    return gab_union_ctimeout(qd);
+    return gab_union_ctimeout(qd + 1);
   }
 
   out->len = len;
@@ -626,11 +626,11 @@ union gab_value_pair complete_filerecv(struct gab_triple gab,
 
 union gab_value_pair resume_filerecv(struct gab_triple gab,
                                      struct gab_file *file, gab_uint len,
-                                     s_char *out, gab_value reentrant) {
-  if (!qd_status(reentrant))
+                                     s_char *out, uintptr_t reentrant) {
+  if (!qd_status(reentrant - 1))
     return gab_union_ctimeout(reentrant);
 
-  int64_t res = qd_destroy(reentrant);
+  int64_t res = qd_destroy(reentrant - 1);
 
   if (res < 0)
     return gab_vmpush(gab_thisvm(gab), gab_err,
@@ -652,7 +652,7 @@ union gab_value_pair complete_sockrecv(struct gab_triple gab,
   if (!len) {
     // Yield while we queue up a read
     qd_t qd = qrecv(sock->io.fd, buffer_avail(sock), buffer_space(sock));
-    return gab_union_ctimeout(qd);
+    return gab_union_ctimeout(qd + 1);
   }
 
   out->len = len;
@@ -665,11 +665,11 @@ union gab_value_pair complete_sockrecv(struct gab_triple gab,
 
 union gab_value_pair resume_sockrecv(struct gab_triple gab,
                                      struct gab_sock *sock, gab_uint len,
-                                     s_char *out, gab_value reentrant) {
-  if (!qd_status(reentrant))
+                                     s_char *out, uintptr_t reentrant) {
+  if (!qd_status(reentrant - 1))
     return gab_union_ctimeout(reentrant);
 
-  int64_t res = qd_destroy(reentrant);
+  int64_t res = qd_destroy(reentrant - 1);
 
   if (res < 0)
     return gab_vmpush(gab_thisvm(gab), gab_err,
@@ -715,7 +715,7 @@ union gab_value_pair complete_sslsockrecv(struct gab_triple gab,
 union gab_value_pair resume_sslsocksend(struct gab_triple gab,
                                         struct gab_ssl_sock *sock,
                                         const char *data, gab_uint len,
-                                        gab_value reentrant) {
+                                        uintptr_t reentrant) {
   if (reentrant & BR_SSL_WRITE_INCOMPLETE) {
     // we didn't finish writing this amount.
     int64_t written = reentrant >> 32;
@@ -809,11 +809,11 @@ union gab_value_pair complete_sslsocksend(struct gab_triple gab,
 union gab_value_pair resume_sslsockconnect(struct gab_triple gab,
                                            struct gab_ssl_sock *sock,
                                            const char *hostname,
-                                           gab_value reentrant) {
-  if (!qd_status(reentrant))
+                                           uintptr_t reentrant) {
+  if (!qd_status(reentrant - 1))
     return gab_union_ctimeout(reentrant);
 
-  int64_t result = qd_destroy(reentrant);
+  int64_t result = qd_destroy(reentrant - 1);
 
   if (result < 0) {
     // When the connect, fails, reset the socket
@@ -872,7 +872,7 @@ union gab_value_pair complete_sslsockconnect(struct gab_triple gab,
   }
 
   qd_t qd = qconnect(sock->io.fd, &sock->addr);
-  return gab_union_ctimeout(qd);
+  return gab_union_ctimeout(qd + 1);
 };
 
 gab_value create_tcp(struct gab_triple gab) {
@@ -963,11 +963,11 @@ GAB_DYNLIB_NATIVE_FN(io, sock) {
 }
 
 union gab_value_pair resume_filesend(struct gab_triple gab,
-                                     gab_value reentrant) {
-  if (!qd_status(reentrant))
-    return gab_union_ctimeout(gab_number(reentrant));
+                                     uintptr_t reentrant) {
+  if (!qd_status(reentrant - 1))
+    return gab_union_ctimeout(reentrant);
 
-  int64_t result = qd_destroy(reentrant);
+  int64_t result = qd_destroy(reentrant - 1);
 
   if (result < 0) {
     gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, strerror(-result)));
@@ -983,15 +983,15 @@ union gab_value_pair resume_filesend(struct gab_triple gab,
 union gab_value_pair complete_filesend(struct gab_triple gab, struct gab_io *io,
                                        const char *data, size_t len) {
   qd_t qd = qwrite(io->fd, len, (uint8_t *)data);
-  return gab_union_ctimeout(qd);
+  return gab_union_ctimeout(qd + 1);
 }
 
 union gab_value_pair resume_socksend(struct gab_triple gab,
-                                     gab_value reentrant) {
-  if (!qd_status(reentrant))
-    return gab_union_ctimeout(gab_number(reentrant));
+                                     uintptr_t reentrant) {
+  if (!qd_status(reentrant - 1))
+    return gab_union_ctimeout(reentrant);
 
-  int64_t result = qd_destroy(reentrant);
+  int64_t result = qd_destroy(reentrant - 1);
 
   if (result < 0) {
     gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, strerror(-result)));
@@ -1007,7 +1007,7 @@ union gab_value_pair resume_socksend(struct gab_triple gab,
 union gab_value_pair complete_socksend(struct gab_triple gab, struct gab_io *io,
                                        const char *data, size_t len) {
   qd_t qd = qsend(io->fd, len, (uint8_t *)data);
-  return gab_union_ctimeout(qd);
+  return gab_union_ctimeout(qd + 1);
 }
 
 GAB_DYNLIB_NATIVE_FN(io, send) {
@@ -1028,17 +1028,17 @@ GAB_DYNLIB_NATIVE_FN(io, send) {
 
   switch (io->k) {
   case IO_FILE:
-    if (reentrant != gab_cundefined)
+    if (reentrant)
       return resume_filesend(gab, reentrant);
     else
       return complete_filesend(gab, io, data, len);
   case IO_SOCK_CLIENT:
-    if (reentrant != gab_cundefined)
+    if (reentrant)
       return resume_socksend(gab, reentrant);
     else
       return complete_socksend(gab, io, data, len);
   case IO_SOCK_SSLCLIENT:
-    if (reentrant != gab_cundefined)
+    if (reentrant)
       return resume_sslsocksend(gab, (struct gab_ssl_sock *)io, data, len,
                                 reentrant);
     else
@@ -1051,21 +1051,21 @@ GAB_DYNLIB_NATIVE_FN(io, send) {
 }
 
 union gab_value_pair gab_io_read(struct gab_triple gab, struct gab_io *io,
-                                 gab_value reentrant, gab_uint len,
+                                 uintptr_t reentrant, gab_uint len,
                                  s_char *out) {
   switch (io->k) {
   case IO_FILE:
-    if (reentrant != gab_cundefined)
+    if (reentrant)
       return resume_filerecv(gab, (struct gab_file *)io, len, out, reentrant);
     else
       return complete_filerecv(gab, (struct gab_file *)io, len, out);
   case IO_SOCK_CLIENT:
-    if (reentrant != gab_cundefined)
+    if (reentrant)
       return resume_sockrecv(gab, (struct gab_sock *)io, len, out, reentrant);
     else
       return complete_sockrecv(gab, (struct gab_sock *)io, len, out);
   case IO_SOCK_SSLCLIENT:
-    if (reentrant != gab_cundefined)
+    if (reentrant)
       return resume_sslsockrecv(gab, (struct gab_ssl_sock *)io, len, out);
     else
       return complete_sslsockrecv(gab, (struct gab_ssl_sock *)io, len, out);
@@ -1085,7 +1085,7 @@ GAB_DYNLIB_NATIVE_FN(io, recv) {
   if (gab_valisnum(vlen))
     len = gab_valtou(vlen);
 
-  if (vlen != gab_nil)
+  if (gab_valkind(vlen) != kGAB_NUMBER && vlen != gab_nil)
     return gab_pktypemismatch(gab, vlen, kGAB_NUMBER);
 
   struct gab_io *io = gab_boxdata(vsock);
@@ -1146,7 +1146,7 @@ GAB_DYNLIB_NATIVE_FN(io, until) {
     /**
      * This clears up the reentrant if we made it past the io_read above.
      */
-    reentrant = gab_cundefined;
+    reentrant = 0;
 
     if (!out.len)
       break;
@@ -1218,11 +1218,11 @@ GAB_DYNLIB_NATIVE_FN(io, connect) {
   }
   case IO_SOCK_CLIENT:
   case IO_SOCK_SERVER:
-    if (reentrant != gab_cundefined)
+    if (reentrant)
       return resume_sockconnect(gab, (struct gab_sock *)sock, reentrant);
   case IO_SOCK_SSLCLIENT:
   case IO_SOCK_SSLSERVER:
-    if (reentrant != gab_cundefined)
+    if (reentrant)
       return resume_sslsockconnect(gab, (struct gab_ssl_sock *)sock,
                                    gab_strdata(&ip), reentrant);
   default:

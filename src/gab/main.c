@@ -315,7 +315,7 @@ int run_repl(int flags, size_t nmodules, const char **modules) {
           .modules = modules,
           .roots =
               (const char *[]){
-                  gab_osprefix(GAB_VERSION_TAG "." GAB_TARGET_TRIPLE), "./",
+                  "./", gab_osprefix(GAB_VERSION_TAG "." GAB_TARGET_TRIPLE),
                   nullptr, // List terminator.
               },
           .resources =
@@ -368,7 +368,7 @@ int run_string(const char *string, int flags, size_t jobs, size_t nmodules,
           .modules = modules,
           .roots =
               (const char *[]){
-                  gab_osprefix(GAB_VERSION_TAG "." GAB_TARGET_TRIPLE), "./",
+                  "./", gab_osprefix(GAB_VERSION_TAG "." GAB_TARGET_TRIPLE),
                   nullptr, // List terminator.
               },
           .resources =
@@ -473,7 +473,7 @@ int run_file(const char *path, int flags, size_t jobs, size_t nmodules,
           .modules = modules,
           .roots =
               (const char *[]){
-                  gab_osprefix(GAB_VERSION_TAG "." GAB_TARGET_TRIPLE), "./",
+                  "./", gab_osprefix(GAB_VERSION_TAG "." GAB_TARGET_TRIPLE),
                   nullptr, // List terminator.
               },
           .resources =
@@ -792,7 +792,7 @@ int download_gab(const char *pkg, const char *triple) {
 
   if (!tag) {
     clierror("cli error: Could not resolve package and tag for '%s'.\n",
-           pkgbuf);
+             pkgbuf);
     return false;
   }
 
@@ -844,8 +844,7 @@ int download_gab(const char *pkg, const char *triple) {
   clisuccess("Resolved installation prefix: %s.\n", location_prefix);
 
   if (!gab_osmkdirp(location_prefix)) {
-    clierror("cli error: Failed to create directory at %s.\n",
-           location_prefix);
+    clierror("cli error: Failed to create directory at %s.\n", location_prefix);
     return false;
   };
 
@@ -1116,9 +1115,10 @@ int copy_file(FILE *in, FILE *out) {
   return 0; // success
 }
 
-bool add_module(mz_zip_archive *zip_o, const char *module) {
+bool add_module(mz_zip_archive *zip_o, const char **roots,
+                struct gab_resource *resources, const char *module) {
   const char *prefix, *suffix;
-  const char *path = gab_resolve(gab, module, &prefix, &suffix);
+  const char *path = gab_mresolve(roots, resources, module, &prefix, &suffix);
 
   if (!path) {
     clierror("cli error: Could not resolve module %s.\n", module);
@@ -1199,30 +1199,20 @@ int build(struct command_arguments args) {
   v_char_spush(&location, s_char_cstr(target));
   v_char_push(&location, '\0');
 
-  union gab_value_pair res = gab_create(
-      (struct gab_create_argt){
-          .len = nmodules,
-          .modules = modules,
-          .roots =
-              (const char *[]){
-                  "./",
-                  gab_osprefix(location.data),
-                  nullptr,
-              },
-          .resources =
-              (struct gab_resource[]){
-                  {"mod/", dynlib_fileending, gab_use_dynlib, file_exister},
-                  {"", dynlib_fileending, gab_use_dynlib, file_exister},
-                  {"", "/mod.gab", gab_use_source, file_exister},
-                  {"mod/", ".gab", gab_use_source, file_exister},
-                  {"", ".gab", gab_use_source, file_exister},
-                  {},
-              },
-      },
-      &gab);
+  const char *roots[] = {
+      gab_osprefix(location.data),
+      "./",
+      nullptr,
+  };
 
-  if (!check_and_printerr(&res))
-    return gab_destroy(gab), 1;
+  struct gab_resource resources[] = {
+      {"mod/", dynlib_fileending, gab_use_dynlib, file_exister},
+      {"", dynlib_fileending, gab_use_dynlib, file_exister},
+      {"", "/mod.gab", gab_use_source, file_exister},
+      {"mod/", ".gab", gab_use_source, file_exister},
+      {"", ".gab", gab_use_source, file_exister},
+      {},
+  };
 
   if (args.argc < 1) {
     clierror("app error: missing bundle argument to build subcommand.\n");
@@ -1280,13 +1270,13 @@ int build(struct command_arguments args) {
 
   for (int i = 0; i < ndefault_modules; i++) {
     const char *module = default_modules[i];
-    if (!add_module(&zip_o, module))
+    if (!add_module(&zip_o, roots, resources, module))
       return 1;
   }
 
   for (int i = 0; i < args.argc; i++) {
     const char *module = args.argv[i];
-    if (!add_module(&zip_o, module))
+    if (!add_module(&zip_o, roots, resources, module))
       return 1;
   }
 
@@ -1302,7 +1292,6 @@ int build(struct command_arguments args) {
 
   fclose(bundle_f);
   fclose(exe);
-  gab_destroy(gab);
 
 #if GAB_PLATFORM_UNIX
   if (chmod(bundle, 0755) != 0) {
@@ -1330,7 +1319,8 @@ bool check_valid_zip() {
   assert(&zip);
   assert(path);
   if (!mz_zip_reader_init_file(&zip, path, 0)) {
-    mz_zip_error e = mz_zip_get_last_error(&zip);
+    // TODO: Report this error somehow
+    // mz_zip_error e = mz_zip_get_last_error(&zip);
     return false;
   }
 
@@ -1348,11 +1338,8 @@ int main(int argc, const char **argv) {
    */
   setlocale(LC_ALL, "");
 
-  if (check_not_gab(argv[0])) {
-    if (check_valid_zip()) {
-      return run_app(argv[0]);
-    }
-  }
+  if (check_not_gab(argv[0]) && check_valid_zip())
+    return run_app(argv[0]);
 
   if (argc < 2)
     goto fin;

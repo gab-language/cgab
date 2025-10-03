@@ -520,8 +520,6 @@ union gab_value_pair gab_create(struct gab_create_argt args,
   struct gab_eg *eg = malloc(egsize);
   memset(eg, 0, egsize);
 
-  eg->nresources = 0;
-  eg->nroots = 0;
   eg->len = njobs + 1;
   eg->njobs = 0;
   eg->hash_seed = time(nullptr);
@@ -580,21 +578,16 @@ union gab_value_pair gab_create(struct gab_create_argt args,
   eg->work_channel = gab_channel(gab);
   gab_iref(gab, eg->work_channel);
 
+  int nroots = 0;
   for (int i = 0; args.roots[i] != nullptr; i++) {
-    assert(gab.eg->nroots < cGAB_RESOURCE_MAX);
-    gab.eg->resroots[gab.eg->nroots++] = args.roots[i];
+    assert(nroots < cGAB_RESOURCE_MAX);
+    gab.eg->resroots[nroots++] = args.roots[i];
   }
 
+  int nres = 0;
   for (int i = 0; args.resources[i].prefix != nullptr; i++) {
-    assert(gab.eg->nresources < cGAB_RESOURCE_MAX);
-
-    struct gab_resource *res = args.resources + i;
-
-    uint64_t idx = gab.eg->nresources++;
-    gab.eg->res[idx].prefix = res->prefix;
-    gab.eg->res[idx].suffix = res->suffix;
-    gab.eg->res[idx].loader = res->loader;
-    gab.eg->res[idx].exister = res->exister;
+    assert(nres < cGAB_RESOURCE_MAX);
+    gab.eg->res[nres++] = args.resources[i];
   }
 
   for (int i = 0; i < LEN_CARRAY(kind_primitives); i++) {
@@ -1444,20 +1437,17 @@ const char *gab_errtocs(struct gab_triple gab, gab_value err) {
 
 #define MODULE_SYMBOL "gab_lib"
 
-a_char *match_resource(struct gab_triple gab, struct gab_resource *res,
+a_char *match_resource(const char **roots, const struct gab_resource *res,
                        const char *name, uint64_t len) {
-  for (int i = gab.eg->nroots - 1; i >= 0; i--) {
-    if (gab.eg->resroots[i] == nullptr)
-      continue;
-
-    const uint64_t r_len = strlen(gab.eg->resroots[i]);
+  for (int i = 0; roots[i] != nullptr; i++) {
+    const uint64_t r_len = strlen(roots[i]);
     const uint64_t p_len = strlen(res->prefix);
     const uint64_t s_len = strlen(res->suffix);
     const uint64_t total_len = r_len + p_len + len + s_len + 1;
 
     char buffer[total_len];
 
-    memcpy(buffer, gab.eg->resroots[i], r_len);
+    memcpy(buffer, roots[i], r_len);
     memcpy(buffer + r_len, res->prefix, p_len);
     memcpy(buffer + r_len + p_len, name, len);
     memcpy(buffer + r_len + p_len + len, res->suffix, s_len + 1);
@@ -1470,11 +1460,13 @@ a_char *match_resource(struct gab_triple gab, struct gab_resource *res,
   return nullptr;
 }
 
-const char *gab_resolve(struct gab_triple gab, const char *mod,
-                        const char **prefix, const char **suffix) {
-  for (int i = gab.eg->nresources - 1; i >= 0; i--) {
-    struct gab_resource *res = gab.eg->res + i;
-    a_char *module_path = match_resource(gab, res, mod, strlen(mod));
+GAB_API const char *gab_mresolve(const char **roots,
+                                 const struct gab_resource *resources,
+                                 const char *mod, const char **prefix,
+                                 const char **suffix) {
+  for (int i = 0; resources[i].prefix != nullptr; i++) {
+    const struct gab_resource *res = resources + i;
+    a_char *module_path = match_resource(roots, res, mod, strlen(mod));
     if (module_path) {
       if (prefix)
         *prefix = res->prefix;
@@ -1489,15 +1481,21 @@ const char *gab_resolve(struct gab_triple gab, const char *mod,
   return nullptr;
 }
 
+const char *gab_resolve(struct gab_triple gab, const char *mod,
+                        const char **prefix, const char **suffix) {
+  return gab_mresolve(gab.eg->resroots, gab.eg->res, mod, prefix, suffix);
+}
+
 union gab_value_pair gab_use(struct gab_triple gab, struct gab_use_argt args) {
   gab_value path = args.sname ? gab_string(gab, args.sname) : args.vname;
   assert(gab_valkind(path) == kGAB_STRING);
 
   const char *name = gab_strdata(&path);
 
-  for (int i = gab.eg->nresources - 1; i >= 0; i--) {
+  for (int i = 0; gab.eg->res[i].prefix != nullptr; i++) {
     struct gab_resource *res = gab.eg->res + i;
-    a_char *module_path = match_resource(gab, res, name, strlen(name));
+    a_char *module_path =
+        match_resource(gab.eg->resroots, res, name, strlen(name));
 
     if (module_path) {
       a_gab_value *cached = gab_segmodat(gab.eg, (char *)module_path->data);

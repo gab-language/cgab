@@ -86,7 +86,7 @@ static handler handlers[] = {
 #define EG() (GAB().eg)
 #define FIBER() (GAB_VAL_TO_FIBER(gab_thisfiber(GAB())))
 #define REENTRANT() (FIBER()->reentrant)
-#define RESET_REENTRANT() (FIBER()->reentrant = gab_cundefined)
+#define RESET_REENTRANT() (FIBER()->reentrant = 0)
 #define RESET_BUMP() (FIBER()->allocator.len = 0)
 #define GC() (GAB().eg->gc)
 #define VM() (gab_thisvm(GAB()))
@@ -454,10 +454,10 @@ struct gab_err_argt vm_frame_build_err(struct gab_triple gab,
   };
 }
 
-// TODO: Accept a *value* here, to be passed when
-union gab_value_pair vm_yield(struct gab_triple gab, gab_value value) {
+union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value) {
   gab_value f = gab_thisfiber(gab);
   struct gab_ofiber *fiber = GAB_VAL_TO_FIBER(f);
+  assert(value != 0);
 
   assert(fiber->header.kind = kGAB_FIBERRUNNING);
   fiber->header.kind = kGAB_FIBER;
@@ -938,7 +938,7 @@ uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc, gab_value argv[argc]) {
     SP() = VM()->sp;                                                           \
                                                                                \
     if (__gab_unlikely(res.status == gab_ctimeout))                            \
-      VM_YIELD(res.vresult);                                                   \
+      assert(res.bresult != 0), VM_YIELD(res.bresult);                         \
                                                                                \
     RESET_BUMP();                                                              \
                                                                                \
@@ -1071,8 +1071,7 @@ union gab_value_pair gab_vmexec(struct gab_triple gab, gab_value f) {
   }
 
 #define VM_PANIC_GUARD_ISS(value)                                              \
-  if (__gab_unlikely(gab_valkind(value) != kGAB_STRING &&                      \
-                     gab_valkind(value) != kGAB_MESSAGE)) {                    \
+  if (__gab_unlikely(gab_valkind(value) != kGAB_STRING)) {                     \
     STORE_PRIMITIVE_VM_PANIC_FRAME(have);                                      \
     VM_PANIC(GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, ks[GAB_SEND_KMESSAGE],       \
              value, gab_valtype(GAB(), value), gab_type(GAB(), kGAB_STRING));  \
@@ -1550,11 +1549,11 @@ CASE_CODE(SEND_PRIMITIVE_CONCAT) {
   if (__gab_unlikely(have < 2))
     PUSH(gab_nil), have++;
 
-  VM_PANIC_GUARD_ISS(PEEK_N(have));
-  VM_PANIC_GUARD_ISS(PEEK_N(have - 1));
-
   gab_value val_a = PEEK_N(have);
   gab_value val_b = PEEK_N(have - 1);
+
+  VM_PANIC_GUARD_ISS(val_a);
+  VM_PANIC_GUARD_ISS(val_b);
 
   STORE_SP();
   gab_value val_ab = gab_strcat(GAB(), val_a, val_b);
@@ -1579,10 +1578,10 @@ CASE_CODE(SEND_PRIMITIVE_USE) {
   SEND_GUARD_KIND(r, kGAB_STRING);
 
   STORE();
-  gab_value reentrant = REENTRANT();
+  uintptr_t reentrant = REENTRANT();
   union gab_value_pair mod;
 
-  if (reentrant != gab_cundefined) {
+  if (reentrant) {
     assert(gab_valisfib(reentrant));
 
     mod = gab_tfibawait(GAB(), reentrant, 0);
@@ -2239,7 +2238,7 @@ CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE_PRIMITIVE) {
   // This is okay for now, as we only make this modification once, and
   // reentries assume it has already been made.
 
-  if (REENTRANT() == gab_cundefined) {
+  if (!REENTRANT()) {
     // Guard that our callee is still a message
     SEND_GUARD_KIND(m, kGAB_MESSAGE);
     // Guard that implementations for this message haven't changed

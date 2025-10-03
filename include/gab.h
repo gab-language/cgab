@@ -33,7 +33,7 @@
 #define GAB_DYNLIB_NATIVE_FN(module, name)                                     \
   union gab_value_pair gab_mod_##module##_##name(                              \
       struct gab_triple gab, uint64_t argc, gab_value *argv,                   \
-      gab_value reentrant)
+      uintptr_t reentrant)
 
 #ifdef __cplusplus
 extern "C" {
@@ -446,7 +446,7 @@ typedef void (*gab_gcvisit_f)(struct gab_triple, struct gab_obj *obj);
 
 typedef union gab_value_pair (*gab_native_f)(struct gab_triple, uint64_t argc,
                                              gab_value *argv,
-                                             gab_value reentrant);
+                                             uintptr_t reentrant);
 
 typedef void (*gab_boxdestroy_f)(struct gab_triple gab, uint64_t len,
                                  char *data);
@@ -558,9 +558,16 @@ GAB_API union gab_value_pair gab_create(struct gab_create_argt args,
 
 /**
  * @brief resolve a module with the engine's given loaders and roots.
+ * The prefix and suffix that matched are written to prefix and suffix, if
+ * provided.
  */
 GAB_API const char *gab_resolve(struct gab_triple gab, const char *mod,
                                 const char **prefix, const char **suffix);
+
+GAB_API const char *gab_mresolve(const char **roots,
+                                 const struct gab_resource *resources,
+                                 const char *mod, const char **prefix,
+                                 const char **suffix);
 
 /**
  * @brief Free the memory owned by this triple.
@@ -687,6 +694,8 @@ union gab_value_pair {
       gab_value vresult;
       /* An array of result values. */
       a_gab_value *aresult;
+      /* An opaque bit blob. */
+      uintptr_t bresult;
     };
   };
 };
@@ -2243,9 +2252,10 @@ GAB_API gab_value gab_fibawaite(struct gab_triple gab, gab_value fiber);
 GAB_API gab_value gab_fibstacktrace(struct gab_triple gab, gab_value fiber);
 
 /*
- * @brief Using the fiber's bump allocator, allocate n bytes and return a pointer to it
+ * @brief Using the fiber's bump allocator, allocate n bytes and return a
+ * pointer to it
  */
-GAB_API void* gab_fibmalloc(gab_value fiber, uint64_t n);
+GAB_API void *gab_fibmalloc(gab_value fiber, uint64_t n);
 
 /*
  * @brief Push a byte onto the fiber's bump allocator.
@@ -2255,7 +2265,7 @@ GAB_API void gab_fibpush(gab_value fiber, uint8_t b);
 /*
  * @brief Get a pointer into the bump allocator, at offset n.
  */
-GAB_API void* gab_fibat(gab_value fiber, uint64_t n);
+GAB_API void *gab_fibat(gab_value fiber, uint64_t n);
 
 /*
  * @brief Get the size of the arena.

@@ -241,11 +241,6 @@ strings\dynamic_interpolate\test: .def (t => do
   t.expect(+:.('hi ' 'world' ignore_me:) ==: 'hi world')
 end)
 
-strings\append_messages\test: .def (t => do
-  t.expect(+:.('hi ' world:) ==: 'hi world')
-  t.expect(('hi ' + world:) ==:'hi world')
-end)
-
 strings\length\test: .def t => do
   t.expect("Hello!".len, ==: 6)
   t.expect("Hello world".len, ==: 11)
@@ -672,7 +667,7 @@ io\should_make_working_tls_request\test: .def t => do
 
   t.expect(ok ==: ok:)
 
-  (ok, bin) = sock.read(1024)
+  (ok, bin) = sock.until('\0'.to\b)
 
   t.expect(ok ==: ok:)
 

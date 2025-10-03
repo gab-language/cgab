@@ -1503,8 +1503,6 @@ gab_value gab_fiber(struct gab_triple gab, struct gab_fiber_argt args) {
     memcpy(self->data + 2, args.argv, args.argc * sizeof(gab_value));
   }
 
-  self->reentrant = gab_cundefined;
-
   self->data[0] = args.message;
   self->data[1] = args.receiver;
 
