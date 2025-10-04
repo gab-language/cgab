@@ -120,7 +120,7 @@ $(VENDOR_PREFIX)/linenoise/$(BUILD_PREFIX)/Makefile:
 		-DCMAKE_BUILD_TYPE=Release
 
 $(BUILD_PREFIX)/liblinenoise.a: $(VENDOR_PREFIX)/linenoise/$(BUILD_PREFIX)/Makefile
-	make -s -C $(VENDOR_PREFIX)/linenoise/$(BUILD_PREFIX)
+	make -s -C $(VENDOR_PREFIX)/linenoise/$(BUILD_PREFIX) linenoise
 	cp $(VENDOR_PREFIX)/linenoise/$(BUILD_PREFIX)/liblinenoise.a $(BUILD_PREFIX)/
 
 $(VENDOR_PREFIX)/sqlite3.c:
