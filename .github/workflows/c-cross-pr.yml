@@ -36,8 +36,8 @@ jobs:
             target: x86_64-linux-gnu
             cmd: ./build-x86_64-linux-gnu/gab
           - os: macos-latest
-            target: aarch64-macos-none
-            cmd: ./build-aarch64-macos-none/gab
+            target: x86_64-macos-none
+            cmd: ./build-x86_64-macos-none/gab
           # - os: windows-latest
           #   target: x86_64-windows-gnu
           #   cmd: .\build-x86_64-windows-gnu\gab
@@ -115,8 +115,8 @@ jobs:
             target: x86_64-linux-gnu
             cmd: ./build-x86_64-linux-gnu/gab
           - os: macos-latest
-            target: aarch64-macos-none
-            cmd: ./build-aarch64-macos-none/gab
+            target: x86_64-macos-none
+            cmd: ./build-x86_64-macos-none/gab
           # - os: windows-latest
           #   target: x86_64-windows-gnu
           #   cmd: .\build-x86_64-windows-gnu\gab
