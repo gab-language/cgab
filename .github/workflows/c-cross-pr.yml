@@ -70,7 +70,7 @@ jobs:
       run: clide build
 
     - name: Gab Build Bundle
-      run: build-${{ matrix.target }}/gab build -m cgui,cgab,tests test
+      run: build-${{ matrix.target }}/gab build -p ${{ matrix.target }} -m cgui,cgab,tests test
 
     - name: Upload Binary Artifact
       uses: pyTooling/upload-artifact@v4

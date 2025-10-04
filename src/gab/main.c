@@ -528,6 +528,7 @@ struct command_arguments {
   int argc, flags;
   const char **argv;
   v_s_char modules;
+  const char *platform;
 };
 
 struct option {
@@ -593,6 +594,26 @@ const struct option structured_err_option = {
     's',
     .flag = FLAG_STRUCT_ERR,
 };
+
+bool platform_handler(struct command_arguments *args) {
+  const char *flag = *args->argv;
+  args->argv++;
+  args->argc--;
+
+  if (args->argc <= 0) {
+    clierror("No argument to flag '%s'.\n", flag);
+    return false;
+  }
+
+  args->flags |= FLAG_BUILD_TARGET;
+  const char *platform = *args->argv;
+  args->argv++;
+  args->argc--;
+
+  args->platform = platform;
+
+  return true;
+}
 
 bool module_handler(struct command_arguments *args) {
   const char *flag = *args->argv;
@@ -707,6 +728,7 @@ static struct command commands[] = {
                 "Set the platform of the build.",
                 'p',
                 .flag = FLAG_BUILD_TARGET,
+                .handler_f = platform_handler,
             },
         },
     },
@@ -1195,7 +1217,8 @@ bool add_module(mz_zip_archive *zip_o, const char **roots,
   const char *path =
       gab_mresolve(roots, resources, cstr_module, &prefix, &suffix);
 
-  // If the path ends in *mod.gab*, we should treat the whole directory as a module and add it.
+  // If the path ends in *mod.gab*, we should treat the whole directory as a
+  // module and add it.
 
   if (!path) {
     clierror("Could not resolve module " GAB_GREEN "%s" GAB_RESET ".\n",
@@ -1230,47 +1253,39 @@ bool add_module(mz_zip_archive *zip_o, const char **roots,
   return true;
 }
 
-const char *target = GAB_TARGET_TRIPLE;
+const char *platform = GAB_TARGET_TRIPLE;
 const char *dynlib_fileending = GAB_DYNLIB_FILEENDING;
 
 int build(struct command_arguments *args) {
   if (args->flags & FLAG_BUILD_TARGET) {
-    if (args->argc == 0) {
-      clierror("Expected argument to build command.\n");
-      return 1;
-    }
+    platform = args->platform;
 
-    target = args->argv[0];
-
-    if (!strcmp(target, "x86_64-linux-gnu")) {
+    if (!strcmp(platform, "x86_64-linux-gnu")) {
       dynlib_fileending = ".so";
-    } else if (!strcmp(target, "x86_64-macos-none")) {
+    } else if (!strcmp(platform, "x86_64-macos-none")) {
       dynlib_fileending = ".dylib";
-    } else if (!strcmp(target, "x86_64-windows-gnu")) {
+    } else if (!strcmp(platform, "x86_64-windows-gnu")) {
       dynlib_fileending = ".dll";
-    } else if (!strcmp(target, "aarch64-linux-gnu")) {
+    } else if (!strcmp(platform, "aarch64-linux-gnu")) {
       dynlib_fileending = ".so";
-    } else if (!strcmp(target, "aarch64-macos-none")) {
+    } else if (!strcmp(platform, "aarch64-macos-none")) {
       dynlib_fileending = ".dylib";
-    } else if (!strcmp(target, "aarch64-windows-gnu")) {
+    } else if (!strcmp(platform, "aarch64-windows-gnu")) {
       dynlib_fileending = ".dll";
     } else {
-      clierror("Unrecognized target '%s'.\n", target);
+      clierror("Unrecognized platform '%s'.\n", platform);
       return 1;
     }
 
-    args->argv++;
-    args->argc--;
-
-    clisuccess("Build target is %s: %s.\n", target, dynlib_fileending);
-    if (!download_gab("Gab", GAB_VERSION_TAG, target))
+    clisuccess("Build platform is %s: %s.\n", platform, dynlib_fileending);
+    if (!download_gab("Gab", GAB_VERSION_TAG, platform))
       return 1;
   }
 
   v_char location = {};
   v_char_spush(&location, s_char_cstr(GAB_VERSION_TAG));
   v_char_push(&location, '.');
-  v_char_spush(&location, s_char_cstr(target));
+  v_char_spush(&location, s_char_cstr(platform));
   v_char_push(&location, '\0');
 
   const char *roots[] = {
@@ -1306,7 +1321,7 @@ int build(struct command_arguments *args) {
   v_char exepath = {};
   v_char_spush(&exepath, s_char_cstr(GAB_VERSION_TAG));
   v_char_push(&exepath, '.');
-  v_char_spush(&exepath, s_char_cstr(target));
+  v_char_spush(&exepath, s_char_cstr(platform));
   v_char_push(&exepath, '\0');
   const char *path = gab_osprefix(exepath.data);
 
