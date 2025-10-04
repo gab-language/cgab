@@ -83,10 +83,7 @@ jobs:
       run: cp build-${{ matrix.target }}/mod/* mod
 
     - name: Gab Build Bundle
-      run: |
-        chmod +x ${{ matrix.cmd }}
-        file build-x86_64-macos-none/gab
-        ${{ matrix.cmd }} build -p ${{ matrix.target }} -m cgui,cgab,tests test
+      run: ${{ matrix.cmd }} build -p ${{ matrix.target }} -m cgui,cgab,tests test
 
     - name: Upload Module Artifacts
       uses: pyTooling/upload-artifact@v4
