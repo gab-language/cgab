@@ -1,9 +1,11 @@
 #include "core.h"
 #include "gab.h"
-#include "miniz/amalgamation/miniz.c"
 #include <locale.h>
 
-#include "linenoise/include/linenoise.h"
+#include "crossline/crossline.c"
+#include "crossline/crossline.h"
+
+#include "miniz/amalgamation/miniz.c"
 #include "miniz/amalgamation/miniz.h"
 
 #include "colors.h"
@@ -325,6 +327,11 @@ static const char *default_modules_deps[] = {
 };
 static const size_t ndefault_modules_deps = LEN_CARRAY(default_modules_deps);
 
+static char prompt_buffer[4096];
+char *readline(const char *prompt) {
+  return crossline_readline(prompt, prompt_buffer, sizeof(prompt_buffer));
+}
+
 int run_repl(int flags, size_t nmodules, const char **modules) {
   union gab_value_pair res = gab_create(
       (struct gab_create_argt){
@@ -351,15 +358,13 @@ int run_repl(int flags, size_t nmodules, const char **modules) {
   if (!check_and_printerr(&res))
     return gab_destroy(gab), 1;
 
-  linenoiseSetMultiLine(true);
   gab_repl(gab, (struct gab_repl_argt){
                     .name = MAIN_MODULE,
                     .flags = flags,
                     .welcome_message = "Gab version " GAB_VERSION_TAG "",
                     .prompt_prefix = "> ",
                     .result_prefix = "=> ",
-                    .readline = linenoise,
-                    .add_hist = linenoiseHistoryAdd,
+                    .readline = readline,
                     .len = nmodules,
                     .sargv = modules,
                     .argv = res.aresult->data + 1, // Skip initial ok:

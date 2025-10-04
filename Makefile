@@ -30,7 +30,7 @@ CXXFLAGS = -std=c++23 \
 # A binary executable needs to keep all cgab symbols,
 # in case they are used by a dynamically loaded c-module.
 # This is why -rdynamic is used.
-GAB_LINK_DEPS = -lcgab -llinenoise -lc++
+GAB_LINK_DEPS = -lcgab
 BINARY_FLAGS 	= -rdynamic -DGAB_CORE $(GAB_LINK_DEPS)
 
 # A shared module needs undefined dynamic lookup
@@ -80,8 +80,7 @@ $(BUILD_PREFIX)/libcgab.a: $(CGAB_OBJ)
 
 # This rule builds the gab executable, linking with libcgab.a
 $(BUILD_PREFIX)/gab: $(GAB_OBJ) 													\
-							$(BUILD_PREFIX)/libcgab.a 									\
-							$(BUILD_PREFIX)/liblinenoise.a
+							$(BUILD_PREFIX)/libcgab.a
 	$(CC) $(CFLAGS) $(BINARY_FLAGS) $(GAB_OBJ) -o $@
 
 # This rule builds each c++ module shared library.
@@ -107,21 +106,6 @@ $(VENDOR_PREFIX)/ta.h: cacert.pem
 	make CC="$(CC)" -s -C $(VENDOR_PREFIX)/BearSSL
 	$(VENDOR_PREFIX)/BearSSL/build/brssl ta cacert.pem > vendor/ta.h
 	make clean -s -C $(VENDOR_PREFIX)/BearSSL
-
-$(VENDOR_PREFIX)/linenoise/$(BUILD_PREFIX)/Makefile:
-	mkdir -p $(VENDOR_PREFIX)/linenoise/$(BUILD_PREFIX)
-	cd $(VENDOR_PREFIX)/linenoise/$(BUILD_PREFIX) && 	\
-		CC="$(CC)" 																			\
-		CXX="$(CXX)" 												 						\
-		cmake .. 														 						\
-		-DCMAKE_CXX_FLAGS=--target=$(GAB_TARGETS)	 			\
-		-DCMAKE_C_FLAGS=--target=$(GAB_TARGETS) 		 		\
-		-DCMAKE_POLICY_VERSION_MINIMUM=3.5							\
-		-DCMAKE_BUILD_TYPE=Release
-
-$(BUILD_PREFIX)/liblinenoise.a: $(VENDOR_PREFIX)/linenoise/$(BUILD_PREFIX)/Makefile
-	make -C $(VENDOR_PREFIX)/linenoise/$(BUILD_PREFIX) linenoise
-	cp $(VENDOR_PREFIX)/linenoise/$(BUILD_PREFIX)/liblinenoise.a $(BUILD_PREFIX)/
 
 $(VENDOR_PREFIX)/sqlite3.c:
 	mkdir -p $(VENDOR_PREFIX)/sqlite/$(BUILD_PREFIX)
