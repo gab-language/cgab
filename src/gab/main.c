@@ -847,6 +847,20 @@ const char *split_pkg(char *pkg) {
 }
 
 int download_gab(const char *pkg, const char *tag, const char *triple) {
+  /// Ensure that the ~/gab folder exists.
+  const char *gab_prefix = gab_osprefix("");
+
+  if (gab_prefix == nullptr) {
+    clierror("Could not determine installation prefix.\n");
+    return false;
+  }
+
+  if (!gab_osmkdirp(gab_prefix)) {
+    clierror("Failed to create directory at " GAB_MAGENTA "%s" GAB_RESET ".\n",
+             gab_prefix);
+    return false;
+  };
+
   int taglen = strlen(tag);
 
   size_t triple_len = strlen(triple);
@@ -867,8 +881,7 @@ int download_gab(const char *pkg, const char *tag, const char *triple) {
           location_prefix);
 
   if (!gab_osmkdirp(location_prefix)) {
-    clierror("cli error: Failed to create directory at " GAB_MAGENTA
-             "%s" GAB_RESET ".\n",
+    clierror("Failed to create directory at " GAB_MAGENTA "%s" GAB_RESET ".\n",
              location_prefix);
     return false;
   };
@@ -1025,7 +1038,8 @@ int get(struct command_arguments *args) {
   }
 
   if (!gab_osmkdirp(gab_prefix)) {
-    clierror("Failed to create directory at %s.\n", gab_prefix);
+    clierror("Failed to create directory at " GAB_MAGENTA "%s" GAB_RESET ".\n",
+             gab_prefix);
     return false;
   };
 
@@ -1282,7 +1296,7 @@ int build(struct command_arguments *args) {
       return 1;
     }
 
-    clisuccess("Build platform is %s: %s.\n", platform, dynlib_fileending);
+    clisuccess("Build platform is %s.\n", platform, dynlib_fileending);
     if (!download_gab("Gab", GAB_VERSION_TAG, platform))
       return 1;
   }
