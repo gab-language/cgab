@@ -68,7 +68,10 @@ all: gab cmodules cxxmodules
 -include $(CGAB_OBJ:.o=.d) $(GAB_OBJ:.o=.d) $(CMOD_SHARED:$(GAB_DYNLIB_FILEENDING)=.d)
 
 # This rule builds object files out of c source files
-$(BUILD_PREFIX)/%.o: $(SRC_PREFIX)/%.c
+# Somewhat confusing that miniz amalgamation needs to be made here,
+# but that is because the main *object file* is created before the executable,
+# and the object file cannot compile without the header and impl from this.
+$(BUILD_PREFIX)/%.o: $(SRC_PREFIX)/%.c $(VENDOR_PREFIX)/miniz/amalgamation/miniz.c
 	$(CC) $(CFLAGS) $< -c -o $@
 
 # This rule builds libcgab by archiving the cgab object files together.
@@ -76,7 +79,9 @@ $(BUILD_PREFIX)/libcgab.a: $(CGAB_OBJ)
 	zig ar rcs $@ $^
 
 # This rule builds the gab executable, linking with libcgab.a
-$(BUILD_PREFIX)/gab: $(GAB_OBJ) $(BUILD_PREFIX)/libcgab.a $(BUILD_PREFIX)/liblinenoise.a $(VENDOR_PREFIX)/miniz/amalgamation/miniz.h
+$(BUILD_PREFIX)/gab: $(GAB_OBJ) 													\
+							$(BUILD_PREFIX)/libcgab.a 									\
+							$(BUILD_PREFIX)/liblinenoise.a
 	$(CC) $(CFLAGS) $(BINARY_FLAGS) $(GAB_OBJ) -o $@
 
 # This rule builds each c++ module shared library.
@@ -146,9 +151,9 @@ libllhttp_generated:
 	echo "libllhttp generation done." >> libllhttp_generated
 	make clean -s -C $(VENDOR_PREFIX)/llhttp
 
-$(VENDOR_PREFIX)/miniz/amalgamation/miniz.h:
-	cd $(VENDOR_PREFIX)/miniz
-	./amalgamation.sh
+$(VENDOR_PREFIX)/miniz/amalgamation/miniz.c:
+	cd $(VENDOR_PREFIX)/miniz && \
+		./amalgamate.sh
 
 $(BUILD_PREFIX)/libgrapheme.a:
 	rm -f $(VENDOR_PREFIX)/libgrapheme/libgrapheme.a $(VENDOR_PREFIX)/libgrapheme/src/*.o
