@@ -118,6 +118,11 @@ queue_tests = (filter_by_suite) => do
         .or xf
     
     fibers = tests\all.collect xf
+
+    fibers.map await:
+
+    events.close
+    app.close
   end
 end
 

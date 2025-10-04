@@ -1,5 +1,4 @@
 #include "gab.h"
-#include "platform.h"
 
 GAB_DYNLIB_NATIVE_FN(message, create) {
   gab_value name = gab_arg(1);

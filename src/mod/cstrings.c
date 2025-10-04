@@ -1,5 +1,4 @@
 #include "../vendor/libgrapheme/grapheme.h"
-#include "core.h"
 #include "gab.h"
 #include <ctype.h>
 
