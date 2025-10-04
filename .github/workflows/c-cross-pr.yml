@@ -84,6 +84,7 @@ jobs:
 
     - name: Gab Build Bundle
       run: |
+        chmod +x ${{ matrix.cmd }}
         file build-x86_64-macos-none/gab
         ${{ matrix.cmd }} build -p ${{ matrix.target }} -m cgui,cgab,tests test
 
