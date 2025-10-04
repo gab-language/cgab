@@ -130,6 +130,7 @@ libgrapheme_generated:
 # This rule generates the header file for llhttp
 # To be later compiled to specific targets
 libllhttp_generated:
+	cd $(VENDOR_PREFIX)/llhttp && npm i
 	make CC="$(CC)" -s -C $(VENDOR_PREFIX)/llhttp
 	mv $(VENDOR_PREFIX)/llhttp/build/llhttp.h $(VENDOR_PREFIX)/
 	echo "libllhttp generation done." >> libllhttp_generated
