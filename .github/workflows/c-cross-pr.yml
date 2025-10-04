@@ -85,8 +85,8 @@ jobs:
     - name: Gab Build Bundle
       run: |
         uname -m
-        file build-{{ matrix.target }}/gab
-        chmod +x build-{{ matrix.target }}/gab
+        file build-${{ matrix.target }}/gab
+        chmod +x build-${{ matrix.target }}/gab
         ${{ matrix.cmd }} build -p ${{ matrix.target }} -m cgui,cgab,tests test
 
     - name: Upload Module Artifacts
