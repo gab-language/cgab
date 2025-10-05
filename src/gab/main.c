@@ -1296,9 +1296,10 @@ int build(struct command_arguments *args) {
       return 1;
     }
 
-    clisuccess("Build platform is %s.\n", platform, dynlib_fileending);
-    if (!download_gab("Gab", GAB_VERSION_TAG, platform))
-      return 1;
+    cliinfo("Build platform is %s.\n", platform, dynlib_fileending);
+    if (!download_gab("Gab", GAB_VERSION_TAG, platform)) {
+      clierror("Continuing. Core modules may be missing.");
+    }
   }
 
   v_char location = {};
