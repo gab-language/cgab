@@ -1308,8 +1308,8 @@ int build(struct command_arguments *args) {
   v_char_push(&location, '\0');
 
   const char *roots[] = {
-      gab_osprefix(location.data),
       "./",
+      gab_osprefix(location.data),
       nullptr,
   };
 
