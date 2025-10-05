@@ -21,8 +21,6 @@ env:
 
 jobs:
   build_artifacts:
-    runs-on: ubuntu-latest
-
     strategy:
       matrix:
         build_type:
@@ -41,6 +39,8 @@ jobs:
           # - os: windows-latest
           #   target: x86_64-windows-gnu
           #   cmd: .\build-x86_64-windows-gnu\gab
+    
+    runs-on: ${{ matrix.os }}
 
     steps:
     - uses: actions/checkout@v4
