@@ -36,8 +36,8 @@ jobs:
             target: x86_64-linux-gnu
             cmd: ./build-x86_64-linux-gnu/gab
           - os: macos-latest
-            target: x86_64-macos-none
-            cmd: ./build-x86_64-macos-none/gab
+            target: aarch64-macos-none
+            cmd: ./build-aarch64-macos-none/gab
           # - os: windows-latest
           #   target: x86_64-windows-gnu
           #   cmd: .\build-x86_64-windows-gnu\gab
@@ -85,6 +85,7 @@ jobs:
     - name: Gab Build Bundle
       run: |
         uname -m
+        arch
         file build-${{ matrix.target }}/gab
         chmod +x build-${{ matrix.target }}/gab
         ${{ matrix.cmd }} build -p ${{ matrix.target }} -m cgui,cgab,tests test
@@ -115,8 +116,8 @@ jobs:
             target: x86_64-linux-gnu
             cmd: ./build-x86_64-linux-gnu/gab
           - os: macos-latest
-            target: x86_64-macos-none
-            cmd: ./build-x86_64-macos-none/gab
+            target: aarch64-macos-none
+            cmd: ./build-aarch64-macos-none/gab
           # - os: windows-latest
           #   target: x86_64-windows-gnu
           #   cmd: .\build-x86_64-windows-gnu\gab
