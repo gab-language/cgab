@@ -1298,7 +1298,7 @@ int build(struct command_arguments *args) {
 
     cliinfo("Build platform is %s.\n", platform, dynlib_fileending);
     if (!download_gab("Gab", GAB_VERSION_TAG, platform)) {
-      clierror("Continuing. Core modules may be missing.");
+      clierror("Continuing. Core modules may be missing.\n");
     }
   }
 
@@ -1352,8 +1352,14 @@ int build(struct command_arguments *args) {
 
   FILE *exe = fopen(exepath.data, "r");
   if (!exe) {
-    clierror("Failed to open gab executable at '%s' read.\n", exepath.data);
-    return 1;
+    clierror("Failed to open gab executable at '%s'.\n", exepath.data);
+    clierror("Falling back to this binary, Gab@" GAB_VERSION_TAG "\n");
+    const char *path = gab_osexepath();
+    exe = fopen(path, "r");
+    if (!exe) {
+      clierror("Failed to open gab executable at '%s'.\n", path);
+      return 1;
+    }
   }
   v_char_destroy(&exepath);
 
