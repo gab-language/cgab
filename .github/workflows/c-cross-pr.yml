@@ -40,7 +40,7 @@ jobs:
           #   target: x86_64-windows-gnu
           #   cmd: .\build-x86_64-windows-gnu\gab
     
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v4
@@ -82,20 +82,11 @@ jobs:
     - name: Collect modules
       run: cp build-${{ matrix.target }}/mod/* mod
 
-    - name: Gab Build Bundle
-      run: ${{ matrix.cmd }} build -p ${{ matrix.target }} -m cgui,cgab,tests test
-
     - name: Upload Module Artifacts
       uses: pyTooling/upload-artifact@v4
       with:
         name: 'gab-${{ matrix.build_type }}-${{ matrix.target }}-modules'
         path: mod
-
-    - name: Upload Bundle Artifact
-      uses: pyTooling/upload-artifact@v4
-      with:
-        name: 'test-${{ matrix.build_type }}-${{ matrix.target }}.exe'
-        path: 'test.exe'
 
   run_tests:
     strategy:
@@ -134,10 +125,9 @@ jobs:
         with:
           name: gab-${{ matrix.build_type }}-${{ matrix.target }}-modules
 
-      - name: Download Bundle
-        uses: pyTooling/download-artifact@v4
-        with:
-          name: 'test-${{ matrix.build_type }}-${{ matrix.target }}.exe'
+      - name: Gab Build Bundle
+        run: |
+          ${{ matrix.cmd }} build -m cgui,cgab,tests test
 
       # - name: Make the binary executable (win)
       #   if: ${{ contains(matrix.target, 'windows') }}

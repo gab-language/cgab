@@ -12,7 +12,6 @@ CFLAGS = -std=c23 \
 				 -fPIC \
 				 -Wall \
 				 -MMD  \
-				 -fno-leading-underscore \
 				 --target=$(GAB_TARGETS) \
 				 -DGAB_TARGET_TRIPLE=\"$(GAB_TARGETS)\"\
 				 -DGAB_DYNLIB_FILEENDING=\"$(GAB_DYNLIB_FILEENDING)\" \
