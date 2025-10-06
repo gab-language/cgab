@@ -702,7 +702,6 @@ union gab_value_pair resume_sslsockrecv(struct gab_triple gab,
   if (result.status > 0)
     return gab_union_ctimeout(result.status);
 
-
   return gab_union_cvalid(gab_nil);
 }
 
@@ -1044,7 +1043,7 @@ GAB_DYNLIB_NATIVE_FN(io, send) {
     else
       return complete_sslsocksend(gab, (struct gab_ssl_sock *)io, data, len);
   default:
-    return gab_panicf(gab, "$ may not send", vsock);
+    return gab_panicf(gab, "$ may not send: $", vsock, gab_number(io->k));
   }
 
   return gab_panicf(gab, "Reached unreachable codepath");
