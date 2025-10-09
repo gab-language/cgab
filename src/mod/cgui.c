@@ -1,7 +1,6 @@
 #include "core.h"
 #include <stdint.h>
 #include <threads.h>
-#include <unistd.h>
 
 // GL/gl.h won't work because some OS's have files which override.
 // Use glad/gl.h instead.
@@ -17,7 +16,6 @@
 
 #define RGFW_IMPLEMENTATION
 #define RGFW_OPENGL
-#define RGFW_DEBUG
 #define RGFW_PRINT_ERRORS
 #include "RGFW/RGFW.h"
 
@@ -43,10 +41,11 @@ unsigned char fontData[] = {
 #embed "resources/SauceCodeProNerdFont-Regular.ttf"
 };
 
-#define SOKOL_DEBUG
 #define SOKOL_IMPL
 #define SOKOL_GLCORE
 #define SOKOL_EXTERNAL_GL_LOADER
+#define _SOKOL_GL_HAS_TEXVIEWS
+#define _SOKOL_GL_HAS_TEXSTORAGE
 #include "sokol/sokol_gfx.h"
 #include "sokol/sokol_log.h"
 #include "sokol/util/sokol_gl.h"
@@ -772,14 +771,6 @@ bool doguirender(struct gab_triple gab) {
     return false;
 
   sg_begin_pass(&(sg_pass){
-      .action =
-          {
-              .colors[0] =
-                  {
-                      .load_action = SG_LOADACTION_CLEAR,
-                      .clear_value = {1.0f, 1.0f, 1.0f, 1.0f},
-                  },
-          },
       .swapchain =
           {
               .width = dim.width,
@@ -787,32 +778,14 @@ bool doguirender(struct gab_triple gab) {
           },
   });
 
-  sgl_defaults();
-
   sgl_matrix_mode_modelview();
   sgl_load_identity();
 
-  sgl_begin_triangles();
+  sclay_render(renderCommands, fonts);
 
-  sgl_c3f(1.0f, 0.0f, 0.0f);
-  sgl_v2f(-0.5f, -0.5f);
-  sgl_c3f(0.0f, 1.0f, 0.0f);
-  sgl_v2f(0.5f, -0.5f);
-  sgl_c3f(0.0f, 0.0f, 1.0f);
-  sgl_v2f(0.0f, 0.5f);
-
-  sgl_end();
-
-  // sclay_render(renderCommands, fonts);
   sgl_draw();
   sg_end_pass();
   sg_commit();
-
-  GLenum err = glGetError();
-  if (err != GL_NO_ERROR) {
-    fprintf(stderr, "GL error: 0x%04X\n", err);
-    return false;
-  }
 
   RGFW_window_swapBuffers_OpenGL(&gui.win);
   return true;
@@ -913,12 +886,11 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_render) {
     RGFW_glHints *hints = RGFW_getGlobalHints_OpenGL();
     hints->samples = 1;
     hints->major = 3;
-    hints->minor = 3;
-    hints->debug = true;
+    hints->minor = 1;
     RGFW_setGlobalHints_OpenGL(hints);
 
     gui.win.userPtr = &gui;
-    if (!RGFW_createWindowPtr("window", 500, 500, 500, 500, RGFW_windowOpenGL,
+    if (!RGFW_createWindowPtr("", 500, 500, 500, 500, RGFW_windowOpenGL,
                               &gui.win))
       return gab_vmpush(gab_thisvm(gab), gab_err,
                         gab_string(gab, "Failed to create window")),
@@ -933,15 +905,20 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_render) {
 
     sg_setup(&(sg_desc){
         .logger.func = slog_func,
+        .environment =
+            {
+                .defaults =
+                    {
+                        .sample_count = 1,
+                        .color_format = SG_PIXELFORMAT_RGBA8,
+                        .depth_format = SG_PIXELFORMAT_DEPTH_STENCIL,
+                    },
+            },
     });
 
     sgl_setup(&(sgl_desc_t){
         .logger.func = slog_func,
     });
-
-    printf("GL_VERSION: %s\n", glGetString(GL_VERSION));
-    printf("GL_VENDOR: %s\n", glGetString(GL_VENDOR));
-    printf("GL_RENDERER: %s\n", glGetString(GL_RENDERER));
 
     sclay_setup();
 
@@ -968,28 +945,29 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_render) {
 
     Clay_SetMeasureTextFunction(sclay_measure_text, &fonts);
 
-    Clay_SetDebugModeEnabled(true);
     gui.ready = true;
   }
 
-  if (gab_chnisclosed(gui.appch))
-    goto fin;
+  for (;;) {
+    if (gab_chnisclosed(gui.appch))
+      goto fin;
 
-  if (gab_chnisclosed(gui.evch))
-    goto fin;
+    if (gab_chnisclosed(gui.evch))
+      goto fin;
 
-  if (!doguirender(gab))
-    goto fin;
+    if (!doguirender(gab))
+      goto fin;
 
-  switch (gab_yield(gab)) {
-  case sGAB_TERM:
-    goto fin;
-  case sGAB_COLL:
-    gab_gcepochnext(gab);
-    gab_sigpropagate(gab);
-    break;
-  default:
-    break;
+    switch (gab_yield(gab)) {
+    case sGAB_TERM:
+      goto fin;
+    case sGAB_COLL:
+      gab_gcepochnext(gab);
+      gab_sigpropagate(gab);
+      break;
+    default:
+      continue;
+    }
   }
 
   return gab_union_ctimeout(gab_cundefined);
@@ -1050,67 +1028,11 @@ fin:
   return gab_union_cinvalid;
 }
 
-GAB_DYNLIB_NATIVE_FN(ui, gui_test_NOSOKOL) {
-  RGFW_glHints *hints = RGFW_getGlobalHints_OpenGL();
-  RGFW_setGlobalHints_OpenGL(hints);
-
-  RGFW_setClassName("RGFW Example");
-  RGFW_window *win =
-      RGFW_createWindow("RGFW Example Window", 500, 500, 500, 500,
-                        RGFW_windowCenter | RGFW_windowOpenGL);
-
-  RGFW_window_setExitKey(win, RGFW_escape);
-
-  RGFW_window_makeCurrentContext_OpenGL(win);
-
-  if (!gladLoadGL(RGFW_getProcAddress_OpenGL))
-    return gab_panicf(gab, "Failed to load OpenGL");
-
-  while (RGFW_window_shouldClose(win) == RGFW_FALSE) {
-    RGFW_event event;
-    while (RGFW_window_checkEvent(
-        win, &event)) { // or RGFW_pollEvents(); if you only want callbacks
-      // you can either check the current event yourself
-      if (event.type == RGFW_quit)
-        break;
-
-      if (event.type == RGFW_mouseButtonPressed &&
-          event.button.value == RGFW_mouseLeft) {
-        printf("You clicked at x: %d, y: %d\n", event.mouse.x, event.mouse.y);
-      }
-
-      // or use the existing functions
-      if (RGFW_isMousePressed(RGFW_mouseRight)) {
-        printf("The right mouse button was clicked at x: %d, y: %d\n",
-               event.mouse.x, event.mouse.y);
-      }
-    }
-
-    // OpenGL 1.1 is used here for a simple example, but you can use any version
-    // you want (if you request it first (see gl33/gl33.c))
-    glViewport(0, 0, win->w, win->h);
-    glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-    glBegin(GL_TRIANGLES);
-    glColor3f(1.0f, 0.0f, 0.0f);
-    glVertex2f(-0.6f, -0.75f);
-    glColor3f(0.0f, 1.0f, 0.0f);
-    glVertex2f(0.6f, -0.75f);
-    glColor3f(0.0f, 0.0f, 1.0f);
-    glVertex2f(0.0f, 0.75f);
-    glEnd();
-
-    RGFW_window_swapBuffers_OpenGL(win);
-    glFlush();
-  }
-
-  RGFW_window_closePtr(win);
-  return gab_union_cvalid(gab_ok);
-}
-
 GAB_DYNLIB_NATIVE_FN(ui, gui_test) {
   RGFW_glHints *hints = RGFW_getGlobalHints_OpenGL();
+  hints->major = 4;
+  hints->minor = 6;
+  hints->profile = RGFW_glCore;
   RGFW_setGlobalHints_OpenGL(hints);
 
   RGFW_setClassName("RGFW Example");
@@ -1140,12 +1062,7 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_test) {
 
   sgl_setup(&(sgl_desc_t){
       .logger.func = slog_func,
-      .sample_count = 1,
-      .color_format = SG_PIXELFORMAT_RGBA8,
-      .depth_format = SG_PIXELFORMAT_DEPTH_STENCIL,
   });
-
-  printf("GL_VERSION: %s\n", glGetString(GL_VERSION));
 
   while (!RGFW_window_shouldClose(win)) {
     if (!sg_isvalid())
@@ -1154,37 +1071,40 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_test) {
     RGFW_pollEvents();
 
     sgl_defaults();
+
     sgl_viewport(0, 0, win->w, win->h, true);
 
+    sgl_matrix_mode_projection();
+    sgl_ortho(0.0f, (float)win->w, (float)win->h, 0.0f, -1.0f, 1.0f);
     sgl_matrix_mode_modelview();
     sgl_load_identity();
 
-    sgl_begin_triangle_strip();
+    // Scale and translate to center coordinates
+    sgl_translate((float)win->w * 0.5f, (float)win->h * 0.5f, 0.0f);
+    sgl_scale((float)win->w * 0.5f, (float)win->h * 0.5f, 1.0f);
 
-    sgl_c3f(1, 1, 1);
+    sgl_begin_triangles();
+
+    sgl_c4f(1.f, 0.f, 0.f, 1.f);
     sgl_v2f(-0.5f, -0.5f);
+
+    sgl_c4f(0.f, 1.f, 0.f, 1.f);
     sgl_v2f(0.5f, -0.5f);
+
+    sgl_c4f(0.f, 0.f, 1.f, 1.f);
     sgl_v2f(0.0f, 0.5f);
 
     sgl_end();
 
     sg_begin_pass(&(sg_pass){
-        .action =
-            {
-                .colors[0] =
-                    {
-                        .load_action = SG_LOADACTION_CLEAR,
-                        .clear_value = {1.0f, 1.0f, 1.0f, 0.0f},
-                    },
-            },
         .swapchain =
             {
-                .color_format = SG_PIXELFORMAT_RGBA8,
-                .depth_format = SG_PIXELFORMAT_DEPTH_STENCIL,
-                .gl.framebuffer = 0,
-                .sample_count = 1,
                 .width = win->w,
                 .height = win->h,
+                .gl.framebuffer = 0,
+                .sample_count = 1,
+                .color_format = SG_PIXELFORMAT_RGBA8,
+                .depth_format = SG_PIXELFORMAT_DEPTH_STENCIL,
             },
     });
 
@@ -1200,9 +1120,28 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_test) {
 
     sgl_draw();
 
-    sg_end_pass();
+    err = sgl_error();
+    if (err.any) {
+      printf("vs full: %i\n", err.vertices_full);
+      printf("us full: %i\n", err.uniforms_full);
+      printf("cs full: %i\n", err.commands_full);
+      printf("stack overflow %i\n", err.stack_overflow);
+      printf("stack underflow: %i\n", err.stack_underflow);
+      printf("no ctx: %i\n", err.no_context);
+    }
 
+    sg_end_pass();
     sg_commit();
+
+    err = sgl_error();
+    if (err.any) {
+      printf("vs full: %i\n", err.vertices_full);
+      printf("us full: %i\n", err.uniforms_full);
+      printf("cs full: %i\n", err.commands_full);
+      printf("stack overflow %i\n", err.stack_overflow);
+      printf("stack underflow: %i\n", err.stack_underflow);
+      printf("no ctx: %i\n", err.no_context);
+    }
 
     RGFW_window_swapBuffers_OpenGL(win);
   }
@@ -1238,9 +1177,7 @@ GAB_DYNLIB_NATIVE_FN(ui, run_gui) {
   res = gab_asend(gab, (struct gab_send_argt){
                            .message = gab_message(gab, mGAB_CALL),
                            .receiver = gab_snative(gab, "ui\\gui\\loop\\render",
-                                                   gab_mod_ui_gui_test),
-                           // gab_mod_ui_gui_test_NOSOKOL),
-                           // gab_mod_ui_gui_render),
+                                                   gab_mod_ui_gui_render),
                        });
 
   if (res.status != gab_cvalid) {

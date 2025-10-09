@@ -24,7 +24,7 @@
 #define GAB_API_INLINE static inline
 
 #ifdef GAB_CORE
-#define GAB_API [[__gnu__::__used__]]
+#define GAB_API [[gnu::used]]
 #else
 #define GAB_API extern
 #endif

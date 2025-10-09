@@ -340,7 +340,8 @@ int run_repl(int flags, size_t nmodules, const char **modules) {
           .modules = modules,
           .roots =
               (const char *[]){
-                  "./", gab_osprefix(GAB_VERSION_TAG "." GAB_TARGET_TRIPLE),
+                  "./",
+                  gab_osprefix(GAB_VERSION_TAG "." GAB_TARGET_TRIPLE),
                   nullptr, // List terminator.
               },
           .resources =
@@ -391,7 +392,8 @@ int run_string(const char *string, int flags, size_t jobs, size_t nmodules,
           .modules = modules,
           .roots =
               (const char *[]){
-                  "./", gab_osprefix(GAB_VERSION_TAG "." GAB_TARGET_TRIPLE),
+                  "./",
+                  gab_osprefix(GAB_VERSION_TAG "." GAB_TARGET_TRIPLE),
                   nullptr, // List terminator.
               },
           .resources =
@@ -496,7 +498,8 @@ int run_file(const char *path, int flags, size_t jobs, size_t nmodules,
           .modules = modules,
           .roots =
               (const char *[]){
-                  "./", gab_osprefix(GAB_VERSION_TAG "." GAB_TARGET_TRIPLE),
+                  "./",
+                  gab_osprefix(GAB_VERSION_TAG "." GAB_TARGET_TRIPLE),
                   nullptr, // List terminator.
               },
           .resources =
@@ -657,8 +660,7 @@ bool module_handler(struct command_arguments *args) {
 
 const struct option modules_option = {
     "mods",
-    "Load a comma-separated list of modules."
-    "modules",
+    "Load a comma-separated list of modules",
     'm',
     .handler_f = module_handler,
 };
@@ -730,7 +732,7 @@ static struct command commands[] = {
             modules_option,
             {
                 "plat",
-                "Set the platform of the build.",
+                "Set the platform of the build",
                 'p',
                 .flag = FLAG_BUILD_TARGET,
                 .handler_f = platform_handler,
@@ -1260,8 +1262,16 @@ bool add_module(mz_zip_archive *zip_o, const char **roots,
           "<archive>/%s" GAB_RESET "\n",
           cstr_module, path, modulename);
 
+    /*
+     * It is unclear whether it is more important to prioritize speed
+     * (which affects startup/load time)
+     * or compression
+     * (which affects bundle size).
+     *
+     * Perhaps leave this up to the user?
+     */
   if (!mz_zip_writer_add_file(zip_o, modulename, path, nullptr, 0,
-                              MZ_BEST_COMPRESSION)) {
+                              MZ_BEST_SPEED)) {
     mz_zip_error e = mz_zip_get_last_error(zip_o);
     const char *estr = mz_zip_get_error_string(e);
     clierror("Failed to add file to archive '%s' - %s.\n", path, estr);

@@ -676,6 +676,4 @@ io\should_make_working_tls_request\test: .def t => do
   t.expect(ok ==: ok:)
 end
 
-'TEST'.println
-
 'tests'.use

@@ -57,6 +57,18 @@
  *
  */
 
+/*
+ * MASSIVE TODO:
+ * Is it unsafe to directly send pointers into gab strings to the io syscalls?
+ *
+ * I ask because all the IO is happening asynchronously,
+ * it may be that the engine is freed and exiting while IO operations are still queued.
+ *
+ * What if the engine closes std/in/out/err before destroying the engine?
+ *
+ * Is there a better way to wait for IO to 'settle'?
+ */
+
 #define BR_SSL_WRITE_INCOMPLETE ((int64_t)1 << 31)
 
 enum {
