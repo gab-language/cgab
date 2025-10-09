@@ -44,8 +44,11 @@ unsigned char fontData[] = {
 #define SOKOL_IMPL
 #define SOKOL_GLCORE
 #define SOKOL_EXTERNAL_GL_LOADER
+
+// https://github.com/floooh/sokol/issues/1345
 #define _SOKOL_GL_HAS_TEXVIEWS
 #define _SOKOL_GL_HAS_TEXSTORAGE
+
 #include "sokol/sokol_gfx.h"
 #include "sokol/sokol_log.h"
 #include "sokol/util/sokol_gl.h"
