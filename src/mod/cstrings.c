@@ -537,6 +537,8 @@ GAB_DYNLIB_NATIVE_FN(string, pop) {
   gab_value leftover = gab_nstring(gab, len - 1, str);
 
   // TODO: Fix this to respect unicode
+  // ie: Can't assume that the *last byte* of the str
+  // is a valid char.
   gab_vmpush(gab_thisvm(gab), leftover, strchar);
   return gab_union_cvalid(gab_nil);
 };

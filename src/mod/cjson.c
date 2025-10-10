@@ -38,35 +38,35 @@ bool unescape_into(char *buf, const char *str, size_t len) {
         /**
          * TODO: Handle unicode escaping as described in JSON spec json.org.
          */
-      /*case 'u':*/
-      /*  i += 2;*/
-      /**/
-      /*  if (str[i] != '[') {*/
-      /*    return nullptr;*/
-      /*  }*/
-      /**/
-      /*  i++;*/
-      /**/
-      /*  uint8_t cpl = 0;*/
-      /*  char codepoint[8] = {0};*/
-      /**/
-      /*  while (str[i] != ']') {*/
-      /**/
-      /*    if (cpl == 7)*/
-      /*      return nullptr;*/
-      /**/
-      /*    codepoint[cpl++] = str[i++];*/
-      /*  }*/
-      /**/
-      /*  i++;*/
-      /**/
-      /*  long cp = strtol(codepoint, nullptr, 16);*/
-      /**/
-      /*  int result = encode_codepoint(buf + buf_end, cp);*/
-      /**/
-      /*  buf_end += result;*/
-      /**/
-      /*  break;*/
+      // case 'u':
+      //   i += 2;
+      //
+      //   if (str[i] != '[') {
+      //     return nullptr;
+      //   }
+      //
+      //   i++;
+      //
+      //   uint8_t cpl = 0;
+      //   char codepoint[8] = {0};
+      //
+      //   while (str[i] != ']') {
+      //
+      //     if (cpl == 7)
+      //       return nullptr;
+      //
+      //     codepoint[cpl++] = str[i++];
+      //   }
+      //
+      //   i++;
+      //
+      //   long cp = strtol(codepoint, nullptr, 16);
+      //
+      //   int result = encode_codepoint(buf + buf_end, cp);
+      //
+      //   buf_end += result;
+      //
+      //   break;
       default:
         // Unrecognized escape sequence
         return false;

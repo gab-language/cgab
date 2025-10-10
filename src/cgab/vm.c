@@ -782,13 +782,13 @@ void gab_fvminspectall(FILE *stream, struct gab_vm *vm) {
 
 #define COMPUTE_TUPLE() (VAR())
 
+static inline uint64_t get_stackspace(gab_value *sp, gab_value *sb) {
+  return (sp - sb) + 3;
+}
+
 static inline bool has_stackspace(gab_value *sp, gab_value *sb,
                                   uint64_t space_needed) {
-  if ((sp - sb) + space_needed + 3 >= cGAB_STACK_MAX) {
-    return false;
-  }
-
-  return true;
+  return get_stackspace(sp, sb) + space_needed < cGAB_STACK_MAX;
 }
 
 gab_value gab_vmpop(struct gab_vm *vm) {
@@ -2362,10 +2362,16 @@ CASE_CODE(SEND_PRIMITIVE_TAKE) {
 
   STORE_SP();
 
-  // TODO: Fix the hardcoding of len here
-  gab_value takebuf[32];
+  /*
+   * Adjust for the tuple-len value at *SP() on the stack.
+   *
+   * Store above it, and subract one from the stackspace to reserve it.
+   */
+
+  uint64_t stackspace = get_stackspace(SP(), SB()) - 1;
+
   gab_value v =
-      gab_ntchntake(GAB(), c, 32, takebuf, cGAB_VM_CHANNEL_TAKE_TRIES);
+      gab_ntchntake(GAB(), c, stackspace, SP() + 1, cGAB_VM_CHANNEL_TAKE_TRIES);
 
   RESET_REENTRANT();
 
@@ -2385,9 +2391,21 @@ CASE_CODE(SEND_PRIMITIVE_TAKE) {
     PUSH(gab_ok);
 
     uint64_t len = gab_valtou(v);
-    assert(has_stackspace(SP(), SB(), len));
+    /*
+     * ntchntake returns the number of values *available*, but will only write
+     *  up to *stackspace*.
+     *
+     * If there were more available to take than we had room for on the stack,
+     * return an overflow.
+     * */
+    if (__gab_unlikely(len > stackspace))
+      VM_PANIC(GAB_OVERFLOW, "");
 
-    memmove(SP(), takebuf, len * sizeof(gab_value));
+    /*
+     * We now know that we wrote *len* values to the buffer, because 
+     * it is guaranteed that len <= stackspace
+     * */
+    memmove(SP(), SP() + have + 1, len * sizeof(gab_value));
     SP() += len;
 
     SET_VAR(below_have + len + 1);

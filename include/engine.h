@@ -236,10 +236,9 @@ struct gab_ofiber {
   uintptr_t reentrant;
 
   /*
-   * TODO: Give native c-functions an allocator here. This can be a very simple bumpallocator.
-   * When a native fn returns, if it yielded we keep the bump,
-   * if it fully returns we reset the bump allocator. This is safe because the
-   * c-function can never nest and call into another c-native in the same fiber.
+   * A simple bump-allocator for use by native-cfunctions.
+   *
+   * It resets when the frame is popped (ie: when the native c-func returns)
    */
   v_uint8_t allocator;
 

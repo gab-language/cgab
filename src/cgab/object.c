@@ -1020,6 +1020,16 @@ gab_value gab_recput(struct gab_triple gab, gab_value rec, gab_value key,
 
 gab_value gab_rectake(struct gab_triple gab, gab_value rec, gab_value key,
                       gab_value *value) {
+  /*
+   * TODO: This can be optimized.
+   *
+   * There is no need to allocate a new record here, we can reuse the original
+   * record with a *new shape*.
+   *
+   * This may need to include *tombstone* kind of value, which we can replace
+   * the original key in the shape with a gab_ctombstone. This will need to be
+   * skipped in a lot of other gab_shape logic.
+   */
   assert(gab_valkind(rec) == kGAB_RECORD);
 
   uint64_t idx = gab_recfind(rec, key);
@@ -1742,7 +1752,7 @@ gab_value channel_take(struct gab_ochannel *channel, uint64_t n,
   memcpy(dest, src, sizeof(gab_value) * len);
 
   if (atomic_compare_exchange_weak(&channel->len, &avail, 0))
-    return atomic_store(&channel->data, nullptr), gab_number(len);
+    return atomic_store(&channel->data, nullptr), gab_number(avail);
   else
     return gab_cundefined;
 }
@@ -1941,12 +1951,14 @@ gab_value gab_chnput(struct gab_triple gab, gab_value c, gab_value value) {
 }
 
 /*
- * Returns
+ * Returns:
  * gab_ctimeout on timeout
  * gab_cundefined on close!
  * gab_cinvalid on terminate
- * gab_number corresponding to number of taken values on success, or negative
- * number if space wasn't available.
+ * a gab_number on success. This number will contain the
+ * amount of values the channel *had available to write*,
+ * not the number that was *actually written*. To obtain the amount
+ * actually written use MIN(result, len).
  */
 gab_value gab_ntchntake(struct gab_triple gab, gab_value c, uint64_t len,
                         gab_value *data, uint64_t tries) {
@@ -1975,11 +1987,10 @@ gab_value gab_tchntake(struct gab_triple gab, gab_value channel,
     return res;
 
   gab_int n = gab_valtoi(res);
-  if (n < 0)
-    return gab_cundefined;
 
-  // We should have one written value.
-  assert(n == 1);
+  /* We should have received at least one value */
+  assert(n >= 1);
+
   return out;
 };
 
@@ -2282,6 +2293,7 @@ int gab_fmodinspect(FILE *stream, gab_value module) {
 enum gab_pprint_k {
   kPPRINT_VALUE,
   kPPRINT_STRING,
+  kPPRINT_BINARY,
   kPPRINT_BREAK,
   kPPRINT_SPACE,
   kPPRINT_COMMA,
@@ -2311,7 +2323,7 @@ int32_t pprint_width(gab_value val) {
   case kGAB_MESSAGE:
     return gab_strlen(val) + 1;
   case kGAB_BINARY:
-    return gab_strlen(val) + 15;
+    return gab_strlen(val) * 2 + 15;
   case kGAB_NATIVE:
     return gab_strlen(GAB_VAL_TO_NATIVE(val)->name) + 13;
   case kGAB_BOX:
@@ -2378,6 +2390,8 @@ void push_pprint_s(v_gab_pprint *self, const char *s) {
                           });
 }
 
+void push_pprint_b(v_gab_pprint *self, const char *s) {}
+
 void push_pprint_kd(v_gab_pprint *self, enum gab_pprint_k k,
                     union gab_pprint_d d) {
   v_gab_pprint_push(self, (struct gab_pprint){
@@ -2429,8 +2443,11 @@ void pprint_binary(v_gab_pprint *self, gab_value bin) {
   push_pprint_s(self, tGAB_BINARY);
   push_pprint_k(self, kPPRINT_SPACE);
   push_pprint_s(self, "0x");
-  /* TODO: PROPERLY CONVERT THIS TO BINARY, NOT JUST PRINT AS UTF8 */
-  push_pprint_v(self, gab_bintostr(bin));
+  v_gab_pprint_push(self, (struct gab_pprint){
+                              .k = kPPRINT_BINARY,
+                              .width = gab_strlen(bin),
+                              .as.val = bin,
+                          });
   push_pprint_kd(self, kPPRINT_DEDENT, (union gab_pprint_d){'>'});
 }
 
@@ -2532,31 +2549,56 @@ const char *colorforkind(gab_value v) {
   }
 }
 
-int spprint_through(char **buf, size_t *len, struct gab_pprint t) {
+int spprint_through(char **dest, size_t *n, struct gab_pprint t) {
   switch (t.k) {
   case kPPRINT_SPACE:
-    return snprintf_through(buf, len, " ");
+    return snprintf_through(dest, n, " ");
   case kPPRINT_COMMA:
-    return snprintf_through(buf, len, ",");
+    return snprintf_through(dest, n, ",");
   case kPPRINT_INDENT:
-    return snprintf_through(buf, len, GAB_YELLOW "%c" GAB_RESET, t.as.c);
+    return snprintf_through(dest, n, GAB_YELLOW "%c" GAB_RESET, t.as.c);
   case kPPRINT_DEDENT:
-    return snprintf_through(buf, len, GAB_YELLOW "%c" GAB_RESET, t.as.c);
+    return snprintf_through(dest, n, GAB_YELLOW "%c" GAB_RESET, t.as.c);
   case kPPRINT_BREAK:
-    return snprintf_through(buf, len, "\n");
+    return snprintf_through(dest, n, "\n");
   case kPPRINT_STRING:
-    return snprintf_through(buf, len, GAB_YELLOW "%s" GAB_RESET, t.as.s);
+    return snprintf_through(dest, n, GAB_YELLOW "%.*s" GAB_RESET, t.width,
+                            t.as.s);
+  case kPPRINT_BINARY: {
+    const char *s = gab_strdata(&t.as.val);
+    int64_t len = t.width;
+
+    if (snprintf_through(dest, n, GAB_YELLOW) < 0)
+      return -1;
+
+    if (len < cGAB_BINARY_LEN_CUTOFF) {
+      while (len--) {
+        if (snprintf_through(dest, n, "%02x", (unsigned char)*s++) < 0)
+          return -1;
+      }
+    } else {
+      uint64_t preview = cGAB_BINARY_LEN_CUTOFF;
+      while (preview--)
+        if (snprintf_through(dest, n, "%02x", (unsigned char)*s++) < 0)
+          return -1;
+
+      if (snprintf_through(dest, n, "...") < 0)
+        return -1;
+    }
+
+    return snprintf_through(dest, n, GAB_RESET);
+  }
   case kPPRINT_VALUE:
     // Depth should be irrelevant bc these should be
     // primitives only
     const char *color = colorforkind(t.as.val);
-    if (snprintf_through(buf, len, "%s", color) < 0)
+    if (snprintf_through(dest, n, "%s", color) < 0)
       return -1;
 
-    if (sinspectval(buf, len, t.as.val, 1) < 0)
+    if (sinspectval(dest, n, t.as.val, 1) < 0)
       return -1;
 
-    return snprintf_through(buf, len, GAB_RESET);
+    return snprintf_through(dest, n, GAB_RESET);
   }
 }
 

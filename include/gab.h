@@ -1886,33 +1886,6 @@ GAB_API gab_value gab_shpwithout(struct gab_triple gab, gab_value shp,
                kvps + 1);                                                      \
   })
 
-/*
- * TODO: How do the following record-creation functions handle repeating keys?
- * What behavior do we want here?
- *
- * Currently:
- *  { ok: 2, ok: 3 }
- *  => { ok: 2 }
- *
- * This is because the first thing done is creating the appropriate shape.
- * This trims (ok: ok:) to just (ok:), and so only looks for one value when
- * creating the record.
- *
- * This leads to the following troubling behavior:
- *  { ok: 2, ok: 3, another: 4 }
- *  => { ok: 2, another: 3 }
- *
- * As the shape is refined to (ok: another:), we pull 2 values, when we should
- * really be *skipping* values in repeat positions.
- *
- * The shape trimming is correct and should remain.
- *  but maybe the shape function should build out a bit-mask as it
- *  scans over the keys.
- *
- * If a key is a valid new addition, the corresponding bit is flipped.
- * Then when creating records, we can skip values whose bit is 0.
- */
-
 /**
  * @brief Create a record.
  *
@@ -2197,17 +2170,6 @@ GAB_API_INLINE gab_value gab_lstat(gab_value lst, uint64_t n) {
 
   return gab_uvrecat(lst, n);
 }
-
-/**
- * @brief Return a new record without key. TODO: Not Implemented
- *
- * @param gab The engine
- * @param record The record
- * @param key The key
- * @return a record without key
- */
-GAB_API gab_value gab_recdel(struct gab_triple gab, gab_value record,
-                             gab_value key);
 
 #define GAB_VAL_TO_FIBER(value) ((struct gab_ofiber *)gab_valtoo(value))
 
