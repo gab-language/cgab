@@ -45,10 +45,6 @@ unsigned char fontData[] = {
 #define SOKOL_GLCORE
 #define SOKOL_EXTERNAL_GL_LOADER
 
-// https://github.com/floooh/sokol/issues/1345
-#define _SOKOL_GL_HAS_TEXVIEWS
-#define _SOKOL_GL_HAS_TEXSTORAGE
-
 #include "sokol/sokol_gfx.h"
 #include "sokol/sokol_log.h"
 #include "sokol/util/sokol_gl.h"
@@ -774,6 +770,14 @@ bool doguirender(struct gab_triple gab) {
     return false;
 
   sg_begin_pass(&(sg_pass){
+      .action =
+          {
+              .colors[0] =
+                  {
+                      .load_action = SG_LOADACTION_CLEAR,
+                      .clear_value = {0.f, 0.f, 0.f, 1.f},
+                  },
+          },
       .swapchain =
           {
               .width = dim.width,

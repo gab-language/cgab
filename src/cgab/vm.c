@@ -2364,10 +2364,8 @@ CASE_CODE(SEND_PRIMITIVE_TAKE) {
 
   /*
    * Adjust for the tuple-len value at *SP() on the stack.
-   *
    * Store above it, and subract one from the stackspace to reserve it.
    */
-
   uint64_t stackspace = get_stackspace(SP(), SB()) - 1;
 
   gab_value v =
