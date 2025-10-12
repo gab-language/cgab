@@ -318,6 +318,7 @@ int32_t gc_job(void *data) {
   return 0;
 }
 
+// TODO: Workers take up 100% CPU when *waiting*. This has gotta be fixed.
 int32_t worker_job(void *data) {
   struct gab_triple *g = data;
   struct gab_triple gab = *g;
@@ -361,7 +362,7 @@ int32_t worker_job(void *data) {
         // GOTO FIN: => exit this worker thread.
         // CONTINUE: => loop until we have work.
         if (q_gab_value_is_empty(&job->queue))
-          continue;
+          goto bail;
 
 #if cGAB_LOG_EG
         gab_fprintf(stderr, "[WORKER $] RESORTING TO LOCALQUEUE $\n",

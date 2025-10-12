@@ -12,4 +12,20 @@ printf:.def(
 #Socket = io.Sock
 #File = io.File
 
+_doconnect: .defcase {
+  ok: (sock, hostname, port) => do
+    (sock.connect(hostname, port), sock)
+  end
+  err: (err) => (err: err)
+}
+
+# Is this a good api?
+[io].defmodule {
+  connect: (protocol hostname port) => do
+    io.Sockets
+        .make(protocol)
+        ._doconnect(hostname, port)
+  end
+}
+
 io

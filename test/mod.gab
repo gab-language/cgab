@@ -655,7 +655,7 @@ channels\handle_multiple_values\test: .def t => do
 end
 
 io\should_make_working_tls_request\test: .def t => do
-  (ok, sock) = IO.Sock.make tcp\tls:
+  (ok, sock) = IO.Sockets.make tcp\tls:
 
   t.expect(ok ==: ok:)
 

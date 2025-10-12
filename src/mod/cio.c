@@ -50,11 +50,6 @@
  * io\sock\udp\client
  * io\sock\udp\server
  *
- * These protocols will require quite a bit of c-implementation, and a TLS layer
- * for https. BearSSL Looks like it might be a great option! We can trivially
- * compile it with zig-cc for all our platforms
- *  - I love it when a plan comes together.
- *
  */
 
 /*
@@ -1394,12 +1389,12 @@ GAB_DYNLIB_MAIN_FN {
 
   gab_def(gab,
           {
-              gab_message(gab, "File"),
+              gab_message(gab, "Files"),
               mod,
               gab_strtomsg(file_t),
           },
           {
-              gab_message(gab, "Sock"),
+              gab_message(gab, "Sockets"),
               mod,
               gab_strtomsg(sock_t),
           },
