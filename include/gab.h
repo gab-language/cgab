@@ -1496,7 +1496,8 @@ GAB_API gab_value gab_srcname(struct gab_src *src);
  * @param offset The offset
  * @return The line in the source code
  */
-GAB_API uint64_t gab_srcline(struct gab_src *src, uint64_t offset);
+GAB_API uint64_t gab_srcline(struct gab_src *src, uint64_t bytecode_offset);
+GAB_API uint64_t gab_tsrcline(struct gab_src *src, uint64_t token_offset);
 
 /**
  * @brief Get the kind of a value.

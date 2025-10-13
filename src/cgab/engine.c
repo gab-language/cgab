@@ -484,7 +484,8 @@ struct gab_job *next_available_job(struct gab_triple gab) {
   return nullptr;
 }
 
-bool gab_jbcreate(struct gab_triple gab, struct gab_job *job, int(fn)(void *)) {
+bool gab_jbcreate(struct gab_triple gab, struct gab_job *job, int(fn)(void *),
+                  gab_value fiber) {
   if (!job)
     return false;
 
@@ -497,6 +498,10 @@ bool gab_jbcreate(struct gab_triple gab, struct gab_job *job, int(fn)(void *)) {
   v_gab_value_create(&job->lock_keep, 8);
   q_gab_value_create(&job->queue);
 
+  if (fiber != gab_cundefined)
+    if (!q_gab_value_push(&job->queue, fiber))
+      assert(false && "BAD");
+
   struct gab_triple *gabcpy = malloc(sizeof(struct gab_triple));
   memcpy(gabcpy, &gab, sizeof(struct gab_triple));
   gabcpy->wkid = job - gab.eg->jobs;
@@ -504,11 +509,8 @@ bool gab_jbcreate(struct gab_triple gab, struct gab_job *job, int(fn)(void *)) {
   return thrd_create(&job->td, fn, gabcpy) == thrd_success;
 }
 
-bool gab_wkspawn(struct gab_triple gab) {
-  // If we aren't
-  if (gab.wkid != 0) {
-  }
-  return gab_jbcreate(gab, next_available_job(gab), worker_job);
+bool gab_wkspawn(struct gab_triple gab, gab_value fiber) {
+  return gab_jbcreate(gab, next_available_job(gab), worker_job, fiber);
 }
 
 union gab_value_pair gab_create(struct gab_create_argt args,
@@ -547,7 +549,7 @@ union gab_value_pair gab_create(struct gab_create_argt args,
 
   gab_gccreate(gab);
 
-  gab_jbcreate(gab, gab.eg->jobs, gc_job);
+  gab_jbcreate(gab, gab.eg->jobs, gc_job, gab_cundefined);
 
   gab_gclock(gab);
 
@@ -1557,8 +1559,11 @@ union gab_value_pair gab_tarun(struct gab_triple gab, size_t tries,
                                     .argc = args.len,
                                 });
 
+  if (fb == gab_cinvalid)
+    return (union gab_value_pair){{gab_cinvalid}};
+
   gab_iref(gab, fb);
-  gab_egkeep(gab.eg, fb); // Not the best solution
+  gab_egkeep(gab.eg, fb);
 
   // If we're *in* a valid worker we can push to the local queue.
   //   if (gab.wkid) {
@@ -1587,10 +1592,10 @@ union gab_value_pair gab_tarun(struct gab_triple gab, size_t tries,
   // thread to thread (After they may have been seen by the gc (ie, run). We
   // should also *skip* incrementing/decrementing stacks for Fibers which have
   // never been run in GC.
-  gab_wkspawn(gab);
 
-  if (gab_tchnput(gab, gab.eg->work_channel, fb, tries) == gab_ctimeout)
-    return (union gab_value_pair){{gab_ctimeout, fb}};
+  if (!gab_wkspawn(gab, fb))
+    if (gab_tchnput(gab, gab.eg->work_channel, fb, tries) == gab_ctimeout)
+      return (union gab_value_pair){{gab_ctimeout, fb}};
 
   return (union gab_value_pair){{gab_cvalid, fb}};
 }
@@ -1631,10 +1636,10 @@ union gab_value_pair gab_asend(struct gab_triple gab,
     return (union gab_value_pair){{gab_cinvalid}};
 
   gab_iref(gab, fb);
+  gab_egkeep(gab.eg, fb);
 
-  gab_jbcreate(gab, next_available_job(gab), worker_job);
-
-  gab_chnput(gab, gab.eg->work_channel, fb);
+  if (!gab_wkspawn(gab, fb))
+    gab_chnput(gab, gab.eg->work_channel, fb);
 
   return (union gab_value_pair){{gab_cvalid, fb}};
 };

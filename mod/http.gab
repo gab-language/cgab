@@ -1,0 +1,62 @@
+'chttp'.use
+
+http\req: .defclass(
+  http\method: http\endpoint: http\headers: http\body:
+  default:
+  {
+    as\b: () => do
+     Strings
+      .make (
+          self.http\method.to\s,
+          ' '
+          self.http\endpoint,
+          ' HTTP/1.1\r\n'
+          self.http\headers.join(
+            Streams.map(
+              (v, k) => Strings.make(k, ":", v ))
+            |> Streams.interpose '\r\n')
+          '\r\n'
+          self.http\body
+        )
+      .to\b
+    end,
+  }
+)
+
+_doget: .defcase {
+  ok: (uri) => do
+    (host, path*) = uri.uri\path*
+
+    req = http\req:.make(
+      GET:
+      "/" + path.join
+      { Host: host }
+      ""      
+    )
+
+    (ok, conn) = IO.connect(tcp\tls: host 443)
+
+    data = req.as\b
+
+    ok
+      .then () => do
+        conn
+          .write(data)
+          .unwrap
+
+        conn
+          .until('\0'.to\b)
+          .unwrap
+          .as\s
+          .unwrap
+          .as\http
+      end
+  end
+  err: (msg) => (err: msg)
+}
+
+[http:] .defmodule {
+  get: url => url.as\uri._doget
+}
+
+http:

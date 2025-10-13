@@ -1,5 +1,5 @@
 'chttp'.use
-Socket = IO.Sock
+Socket = IO.Sockets
 
 req = 'GET / HTTP/1.0\r\nHost:www.google.com\r\n\r\n'
 

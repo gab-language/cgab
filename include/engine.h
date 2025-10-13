@@ -41,7 +41,15 @@ static const char *gab_opcode_names[] = {
 
 /**
  * Structure used to actually execute bytecode
- */
+ *
+ * This structure is pretty large (8kb).
+ *
+ * Since a lot of fibers are small and short lived, this is overkill.
+ *
+ * It might be a nice optimization to store a small number of frames
+ * on the fiber itself, and then migrate the stack to a larger
+ * one if this small stack overflows.
+ * */
 struct gab_vm {
   uint8_t *ip;
 
@@ -516,7 +524,7 @@ struct gab_eg {
 
 union gab_value_pair gab_vmexec(struct gab_triple gab, gab_value fiber);
 
-bool gab_wkspawn(struct gab_triple gab);
+bool gab_wkspawn(struct gab_triple gab, gab_value fiber);
 
 void gab_gccreate(struct gab_triple gab);
 

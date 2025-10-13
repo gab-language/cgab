@@ -333,6 +333,8 @@ char *readline(const char *prompt) {
 }
 
 int run_repl(int flags, size_t nmodules, const char **modules) {
+  gab_ossignal(SIGINT, propagate_term);
+
   union gab_value_pair res = gab_create(
       (struct gab_create_argt){
           .flags = flags,
@@ -384,6 +386,8 @@ int run_repl(int flags, size_t nmodules, const char **modules) {
 
 int run_string(const char *string, int flags, size_t jobs, size_t nmodules,
                const char **modules) {
+  gab_ossignal(SIGINT, propagate_term);
+
   union gab_value_pair res = gab_create(
       (struct gab_create_argt){
           .flags = flags,
@@ -433,6 +437,8 @@ int run_string(const char *string, int flags, size_t jobs, size_t nmodules,
 }
 
 int run_bundle(const char *mod) {
+  gab_ossignal(SIGINT, propagate_term);
+
   size_t len = strlen(mod);
 
   if (len > 4 && !memcmp(mod + len - 4, ".exe", 4))
@@ -490,6 +496,8 @@ int run_bundle(const char *mod) {
 
 int run_file(const char *path, int flags, size_t jobs, size_t nmodules,
              const char **modules) {
+  gab_ossignal(SIGINT, propagate_term);
+
   union gab_value_pair res = gab_create(
       (struct gab_create_argt){
           .flags = flags,
@@ -849,19 +857,6 @@ const char *split_pkg(char *pkg) {
 }
 
 int download_gab(const char *pkg, const char *tag, const char *triple) {
-  /// Ensure that the ~/gab folder exists.
-  const char *gab_prefix = gab_osprefix("");
-
-  if (gab_prefix == nullptr) {
-    clierror("Could not determine installation prefix.\n");
-    return false;
-  }
-
-  if (!gab_osmkdirp(gab_prefix)) {
-    clierror("Failed to create directory at " GAB_MAGENTA "%s" GAB_RESET ".\n",
-             gab_prefix);
-    return false;
-  };
 
   int taglen = strlen(tag);
 
@@ -882,135 +877,155 @@ int download_gab(const char *pkg, const char *tag, const char *triple) {
   cliinfo("Resolved installation prefix: " GAB_MAGENTA "%s" GAB_RESET ".\n",
           location_prefix);
 
+  v_char binary_location = {};
+  v_char_spush(&binary_location, s_char_cstr(location_prefix));
+  v_char_spush(&binary_location, s_char_cstr("/gab"));
+  v_char_push(&binary_location, '\0');
+
+  v_char binary_url = {};
+  v_char_spush(&binary_url, s_char_cstr(GAB_RELEASE_DOWNLOAD_URL));
+  v_char_spush(&binary_url, s_char_cstr(tag));
+  v_char_spush(&binary_url, s_char_cstr("/gab-release-"));
+  v_char_spush(&binary_url, s_char_cstr(triple));
+  v_char_push(&binary_url, '\0');
+
+  v_char modules_location = {};
+  v_char_spush(&modules_location, s_char_cstr(location_prefix));
+  v_char_spush(&modules_location, s_char_cstr("modules"));
+  v_char_push(&modules_location, '\0');
+
+  v_char modules_url = {};
+  v_char_spush(&modules_url, s_char_cstr(GAB_RELEASE_DOWNLOAD_URL));
+  v_char_spush(&modules_url, s_char_cstr(tag));
+  v_char_spush(&modules_url, s_char_cstr("/gab-release-"));
+  v_char_spush(&modules_url, s_char_cstr(triple));
+  v_char_spush(&modules_url, s_char_cstr("-modules"));
+  v_char_push(&modules_url, '\0');
+
+  v_char modules_extract_location = {};
+  v_char_spush(&modules_extract_location, s_char_cstr(location_prefix));
+  v_char_push(&modules_extract_location, '\0');
+
+  // Fetch dev files (libcgab.a, headers)
+  v_char dev_url = {};
+  v_char_spush(&dev_url, s_char_cstr(GAB_RELEASE_DOWNLOAD_URL));
+  v_char_spush(&dev_url, s_char_cstr(tag));
+  v_char_spush(&dev_url, s_char_cstr("/gab-release-"));
+  v_char_spush(&dev_url, s_char_cstr(triple));
+  v_char_spush(&dev_url, s_char_cstr("-dev"));
+  v_char_push(&dev_url, '\0');
+
+  v_char dev_location = {};
+  v_char_spush(&dev_location, s_char_cstr(location_prefix));
+  v_char_spush(&dev_location, s_char_cstr("dev"));
+  v_char_push(&dev_location, '\0');
+
+  v_char dev_extract_location = {};
+  v_char_spush(&dev_extract_location, s_char_cstr(location_prefix));
+  v_char_push(&dev_extract_location, '\0');
+
+  cliinfo("The following steps will be taken:\n");
+  cliinfo("(1) Create the " GAB_MAGENTA "%s" GAB_RESET
+          " directory, if it does not exist.\n",
+          location_prefix);
+  cliinfo("(2) Download (via curl) the gab binary: " GAB_MAGENTA "%s" GAB_RESET
+          "\n",
+          binary_url.data);
+  cliinfo("(3) Download (via curl) gab's builtin modules: " GAB_MAGENTA
+          "%s" GAB_RESET "\n",
+          modules_url.data);
+  cliinfo("(4) Download (via curl) gab's development files: " GAB_MAGENTA
+          "%s" GAB_RESET "\n",
+          dev_url.data);
+  cliinfo("(5) Extract (via tar) the downloaded modules: "GAB_MAGENTA"%s"GAB_RESET" => "GAB_MAGENTA"%s"GAB_RESET"\n",
+          modules_location.data, modules_extract_location.data);
+  cliinfo("(6) Extract (via tar) the downloaded development files: "GAB_MAGENTA"%s"GAB_RESET" => "GAB_MAGENTA"%s"GAB_RESET"\n",
+          dev_location.data, dev_extract_location.data);
+
+  cliinfo("Begin installation process? (y,n) ");
+  int ch = getc(stdin);
+  if (ch != 'y' && ch != 'Y') {
+    clierror("Installation cancelled.\n");
+    return false;
+  }
+
+  /// Ensure that the ~/gab folder exists.
+  const char *gab_prefix = gab_osprefix("");
+
+  if (gab_prefix == nullptr) {
+    clierror("(1) Could not determine installation prefix.\n");
+    return false;
+  }
+
+  if (!gab_osmkdirp(gab_prefix)) {
+    clierror("(1) Failed to create directory at " GAB_MAGENTA "%s" GAB_RESET ".\n",
+             gab_prefix);
+    return false;
+  };
+
   if (!gab_osmkdirp(location_prefix)) {
-    clierror("Failed to create directory at " GAB_MAGENTA "%s" GAB_RESET ".\n",
+    clierror("(1) Failed to create directory at " GAB_MAGENTA "%s" GAB_RESET ".\n",
              location_prefix);
     return false;
   };
 
-  v_char location = {};
-  v_char_spush(&location, s_char_cstr(location_prefix));
-  v_char_spush(&location, s_char_cstr("/gab"));
-  v_char_push(&location, '\0');
-
-  v_char url = {};
-
-  v_char_spush(&url, s_char_cstr(GAB_RELEASE_DOWNLOAD_URL));
-  v_char_spush(&url, s_char_cstr(tag));
-  v_char_spush(&url, s_char_cstr("/gab-release-"));
-  v_char_spush(&url, s_char_cstr(triple));
-  v_char_push(&url, '\0');
+  clisuccess("(1) Validated installation location.\n");
 
   // Fetch release binary
-  int res = gab_osproc("curl", "-f", "-s", "-L", "-o", location.data, url.data);
+  int res = gab_osproc("curl", "-f", "-s", "-L", "-o", binary_location.data,
+                       binary_url.data);
 
   if (res) {
-    clierror("Failed to download release " GAB_YELLOW "%s" GAB_RESET
+    clierror("(2) Failed to download release " GAB_YELLOW "%s" GAB_RESET
              " for target " GAB_YELLOW "%s" GAB_RESET ".\n",
              tag, triple);
     return false;
   }
 
-#ifdef GAB_PLATFORM_UNIX
-  res = gab_osproc("chmod", "+x", location.data);
-
-  if (res) {
-    clierror("Failed to change permissions of binary %s.", location.data);
-    return false;
-  }
-#endif
-
-  v_char_destroy(&location);
-  v_char_destroy(&url);
-
-  cliinfo("Downloaded binary for release: " GAB_YELLOW "%s" GAB_RESET ".\n",
+  clisuccess("(2) Downloaded binary for release: " GAB_YELLOW "%s" GAB_RESET ".\n",
           tag);
-
-  v_char_spush(&url, s_char_cstr(GAB_RELEASE_DOWNLOAD_URL));
-  v_char_spush(&url, s_char_cstr(tag));
-  v_char_spush(&url, s_char_cstr("/gab-release-"));
-  v_char_spush(&url, s_char_cstr(triple));
-  v_char_spush(&url, s_char_cstr("-modules"));
-  v_char_push(&url, '\0');
-
-  v_char_spush(&location, s_char_cstr(location_prefix));
-  v_char_spush(&location, s_char_cstr("/modules"));
-  v_char_push(&location, '\0');
 
   // Fetch release modules
-  res = gab_osproc("curl", "-f", "-s", "-L", "-o", location.data, url.data);
-  cliinfo("Downloaded modules for release: " GAB_YELLOW "%s" GAB_RESET ".\n",
+  res = gab_osproc("curl", "-f", "-s", "-L", "-o", modules_location.data,
+                   modules_url.data);
+  clisuccess("(3) Downloaded modules for release: " GAB_YELLOW "%s" GAB_RESET ".\n",
           tag);
 
-  v_char_destroy(&location);
-  v_char_destroy(&url);
-
   if (res) {
-    clierror("Failed to download release " GAB_YELLOW "%s" GAB_RESET ".", tag);
+    clierror("(3) Failed to download modules for release " GAB_YELLOW "%s" GAB_RESET ".", tag);
     return false;
   }
 
-  v_char_spush(&location, s_char_cstr(location_prefix));
-  v_char_spush(&location, s_char_cstr("/modules"));
-  v_char_push(&location, '\0');
-
-  v_char_spush(&url, s_char_cstr(location_prefix));
-  v_char_push(&url, '/');
-  v_char_push(&url, '\0');
-
-  res = gab_osproc("tar", "xzf", location.data, "-C", url.data);
-
-  if (res) {
-    clierror("Failed to download release " GAB_YELLOW "%s" GAB_RESET ".", tag);
-    return false;
-  }
-
-  cliinfo("Extracted modules.\n");
-
-  v_char_destroy(&location);
-  v_char_destroy(&url);
-
-  // Fetch dev files (libcgab.a, headers)
-  v_char_spush(&url, s_char_cstr(GAB_RELEASE_DOWNLOAD_URL));
-  v_char_spush(&url, s_char_cstr(tag));
-  v_char_spush(&url, s_char_cstr("/gab-release-"));
-  v_char_spush(&url, s_char_cstr(triple));
-  v_char_spush(&url, s_char_cstr("-dev"));
-  v_char_push(&url, '\0');
-
-  v_char_spush(&location, s_char_cstr(location_prefix));
-  v_char_spush(&location, s_char_cstr("/dev"));
-  v_char_push(&location, '\0');
-
-  res = gab_osproc("curl", "-f", "-s", "-L", "-o", location.data, url.data);
-  cliinfo("Downloaded development files for release: " GAB_YELLOW "%s" GAB_RESET
+  res = gab_osproc("curl", "-f", "-s", "-L", "-o", dev_location.data,
+                   dev_url.data);
+  clisuccess("(4) Downloaded development files for release: " GAB_YELLOW "%s" GAB_RESET
           ".\n",
           tag);
 
-  v_char_destroy(&location);
-  v_char_destroy(&url);
-
   if (res) {
-    clierror("Failed to download release %s", tag);
+    clierror("(4) Failed to download development files for release %s", tag);
     return false;
   }
 
-  v_char_spush(&location, s_char_cstr(location_prefix));
-  v_char_spush(&location, s_char_cstr("/dev"));
-  v_char_push(&location, '\0');
-
-  v_char_spush(&url, s_char_cstr(location_prefix));
-  v_char_push(&url, '/');
-  v_char_push(&url, '\0');
-
-  res = gab_osproc("tar", "xzf", location.data, "-C", url.data);
+  res = gab_osproc("(5) tar", "xzf", modules_location.data, "-C",
+                   modules_extract_location.data);
 
   if (res) {
-    clierror("Failed to download release " GAB_YELLOW "%s" GAB_RESET "", tag);
-    return v_char_destroy(&location), v_char_destroy(&url), false;
+    clierror("(5) Failed to extract module files for release " GAB_YELLOW "%s" GAB_RESET ".", tag);
+    return false;
   }
 
-  cliinfo("Extracted development files.\n");
+  clisuccess("(5) Extracted modules.\n");
+
+  res = gab_osproc("tar", "xzf", dev_location.data, "-C",
+                   dev_extract_location.data);
+
+  if (res) {
+    clierror("(6) Failed to extract development files for release " GAB_YELLOW "%s" GAB_RESET "", tag);
+    return false;
+  }
+
+  clisuccess("(6) Extracted development files.\n");
 
   if (!strcmp(triple, GAB_TARGET_TRIPLE)) {
     clisuccess(
@@ -1024,7 +1039,7 @@ int download_gab(const char *pkg, const char *tag, const char *triple) {
         pkg, tag, location_prefix, location_prefix, location_prefix);
   }
 
-  return v_char_destroy(&location), v_char_destroy(&url), true;
+  return true;
 }
 
 int get(struct command_arguments *args) {
@@ -1262,14 +1277,14 @@ bool add_module(mz_zip_archive *zip_o, const char **roots,
           "<archive>/%s" GAB_RESET "\n",
           cstr_module, path, modulename);
 
-    /*
-     * It is unclear whether it is more important to prioritize speed
-     * (which affects startup/load time)
-     * or compression
-     * (which affects bundle size).
-     *
-     * Perhaps leave this up to the user?
-     */
+  /*
+   * It is unclear whether it is more important to prioritize speed
+   * (which affects startup/load time)
+   * or compression
+   * (which affects bundle size).
+   *
+   * Perhaps leave this up to the user?
+   */
   if (!mz_zip_writer_add_file(zip_o, modulename, path, nullptr, 0,
                               MZ_BEST_SPEED)) {
     mz_zip_error e = mz_zip_get_last_error(zip_o);
@@ -1472,8 +1487,6 @@ int main(int argc, const char **argv) {
 
   if (argc < 2)
     goto fin;
-
-  gab_ossignal(SIGINT, propagate_term);
 
   for (int i = 0; i < N_COMMANDS; i++) {
     struct command cmd = commands[i];

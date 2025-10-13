@@ -35,13 +35,22 @@
 
 #define FMT_ID_NOT_FOUND "Variable $ is not defined in this scope."
 
-#define FMT_ASSIGNMENT_ABANDONED                                               \
-  "This assignment expression is incomplete.\n\n"                              \
-  "Assignments consist of a list of targets and a list of values, separated "  \
-  "by an $.\n\n"                                                               \
-  "  a, b = " GAB_YELLOW "1" GAB_RESET ", " GAB_YELLOW "2\n" GAB_RESET         \
-  "  a:put!(" GAB_GREEN ".key" GAB_RESET "), b = " GAB_YELLOW "1" GAB_RESET    \
-  ", " GAB_YELLOW "2\n" GAB_RESET
+#define FMT_MALFORMED_ASSIGNMENT                                               \
+  "This assignment is malformed - a valid assignment looks like:\n\n"          \
+  "  a = " GAB_YELLOW "1" GAB_MAGENTA                                          \
+  "\t\t\t# A single variable and expression\n" GAB_RESET " " GAB_BLACK         \
+  "=> a = 1\n" GAB_RESET "  (a, b) = (" GAB_YELLOW "1" GAB_RESET ", " GAB_RED  \
+  "bark:" GAB_RESET ")" GAB_MAGENTA                                            \
+  "\t# A tuple of variables and expressions\n" GAB_RESET " " GAB_BLACK         \
+  "=> a = 1, b = bark:\n" GAB_RESET "  (a*, b) = (" GAB_YELLOW "1" GAB_RESET   \
+  ", " GAB_YELLOW "2" GAB_RESET ", " GAB_YELLOW "3" GAB_RESET ")" GAB_MAGENTA  \
+  "\t# Specify one variable to collect extra values with '*'\n" GAB_RESET      \
+  " " GAB_BLACK "=> a = [1, 2], b = 3\n" GAB_RESET "  (a**) = (" GAB_RED       \
+  "num:" GAB_RESET ", " GAB_YELLOW "2" GAB_RESET ")" GAB_MAGENTA               \
+  "\t# Specify one variable to zip extra values with '**'\n" GAB_RESET         \
+  " " GAB_BLACK "=> a = { num: 2 }\n" GAB_RESET
+
+#define FMT_MALFORMED_ASSIGNMENT_NOTE "\nHint: "
 
 #define FMT_TOO_MANY_EXPRESSIONS_IN_TUPLE                                      \
   "Tuples cannot have more than 64 compile-time "                              \
@@ -345,8 +354,7 @@ static int parser_error(struct gab_triple gab, struct parser *parser,
 
 static int eat_token(struct gab_triple gab, struct parser *parser) {
   if (match_token(parser, TOKEN_EOF))
-    return parser->offset++,
-           parser_error(gab, parser, GAB_UNEXPECTED_EOF,
+    return parser_error(gab, parser, GAB_UNEXPECTED_EOF,
                         "Unexpectedly reached the end of input.");
 
   parser->offset++;
@@ -393,6 +401,16 @@ gab_value parse_expression(struct gab_triple gab, struct parser *parser,
 static inline void skip_newlines(struct gab_triple gab, struct parser *parser) {
   while (match_and_eat_token(gab, parser, TOKEN_NEWLINE))
     ;
+}
+
+size_t node_getinfo_begin(struct gab_src *src, gab_value node) {
+  assert(d_uint64_t_exists(&src->node_begin_toks, node));
+  return d_uint64_t_read(&src->node_begin_toks, node);
+}
+
+size_t node_getinfo_end(struct gab_src *src, gab_value node) {
+  assert(d_uint64_t_exists(&src->node_end_toks, node));
+  return d_uint64_t_read(&src->node_end_toks, node);
 }
 
 void node_storeinfo(struct gab_src *src, gab_value node, size_t begin,
@@ -751,10 +769,17 @@ gab_value parse_exp_tup(struct gab_triple gab, struct parser *parser,
 
 gab_value parse_exp_blk(struct gab_triple gab, struct parser *parser,
                         gab_value lhs) {
+  gab_value begin = gab_number(gab_tsrcline(parser->src, parser->offset - 1));
+
   gab_value res = parse_expressions_body(gab, parser);
 
   if (res == gab_cinvalid)
     return gab_cinvalid;
+
+  if (match_token(parser, TOKEN_EOF))
+    return parser_error(gab, parser, GAB_MISSING_END,
+                        "The block was opened at line $", begin),
+           gab_cinvalid;
 
   if (!expect_token(gab, parser, TOKEN_END))
     return gab_cinvalid;
@@ -1565,7 +1590,11 @@ gab_value unpack_binding(struct gab_triple gab, struct bc *bc,
           goto err;
 
         if (*listpack_at_n >= 0 || *recpack_at_n >= 0)
-          goto err;
+          return bc_error(gab, bc, binding, GAB_MALFORMED_ASSIGNMENT,
+                          FMT_MALFORMED_ASSIGNMENT FMT_MALFORMED_ASSIGNMENT_NOTE
+                          "There may only be one assignment target with '*' or "
+                          "'**'"),
+                 gab_cinvalid;
 
         assert(gab_valkind(gab_recat(ctx, rec)) != kGAB_NUMBER);
         ctx = gab_recput(gab, ctx, rec, gab_nil);
@@ -1576,6 +1605,9 @@ gab_value unpack_binding(struct gab_triple gab, struct bc *bc,
         return ctx;
       }
 
+      /*
+       * Compiling a DICT member
+       */
       if (m == gab_message(gab, mGAB_SPLATDICT)) {
         if (gab_valkind(rec) != kGAB_BINARY)
           goto err;
@@ -1584,7 +1616,11 @@ gab_value unpack_binding(struct gab_triple gab, struct bc *bc,
           goto err;
 
         if (*listpack_at_n >= 0 || *recpack_at_n >= 0)
-          goto err;
+          return bc_error(gab, bc, binding, GAB_MALFORMED_ASSIGNMENT,
+                          FMT_MALFORMED_ASSIGNMENT FMT_MALFORMED_ASSIGNMENT_NOTE
+                          "There may only be one assignment target with '*' or "
+                          "'**'"),
+                 gab_cinvalid;
 
         assert(gab_valkind(gab_recat(ctx, rec)) != kGAB_NUMBER);
         ctx = gab_recput(gab, ctx, rec, gab_nil);
@@ -1596,15 +1632,15 @@ gab_value unpack_binding(struct gab_triple gab, struct bc *bc,
       }
 
     err:
-      return bc_error(gab, bc, binding, GAB_INVALID_REST_VARIABLE,
-                      "$ is invalid assignment", lhs),
+      return bc_error(gab, bc, binding, GAB_MALFORMED_ASSIGNMENT,
+                      FMT_MALFORMED_ASSIGNMENT),
              gab_cinvalid;
     }
   }
 
   default:
-    return bc_error(gab, bc, binding, GAB_INVALID_REST_VARIABLE,
-                    "$ is invalid assignment", binding),
+    return bc_error(gab, bc, binding, GAB_MALFORMED_ASSIGNMENT,
+                    FMT_MALFORMED_ASSIGNMENT),
            gab_cinvalid;
   }
 }
@@ -1682,8 +1718,8 @@ gab_value unpack_bindings_into_env(struct gab_triple gab, struct bc *bc,
     }
     default:
       return v_gab_value_destroy(&targets),
-             bc_error(gab, bc, bindings, GAB_INVALID_REST_VARIABLE,
-                      "$ is invalid assignment", target),
+             bc_error(gab, bc, bindings, GAB_MALFORMED_ASSIGNMENT,
+                      FMT_MALFORMED_ASSIGNMENT),
              gab_cinvalid;
     }
 
