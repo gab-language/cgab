@@ -1324,8 +1324,6 @@ int sprint_pretty_err(struct gab_triple gab, char **buf, size_t *len,
     if (line_num < src->lines.len) {
       size_t next_line_num = line_num;
       s_char next_line_src = v_s_char_val_at(&src->lines, next_line_num);
-      printf("NEXTLINE: %lu/%lu, %.*s\n", line_num, src->lines.len,
-             next_line_src.len, next_line_src.data);
 
       if (next_line_src.len > whitespace_skipped)
         if (snprintf_through(buf, len, "\n      %.*s",
