@@ -8,11 +8,20 @@
 
 #ifdef GAB_STATUS_NAMES_IMPL
 static const char *gab_status_names[] = {
-#define STATUS(name, message) message,
+#define STATUS(name, message) #name,
 #include "status_code.h"
 #undef STATUS
 };
 #undef GAB_STATUS_NAMES_IMPL
+#endif
+
+#ifdef GAB_STATUS_MESSAGES_IMPL
+static const char *gab_status_messages[] = {
+#define STATUS(name, message) message,
+#include "status_code.h"
+#undef STATUS
+};
+#undef GAB_STATUS_MESSAGES_IMPL
 #endif
 
 #ifdef GAB_TOKEN_NAMES_IMPL

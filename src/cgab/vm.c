@@ -1,8 +1,6 @@
 #include "core.h"
 #include "gab.h"
 
-#define GAB_STATUS_NAMES_IMPL
-#define GAB_OPCODE_NAMES_IMPL
 #include "engine.h"
 
 #include "colors.h"

@@ -1,5 +1,6 @@
 #include <stdatomic.h>
 #define GAB_STATUS_NAMES_IMPL
+#define GAB_STATUS_MESSAGES_IMPL
 #define GAB_TOKEN_NAMES_IMPL
 #include "engine.h"
 
@@ -10,8 +11,9 @@
 #include "lexer.h"
 
 struct errdetails {
-  const char *status_name, *src_name, *tok_name, *msg_name;
+  const char *src_name, *tok_name, *msg_name;
   uint64_t token, row, col_begin, col_end, byte_begin, byte_end;
+  enum gab_status status;
   int wkid;
 };
 
@@ -638,9 +640,14 @@ union gab_value_pair gab_create(struct gab_create_argt args,
     }
   }
 
+  size_t len = 0;
+  const char **cursor = args.modules;
+  while (*cursor)
+    len++, cursor++;
+
   size_t nargs = 0;
-  gab_value vargs[args.len + 1];
-  const char *sargs[args.len + 1];
+  gab_value vargs[len + 1];
+  const char *sargs[len + 1];
 
   vargs[nargs] = gab_ok;
   sargs[nargs] = "";
@@ -648,7 +655,7 @@ union gab_value_pair gab_create(struct gab_create_argt args,
 
   // Use each module that's asked for, in order.
   // Build up an array of names and values.
-  for (int i = 0; i < args.len; i++) {
+  for (int i = 0; i < len; i++) {
     const char *module = args.modules[i];
     union gab_value_pair res = gab_use(gab, (struct gab_use_argt){
                                                 .sname = module,
@@ -806,6 +813,22 @@ bool repl_check_res(struct gab_triple gab, union gab_value_pair res) {
   return false;
 }
 
+bool repl_check_needmore(struct gab_triple gab, union gab_value_pair res) {
+  if (res.status != gab_cinvalid)
+    return false;
+
+  gab_value err = res.vresult;
+  gab_value status = gab_mrecat(gab, err, "status");
+  assert(status != gab_cundefined);
+  assert(gab_valkind(status) == kGAB_STRING);
+
+  const char *status_name = gab_strdata(&status);
+  if (!strcmp(status_name, "UNEXPECTED_EOF"))
+    return true;
+
+  return false;
+}
+
 bool repl_check_vresult(struct gab_triple gab, union gab_value_pair res) {
   return repl_check_res(gab, res);
 }
@@ -853,27 +876,34 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
   gab_value env = gab_cinvalid;
 
   args.welcome_message = args.welcome_message ? args.welcome_message : "";
-  args.prompt_prefix = args.prompt_prefix ? args.prompt_prefix : "";
   args.result_prefix = args.result_prefix ? args.result_prefix : "";
+  args.prompt_prefix = args.prompt_prefix ? args.prompt_prefix : "";
+  args.promptmore_prefix =
+      args.promptmore_prefix ? args.promptmore_prefix : args.prompt_prefix;
 
   printf("%s\n", args.welcome_message);
 
-  for (;;) {
-    char *src = args.readline(args.prompt_prefix);
+  v_char source = {};
 
-    if (!src)
+  for (;;) {
+  readmore:
+    char *line;
+    if (source.len)
+      line = args.readline(args.promptmore_prefix);
+    else
+      line = args.readline(args.prompt_prefix);
+
+    if (!line)
       return;
 
-    if (src[0] == '\0')
+    if (line[0] == '\0')
       continue;
 
     if (args.add_hist)
-      args.add_hist(src);
+      args.add_hist(line);
 
-    // Append the iterations number to the end of the given name
-    char unique_name[strlen(args.name) + 16];
-    snprintf(unique_name, sizeof(unique_name), "%s:%" PRIu64 "", args.name,
-             iterations);
+    v_char_spush(&source, s_char_cstr(line));
+    v_char_push(&source, '\n');
 
     iterations++;
 
@@ -908,17 +938,34 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
       n++;
     }
 
-    union gab_value_pair fiber = gab_aexec(gab, (struct gab_exec_argt){
+    // Append the iterations number to the end of the given name
+    char unique_name[strlen(args.name) + 16];
+    snprintf(unique_name, sizeof(unique_name), "%s:%" PRIu64 "", args.name,
+             iterations);
+
+    union gab_value_pair block = gab_build(gab, (struct gab_parse_argt){
                                                     .name = unique_name,
-                                                    .source = src,
+                                                    .source = source.data,
+                                                    .source_len = source.len,
                                                     .flags = args.flags,
                                                     .len = n,
-                                                    .sargv = keys,
-                                                    .argv = vals,
+                                                    .argv = keys,
                                                 });
+    if (repl_check_needmore(gab, block))
+      goto readmore;
+
+    if (repl_check_vresult(gab, block))
+      goto fin;
+
+    union gab_value_pair fiber = gab_arun(gab, (struct gab_run_argt){
+                                                   .flags = args.flags,
+                                                   .len = n,
+                                                   .argv = vals,
+                                                   .main = block.vresult,
+                                               });
 
     if (repl_check_vresult(gab, fiber))
-      continue;
+      goto fin;
 
     repl_wait_for(gab, &args, fiber.vresult);
 
@@ -935,7 +982,7 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
     assert(env != gab_cinvalid);
 
     if (repl_check_aresult(gab, res))
-      continue;
+      goto fin;
 
     for (int32_t i = 0; i < res.aresult->len; i++) {
       gab_value arg = res.aresult->data[i];
@@ -949,6 +996,9 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
     }
 
     putc('\n', stdout);
+
+  fin:
+    source.len = 0;
   }
 }
 
@@ -1222,9 +1272,9 @@ int sprint_pretty_err(struct gab_triple gab, char **buf, size_t *len,
                        args->wkid, src_name, tok_name) < 0)
     return -1;
 
-  if (args->status_name)
+  if (args->status)
     if (snprintf_through(buf, len, "    " GAB_RED "%s" GAB_RESET "\n",
-                         args->status_name) < 0)
+                         gab_status_messages[args->status]) < 0)
       return -1;
 
   if (src) {
@@ -1274,6 +1324,8 @@ int sprint_pretty_err(struct gab_triple gab, char **buf, size_t *len,
     if (line_num < src->lines.len) {
       size_t next_line_num = line_num;
       s_char next_line_src = v_s_char_val_at(&src->lines, next_line_num);
+      printf("NEXTLINE: %lu/%lu, %.*s\n", line_num, src->lines.len,
+             next_line_src.len, next_line_src.data);
 
       if (next_line_src.len > whitespace_skipped)
         if (snprintf_through(buf, len, "\n      %.*s",
@@ -1293,8 +1345,8 @@ int sprint_pretty_err(struct gab_triple gab, char **buf, size_t *len,
 
 int sprint_structured_err(struct gab_triple gab, char **buf, size_t *len,
                           struct errdetails *d, const char *hint) {
-  snprintf_through(buf, len, "%s:%s:%s:%s", d->status_name, d->src_name,
-                   d->tok_name, d->msg_name);
+  snprintf_through(buf, len, "%s:%s:%s:%s", gab_status_names[d->status],
+                   d->src_name, d->tok_name, d->msg_name);
 
   snprintf_through(
       buf, len, ":%" PRIu64 ":%" PRIu64 ":%" PRIu64 ":%" PRIu64 ":%" PRIu64 "",
@@ -1330,7 +1382,7 @@ gab_value gab_vspanicf(struct gab_triple gab, va_list va,
 
   err.src_name = args.src ? gab_strdata(&args.src->name) : "C";
 
-  err.status_name = gab_status_names[args.status];
+  err.status = args.status;
 
   gab_gclock(gab);
 
@@ -1341,17 +1393,17 @@ gab_value gab_vspanicf(struct gab_triple gab, va_list va,
   }
 
   gab_value rec = gab_recordof(
-      gab, gab_message(gab, "status"), gab_string(gab, err.status_name),
-      gab_message(gab, "src"), gab_string(gab, err.src_name),
-      gab_message(gab, "tok\\offset"), gab_number(args.tok),
-      gab_message(gab, "tok\\t"), gab_string(gab, err.tok_name),
-      gab_message(gab, "hint"), gab_string(gab, hint), gab_message(gab, "row"),
-      gab_number(err.row), gab_message(gab, "col\\begin"),
-      gab_number(err.col_begin), gab_message(gab, "col\\end"),
-      gab_number(err.col_end), gab_message(gab, "byte\\begin"),
-      gab_number(err.byte_begin), gab_message(gab, "byte\\end"),
-      gab_number(err.byte_end), gab_message(gab, "thread"),
-      gab_number(args.wkid), );
+      gab, gab_message(gab, "status"),
+      gab_string(gab, gab_status_names[err.status]), gab_message(gab, "src"),
+      gab_string(gab, err.src_name), gab_message(gab, "tok\\offset"),
+      gab_number(args.tok), gab_message(gab, "tok\\t"),
+      gab_string(gab, err.tok_name), gab_message(gab, "hint"),
+      gab_string(gab, hint), gab_message(gab, "row"), gab_number(err.row),
+      gab_message(gab, "col\\begin"), gab_number(err.col_begin),
+      gab_message(gab, "col\\end"), gab_number(err.col_end),
+      gab_message(gab, "byte\\begin"), gab_number(err.byte_begin),
+      gab_message(gab, "byte\\end"), gab_number(err.byte_end),
+      gab_message(gab, "thread"), gab_number(args.wkid), );
 
   gab_gcunlock(gab);
 
@@ -1373,10 +1425,21 @@ gab_value single_errtos(struct gab_triple gab, gab_value err) {
 
   gab_value wkid = gab_valtou(gab_mrecat(gab, err, "thread"));
 
+  enum gab_status status_enum = GAB_OK;
+  const char *statusname = gab_strdata(&status);
+  for (int i = 0; i < LEN_CARRAY(gab_status_names); i++) {
+    if (!strcmp(statusname, gab_status_names[i])) {
+      status_enum = i;
+      break;
+    }
+  }
+
+  assert(status_enum != GAB_OK);
+
   struct errdetails e = {
       .token = token,
       .src_name = gab_strdata(&srcname),
-      .status_name = gab_strdata(&status),
+      .status = status_enum,
       .tok_name = gab_strdata(&token_type),
       .byte_begin = byte_begin,
       .byte_end = byte_end,

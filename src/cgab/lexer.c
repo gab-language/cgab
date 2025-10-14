@@ -310,7 +310,6 @@ gab_token gab_lexnext(gab_lx *self) {
 
   if (peek(self) == '\0' || peek(self) == EOF) {
   eof:
-    advance(self);
     tok = TOKEN_EOF;
     v_gab_token_push(&self->source->tokens, tok);
     v_s_char_push(&self->source->token_srcs, self->current_token_src);
@@ -428,6 +427,7 @@ struct gab_src *gab_src(struct gab_triple gab, gab_value name,
 
   for (;;) {
     gab_token t = gab_lexnext(&lex);
+
     if (t == TOKEN_EOF)
       break;
   }

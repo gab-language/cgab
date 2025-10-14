@@ -26,6 +26,10 @@
 #define GAB_SYMLINK_RECOMMENDATION ""
 #endif
 
+// TODO:
+// Simply replace curl and tar with
+// sokol_fetch and miniz implementations. Much better than subprocessing.
+
 struct gab_triple gab;
 
 mz_zip_archive zip = {0};
@@ -314,18 +318,18 @@ bool zip_exister(const char *path) {
   return res >= 0;
 }
 
-static const char *default_modules[] = {
-    "Strings", "Binaries", "Shapes",  "Messages", "Numbers",
-    "Blocks",  "Records",  "Fibers",  "Channels", "__core",
-    "Ranges",  "IO",       "Streams",
-};
-static const size_t ndefault_modules = LEN_CARRAY(default_modules);
-
 static const char *default_modules_deps[] = {
     "cstrings", "cshapes", "cmessages", "cnumbers",
     "crecords", "cfibers", "cchannels", "cio",
 };
 static const size_t ndefault_modules_deps = LEN_CARRAY(default_modules_deps);
+
+static const char *default_modules[] = {
+    "Strings", "Binaries", "Shapes",  "Messages", "Numbers",
+    "Blocks",  "Records",  "Fibers",  "Channels", "__core",
+    "Ranges",  "IO",       "Streams", nullptr,
+};
+static const size_t ndefault_modules = LEN_CARRAY(default_modules) - 1;
 
 static char prompt_buffer[4096];
 char *readline(const char *prompt) {
@@ -333,12 +337,13 @@ char *readline(const char *prompt) {
 }
 
 int run_repl(int flags, size_t nmodules, const char **modules) {
+  // Crossline seems to stomp over the Ctrl-C signal.
+  // Maybe linenoise doesn't do this?
   gab_ossignal(SIGINT, propagate_term);
 
   union gab_value_pair res = gab_create(
       (struct gab_create_argt){
           .flags = flags,
-          .len = nmodules,
           .modules = modules,
           .roots =
               (const char *[]){
@@ -365,8 +370,9 @@ int run_repl(int flags, size_t nmodules, const char **modules) {
                     .name = MAIN_MODULE,
                     .flags = flags,
                     .welcome_message = "Gab version " GAB_VERSION_TAG "",
-                    .prompt_prefix = "> ",
-                    .result_prefix = "=> ",
+                    .prompt_prefix = ">>> ",
+                    .promptmore_prefix = "... ",
+                    .result_prefix = "",
                     .readline = readline,
                     .len = nmodules,
                     .sargv = modules,
@@ -392,7 +398,6 @@ int run_string(const char *string, int flags, size_t jobs, size_t nmodules,
       (struct gab_create_argt){
           .flags = flags,
           .jobs = jobs,
-          .len = nmodules,
           .modules = modules,
           .roots =
               (const char *[]){
@@ -455,7 +460,6 @@ int run_bundle(const char *mod) {
 
   union gab_value_pair res = gab_create(
       (struct gab_create_argt){
-          .len = ndefault_modules,
           .modules = default_modules,
           .roots =
               (const char *[]){
@@ -502,7 +506,6 @@ int run_file(const char *path, int flags, size_t jobs, size_t nmodules,
       (struct gab_create_argt){
           .flags = flags,
           .jobs = jobs,
-          .len = nmodules,
           .modules = modules,
           .roots =
               (const char *[]){
@@ -784,7 +787,7 @@ struct command_arguments parse_options(int argc, const char **argv,
       .argv = argv,
   };
 
-  v_s_char_create(&args.modules, 16);
+  v_s_char_create(&args.modules, 32);
 
   for (int i = 0; i < ndefault_modules; i++)
     v_s_char_push(&args.modules, s_char_cstr(default_modules[i]));
@@ -937,9 +940,11 @@ int download_gab(const char *pkg, const char *tag, const char *triple) {
   cliinfo("(4) Download (via curl) gab's development files: " GAB_MAGENTA
           "%s" GAB_RESET "\n",
           dev_url.data);
-  cliinfo("(5) Extract (via tar) the downloaded modules: "GAB_MAGENTA"%s"GAB_RESET" => "GAB_MAGENTA"%s"GAB_RESET"\n",
+  cliinfo("(5) Extract (via tar) the downloaded modules: " GAB_MAGENTA
+          "%s" GAB_RESET " => " GAB_MAGENTA "%s" GAB_RESET "\n",
           modules_location.data, modules_extract_location.data);
-  cliinfo("(6) Extract (via tar) the downloaded development files: "GAB_MAGENTA"%s"GAB_RESET" => "GAB_MAGENTA"%s"GAB_RESET"\n",
+  cliinfo("(6) Extract (via tar) the downloaded development files: " GAB_MAGENTA
+          "%s" GAB_RESET " => " GAB_MAGENTA "%s" GAB_RESET "\n",
           dev_location.data, dev_extract_location.data);
 
   cliinfo("Begin installation process? (y,n) ");
@@ -958,13 +963,15 @@ int download_gab(const char *pkg, const char *tag, const char *triple) {
   }
 
   if (!gab_osmkdirp(gab_prefix)) {
-    clierror("(1) Failed to create directory at " GAB_MAGENTA "%s" GAB_RESET ".\n",
+    clierror("(1) Failed to create directory at " GAB_MAGENTA "%s" GAB_RESET
+             ".\n",
              gab_prefix);
     return false;
   };
 
   if (!gab_osmkdirp(location_prefix)) {
-    clierror("(1) Failed to create directory at " GAB_MAGENTA "%s" GAB_RESET ".\n",
+    clierror("(1) Failed to create directory at " GAB_MAGENTA "%s" GAB_RESET
+             ".\n",
              location_prefix);
     return false;
   };
@@ -982,25 +989,29 @@ int download_gab(const char *pkg, const char *tag, const char *triple) {
     return false;
   }
 
-  clisuccess("(2) Downloaded binary for release: " GAB_YELLOW "%s" GAB_RESET ".\n",
-          tag);
+  clisuccess("(2) Downloaded binary for release: " GAB_YELLOW "%s" GAB_RESET
+             ".\n",
+             tag);
 
   // Fetch release modules
   res = gab_osproc("curl", "-f", "-s", "-L", "-o", modules_location.data,
                    modules_url.data);
-  clisuccess("(3) Downloaded modules for release: " GAB_YELLOW "%s" GAB_RESET ".\n",
-          tag);
+  clisuccess("(3) Downloaded modules for release: " GAB_YELLOW "%s" GAB_RESET
+             ".\n",
+             tag);
 
   if (res) {
-    clierror("(3) Failed to download modules for release " GAB_YELLOW "%s" GAB_RESET ".", tag);
+    clierror("(3) Failed to download modules for release " GAB_YELLOW
+             "%s" GAB_RESET ".",
+             tag);
     return false;
   }
 
   res = gab_osproc("curl", "-f", "-s", "-L", "-o", dev_location.data,
                    dev_url.data);
-  clisuccess("(4) Downloaded development files for release: " GAB_YELLOW "%s" GAB_RESET
-          ".\n",
-          tag);
+  clisuccess("(4) Downloaded development files for release: " GAB_YELLOW
+             "%s" GAB_RESET ".\n",
+             tag);
 
   if (res) {
     clierror("(4) Failed to download development files for release %s", tag);
@@ -1011,7 +1022,9 @@ int download_gab(const char *pkg, const char *tag, const char *triple) {
                    modules_extract_location.data);
 
   if (res) {
-    clierror("(5) Failed to extract module files for release " GAB_YELLOW "%s" GAB_RESET ".", tag);
+    clierror("(5) Failed to extract module files for release " GAB_YELLOW
+             "%s" GAB_RESET ".",
+             tag);
     return false;
   }
 
@@ -1021,7 +1034,9 @@ int download_gab(const char *pkg, const char *tag, const char *triple) {
                    dev_extract_location.data);
 
   if (res) {
-    clierror("(6) Failed to extract development files for release " GAB_YELLOW "%s" GAB_RESET "", tag);
+    clierror("(6) Failed to extract development files for release " GAB_YELLOW
+             "%s" GAB_RESET "",
+             tag);
     return false;
   }
 
@@ -1134,13 +1149,17 @@ int run(struct command_arguments *args) {
   const char *path = args->argv[0];
   size_t jobs = 8;
 
+  /// Push a terminator module to the list
+  v_s_char_push(&args->modules, s_char_create(nullptr, 0));
+
   size_t nmodules = args->modules.len;
   assert(nmodules > 0);
+
   const char *modules[nmodules];
   for (int i = 0; i < nmodules; i++)
     modules[i] = v_s_char_ref_at(&args->modules, i)->data;
 
-  return run_file(path, args->flags, jobs, nmodules, modules);
+  return run_file(path, args->flags, jobs, nmodules - 1, modules);
 }
 
 int exec(struct command_arguments *args) {
@@ -1149,23 +1168,31 @@ int exec(struct command_arguments *args) {
     return 1;
   }
 
+  /// Push a terminator module to the list
+  v_s_char_push(&args->modules, s_char_create(nullptr, 0));
+
   size_t nmodules = args->modules.len;
   assert(nmodules > 0);
+
   const char *modules[nmodules];
   for (int i = 0; i < nmodules; i++)
     modules[i] = v_s_char_ref_at(&args->modules, i)->data;
 
-  return run_string(args->argv[0], args->flags, 8, nmodules, modules);
+  return run_string(args->argv[0], args->flags, 8, nmodules - 1, modules);
 }
 
 int repl(struct command_arguments *args) {
+  /// Push a terminator module to the list
+  v_s_char_push(&args->modules, s_char_create(nullptr, 0));
+
   size_t nmodules = args->modules.len;
   assert(nmodules > 0);
+
   const char *modules[nmodules];
   for (int i = 0; i < nmodules; i++)
     modules[i] = v_s_char_ref_at(&args->modules, i)->data;
 
-  return run_repl(args->flags, nmodules, modules);
+  return run_repl(args->flags, nmodules - 1, modules);
 }
 
 void cmd_summary(int i) {

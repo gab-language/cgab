@@ -542,7 +542,6 @@ struct gab_create_argt {
    *  -> Messages = 'Messages'.use
    *  -> Ranges = 'Ranges'.use
    * */
-  uint32_t len;
   const char **modules;
 };
 
@@ -1206,6 +1205,10 @@ struct gab_repl_argt {
    * The prompt to display before each input of REPL.
    */
   const char *prompt_prefix;
+  /**
+   * The prompt shown when the user needs to enter additional lines.
+   */
+  const char *promptmore_prefix;
   /**
    * The prefix to display before each result of REPL.
    */

@@ -18,19 +18,6 @@
   ")" GAB_MAGENTA "\t# A tuple\n" GAB_RESET "  "                               \
   "a_variable" GAB_MAGENTA "\t\t# Or a variable!" GAB_RESET
 
-#define FMT_CLOSING_RBRACE                                                     \
-  "Expected a closing $ to define a rest assignment target."
-
-#define FMT_EXTRA_REST_TARGET                                                  \
-  "$ is already a rest-target.\n"                                              \
-  "\nBlocks and assignments can only declare one target as a rest-target."
-
-#define FMT_UNEXPECTEDTOKEN "Expected $ instead."
-
-#define FMT_MISSINGSEPARATOR                                                   \
-  "Expected one of " GAB_GREEN "';'" GAB_RESET ", " GAB_GREEN "','" GAB_RESET  \
-  ", or a newline instead."
-
 #define FMT_REFERENCE_BEFORE_INIT "$ is referenced before it is initialized."
 
 #define FMT_ID_NOT_FOUND "Variable $ is not defined in this scope."
@@ -51,11 +38,6 @@
   " " GAB_BLACK "=> a = { num: 2 }\n" GAB_RESET
 
 #define FMT_MALFORMED_ASSIGNMENT_NOTE "\nHint: "
-
-#define FMT_TOO_MANY_EXPRESSIONS_IN_TUPLE                                      \
-  "Tuples cannot have more than 64 compile-time "                              \
-  "values.\n\nThis is an artificial limitiation,\n but is enforced by "        \
-  "the compiler for performance reasons."
 
 /*
  *******
@@ -325,10 +307,6 @@ static inline bool match_token(struct parser *parser, gab_token tok) {
   return v_gab_token_val_at(&parser->src->tokens, parser->offset) == tok;
 }
 
-static inline bool match_terminator(struct parser *parser) {
-  return match_token(parser, TOKEN_END) || match_token(parser, TOKEN_EOF);
-}
-
 static int vparser_error(struct gab_triple gab, struct parser *parser,
                          enum gab_status e, const char *fmt, va_list args) {
   parser->err = gab_vspanicf(gab, args,
@@ -373,7 +351,7 @@ static inline int match_and_eat_token_of(struct gab_triple gab,
                                          gab_token tok[len]) {
   for (size_t i = 0; i < len; i++)
     if (match_token(parser, tok[i]))
-      return eat_token(gab, parser);
+      return (tok[i] == TOKEN_EOF) ? 1 : eat_token(gab, parser);
 
   return 0;
 }
@@ -384,16 +362,6 @@ static inline int match_and_eat_token_of(struct gab_triple gab,
     match_and_eat_token_of(gab, parser, sizeof(toks) / sizeof(gab_token),      \
                            toks);                                              \
   })
-
-static inline int expect_token(struct gab_triple gab, struct parser *parser,
-                               gab_token tok) {
-  if (!match_token(parser, tok))
-    return eat_token(gab, parser),
-           parser_error(gab, parser, GAB_UNEXPECTED_TOKEN, FMT_UNEXPECTEDTOKEN,
-                        tok_id(gab, tok));
-
-  return eat_token(gab, parser);
-}
 
 gab_value parse_expression(struct gab_triple gab, struct parser *parser,
                            enum prec_k prec);
@@ -536,27 +504,40 @@ gab_value node_send(struct gab_triple gab, gab_value lhs, gab_value msg,
 }
 
 static gab_value parse_expressions_body(struct gab_triple gab,
-                                        struct parser *parser) {
-
-  skip_newlines(gab, parser);
+                                        struct parser *parser,
+                                        enum gab_token t) {
+  size_t begin = parser->offset;
 
   gab_value result = node_empty(gab, parser);
 
-  while (!match_terminator(parser) && !match_token(parser, TOKEN_EOF)) {
-    gab_value rhs = parse_expression(gab, parser, kEXP);
+  skip_newlines(gab, parser);
 
-    if (rhs == gab_cinvalid)
+  while (!match_and_eat_token(gab, parser, t)) {
+    skip_newlines(gab, parser);
+
+    gab_value exp = parse_expression(gab, parser, kEXP);
+
+    if (exp == gab_cinvalid)
       return gab_cinvalid;
 
-    gab_value tup = node_value(gab, rhs);
-    node_stealinfo(parser->src, rhs, tup);
+    gab_value tup = node_value(gab, exp);
+    node_stealinfo(parser->src, exp, tup);
 
     result = gab_lstcat(gab, result, tup);
+
+    if (result == gab_cinvalid)
+      return gab_cinvalid;
 
     skip_newlines(gab, parser);
   }
 
-  return node_value(gab, result);
+  size_t end = parser->offset;
+
+  gab_value res = node_value(gab, result);
+
+  node_storeinfo(parser->src, res, begin, end);
+
+  return res;
 }
 
 gab_value parse_expressions_until(struct gab_triple gab, struct parser *parser,
@@ -580,9 +561,6 @@ gab_value parse_expressions_until(struct gab_triple gab, struct parser *parser,
     if (result == gab_cinvalid)
       return gab_cinvalid;
 
-    if (match_and_eat_token(gab, parser, t))
-      break;
-
     skip_newlines(gab, parser);
   }
 
@@ -603,7 +581,7 @@ gab_value parse_expression(struct gab_triple gab, struct parser *parser,
   struct parse_rule rule = get_parse_rule(tok);
 
   if (rule.prefix == nullptr)
-    return parser_error(gab, parser, GAB_UNEXPECTED_TOKEN,
+    return parser_error(gab, parser, GAB_MALFORMED_EXPRESSION,
                         FMT_EXPECTED_EXPRESSION),
            gab_cinvalid;
 
@@ -616,6 +594,8 @@ gab_value parse_expression(struct gab_triple gab, struct parser *parser,
 
   node_storeinfo(parser->src, node, begin, end);
 
+  skip_newlines(gab, parser);
+
   /*
    * The next section will skip newlines to peek and see
    * if we have an infix expression to continue.
@@ -626,8 +606,6 @@ gab_value parse_expression(struct gab_triple gab, struct parser *parser,
    * This is because newlines are *expected* in some places as
    * separators. (tuples, lists, and dicts)
    */
-  skip_newlines(gab, parser);
-
   while (prec <= get_parse_rule(curr_tok(parser)).prec) {
 
     if (node == gab_cinvalid)
@@ -769,19 +747,9 @@ gab_value parse_exp_tup(struct gab_triple gab, struct parser *parser,
 
 gab_value parse_exp_blk(struct gab_triple gab, struct parser *parser,
                         gab_value lhs) {
-  gab_value begin = gab_number(gab_tsrcline(parser->src, parser->offset - 1));
-
-  gab_value res = parse_expressions_body(gab, parser);
+  gab_value res = parse_expressions_body(gab, parser, TOKEN_END);
 
   if (res == gab_cinvalid)
-    return gab_cinvalid;
-
-  if (match_token(parser, TOKEN_EOF))
-    return parser_error(gab, parser, GAB_MISSING_END,
-                        "The block was opened at line $", begin),
-           gab_cinvalid;
-
-  if (!expect_token(gab, parser, TOKEN_END))
     return gab_cinvalid;
 
   return res;
@@ -887,7 +855,7 @@ gab_value parse(struct gab_triple gab, struct parser *parser) {
     return gab_cinvalid;
   }
 
-  gab_value ast = parse_expressions_body(gab, parser);
+  gab_value ast = parse_expressions_body(gab, parser, TOKEN_EOF);
 
   if (ast == gab_cinvalid)
     return gab_cinvalid;

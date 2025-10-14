@@ -67,3 +67,6 @@
 [submodule "vendor/duckdb"]
 	path = vendor/duckdb
 	url = https://github.com/duckdb/duckdb.git
+[submodule "vendor/crossline"]
+	path = vendor/crossline
+	url = https://github.com/jcwangxp/Crossline.git
