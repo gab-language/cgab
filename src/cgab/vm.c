@@ -1018,9 +1018,6 @@ union gab_value_pair do_vmexecfiber(struct gab_triple gab, gab_value f) {
   assert(gab_valkind(f) == kGAB_FIBER);
   struct gab_ofiber *fiber = GAB_VAL_TO_FIBER(f);
 
-  // Just a sanity bounds check here.
-  assert(*fiber->vm.sp > 0 && *fiber->vm.sp < 32);
-
   assert(fiber->header.kind != kGAB_FIBERDONE);
 
   assert(fiber->vm.kb);

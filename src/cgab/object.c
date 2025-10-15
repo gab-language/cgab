@@ -1969,7 +1969,8 @@ gab_value gab_ntchntake(struct gab_triple gab, gab_value c, uint64_t len,
 
   switch (channel->header.kind) {
   case kGAB_CHANNEL:
-    return channel_blocking_take(gab, channel, c, len, data, tries);
+    gab_value res = channel_blocking_take(gab, channel, c, len, data, tries);
+    return res;
   case kGAB_CHANNELCLOSED:
     return gab_cundefined;
   default:

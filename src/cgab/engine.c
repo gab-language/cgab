@@ -297,12 +297,14 @@ int32_t gc_job(void *data) {
   while (gab.eg->njobs >= 0) {
     switch (gab_yield(gab)) {
     case sGAB_TERM:
+      gab_sigclear(gab);
       continue;
     case sGAB_COLL:
       gab_gcdocollect(gab);
       gab_sigclear(gab);
       continue;
     default:
+      thrd_sleep(&(struct timespec){.tv_nsec = 5000}, nullptr);
       break;
     }
 
@@ -320,7 +322,6 @@ int32_t gc_job(void *data) {
   return 0;
 }
 
-// TODO: Workers take up 100% CPU when *waiting*. This has gotta be fixed.
 int32_t worker_job(void *data) {
   struct gab_triple *g = data;
   struct gab_triple gab = *g;
@@ -409,41 +410,49 @@ int32_t worker_job(void *data) {
 
     switch (res.status) {
     case gab_ctimeout:
+      assert(!gab_fibisrunning(popped));
+      assert(!gab_fibisdone(popped));
       // We did not complete the work. Push back onto our queue.
       if (!q_gab_value_push(&job->queue, fiber))
         assert(false && "PUSH FAILED");
       break;
     // We completed the work. Nothing else to do.
     case gab_cvalid:
+      assert(gab_fibisdone(popped));
+      // We panicked. Crash the system.
       if (res.aresult->data[0] != gab_ok)
         gab_sigterm(gab);
       break;
     // We were interruppted by sGAB_TERM. Signal will be handled below.
     case gab_cinvalid:
-      break;
-    default:
-      assert(false && "UNREACHABLE");
-    }
-
-    /* Yield for signals here before taking a new job */
-    switch (gab_yield(gab)) {
-    case sGAB_TERM:
+      assert(gab_fibisdone(popped));
       goto bail;
     default:
-      break;
+      assert(false && "UNREACHABLE");
     }
   }
 
 bail:
   // printf("WORKER %i is bailing\n", gab.wkid);
   while (!q_gab_value_is_empty(&job->queue)) {
-    gab_value fiber = q_gab_value_pop(&job->queue);
+    gab_value fiber = q_gab_value_peek(&job->queue);
+
+    // Run each queued fiber. Since there is a TERM signal waiting on this
+    // worker, each fiber will terminate itself here, in one instruction.
+    union gab_value_pair res = gab_vmexec(gab, fiber);
+    // Ensure that the termination occurred.
+    assert(res.status == gab_cinvalid);
+    assert(gab_fibisdone(fiber));
+
     gab_value err = gab_fibstacktrace(gab, fiber);
 
     gab_iref(gab, err);
     gab_egkeep(gab.eg, err);
 
     v_gab_value_thrd_push(&gab.eg->err, err);
+
+    // Truly pop off the fiber now.
+    q_gab_value_pop(&job->queue);
   }
 
 fin:
@@ -698,6 +707,7 @@ void dec_child_shapes(struct gab_triple gab, gab_value shp) {
 
 void gab_destroy(struct gab_triple gab) {
   gab_sigterm(gab);
+
   // Wait until there is no work to be done
   // This doesn't quite work anymore as now
   // Workers have local queues of work to do.
@@ -852,11 +862,9 @@ bool repl_check_aresult(struct gab_triple gab, union gab_value_pair res) {
 
 void repl_wait_for(struct gab_triple gab, struct gab_repl_argt *args,
                    gab_value fib) {
-  printf("  %s" GAB_SAVE, args->result_prefix);
-
   const char waitstrs[] = {'|', '/', '-', '\\'};
   for (int i = 0; !gab_fibisdone(fib); i++) {
-    printf("\r%c" GAB_RESTORE, waitstrs[i & 0b11]);
+    printf("\r%c %s ", waitstrs[i & 0b11], args->result_prefix);
     fflush(stdout);
     switch (gab_yield(gab)) {
     case sGAB_COLL:
@@ -867,7 +875,8 @@ void repl_wait_for(struct gab_triple gab, struct gab_repl_argt *args,
       continue;
     }
   }
-  printf("\r " GAB_RESTORE);
+
+  printf("\r");
   fflush(stdout);
 }
 
@@ -1888,10 +1897,13 @@ GAB_API inline bool gab_signext(struct gab_triple gab, int wkid) {
   return false;
 }
 
-GAB_API inline void gab_sigclear(struct gab_triple gab) {
-  assert(gab_is_signaling(gab));
-  gab.eg->sig.signal = sGAB_IGN;
+GAB_API inline bool gab_sigclear(struct gab_triple gab) {
+  if (!gab_is_signaling(gab))
+    return false;
+
+  atomic_store(&gab.eg->sig.signal, sGAB_IGN);
   gab.eg->sig.schedule = -1;
+  return true;
 }
 
 // This needs to become atomic

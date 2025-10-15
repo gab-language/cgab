@@ -1,4 +1,4 @@
-'cbencode'.use
+mod = 'cbencode'.use
 
 array_xf = Streams.map to\bencode:
 
@@ -21,3 +21,9 @@ to\bencode: .defcase {
   Records.t
   () => self.is\list.bencode\do_encode_record self
 }
+
+rec = { 'a' 2, 'b' 3 }
+
+bc = rec.to\bencode
+
+bc.as\bencode.unwrap.println

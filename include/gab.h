@@ -2691,7 +2691,7 @@ GAB_API_INLINE void gab_sigpropagate(struct gab_triple gab) {
 /**
  * @brief Clear the current signal as resolved.
  */
-GAB_API void gab_sigclear(struct gab_triple gab);
+GAB_API bool gab_sigclear(struct gab_triple gab);
 
 /**
  * @brief Send signal s to worker wkid. An example usage of this system is to

@@ -766,9 +766,7 @@ static struct command commands[] = {
     {
         "repl",
         "Enter the read-eval-print loop",
-        "A read-eval-print-loop is a convenient tool for expiremtnation.\n"
-        "Currently, Gab's repl is quite feature-poor. It is a priority to "
-        "improve developer experience in this area.",
+        "A read-eval-print-loop is a convenient tool for expiremtnation.",
         .handler = repl,
         {
             dumpast_option,

@@ -50,6 +50,9 @@ There are several sub-projects within this repository.
     - History
 - [ ] JIT Compilation (need I say more)
     - Copy-and-patch JIT compiler? Refactoring VM.c via macros to write into stencils
+- [ ] Busy-Waiting configuration at the multiple points where this occurs:
+    - IO Loop:
+    - worker_job and gc_job loop:
 # Dependencies
 libc is the only dependency.
 # Installation
