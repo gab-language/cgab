@@ -336,14 +336,13 @@ char *readline(const char *prompt) {
   return crossline_readline(prompt, prompt_buffer, sizeof(prompt_buffer));
 }
 
-int run_repl(int flags, size_t nmodules, const char **modules) {
-  // Crossline seems to stomp over the Ctrl-C signal.
-  // Maybe linenoise doesn't do this?
+int run_repl(int flags, uint32_t wait, size_t nmodules, const char **modules) {
   gab_ossignal(SIGINT, propagate_term);
 
   union gab_value_pair res = gab_create(
       (struct gab_create_argt){
           .flags = flags,
+          .wait = wait ? wait : 50000,
           .modules = modules,
           .roots =
               (const char *[]){
@@ -390,13 +389,14 @@ int run_repl(int flags, size_t nmodules, const char **modules) {
   return gab_destroy(gab), 0;
 }
 
-int run_string(const char *string, int flags, size_t jobs, size_t nmodules,
-               const char **modules) {
+int run_string(const char *string, int flags, uint32_t wait, size_t jobs,
+               size_t nmodules, const char **modules) {
   gab_ossignal(SIGINT, propagate_term);
 
   union gab_value_pair res = gab_create(
       (struct gab_create_argt){
           .flags = flags,
+          .wait = wait,
           .jobs = jobs,
           .modules = modules,
           .roots =
@@ -498,13 +498,14 @@ int run_bundle(const char *mod) {
   return a_gab_value_destroy(run_res.aresult), gab_destroy(gab), 0;
 }
 
-int run_file(const char *path, int flags, size_t jobs, size_t nmodules,
-             const char **modules) {
+int run_file(const char *path, int flags, uint32_t wait, size_t jobs,
+             size_t nmodules, const char **modules) {
   gab_ossignal(SIGINT, propagate_term);
 
   union gab_value_pair res = gab_create(
       (struct gab_create_argt){
           .flags = flags,
+          .wait = wait,
           .jobs = jobs,
           .modules = modules,
           .roots =
@@ -544,7 +545,7 @@ int run_file(const char *path, int flags, size_t jobs, size_t nmodules,
 }
 
 struct command_arguments {
-  int argc, flags;
+  uint32_t argc, flags, wait;
   const char **argv;
   v_s_char modules;
   const char *platform;
@@ -581,9 +582,8 @@ int build(struct command_arguments *args);
 enum cliflag {
   FLAG_DUMP_AST = fGAB_AST_DUMP,
   FLAG_DUMP_BC = fGAB_BUILD_DUMP,
-  FLAG_QUIET_ERR = fGAB_ERR_QUIET,
   FLAG_STRUCT_ERR = fGAB_ERR_STRUCTURED,
-  FLAG_BUILD_TARGET = 1 << 5,
+  FLAG_BUILD_TARGET = 1 << 4,
 };
 
 const struct option dumpast_option = {
@@ -598,13 +598,6 @@ const struct option dumpbytecode_option = {
     "Dump compiled bytecode to stdout",
     'd',
     .flag = FLAG_DUMP_BC,
-};
-
-const struct option quiet_option = {
-    "quiet",
-    "Do not print errors to the engine's stderr",
-    'q',
-    .flag = FLAG_QUIET_ERR,
 };
 
 const struct option structured_err_option = {
@@ -631,6 +624,38 @@ bool platform_handler(struct command_arguments *args) {
 
   args->platform = platform;
 
+  return true;
+}
+
+bool busywait_handler(struct command_arguments *args) {
+  const char *flag = *args->argv;
+  args->argv++;
+  args->argc--;
+
+  if (args->argc <= 0) {
+    clierror("No argument to flag '%s'.\n", flag);
+    return false;
+  }
+
+  const char *wait = *args->argv;
+  args->argv++;
+  args->argc--;
+
+  uint32_t nwait = 0;
+
+  if (!strcmp(wait, "none"))
+    return true;
+
+  if (!strcmp(wait, "no"))
+    return true;
+
+  nwait = atoll(wait);
+  if (nwait == 0) {
+    clierror("Specify a busy-wait greater than 0, or use none|no.");
+    return false;
+  }
+
+  args->wait = nwait;
   return true;
 }
 
@@ -669,6 +694,13 @@ bool module_handler(struct command_arguments *args) {
   return true;
 }
 
+const struct option busywait_option = {
+    "busy",
+    "Configure the gab engine's behavior while 'busy-waiting'",
+    'w',
+    .handler_f = busywait_handler,
+};
+
 const struct option modules_option = {
     "mods",
     "Load a comma-separated list of modules",
@@ -701,6 +733,23 @@ static struct command commands[] = {
         .handler = get,
     },
     {
+        "build",
+        "Build a standalone executable for the module <arg>.",
+        "Bundle the gab binary and source code for the module <arg> into a "
+        "single executable.",
+        .handler = build,
+        {
+            modules_option,
+            {
+                "plat",
+                "Set the platform of the build",
+                'p',
+                .flag = FLAG_BUILD_TARGET,
+                .handler_f = platform_handler,
+            },
+        },
+    },
+    {
         "run",
         "Compile and run the module at path <args>",
         "Expects one argument, the name of the module to run. "
@@ -721,32 +770,15 @@ static struct command commands[] = {
         {
             dumpast_option,
             dumpbytecode_option,
-            quiet_option,
             structured_err_option,
             modules_option,
+            busywait_option,
             {
                 "jobs",
                 "Specify the number of os threads which should serve as "
                 "workers for running fibers. Default is " STR(
                     cGAB_DEFAULT_NJOBS),
                 'j',
-            },
-        },
-    },
-    {
-        "build",
-        "Build a standalone executable for the module <arg>.",
-        "Bundle the gab binary and source code for the module <arg> into a "
-        "single executable.",
-        .handler = build,
-        {
-            modules_option,
-            {
-                "plat",
-                "Set the platform of the build",
-                'p',
-                .flag = FLAG_BUILD_TARGET,
-                .handler_f = platform_handler,
             },
         },
     },
@@ -758,9 +790,9 @@ static struct command commands[] = {
         {
             dumpast_option,
             dumpbytecode_option,
-            quiet_option,
             structured_err_option,
             modules_option,
+            busywait_option,
         },
     },
     {
@@ -772,6 +804,7 @@ static struct command commands[] = {
             dumpast_option,
             dumpbytecode_option,
             modules_option,
+            busywait_option,
         },
     },
 };
@@ -1157,7 +1190,7 @@ int run(struct command_arguments *args) {
   for (int i = 0; i < nmodules; i++)
     modules[i] = v_s_char_ref_at(&args->modules, i)->data;
 
-  return run_file(path, args->flags, jobs, nmodules - 1, modules);
+  return run_file(path, args->flags, args->wait, jobs, nmodules - 1, modules);
 }
 
 int exec(struct command_arguments *args) {
@@ -1176,7 +1209,8 @@ int exec(struct command_arguments *args) {
   for (int i = 0; i < nmodules; i++)
     modules[i] = v_s_char_ref_at(&args->modules, i)->data;
 
-  return run_string(args->argv[0], args->flags, 8, nmodules - 1, modules);
+  return run_string(args->argv[0], args->flags, args->wait, 8, nmodules - 1,
+                    modules);
 }
 
 int repl(struct command_arguments *args) {
@@ -1190,7 +1224,7 @@ int repl(struct command_arguments *args) {
   for (int i = 0; i < nmodules; i++)
     modules[i] = v_s_char_ref_at(&args->modules, i)->data;
 
-  return run_repl(args->flags, nmodules - 1, modules);
+  return run_repl(args->flags, args->wait, nmodules - 1, modules);
 }
 
 void cmd_summary(int i) {

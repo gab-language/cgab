@@ -498,32 +498,27 @@ enum gab_flags {
    * */
   fGAB_BUILD_CHECK = 1 << 2,
   /*
-   *
-   */
-  fGAB_ERR_QUIET = 1 << 3,
-  /*
    * @see gab_errtocs will convert errors into structured
    * strings as opposed to pretty errors.
    */
-  fGAB_ERR_STRUCTURED = 1 << 4,
+  fGAB_ERR_STRUCTURED = 1 << 3,
 };
 
 /**
  * @class gab_create_argt
  */
 struct gab_create_argt {
-  uint32_t flags, jobs;
-
   /*
-   * A list of roots. Each resource is checked at
-   * each root.
+   * @see enum gab_flags
    */
-  const char **roots;
+  uint32_t flags, jobs, wait;
 
   /*
    * A list of resources. At each root, these
    * will be tested (in reverse order), until
    * they a module is found.
+   *
+   * This list should be terminated with an empty structure (specifically, an empty prefix)
    */
   struct gab_resource {
     const char *prefix;
@@ -535,12 +530,22 @@ struct gab_create_argt {
     bool (*exister)(const char *);
   } *resources;
 
+  /*
+   * A list of roots. Each resource is checked at
+   * each root.
+   *
+   * This list should be terminated with a nullptr.
+   */
+  const char **roots;
+
   /* A list of modules to load automatically into the engine.
    * The name of the variable will match the name of the module.
    *
    * [ 'Messages', 'Ranges' ]
    *  -> Messages = 'Messages'.use
    *  -> Ranges = 'Ranges'.use
+   *
+   *  This list should be terminated with a nullptr.
    * */
   const char **modules;
 };
@@ -2575,6 +2580,25 @@ enum gab_signal {
  * @return A signal to handle.
  */
 [[nodiscard]] GAB_API enum gab_signal gab_yield(struct gab_triple gab);
+
+/**
+ *
+ * @brief 'busy-wait', as configured by the engine.
+ *
+ * In several places in the engine, a thread must spin in a loop,
+ * checking and waiting for work to appear.
+ *
+ * This 'busy-wait' can cause an 'idle' thread (from the perspective of the gab engine,
+ *  this thread isn't doing any useful work) to have close to 100% CPU usage (the loop can
+ *  spin very fast).
+ *
+ * This function is called in every iteration of these loops. It sleeps the thread for an amount of time,
+ * as specified in the 'wait' call to gab_create.
+ *
+ * If your user code includes a loop like this (for instance, you're implementing an IO event loop)
+ * be sure to call this function periodically in order to comply with the engine's behavior.
+ */
+GAB_API void gab_busywait(struct gab_triple gab);
 
 /**
  * @brief Check if a value's runtime id matches a given value.

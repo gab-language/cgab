@@ -511,7 +511,7 @@ struct gab_eg {
   mtx_t modules_mtx;
   d_gab_modules modules;
 
-  uint64_t len;
+  uint32_t wait, len;
 
   struct gab_job {
     thrd_t td;

@@ -1,4 +1,3 @@
-#include "core.h"
 #include "gab.h"
 
 const char *modules[] = {
@@ -15,7 +14,6 @@ GAB_DYNLIB_NATIVE_FN(gab, build) {
   union gab_value_pair mod = gab_build(gab, (struct gab_parse_argt){
                                                 .source = src,
                                                 .name = src,
-                                                .flags = fGAB_ERR_QUIET,
                                                 .len = nmodules,
                                                 .argv = modules,
                                             });
@@ -38,7 +36,6 @@ GAB_DYNLIB_NATIVE_FN(gab, parse) {
   union gab_value_pair mod = gab_parse(gab, (struct gab_parse_argt){
                                                 .source = src,
                                                 .name = src,
-                                                .flags = fGAB_ERR_QUIET,
                                             });
 
   if (mod.status != gab_cinvalid) {
@@ -74,7 +71,6 @@ GAB_DYNLIB_NATIVE_FN(gab, aeval) {
     union gab_value_pair res = gab_aexec(gab, (struct gab_exec_argt){
                                                   .source = src,
                                                   .name = src,
-                                                  .flags = fGAB_ERR_QUIET,
                                               });
     assert(res.status == gab_cvalid);
     fib = res.vresult;
@@ -95,7 +91,6 @@ GAB_DYNLIB_NATIVE_FN(gab, aeval) {
     union gab_value_pair res = gab_aexec(gab, (struct gab_exec_argt){
                                                   .source = src,
                                                   .name = src,
-                                                  .flags = fGAB_ERR_QUIET,
                                                   .len = len,
                                                   .sargv = keys,
                                                   .argv = vals,

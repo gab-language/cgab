@@ -277,14 +277,15 @@ enum gab_signal gab_yield(struct gab_triple gab) {
     return gab.eg->sig.signal;
   }
 
-// Previously, this would perform a thrd_yield() as well as a sleep.
-// This was causing *a lot* of context switching and was not a good idea.
-// As far as I know
 #if GAB_YIELD_SLEEPTIME_NS != 0
   thrd_sleep(&t, nullptr);
 #endif
-  /* thrd_yield(); */
   return sGAB_IGN;
+}
+
+void gab_busywait(struct gab_triple gab) {
+  if (gab.eg->wait > 0)
+    thrd_sleep(&(const struct timespec){.tv_nsec = gab.eg->wait}, nullptr);
 }
 
 int32_t gc_job(void *data) {
@@ -304,7 +305,7 @@ int32_t gc_job(void *data) {
       gab_sigclear(gab);
       continue;
     default:
-      thrd_sleep(&(struct timespec){.tv_nsec = 5000}, nullptr);
+      gab_busywait(gab);
       break;
     }
 
@@ -534,6 +535,7 @@ union gab_value_pair gab_create(struct gab_create_argt args,
   struct gab_eg *eg = malloc(egsize);
   memset(eg, 0, egsize);
 
+  eg->wait = args.wait;
   eg->len = njobs + 1;
   eg->njobs = 0;
   eg->hash_seed = time(nullptr);
@@ -871,7 +873,7 @@ void repl_wait_for(struct gab_triple gab, struct gab_repl_argt *args,
       gab_gcepochnext(gab);
       gab_sigpropagate(gab);
     default:
-      thrd_sleep(&(struct timespec){.tv_nsec = 50000000}, nullptr);
+      gab_busywait(gab);
       continue;
     }
   }
