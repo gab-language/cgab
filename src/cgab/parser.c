@@ -1117,25 +1117,21 @@ static inline void push_loadu(struct bc *bc, uint8_t upv, gab_value node) {
 static inline void push_storel(struct bc *bc, uint8_t local, gab_value node) {
 #if cGAB_SUPERINSTRUCTIONS
   switch (bc->prev_op) {
-  case OP_POPSTORE_LOCAL: {
+  case OP_STORE_LOCAL: {
     size_t prev_local_arg = bc->prev_op_at + 1;
     uint8_t prev_local = v_uint8_t_val_at(&bc->bc, prev_local_arg);
     push_byte(bc, prev_local, node);
     push_byte(bc, local, node);
     v_uint8_t_set(&bc->bc, prev_local_arg, 2);
-    v_uint8_t_set(&bc->bc, bc->prev_op_at, OP_NPOPSTORE_STORE_LOCAL);
-    bc->prev_op = OP_NPOPSTORE_STORE_LOCAL;
+    v_uint8_t_set(&bc->bc, bc->prev_op_at, OP_NSTORE_LOCAL);
+    bc->prev_op = OP_NSTORE_LOCAL;
     return;
   }
-  case OP_NPOPSTORE_LOCAL: {
+  case OP_NSTORE_LOCAL: {
     size_t prev_loc_arg = bc->prev_op_at + 1;
     uint8_t old_arg = v_uint8_t_val_at(&bc->bc, prev_loc_arg);
     v_uint8_t_set(&bc->bc, prev_loc_arg, old_arg + 1);
-
     push_byte(bc, local, node);
-
-    v_uint8_t_set(&bc->bc, bc->prev_op_at, OP_NPOPSTORE_STORE_LOCAL);
-    bc->prev_op = OP_NPOPSTORE_STORE_LOCAL;
     return;
   }
   }
@@ -1182,7 +1178,7 @@ static inline void push_pop(struct bc *bc, uint8_t n, gab_value node) {
     bc->prev_op = OP_POPSTORE_LOCAL;
     return;
 
-  case OP_NPOPSTORE_STORE_LOCAL:
+  case OP_NSTORE_LOCAL:
     bc->bc.data[bc->prev_op_at] = OP_NPOPSTORE_LOCAL;
     bc->prev_op = OP_NPOPSTORE_LOCAL;
     return;
@@ -1690,9 +1686,6 @@ gab_value unpack_bindings_into_env(struct gab_triple gab, struct bc *bc,
                       FMT_MALFORMED_ASSIGNMENT),
              gab_cinvalid;
     }
-
-    if (i + 1 < actual_targets)
-      push_pop(bc, 1, bindings);
   }
 
   return v_gab_value_destroy(&targets), env;
@@ -1723,7 +1716,7 @@ gab_value compile_block(struct gab_triple gab, struct bc *bc, gab_value node,
   gab_value prt = pair.vresult;
   assert(gab_valkind(prt) == kGAB_PROTOTYPE);
 
-  env = gab_lstpop(gab, gab_prtenv(prt), nullptr);
+  env = gab_recpop(gab, gab_prtenv(prt), nullptr, nullptr);
 
   push_op(bc, OP_BLOCK, RHS);
   push_short(bc, addk(gab, bc, prt), RHS);

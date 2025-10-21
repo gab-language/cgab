@@ -189,6 +189,8 @@ Records.t.def\seq
 
 Strings.t.def\seq
 
+Shapes.t.def\seq
+
 |>: .def (
   Messages.t,
   (second) => do

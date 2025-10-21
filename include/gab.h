@@ -518,7 +518,8 @@ struct gab_create_argt {
    * will be tested (in reverse order), until
    * they a module is found.
    *
-   * This list should be terminated with an empty structure (specifically, an empty prefix)
+   * This list should be terminated with an empty structure (specifically, an
+   * empty prefix)
    */
   struct gab_resource {
     const char *prefix;
@@ -2155,12 +2156,19 @@ GAB_API gab_value gab_nlstpush(struct gab_triple gab, gab_value list,
                                uint64_t len, gab_value *values);
 
 /**
- * @brief Pop the last value from a list, returning the new list.
+ * @brief Pop the last value from a record, returning the new record.
  *
  * The popped value will be written to out_val, if it is not nullptr.
  */
-GAB_API gab_value gab_lstpop(struct gab_triple gab, gab_value list,
-                             gab_value *out_val);
+GAB_API_INLINE gab_value gab_recpop(struct gab_triple gab, gab_value rec,
+                                    gab_value *out_val, gab_value *out_key) {
+  gab_value lastkey = gab_ushpat(gab_recshp(rec), gab_reclen(rec) - 1);
+
+  if (out_key)
+    *out_key = lastkey;
+
+  return gab_rectake(gab, rec, lastkey, out_val);
+}
 
 GAB_API_INLINE uint64_t gab_recisl(gab_value rec) {
   return gab_shpisl(gab_recshp(rec));
@@ -2588,15 +2596,16 @@ enum gab_signal {
  * In several places in the engine, a thread must spin in a loop,
  * checking and waiting for work to appear.
  *
- * This 'busy-wait' can cause an 'idle' thread (from the perspective of the gab engine,
- *  this thread isn't doing any useful work) to have close to 100% CPU usage (the loop can
- *  spin very fast).
+ * This 'busy-wait' can cause an 'idle' thread (from the perspective of the gab
+ * engine, this thread isn't doing any useful work) to have close to 100% CPU
+ * usage (the loop can spin very fast).
  *
- * This function is called in every iteration of these loops. It sleeps the thread for an amount of time,
- * as specified in the 'wait' call to gab_create.
+ * This function is called in every iteration of these loops. It sleeps the
+ * thread for an amount of time, as specified in the 'wait' call to gab_create.
  *
- * If your user code includes a loop like this (for instance, you're implementing an IO event loop)
- * be sure to call this function periodically in order to comply with the engine's behavior.
+ * If your user code includes a loop like this (for instance, you're
+ * implementing an IO event loop) be sure to call this function periodically in
+ * order to comply with the engine's behavior.
  */
 GAB_API void gab_busywait(struct gab_triple gab);
 

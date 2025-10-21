@@ -282,6 +282,31 @@ static handler handlers[] = {
     NEXT();                                                                    \
   }
 
+#define IMPL_SEND_BINARY_STRCOLL(CODE, operation)                              \
+  CASE_CODE(SEND_##CODE) {                                                     \
+    gab_value *ks = READ_SENDCONSTANTS;                                        \
+    uint64_t have = COMPUTE_TUPLE();                                           \
+    uint64_t below_have = PEEK_N(have + 1);                                    \
+                                                                               \
+    SEND_GUARD_CACHED_RECEIVER_TYPE(PEEK_N(have));                             \
+                                                                               \
+    if (__gab_unlikely(have < 2))                                              \
+      PUSH(gab_nil), have++;                                                   \
+                                                                               \
+    VM_PANIC_GUARD_ISS(PEEK_N(have));                                          \
+    VM_PANIC_GUARD_ISS(PEEK_N(have - 1));                                      \
+                                                                               \
+    const char *val_a = gab_strdata(&PEEK_N(have));                            \
+    const char *val_b = gab_strdata(&PEEK_N(have - 1));                        \
+                                                                               \
+    DROP_N(have + 1);                                                          \
+    PUSH(gab_bool(strcoll(val_a, val_b) operation 0));                         \
+                                                                               \
+    SET_VAR(below_have + 1);                                                   \
+                                                                               \
+    NEXT();                                                                    \
+  }
+
 #define IMPL_SEND_BINARY_BOOLEAN(CODE, value_type, operation_type, operation)  \
   CASE_CODE(SEND_##CODE) {                                                     \
     gab_value *ks = READ_SENDCONSTANTS;                                        \
@@ -1283,22 +1308,22 @@ CASE_CODE(NLOAD_LOCAL) {
   NEXT();
 }
 
+/*
+ * The store-local opcodes should basically
+ * be side-effects, not popping values from the stack at all.
+ */
+
 CASE_CODE(STORE_LOCAL) {
   LOCAL(READ_BYTE) = PEEK();
-
-  SET_VAR(1);
-
   NEXT();
 }
 
-CASE_CODE(NPOPSTORE_STORE_LOCAL) {
-  uint8_t n = READ_BYTE - 1;
+CASE_CODE(NSTORE_LOCAL) {
+  uint8_t n = READ_BYTE;
+  const uint8_t c = n;
 
   while (n--)
-    LOCAL(READ_BYTE) = POP();
-
-  LOCAL(READ_BYTE) = PEEK();
-  SET_VAR(1);
+    LOCAL(READ_BYTE) = PEEK_N(c - n);
 
   NEXT();
 }
@@ -1481,6 +1506,11 @@ IMPL_SEND_UNARY_BOOLEAN(PRIMITIVE_LIN, gab_bool, bool, !);
 // necessary
 IMPL_SEND_BINARY_BOOLEAN(PRIMITIVE_LOR, gab_bool, bool, |);
 IMPL_SEND_BINARY_BOOLEAN(PRIMITIVE_LND, gab_bool, bool, &);
+
+IMPL_SEND_BINARY_STRCOLL(PRIMITIVE_STR_LT, <);
+IMPL_SEND_BINARY_STRCOLL(PRIMITIVE_STR_LTE, <=);
+IMPL_SEND_BINARY_STRCOLL(PRIMITIVE_STR_GT, >);
+IMPL_SEND_BINARY_STRCOLL(PRIMITIVE_STR_GTE, >=);
 
 CASE_CODE(SEND_PRIMITIVE_MOD) {
   gab_value *ks = READ_SENDCONSTANTS;
@@ -2395,7 +2425,7 @@ CASE_CODE(SEND_PRIMITIVE_TAKE) {
       VM_PANIC(GAB_OVERFLOW, "");
 
     /*
-     * We now know that we wrote *len* values to the buffer, because 
+     * We now know that we wrote *len* values to the buffer, because
      * it is guaranteed that len <= stackspace
      * */
     memmove(SP(), SP() + have + 1, len * sizeof(gab_value));

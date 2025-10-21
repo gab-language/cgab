@@ -1,85 +1,139 @@
-s = 'specs':use
+s = 'Specs'.use
 
-record.spec = s:def {
-  name = .gab.record,
-  help = "An ordered, constant array of key-value pairs.",
-  spec = s:protocol {},
+record\spec = record:.defspec {
+  help:  'A set of key-value pairs.',
+  spec:  s.protocol {},
 }
 
-KEY   = s:unknown:spec.label "key"
-VALUE = s:unknown:spec.label "value"
-INDEX = s:int:spec.label "index"
+KEY   = s.unknown.spec\labeled 'key'
+VALUE = s.unknown.spec\labeled 'value'
+INDEX = s.int.spec\labeled 'index'
 
-s:def {
-  name = .gab.record.len,
-  help = "Return the number of key-value pairs in the record.",
-  spec = s:message {
-    receiver  = record.spec,
-    message   = \len,
-    input     = s:values,
-    output    = s:int,
-    semantics = .nil,
+record\len: .defspec {
+  help: 'Return the number of key-value pairs in the record.',
+  spec: s.message {
+    receiver:   record\spec,
+    message:    len:,
+    input:      s.cat,
+    output:     s.int,
+    semantics:  nil:,
   },
 }
 
-s:def {
-  name = .gab.record.at,
-  help = "Return the value at the given key, if it exists.",
-  spec = s:message {
-    receiver   = record.spec,
-    message    = \at,
-    input      = KEY,
-    output     = s:option VALUE,
-    semantics  = .nil,
+record\at: .defspec {
+  help:  'Return the value at the given key, if it exists.',
+  spec:  s.message {
+    receiver:   record\spec,
+    message:    at:,
+    input:      KEY,
+    output:     s.option VALUE,
+    semantics:  nil:,
   },
 }
 
-s:def {
-  name = .gab.record.at!,
-  help = "Return the value at each of the given keys. Panics if any are missing.",
-  spec = s:message {
-    receiver   = record.spec,
-    message    = \at!,
-    input      = s:values(KEY),
-    output     = s:values(VALUE),
-    semantics  = .nil,
-  },
-}
-
-s:def {
-  name = .gab.record.put,
-  help = "Return a new record with the additional key-value pair, or an updated value for an existing key.",
-  spec = s:message {
-    receiver   = record.spec,
-    message    = \put,
-    input      = s:values(KEY, VALUE),
-    output     = record.spec,
-    semantics  = .nil,
+record\put: .defspec {
+  help: 'Return a new record with the additional key-value pair, or an updated value for an existing key.',
+  spec: s.message {
+    receiver:   record\spec
+    message:    put:
+    input:      s.cat('key' KEY, 'value' VALUE)
+    output:     record\spec
+    semantics:  nil:
   }
 }
 
-s:def {
-  name = .gab.record.seq.next,
-  help = "Return the key that appears after the given key in the record.",
-  spec = s:message {
-    receiver   = record.spec,
-    message    = \seq.next,
-    input      = KEY,
-    output     = s:option KEY,
-    semantics  = .nil,
+record\put_via: .defspec {
+  help: 'Set a value by traversing nested maps with the given key-path.'
+  spec: s.message {
+    receiver:   record\spec
+    message:    put_via:
+    input:      s.cat('key_path' s*KEY, 'value' VALUE)
+    output:     record\spec
+    semantics:  nil:
   }
 }
 
-s:def {
-  name = .gab.record.seq.init,
-  help = "Return the first key in the record, if any.",
-  spec = s:message {
-    receiver   = record.spec,
-    message    = \seq.init,
-    input      = s:values,
-    output     = s:option KEY,
-    semantics  = .nil,
+record\at_via: .defspec {
+  help: 'Get a value by traversing nested maps with the given key-path.'
+  spec: s.message {
+    receiver:   record\spec
+    message:    at_via:
+    input:      s.cat('key_path' s*KEY)
+    output:     record\spec
+    semantics:  nil:
   }
 }
 
-record.spec
+record\push: .defspec {
+  help: 'Return a new record with the given value at the *end* of the record. The key will be whatever the length of the record is *before* inserting.'
+  spec: s.message {
+    receiver: record\spec
+    message:  push:
+    input:    VALUE
+    output:   record\spec
+    semantics: nil:
+  }
+}
+
+record\pop: .defspec {
+  help: 'Return a new record without the *last* key-value pair in the record'
+  spec: s.message {
+    receiver: record\spec
+    message:  pop:
+    input:    s.cat
+    output:   s.cat(
+      'record' record\spec
+      'popped_value' VALUE
+      'popped_key' KEY
+    )
+    semantics: nil:
+  }
+}
+
+record\keys: .defspec {
+  help: 'Return a list of all the keys in the record, in order.'
+  spec: s.message {
+    receiver: record\spec
+    message:  keys:
+    input:    s.cat
+    output:   s.list(KEY)
+    semantics: nil:
+  }
+}
+
+record\vals: .defspec {
+  help: 'Return a list of all the values in the record, in order.'
+  spec: s.message {
+    receiver: record\spec
+    message:  vals:
+    input:    s.cat
+    output:   s.list(VALS)
+    semantics: nil:
+  }
+}
+
+record\seq\next: .defspec {
+  help: 'Return the key that appears after the given key in the record.',
+  spec: s.message {
+    receiver:   record\spec,
+    message:    seq\next:,
+    input:      KEY,
+    output:     s.option KEY,
+    semantics:  nil:,
+  }
+}
+
+record\seq\init: .defspec {
+  help: 'Return the first key in the record, if any.',
+  spec: s.message {
+    receiver:   record\spec,
+    message:    seq\init:,
+    input:      s.cat,
+    output:     s.option KEY,
+    semantics:  nil:,
+  }
+}
+
+s.doc record: .to\s.println
+
+record\spec

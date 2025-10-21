@@ -1,10 +1,17 @@
 Records = 'crecords'.use
 
+make\from: .def (
+  Records,
+  (shape, f) => do
+    shape.reduce({}, (r, k) => r.put(k, f.(k)))
+  end)
 
 [Records.t] .defmodule {
   has: key => do
     self.at key .ok
   end
+
+  : key => self.at key .unwrap
 
   put_by: (k f) => do
     v = self.at k .unwrap
@@ -21,7 +28,11 @@ Records = 'crecords'.use
 
 is\record: .def false:
 
-sort: .defcase {
+() => do
+  keys = self.keys.sort
+end
+
+list\sort: .defcase {
   []?
   []
 
@@ -37,5 +48,24 @@ sort: .defcase {
       .+ bigger
   end
 }
+
+record\sort: .def(
+  Records.t,
+  (f) => do
+    keys = self.keys.sort f
+
+    shp = Shapes.make(keys*)
+
+    Records.make\from(shp, self)
+  end)
+
+dosort:.defcase {
+  true: (rec, f) => rec.list\sort f
+  false: (rec, f) => rec.record\sort f
+}
+
+sort:.def(
+  Records.t,
+  (f) => self.is\list.dosort(self, f))
 
 Records

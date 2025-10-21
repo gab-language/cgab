@@ -31,12 +31,23 @@ int push_value(struct gab_triple gab, struct bencode *bncd,
     break;
   }
   case BENCODE_DICT_BEGIN: {
-    size_t i = 0, save = stack->len;
+    size_t i = 0, save = stack->len, res = 0;
 
     // TODO: Handle errors here.
-    while (push_value(gab, bncd, stack) != BENCODE_DICT_END)
-      i++;
+    for (;;)
+      switch ((res = push_value(gab, bncd, stack))) {
+      case BENCODE_DICT_END:
+        goto fin;
+      case BENCODE_ERROR_BAD_KEY:
+      case BENCODE_ERROR_INVALID:
+      case BENCODE_ERROR_EOF:
+      case BENCODE_ERROR_OOM:
+          return res;
+      default:
+        i++;
+      }
 
+  fin:
     stack->len -= i;
 
     assert(i % 2 == 0);

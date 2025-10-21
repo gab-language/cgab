@@ -1019,7 +1019,7 @@ gab_value gab_recput(struct gab_triple gab, gab_value rec, gab_value key,
 }
 
 gab_value gab_rectake(struct gab_triple gab, gab_value rec, gab_value key,
-                      gab_value *value) {
+                      gab_value *out_val) {
   /*
    * TODO: This can be optimized.
    *
@@ -1035,16 +1035,16 @@ gab_value gab_rectake(struct gab_triple gab, gab_value rec, gab_value key,
   uint64_t idx = gab_recfind(rec, key);
 
   if (idx == -1) {
-    if (value)
-      *value = gab_nil;
+    if (out_val)
+      *out_val = gab_nil;
 
     return rec;
   }
 
   gab_gclock(gab);
 
-  if (value)
-    *value = gab_uvrecat(rec, idx);
+  if (out_val)
+    *out_val = gab_uvrecat(rec, idx);
 
   gab_value result = recsetshp(dissoc(gab, reccpy(gab, rec, 0), idx),
                                gab_shpwithout(gab, gab_recshp(rec), key));
@@ -1067,10 +1067,6 @@ gab_value gab_nlstpush(struct gab_triple gab, gab_value list, uint64_t len,
   }
 
   return gab_gcunlock(gab), list;
-}
-
-gab_value gab_lstpop(struct gab_triple gab, gab_value list, gab_value *popped) {
-  return gab_rectake(gab, list, gab_number(gab_reclen(list) - 1), popped);
 }
 
 gab_value gab_urecput(struct gab_triple gab, gab_value rec, uint64_t i,
@@ -2168,7 +2164,7 @@ static uint64_t dumpInstruction(FILE *stream, struct gab_oprototype *self,
   case OP_LOAD_UPVALUE:
   case OP_LOAD_LOCAL:
     return dumpByteInstruction(stream, self, offset);
-  case OP_NPOPSTORE_STORE_LOCAL:
+  case OP_NSTORE_LOCAL:
   case OP_NPOPSTORE_LOCAL:
   case OP_NLOAD_UPVALUE:
   case OP_NLOAD_LOCAL: {
@@ -2515,6 +2511,7 @@ void pprint_reclist(v_gab_pprint *self, gab_value rec) {
 bool pprint_tokify(v_gab_pprint *self, gab_value val) {
   switch (gab_valkind(val)) {
   case kGAB_SHAPE:
+  case kGAB_SHAPELIST:
     return pprint_shape(self, val), true;
   case kGAB_BLOCK:
     return pprint_block(self, val), false;

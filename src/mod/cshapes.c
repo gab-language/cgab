@@ -118,7 +118,7 @@ GAB_DYNLIB_NATIVE_FN(shp, pop) {
 
   gab_value res;
 
-  gab_vmpush(gab_thisvm(gab), gab_lstpop(gab, shp, &res));
+  gab_vmpush(gab_thisvm(gab), gab_recpop(gab, shp, &res, nullptr));
   gab_vmpush(gab_thisvm(gab), res);
 
   return gab_union_cvalid(gab_nil);
@@ -185,7 +185,7 @@ GAB_DYNLIB_NATIVE_FN(shp, seq_next) {
   if (gab_valkind(shp) != kGAB_SHAPE)
     return gab_pktypemismatch(gab, shp, kGAB_SHAPE);
 
-  if (gab_valisnum(old_key))
+  if (!gab_valisnum(old_key))
     return gab_pktypemismatch(gab, old_key, kGAB_NUMBER);
 
   uint64_t len = gab_shplen(shp);
@@ -198,7 +198,7 @@ GAB_DYNLIB_NATIVE_FN(shp, seq_next) {
   if (i == -1 || i + 1 == len)
     goto fin;
 
-  gab_value key = i + 1;
+  gab_value key = gab_number(i + 1);
   gab_value val = gab_ushpat(shp, i + 1);
 
   gab_vmpush(gab_thisvm(gab), gab_ok, key, val, key);

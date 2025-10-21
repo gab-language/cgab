@@ -175,6 +175,16 @@ variables\rest_kw_assign_middle_from_block\test:.def t => do
   t.expect(opts.config, ==:, 3)
 end
 
+variables\funky_assign_in_record\test:.def t => do
+  record = ({ (a, b, c, d) = (hi: 'world' bye: 'world') })
+
+  t.expect(a ==: hi:)
+  t.expect(b ==: 'world')
+  t.expect(c ==: bye:)
+  t.expect(d ==: 'world')
+  t.expect((record?) ==: Shapes.make(hi: bye:))
+end
+
 numbers\equal_itself\test: .def t => do
   t.expect(5 ==: 5)
 end

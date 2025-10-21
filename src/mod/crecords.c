@@ -28,52 +28,42 @@ GAB_DYNLIB_NATIVE_FN(rec, slice) {
 
   switch (argc) {
   case 2: {
-    if (gab_valkind(argv[1]) != kGAB_NUMBER) {
-      return gab_panicf(gab, "&:slice expects a number as the second argument");
-    }
+    if (gab_valkind(argv[1]) != kGAB_NUMBER)
+      return gab_pktypemismatch(gab, argv[1], kGAB_NUMBER);
 
     gab_uint a = gab_valtou(argv[1]);
     end = MIN(a, len);
     break;
   }
 
-  case 3:
-    if (gab_valkind(argv[1]) == kGAB_NUMBER) {
-      start = MIN(gab_valtou(argv[1]), len);
-    } else if (argv[1] == gab_nil) {
-      return gab_panicf(gab, "&:slice expects a number as the second argument");
-    }
-
-    if (gab_valkind(argv[2]) == kGAB_NUMBER) {
-      end = MIN(gab_valtou(argv[2]), len);
-    } else if (argv[2] == gab_nil) {
-      return gab_panicf(gab, "&:slice expects a number as the third argument");
-    }
-    break;
-
   default:
-    return gab_panicf(gab, "&:slice expects 2 or 3 arguments");
+    if (gab_valkind(argv[1]) != kGAB_NUMBER)
+      return gab_pktypemismatch(gab, argv[1], kGAB_NUMBER);
+
+    start = MIN(gab_valtou(argv[1]), len);
+
+    if (gab_valkind(argv[2]) != kGAB_NUMBER)
+      return gab_pktypemismatch(gab, argv[2], kGAB_NUMBER);
+
+    end = MIN(gab_valtou(argv[2]), len);
+    break;
   }
 
-  if (start > end) {
-    return gab_panicf(gab, "&:slice expects the start to be before the end");
-  }
+  if (start > end)
+    return gab_panicf(gab, "slice: expects the start to be before the end");
 
   uint64_t size = end - start;
 
-  if (size == 0) {
-    gab_vmpush(gab_thisvm(gab), gab_listof(gab));
-    return gab_union_cvalid(gab_nil);
-  }
+  if (size == 0)
+    return gab_vmpush(gab_thisvm(gab), gab_listof(gab)),
+           gab_union_cvalid(gab_nil);
 
   gab_value vs[size];
-  for (uint64_t i = 0; i < size; i++) {
+  for (uint64_t i = 0; i < size; i++)
     vs[i] = gab_uvrecat(rec, start + i);
-  }
 
-  gab_vmpush(gab_thisvm(gab), gab_list(gab, size, vs));
-
-  return gab_union_cvalid(gab_nil);
+  return gab_vmpush(gab_thisvm(gab), gab_list(gab, size, vs)),
+         gab_union_cvalid(gab_nil);
 }
 
 GAB_DYNLIB_NATIVE_FN(rec, cat) {
@@ -111,10 +101,11 @@ GAB_DYNLIB_NATIVE_FN(rec, pop) {
   if (gab_valkind(rec) != kGAB_RECORD)
     return gab_pktypemismatch(gab, rec, kGAB_RECORD);
 
-  gab_value res;
+  gab_value value, key;
 
-  gab_vmpush(gab_thisvm(gab), gab_lstpop(gab, rec, &res));
-  gab_vmpush(gab_thisvm(gab), res);
+  gab_vmpush(gab_thisvm(gab), gab_recpop(gab, rec, &value, &key));
+  gab_vmpush(gab_thisvm(gab), value);
+  gab_vmpush(gab_thisvm(gab), key);
 
   return gab_union_cvalid(gab_nil);
 }
@@ -249,6 +240,41 @@ GAB_DYNLIB_NATIVE_FN(rec, put_via) {
   return gab_union_cvalid(gab_nil);
 }
 
+GAB_DYNLIB_NATIVE_FN(rec, keys) {
+  gab_value rec = gab_arg(0);
+
+  if (gab_valkind(rec) != kGAB_RECORD)
+    return gab_pktypemismatch(gab, rec, kGAB_RECORD);
+
+  gab_value shp = gab_recshp(rec);
+
+  gab_value keys = gab_list(gab, gab_shplen(shp), gab_shpdata(shp));
+
+  gab_vmpush(gab_thisvm(gab), keys);
+
+  return gab_union_cvalid(gab_nil);
+}
+
+GAB_DYNLIB_NATIVE_FN(rec, vals) {
+  gab_value rec = gab_arg(0);
+
+  if (gab_valkind(rec) != kGAB_RECORD)
+    return gab_pktypemismatch(gab, rec, kGAB_RECORD);
+
+  uint64_t nvals = gab_reclen(rec);
+
+  gab_value vals[nvals];
+  for (uint64_t i = 0; i < nvals; i++) {
+    vals[i] = gab_uvrecat(rec, i);
+  }
+
+  gab_value keys = gab_list(gab, nvals, vals);
+
+  gab_vmpush(gab_thisvm(gab), keys);
+
+  return gab_union_cvalid(gab_nil);
+}
+
 GAB_DYNLIB_NATIVE_FN(rec, len) {
   gab_value rec = gab_arg(0);
 
@@ -371,6 +397,16 @@ GAB_DYNLIB_MAIN_FN {
               gab_message(gab, "at"),
               t,
               gab_snative(gab, "at", gab_mod_rec_at),
+          },
+          {
+              gab_message(gab, "vals"),
+              t,
+              gab_snative(gab, "vals", gab_mod_rec_vals),
+          },
+          {
+              gab_message(gab, "keys"),
+              t,
+              gab_snative(gab, "keys", gab_mod_rec_keys),
           },
           {
               gab_message(gab, "len"),

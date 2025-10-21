@@ -194,6 +194,26 @@ struct primitive kind_primitives[] = {
         .primitive = gab_primitive(OP_SEND_PRIMITIVE_GTE),
     },
     {
+        .name = mGAB_LT,
+        .kind = kGAB_STRING,
+        .primitive = gab_primitive(OP_SEND_PRIMITIVE_STR_LT),
+    },
+    {
+        .name = mGAB_LTE,
+        .kind = kGAB_STRING,
+        .primitive = gab_primitive(OP_SEND_PRIMITIVE_STR_LTE),
+    },
+    {
+        .name = mGAB_GT,
+        .kind = kGAB_STRING,
+        .primitive = gab_primitive(OP_SEND_PRIMITIVE_STR_GT),
+    },
+    {
+        .name = mGAB_GTE,
+        .kind = kGAB_STRING,
+        .primitive = gab_primitive(OP_SEND_PRIMITIVE_STR_GTE),
+    },
+    {
         .name = mGAB_ADD,
         .kind = kGAB_STRING,
         .primitive = gab_primitive(OP_SEND_PRIMITIVE_CONCAT),
@@ -995,7 +1015,7 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
     if (repl_check_aresult(gab, res))
       goto fin;
 
-    for (int32_t i = 0; i < res.aresult->len; i++) {
+    for (int32_t i = 1; i < res.aresult->len; i++) {
       gab_value arg = res.aresult->data[i];
 
       if (i == res.aresult->len - 1) {
