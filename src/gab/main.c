@@ -341,7 +341,6 @@ int run_repl(int flags, uint32_t wait, size_t nmodules, const char **modules) {
 
   union gab_value_pair res = gab_create(
       (struct gab_create_argt){
-          .flags = flags,
           .wait = wait ? wait : 50000,
           .modules = modules,
           .roots =
@@ -395,7 +394,6 @@ int run_string(const char *string, int flags, uint32_t wait, size_t jobs,
 
   union gab_value_pair res = gab_create(
       (struct gab_create_argt){
-          .flags = flags,
           .wait = wait,
           .jobs = jobs,
           .modules = modules,
@@ -504,7 +502,6 @@ int run_file(const char *path, int flags, uint32_t wait, size_t jobs,
 
   union gab_value_pair res = gab_create(
       (struct gab_create_argt){
-          .flags = flags,
           .wait = wait,
           .jobs = jobs,
           .modules = modules,
@@ -530,6 +527,7 @@ int run_file(const char *path, int flags, uint32_t wait, size_t jobs,
     return gab_destroy(gab), 1;
 
   union gab_value_pair run_res = gab_use(gab, (struct gab_use_argt){
+                                                  .flags = flags,
                                                   .sname = path,
                                                   .len = nmodules,
                                                   .sargv = modules,
