@@ -1,9 +1,8 @@
 #include "gab.h"
 
 const char *modules[] = {
-    "Strings", "Binaries", "Messages", "Numbers",  "Blocks",
-    "Records", "Shapes",   "Fibers",   "Channels", "__core",
-    "Ranges",  "Streams",  "IO",
+    "Strings", "Binaries", "Messages", "Numbers", "Blocks", "Records", "Shapes",
+    "Fibers",  "Channels", "__core",   "Ranges",  "IO",     "Streams",
 };
 const size_t nmodules = sizeof(modules) / sizeof(modules[0]);
 
@@ -72,6 +71,10 @@ GAB_DYNLIB_NATIVE_FN(gab, aeval) {
                                                   .source = src,
                                                   .name = src,
                                               });
+    if (res.status == gab_cinvalid)
+      return gab_vmpush(gab_thisvm(gab), gab_err, res.vresult),
+             gab_union_cvalid(gab_nil);
+
     assert(res.status == gab_cvalid);
     fib = res.vresult;
 
@@ -95,6 +98,10 @@ GAB_DYNLIB_NATIVE_FN(gab, aeval) {
                                                   .sargv = keys,
                                                   .argv = vals,
                                               });
+    if (res.status == gab_cinvalid)
+      return gab_vmpush(gab_thisvm(gab), gab_err, res.vresult),
+             gab_union_cvalid(gab_nil);
+
     assert(res.status == gab_cvalid);
     fib = res.vresult;
   }

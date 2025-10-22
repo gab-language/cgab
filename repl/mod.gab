@@ -3,8 +3,8 @@ ui = 'cgui'.use
 
 (events, app) = (Channels.make, Channels.make)
 
-#Fibers.make () => ui.run\tui(events, app).unwrap
-Fibers.make () => ui.run\gui(events, app).unwrap
+Fibers.make () => ui.run\tui(events, app).unwrap
+#Fibers.make () => ui.run\gui(events, app).unwrap
 
 model = {
   input: ''
@@ -24,13 +24,13 @@ HistoryElement = repl\history\elem: .defclass (
       fiber = self.fiber.to\s plain:
       [
         box:
-        { width\grow: 1 border: { width: 4 color: red } padding: 8 }
+        { width\grow: 1 border: { width: 8 color: red } padding: 16 }
         [
           [
-            text: { content: self.source }
+            text: { size: 32 content: self.source }
           ]
           [
-            text: { content: '=> $'.sprintf(fiber) }
+            text: { size: 32 content: '=> $'.sprintf(fiber) }
           ]
         ]
       ]
@@ -39,6 +39,7 @@ HistoryElement = repl\history\elem: .defclass (
 
 handle\keydown: .defcase {
   backspace: (ev model) => do
+    'backspace'.eprintln
     model.put_by(input: pop:)
   end
   escape: (ev model) => do
@@ -101,7 +102,6 @@ render\history: .def (
 controller: .def (
   model?
   (type ev*) => do
-    '$  $\n'.printf(type, ev)
     type
       .handle\type(ev self)
   end)
@@ -113,7 +113,7 @@ view: .def (
     [
       [
         box:
-        { width\relative: 100 padding: 32 }
+        { width\relative: 100 padding: 8 }
         history
       ]
       [
@@ -121,8 +121,8 @@ view: .def (
         {
           width\relative: 100
           height\relative: 10
-          border: { width: 4 }
-          padding: 32
+          border: { width: 8 }
+          padding: 16 
         }
         [
           [text: { size: 32 content: self.input }]
@@ -134,6 +134,10 @@ view: .def (
 events
   .pipe(
     app,
-    Streams.reduce(model controller:)
+    Streams.take_until((e, key) => do
+      (e == key:) & (key == escape:)
+    end)
+    |> Streams.tap((e, key) => '$ $'.sprintf(e key).println)
+    |> Streams.reduce(model controller:)
     |> Streams.map view:
   )

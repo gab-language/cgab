@@ -107,7 +107,7 @@ record\vals: .defspec {
     receiver: record\spec
     message:  vals:
     input:    s.cat
-    output:   s.list(VALS)
+    output:   s.list(VALUE)
     semantics: nil:
   }
 }

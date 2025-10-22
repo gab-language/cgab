@@ -367,9 +367,9 @@ int run_repl(int flags, uint32_t wait, size_t nmodules, const char **modules) {
   gab_repl(gab, (struct gab_repl_argt){
                     .name = MAIN_MODULE,
                     .flags = flags,
-                    .welcome_message = "Gab version " GAB_VERSION_TAG "",
+                    .welcome_message = "Gab version " GAB_VERSION_TAG "\tPress ^C to exit.",
                     .prompt_prefix = ">>> ",
-                    .promptmore_prefix = "... ",
+                    .promptmore_prefix = ">   ",
                     .result_prefix = "",
                     .readline = readline,
                     .len = nmodules,

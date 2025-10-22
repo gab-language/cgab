@@ -1,20 +1,18 @@
-logfile = IO
-  .file('/tmp/gablsp.log', 'w')
-  .unwrap
+logfile = IO.Files.make('/tmp/gablsp.log', 'w').unwrap
 
 log\row\t = Shapes.make(level: msg:)
 
 [log\row\t] .defmodule {
   log\tofile: () => do
     row = self
-    logfile.write(row.level.to\s).unwrap
+    logfile.write(row.level.to\s.to\b).unwrap
 
     row.msg.each m => do
-      logfile.write ',' .unwrap
-      logfile.write(m.to\s).unwrap
+      logfile.write(','.to\b) .unwrap
+      logfile.write(m.to\s.to\b).unwrap
     end
 
-    logfile.write '\n' .unwrap
+    logfile.write('\n'.to\b).unwrap
   end
 }
 

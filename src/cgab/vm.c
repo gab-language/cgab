@@ -1,6 +1,7 @@
 #include "core.h"
 #include "gab.h"
 
+#define GAB_OPCODE_NAMES_IMPL
 #include "engine.h"
 
 #include "colors.h"
@@ -25,9 +26,9 @@ static handler handlers[] = {
 };
 
 #if cGAB_LOG_VM
-#define LOG(op) printf("OP_%s (%lu)\n", gab_opcode_names[op], VAR());
+#define LOG(gab, op) printf("OP_%s (%i)\n", gab_opcode_names[op], gab.wkid);
 #else
-#define LOG(op)
+#define LOG(gab, op)
 #endif
 
 #define ATTRIBUTES
@@ -37,25 +38,28 @@ static handler handlers[] = {
 
 #define DISPATCH_ARGS() GAB(), IP(), KB(), FB(), SP()
 
+#define CHECK_SIGNAL()                                                         \
+  if (gab_sigwaiting(GAB())) {                                                 \
+    STORE_SP();                                                                \
+    switch (gab_yield(GAB())) {                                                \
+    case sGAB_COLL:                                                            \
+      gab_gcepochnext(GAB());                                                  \
+      gab_sigpropagate(GAB());                                                 \
+      break;                                                                   \
+    case sGAB_TERM:                                                            \
+      VM_TERM();                                                               \
+    default:                                                                   \
+      break;                                                                   \
+    }                                                                          \
+  }
+
 #define DISPATCH(op)                                                           \
   ({                                                                           \
-    if (gab_sigwaiting(GAB())) {                                               \
-      STORE_SP();                                                              \
-      switch (gab_yield(GAB())) {                                              \
-      case sGAB_COLL:                                                          \
-        gab_gcepochnext(GAB());                                                \
-        gab_sigpropagate(GAB());                                               \
-        break;                                                                 \
-      case sGAB_TERM:                                                          \
-        VM_TERM();                                                             \
-      default:                                                                 \
-        break;                                                                 \
-      }                                                                        \
-    }                                                                          \
+    CHECK_SIGNAL();                                                            \
                                                                                \
     uint8_t o = (op);                                                          \
                                                                                \
-    LOG(o)                                                                     \
+    LOG(GAB(), o);                                                             \
                                                                                \
     assert(SP() < VM()->sb + cGAB_STACK_MAX);                                  \
     assert(SP() >= FB());                                                      \
@@ -943,6 +947,8 @@ uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc, gab_value argv[argc]) {
   ({                                                                           \
     STORE();                                                                   \
                                                                                \
+    CHECK_SIGNAL();                                                            \
+                                                                               \
     gab_value *returnptr = RETURN_FB();                                        \
                                                                                \
     gab_value *to = SP() - (have + 1);                                         \
@@ -1057,6 +1063,9 @@ union gab_value_pair do_vmexecfiber(struct gab_triple gab, gab_value f) {
 
   assert(fiber->header.kind != kGAB_FIBERDONE);
   fiber->header.kind = kGAB_FIBERRUNNING;
+
+  LOG(gab, op);
+
   return handlers[op](gab, ip, fiber->vm.kb, fiber->vm.fp, fiber->vm.sp);
 };
 
@@ -2395,6 +2404,8 @@ CASE_CODE(SEND_PRIMITIVE_TAKE) {
 
   gab_value v =
       gab_ntchntake(GAB(), c, stackspace, SP() + 1, cGAB_VM_CHANNEL_TAKE_TRIES);
+
+  // gab_fprintf(stdout, "TAKE: $\n", v);
 
   RESET_REENTRANT();
 

@@ -204,6 +204,7 @@ bool clay_termbox_update(struct gab_triple gab, struct tb_event *e,
     return false;
   case TB_EVENT_KEY:
     switch (e->key) {
+      case TB_KEY_BACKSPACE2:
       TERMBOX_KEY_CASE(BACKSPACE, backspace);
       TERMBOX_KEY_CASE(ENTER, enter);
       TERMBOX_KEY_CASE(ESC, escape);

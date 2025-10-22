@@ -462,7 +462,7 @@ bail:
     // worker, each fiber will terminate itself here, in one instruction.
     union gab_value_pair res = gab_vmexec(gab, fiber);
     // Ensure that the termination occurred.
-    assert(res.status == gab_cinvalid);
+    assert(res.status != gab_ctimeout);
     assert(gab_fibisdone(fiber));
 
     gab_value err = gab_fibstacktrace(gab, fiber);
@@ -884,10 +884,7 @@ bool repl_check_aresult(struct gab_triple gab, union gab_value_pair res) {
 
 void repl_wait_for(struct gab_triple gab, struct gab_repl_argt *args,
                    gab_value fib) {
-  const char waitstrs[] = {'|', '/', '-', '\\'};
   for (int i = 0; !gab_fibisdone(fib); i++) {
-    printf("\r%c %s ", waitstrs[i & 0b11], args->result_prefix);
-    fflush(stdout);
     switch (gab_yield(gab)) {
     case sGAB_COLL:
       gab_gcepochnext(gab);
@@ -897,9 +894,6 @@ void repl_wait_for(struct gab_triple gab, struct gab_repl_argt *args,
       continue;
     }
   }
-
-  printf("\r");
-  fflush(stdout);
 }
 
 void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
