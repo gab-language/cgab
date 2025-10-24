@@ -1,8 +1,23 @@
 Messages = 'cmessages'.use
 
+defm:.def(
+  Messages.t
+  (meta**, type, impl)
+    => do
+      self.def(type impl)
+      _meta:.def(self, meta)
+    end)
+
+add: .defm (
+  help: "This is an example message which adds two values"
+  version: "0.1"
+  Strings.t
+  (other) => self + other)
+
 to\class_cxtor: .defcase {
   default: () => (t) => (args*) => t.make(args*)
 }
+
 to\class_cxtor: .def () => self
 
 # Helper message for defining 'class'-esque types.

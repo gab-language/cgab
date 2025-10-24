@@ -1,5 +1,25 @@
 #include "gab.h"
 
+GAB_DYNLIB_NATIVE_FN(block, env) {
+  gab_value block = gab_arg(0);
+
+  if (gab_valkind(block) != kGAB_BLOCK)
+    return gab_pktypemismatch(gab, block, kGAB_BLOCK);
+
+  gab_vmpush(gab_thisvm(gab), gab_blkenv(block));
+  return gab_union_cvalid(gab_nil);
+}
+
+GAB_DYNLIB_NATIVE_FN(block, params) {
+  gab_value block = gab_arg(0);
+
+  if (gab_valkind(block) != kGAB_BLOCK)
+    return gab_pktypemismatch(gab, block, kGAB_BLOCK);
+
+  gab_vmpush(gab_thisvm(gab), gab_blkparams(gab, block));
+  return gab_union_cvalid(gab_nil);
+}
+
 GAB_DYNLIB_NATIVE_FN(message, create) {
   gab_value name = gab_arg(1);
 
@@ -209,6 +229,16 @@ GAB_DYNLIB_MAIN_FN {
               gab_message(gab, "t"),
               gab_strtomsg(gab_type(gab, kGAB_BLOCK)),
               gab_type(gab, kGAB_BLOCK),
+          },
+          {
+            gab_message(gab, "env"),
+            gab_type(gab, kGAB_BLOCK),
+            gab_snative(gab, "env", gab_mod_block_env),
+          },
+          {
+            gab_message(gab, "params"),
+            gab_type(gab, kGAB_BLOCK),
+            gab_snative(gab, "params", gab_mod_block_params),
           },
           {
               gab_message(gab, "t"),

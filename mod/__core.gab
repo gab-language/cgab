@@ -146,13 +146,13 @@ def\seq: .def do
       self.collect xf .is\empty.!
     end,
     join: xf => do
-      self.transduce("", +:, xf)
+      self.transduce("" +: xf)
     end,
     collect: xf => do
-      self.transduce({}, cons:, xf)
+      self.transduce({} cons: xf)
     end,
     pipe: (ch, xf) =>do
-      self.transduce(ch, <!:, xf)
+      self.transduce(ch <!: xf)
     end
   }
 end

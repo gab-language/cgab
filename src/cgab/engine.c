@@ -982,6 +982,8 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
     if (repl_check_vresult(gab, block))
       goto fin;
 
+    gab_value before_env = gab_blkenv(block.vresult);
+
     union gab_value_pair fiber = gab_arun(gab, (struct gab_run_argt){
                                                    .flags = args.flags,
                                                    .len = n,
@@ -999,9 +1001,17 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
     /* Setup env regardless of run failing/succeeding */
     gab_value new_env = gab_fibawaite(gab, fiber.vresult);
 
+    /* Sometimes the env that is returned from here is
+     *  an env from a ~different~ block. This is because
+     *  we always tailcall, so the bottom frame can change the block
+     *  it belongs to throughout execution.
+     * */
+
     if (env == gab_cinvalid || new_env == gab_cinvalid)
       env = new_env;
-    else
+    // If the block's environment is equal to the fiber's final environment
+    // then we know we *didn't* tailcall out of the block.
+    else if (before_env == new_env)
       env = gab_reccat(gab, env, new_env);
 
     assert(env != gab_cinvalid);
@@ -1180,6 +1190,17 @@ int gab_sprintf(char *dest, size_t n, const char *fmt, ...) {
   return res;
 }
 
+int gab_psprintf(char *dest, size_t n, const char *fmt, ...) {
+  va_list va;
+  va_start(va, fmt);
+
+  int res = gab_vpsprintf(dest, n, fmt, va);
+
+  va_end(va);
+
+  return res;
+}
+
 int gab_fprintf(FILE *stream, const char *fmt, ...) {
   va_list va;
 
@@ -1194,6 +1215,51 @@ int gab_fprintf(FILE *stream, const char *fmt, ...) {
   }
 
   return -1;
+}
+
+int gab_npsprintf(char *dest, size_t n, const char *fmt, uint64_t argc,
+                  gab_value *argv) {
+  const char *c = fmt;
+  char *cursor = dest;
+  size_t remaining = n;
+  uint64_t i = 0;
+
+  while (*c != '\0') {
+    switch (*c) {
+    case '$': {
+      if (i >= argc)
+        return -1;
+
+      gab_value arg = argv[i++];
+
+      int res = gab_psvalinspect(&cursor, &remaining, arg, 1);
+
+      if (res < 0)
+        return res;
+
+      break;
+    }
+    default:
+      if (remaining == 0)
+        return -1;
+
+      *cursor++ = *c;
+      remaining -= 1;
+    }
+
+    c++;
+  }
+
+  if (remaining == 0)
+    return -1;
+
+  *cursor++ = *c;
+  remaining -= 1;
+
+  if (i != argc)
+    return -1;
+
+  return n - remaining;
 }
 
 int gab_nsprintf(char *dest, size_t n, const char *fmt, uint64_t argc,
@@ -1237,6 +1303,42 @@ int gab_nsprintf(char *dest, size_t n, const char *fmt, uint64_t argc,
 
   if (i != argc)
     return -1;
+
+  return n - remaining;
+}
+
+int gab_vpsprintf(char *dest, size_t n, const char *fmt, va_list varargs) {
+  const char *c = fmt;
+  char *cursor = dest;
+  size_t remaining = n;
+
+  while (*c != '\0') {
+    switch (*c) {
+    case '$': {
+      gab_value arg = va_arg(varargs, gab_value);
+
+      int res = gab_psvalinspect(&cursor, &remaining, arg, 1);
+
+      if (res < 0)
+        return -1;
+
+      break;
+    }
+    default:
+      if (remaining == 0)
+        return -1;
+
+      *cursor++ = *c;
+      remaining -= 1;
+    }
+    c++;
+  }
+
+  if (remaining == 0)
+    return -1;
+
+  *cursor++ = *c;
+  remaining -= 1;
 
   return n - remaining;
 }
@@ -1576,6 +1678,7 @@ const char *gab_resolve(struct gab_triple gab, const char *mod,
 }
 
 union gab_value_pair gab_use(struct gab_triple gab, struct gab_use_argt args) {
+  gab.flags |= args.flags;
   gab_value path = args.sname ? gab_string(gab, args.sname) : args.vname;
   assert(gab_valkind(path) == kGAB_STRING);
 

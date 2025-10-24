@@ -1,33 +1,33 @@
-s = 'specs':use
+s = 'specs'.use
 
-socket.spec = s:def {
-  name = "gab.socket",
+socket\spec = s.def {
+  name = "gab\socket",
   help = "A wrapper type for an OS socket.",
   spec = .gab.socket, # TODO: Replace with some c-user-data spec
 }
 
-s:def {
+s.def {
   name = "socket",
   help = "Construct a new gab.socket",
-  spec = s:message {
-    receiver  = .gab.socket,
+  spec = s.message {
+    receiver  = gab\socket:,
     message   = \,
-    input     = s:nilable(s:protocol {
-      gab.socket.family = s:int,
-      gab.socket.type   = s:int,
+    input     = s.nilable(s.protocol {
+      gab\socket\family: = s.int,
+      gab\socket\type:   = s.int,
     }),
     output    = socket.spec,
     semantics = .nil
   }
 }
 
-s:def {
+s.def {
   name = "connect",
   help = "Connect a socket to a host and port",
-  spec = s:message {
+  spec = s.message {
     receiver  = socket.spec,
     message   = \connect,
-    input     = s:values(
+    input     = s.values(
       s:string :spec.label 'host',
       s:int    :spec.label 'port',
     ),

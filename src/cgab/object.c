@@ -582,6 +582,13 @@ gab_value gab_prtenv(gab_value prt) {
   return GAB_VAL_TO_PROTOTYPE(prt)->env;
 }
 
+GAB_API gab_value gab_prtparams(struct gab_triple gab, gab_value prt) {
+  assert(gab_valkind(prt) == kGAB_PROTOTYPE);
+  gab_value shp = gab_prtshp(prt);
+  uint8_t nargs = GAB_VAL_TO_PROTOTYPE(prt)->narguments;
+  return gab_shape(gab, 1, nargs, gab_shpdata(shp), nullptr);
+}
+
 gab_value gab_native(struct gab_triple gab, gab_value name, gab_native_f f) {
   assert(gab_valkind(name) == kGAB_STRING || gab_valkind(name) == kGAB_MESSAGE);
 
@@ -612,6 +619,11 @@ gab_value gab_block(struct gab_triple gab, gab_value prototype) {
   }
 
   return __gab_obj(self);
+}
+
+GAB_API gab_value gab_blkproto(gab_value block) {
+  assert(gab_valkind(block) == kGAB_BLOCK);
+  return GAB_VAL_TO_BLOCK(block)->p;
 }
 
 gab_value gab_box(struct gab_triple gab, struct gab_box_argt args) {
@@ -2685,51 +2697,44 @@ struct layout dolayout(v_gab_pprint *self, int32_t t, int32_t indent) {
   return l;
 }
 
-gab_value sprint_tokens(struct gab_triple gab, v_gab_pprint *self) {
-  for (int i = 2048;; i *= 2) {
-    char buf[i];
-    size_t len = i;
-    char *cursor = buf;
-    int32_t indent = 0;
+int spprint_tokens(char **dest, size_t *n, v_gab_pprint *self) {
+  int32_t indent = 0;
 
-    for (uint64_t n = 0; n < self->len; n++) {
-      struct gab_pprint t = v_gab_pprint_val_at(self, n);
+  for (uint64_t i = 0; i < self->len; i++) {
+    struct gab_pprint t = v_gab_pprint_val_at(self, i);
 
-      if (t.k == kPPRINT_INDENT)
-        indent++;
+    if (t.k == kPPRINT_INDENT)
+      indent++;
 
-      // Dedent needs to be applied *before* we
-      // draw the dedent token
-      if (n + 1 < self->len)
-        if (v_gab_pprint_val_at(self, n + 1).k == kPPRINT_DEDENT)
-          indent--;
+    // Dedent needs to be applied *before* we
+    // draw the dedent token
+    if (i + 1 < self->len)
+      if (v_gab_pprint_val_at(self, i + 1).k == kPPRINT_DEDENT)
+        indent--;
 
-      if (spprint_through(&cursor, &len, t) < 0)
-        goto morespace;
+    if (spprint_through(dest, n, t) < 0)
+      return -1;
 
-      if (t.k == kPPRINT_BREAK)
-        for (int32_t i = 0; i < indent; i++)
-          if (snprintf_through(&cursor, &len, "  ") < 0)
-            goto morespace;
-    }
-
-    gab_value newestr = gab_string(gab, buf);
-    return newestr;
-
-  morespace:
+    if (t.k == kPPRINT_BREAK)
+      for (int32_t i = 0; i < indent; i++)
+        if (snprintf_through(dest, n, "  ") < 0)
+          return -1;
   }
+
+  return 0;
 }
 
-gab_value gab_pvalintos(struct gab_triple gab, gab_value value) {
+int gab_psvalinspect(char **dest, size_t *n, gab_value value, int depth) {
   v_gab_pprint tokens = {};
 
   if (pprint_tokify(&tokens, value))
     dolayout(&tokens, 0, 0);
 
-  gab_value s = sprint_tokens(gab, &tokens);
+  if (spprint_tokens(dest, n, &tokens) < 0)
+    return v_gab_pprint_destroy(&tokens), -1;
 
-  return v_gab_pprint_destroy(&tokens), s;
-};
+  return v_gab_pprint_destroy(&tokens), 0;
+}
 
 #undef CREATE_GAB_FLEX_OBJ
 #undef CREATE_GAB_OBJ

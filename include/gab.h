@@ -605,6 +605,8 @@ GAB_API void gab_destroy(struct gab_triple gab);
  * @return the number of bytes written to the stream.
  */
 GAB_API int gab_svalinspect(char **dest, size_t *n, gab_value value, int depth);
+GAB_API int gab_psvalinspect(char **dest, size_t *n, gab_value value,
+                             int depth);
 
 /**
  * @brief Format the given string into the given buffer.
@@ -624,6 +626,7 @@ GAB_API int gab_svalinspect(char **dest, size_t *n, gab_value value, int depth);
  * @return the number of bytes written to the buffer, or -1.
  */
 GAB_API int gab_sprintf(char *dst, size_t n, const char *fmt, ...);
+GAB_API int gab_psprintf(char *dst, size_t n, const char *fmt, ...);
 
 /**
  * @brief Format the given string into the given buffer, with varargs. @see
@@ -636,6 +639,8 @@ GAB_API int gab_sprintf(char *dst, size_t n, const char *fmt, ...);
  * @return the number of bytes written to the buffer, or -1.
  */
 GAB_API int gab_vsprintf(char *dst, size_t n, const char *fmt, va_list varargs);
+GAB_API int gab_vpsprintf(char *dst, size_t n, const char *fmt,
+                          va_list varargs);
 
 /**
  * @brief Format the given string into the given buffer, with n arguments.
@@ -650,6 +655,8 @@ GAB_API int gab_vsprintf(char *dst, size_t n, const char *fmt, va_list varargs);
  */
 GAB_API int gab_nsprintf(char *dst, size_t n, const char *fmt, uint64_t argc,
                          gab_value *argv);
+GAB_API int gab_npsprintf(char *dst, size_t n, const char *fmt, uint64_t argc,
+                          gab_value *argv);
 
 /**
  * @brief Give the engine ownership of the values.
@@ -2475,6 +2482,22 @@ GAB_API_INLINE gab_value gab_prtshp(gab_value prt) {
   return gab_recshp(gab_uvrecat(env, len - 1));
 }
 
+GAB_API gab_value gab_prtparams(struct gab_triple gab, gab_value prt);
+
+GAB_API gab_value gab_blkproto(gab_value block);
+
+GAB_API_INLINE gab_value gab_blkparams(struct gab_triple gab, gab_value block) {
+  return gab_prtparams(gab, gab_blkproto(block));
+}
+
+GAB_API_INLINE gab_value gab_blkenv(gab_value block) {
+  return gab_prtenv(gab_blkproto(block));
+}
+
+GAB_API_INLINE gab_value gab_blkshp(gab_value block) {
+  return gab_prtshp(gab_blkproto(block));
+}
+
 /**
  * @brief Create a native wrapper to a c function with a gab_string name.
  *
@@ -2651,15 +2674,6 @@ GAB_API_INLINE bool gab_valintob(gab_value value) {
 }
 
 /**
- * @brief Coerce the given value to a string. Format said string to be pretty!
- *
- * @param gab The engine
- * @param value The value to convert
- * @return The string representation of the value.
- */
-GAB_API gab_value gab_pvalintos(struct gab_triple gab, gab_value value);
-
-/**
  * @brief Coerce the given value to a string.
  *
  * @param gab The engine
@@ -2673,13 +2687,9 @@ GAB_API_INLINE gab_value gab_valintos(struct gab_triple gab, gab_value value) {
   case kGAB_STRING:
     return value;
   default:
-    // Generally, I think this is a bad idea.
-    // It can ( and will ) blow the stack up for sufficiently large
-    // values. Also if some logic is wrong.
-    // Probably a good idea to put an upper bound here
-    // so as not to smash teh stack.
-    for (size_t len = 128;; len *= 2) {
-      char buffer[len];
+    for (size_t len = 4096;; len *= 2) {
+      char *buffer = malloc(len);
+      assert(buffer);
 
       char *cursor = buffer;
       size_t remaining = len;
@@ -2689,6 +2699,28 @@ GAB_API_INLINE gab_value gab_valintos(struct gab_triple gab, gab_value value) {
 
       return gab_string(gab, buffer);
     }
+  }
+}
+
+/**
+ * @brief Coerce the given value to a string. Format said string to be pretty!
+ *
+ * @param gab The engine
+ * @param value The value to convert
+ * @return The string representation of the value.
+ */
+GAB_API_INLINE gab_value gab_pvalintos(struct gab_triple gab, gab_value value) {
+  for (size_t len = 4096;; len *= 2) {
+    char *buffer = malloc(len);
+    assert(buffer);
+
+    char *cursor = buffer;
+    size_t remaining = len;
+
+    if (gab_psvalinspect(&cursor, &remaining, value, -1) < 0)
+      continue;
+
+    return gab_string(gab, buffer);
   }
 }
 

@@ -1,10 +1,25 @@
-ui = 'cgui'.use
+ch = Channels.make
 
-(events, app) = (Channels.make, Channels.make)
+fib = Fibers.make () => do
+  Ranges.make(1 5).each (i) => do
+    ch <! (num: i)
+  end
 
-Fibers.make () => ui.run(events, app)
+  ch.close
+end
 
-events
-  .pipe(
-    app,
-    Streams.map e => [[img: { content: img w: 4000 h: 6000 }]])
+Fibers.make () => do
+  loop = () => do
+    (status, kind, value) = ch >!
+
+    status.ok.then () => do
+      "Received: $ $".sprintf(kind, value).println
+    end
+
+    (status.ok & ch.is\open).then self
+  end
+
+  loop.()
+end
+
+fib.await

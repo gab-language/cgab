@@ -1132,17 +1132,12 @@ GAB_DYNLIB_NATIVE_FN(io, until) {
   struct gab_io *io = gab_boxdata(vio);
 
   for (;;) {
-    /** looping with the reentrant here is dangerous.
-     * The io_read can 'consume' the reentrant (ie, destroy the qid).
-     * If this happens, then this is basically a dangling pointer.
-     */
     s_char out = {0};
     union gab_value_pair res = gab_io_read(gab, io, reentrant, 1, &out);
 
     // If we saw an error or yielded, return it.
-    if (res.status == gab_ctimeout) {
+    if (res.status == gab_ctimeout)
       return res;
-    }
 
     if (res.status == gab_cinvalid)
       return res;

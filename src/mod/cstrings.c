@@ -353,8 +353,7 @@ GAB_DYNLIB_NATIVE_FN(binary, at) {
   return gab_union_cvalid(gab_nil);
 }
 
-
-GAB_DYNLIB_NATIVE_FN(string, at){
+GAB_DYNLIB_NATIVE_FN(string, at) {
   if (argc != 2 && gab_valkind(argv[1]) != kGAB_NUMBER) {
     return gab_panicf(gab, "&:at expects 1 number argument");
   }
@@ -406,7 +405,7 @@ s_char utf8_slice(const char *data, size_t len, size_t from, size_t to) {
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define CLAMP(a, b) (MAX(0, MIN(a, b)))
 
-GAB_DYNLIB_NATIVE_FN(string, slice){
+GAB_DYNLIB_NATIVE_FN(string, slice) {
   gab_value str = gab_arg(0);
 
   if (gab_valkind(str) != kGAB_STRING)
@@ -485,10 +484,7 @@ GAB_DYNLIB_NATIVE_FN(string, has) {
 }
 
 GAB_DYNLIB_NATIVE_FN(string, tos) {
-  if (gab_arg(1) == gab_message(gab, "plain"))
-    gab_vmpush(gab_thisvm(gab), gab_valintos(gab, gab_arg(0)));
-  else
-    gab_vmpush(gab_thisvm(gab), gab_pvalintos(gab, gab_arg(0)));
+  gab_vmpush(gab_thisvm(gab), gab_valintos(gab, gab_arg(0)));
 
   return gab_union_cvalid(gab_nil);
 }
@@ -547,13 +543,20 @@ GAB_DYNLIB_NATIVE_FN(fmt, panicf) {
   gab_value fmtstr = gab_arg(0);
   const char *fmt = gab_strdata(&fmtstr);
 
-  char buf[10000];
-  int len = gab_nsprintf(buf, sizeof(buf), fmt, argc - 1, argv + 1);
+  
+  for (size_t n = 2048;; n *= 2) {
+    char *buf = malloc(n);
+    int len = gab_nsprintf(buf, n, fmt, argc - 1, argv + 1);
 
-  if (len < 0)
-    return gab_panicf(gab, "sprintf buffer too small", gab_number(argc - 1));
+    if (len < 0) {
+      free(buf);
+      continue;
+    }
 
-  return gab_panicf(gab, "$", gab_string(gab, buf));
+    gab_value e = gab_string(gab, buf);
+    free(buf);
+    return gab_panicf(gab, "$", e);
+  }
 }
 
 GAB_DYNLIB_NATIVE_FN(fmt, sprintf) {
@@ -561,8 +564,7 @@ GAB_DYNLIB_NATIVE_FN(fmt, sprintf) {
 
   const char *fmt = gab_strdata(&fmtstr);
 
-  size_t n = 2048;
-  for (;; n *= 2) {
+  for (size_t n = 2048;; n *= 2) {
     char *buf = malloc(n);
     int len = gab_nsprintf(buf, n, fmt, argc - 1, argv + 1);
 
@@ -700,8 +702,7 @@ GAB_DYNLIB_MAIN_FN {
               gab_message(gab, "pop"),
               t,
               gab_snative(gab, "pop", gab_mod_string_pop),
-          }
-          );
+          });
 
   gab_value res[] = {gab_ok, gab_strtomsg(t)};
 

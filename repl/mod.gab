@@ -39,7 +39,6 @@ HistoryElement = repl\history\elem: .defclass (
 
 handle\keydown: .defcase {
   backspace: (ev model) => do
-    'backspace'.eprintln
     model.put_by(input: pop:)
   end
   escape: (ev model) => do
@@ -137,7 +136,6 @@ events
     Streams.take_until((e, key) => do
       (e == key:) & (key == escape:)
     end)
-    |> Streams.tap((e, key) => '$ $'.sprintf(e key).println)
     |> Streams.reduce(model controller:)
     |> Streams.map view:
   )

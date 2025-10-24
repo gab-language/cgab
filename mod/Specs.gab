@@ -13,7 +13,7 @@ explain_values = (strings separator)
       .transduce(
         ''
         +:
-        Streams.map ((v) => Strings.make("\" v))
+        Streams.map (v => "\$".sprintf v)
         |> Streams.interpose separator)
 
 defspec: .def (
@@ -283,10 +283,7 @@ RE\Rep = re\rep: .defclass(
   {})
 
 stringify_forms = (forms, sep)
-  => Strings.make(
-    "("
-    forms.map re\debug: .join (Streams.interpose sep)
-    ")")
+  => "($)".sprintf(forms.map re\debug: .join (Streams.interpose sep))
 
 collapse_path = (path) => do
   path.reduce({} (col elem) => do
@@ -386,7 +383,7 @@ re\debug: .defcase {
   () => stringify_forms.(self.forms, " | ")
 
   RE\Rep.t
-  () => Strings.make('*', self.forms.re\name)
+  () => '*$'.sprintf(self.forms.re\name)
 }
 re\debug: .def () => self.to\spec.spec\name
 
@@ -766,20 +763,23 @@ alt: .def(
 
     re = RE\Rep.make(spec.to\spec.to\spec\re, { name: "*" })
 
-    spec\fits: .def(
-      pred
-      (values*) => values .match re)
-
     generator = Streams.map(_ => spec.to\spec.spec\gen)
 
-    spec\gen:.def(
-      pred
-      () => Ranges
+    [pred] .defmodule {
+      spec\fits: (values*)
+        => values .match re
+
+      spec\gen: ()
+        => Ranges
               .make(0 Numbers.int\between(0 10))
               .collect generator
-              .*)
+              .*
 
-    to\spec\re: .def(pred re)
+      spec\name: ()
+        => re.re\debug
+
+      to\spec\re: re
+    }
 
     pred
   end)
@@ -793,20 +793,22 @@ alt: .def(
 
     re = RE\Seq.make([re, RE\Rep.make(re, { name: "rep+" })], { name: "seq+" })
 
-    spec\fits:.def(
-      pred
-      (values*) => values .match re)
+    [pred] .defmodule {
+      spec\fits: (values*)
+        => values .match re
 
-    spec\gen:.def(
-      pred
-      () => do
-        Ranges
-          .make(0 Numbers.int\between(1 10))
-          .collect(Streams.map _ => spec.spec\gen
-          .*)
-      end)
+      spec\gen: ()
+        => Ranges
+            .make(0 Numbers.int\between(1 10))
+            .collect(Streams.map _ => spec.spec\gen)
+            .*
 
-    to\spec\re: .def(pred re)
+      spec\name: ()
+        => re.re\debug
+
+      to\spec\re: re
+    }
+
 
     pred
   end)
@@ -817,42 +819,44 @@ slice\predicate = (slice) => do
 
   pred = Strings.make('predicate:protocol:slice:' keys ':' slice).to\m
 
-  spec\fits:.def(
-    pred
-    value => do
-      keys.reduce([true: self value] (acc m) => do
-# Check for a spec which corresponds to this message in the protocol
-        acc.at 0 .unwrap.and acc .else () => do
-          m.at value .then () => do
-            m.to\m.to\spec.ok.then s => do
-              s.spec\fits(value .at m .unwrap)
-            end
-          end .or [false:, self, value, m]
-        end
-      end).*
-    end)
+  [pred].defmodule {
 
-  genit = Streams.map (v) => do
-    found = v.to\m.to\spec
-    (v found.spec\gen)
-  end
-
-  spec\gen:.def(
-    pred
-    () => keys.transduce(protocol put: genit))
-
-  spec\explain:.def(
-    pred
-    () => protocol.to\spec\exlain)
+      spec\explain: ()
+        => protocol.to\spec\exlain
+  }
 
   pred
 end
 
 
-protocol\predicate = (protocol) => do
+protocol\predicate = (protocol**) => do
   pred = Strings.make('predicate:protocol:' protocol).to\m
 
+  keys = protocol.keys
+
+  genit = Streams.map (k) => do
+    found = k.to\m.to\spec
+    (k found.spec\gen)
+  end
+
   [pred] .defmodule {
+      spec\fits: value
+        => do
+          keys.reduce([true: self value] (acc m) => do
+# Check for a spec which corresponds to this message in the protocol
+            acc.at 0 .unwrap.and acc .else () => do
+              m.at value .then () => do
+                m.to\m.to\spec.ok.then s => do
+                  s.spec\fits(value .at m .unwrap)
+                end
+              end .or [false:, self, value, m]
+            end
+          end).*
+        end
+
+    spec\gen: ()
+      => keys.collect(genit)
+
     spec\explain: () => (protocol.len == 0)
         .and "[]"
         .or ("[ " + explain_values.(protocol, ', ') + " ]")
@@ -870,8 +874,10 @@ list\predicate = spec => do
 
   [pred] .defmodule {
     spec\fits: value => value.spec\fits_each values:
+
     spec\gen: () => [spec.spec\gen]
-    spec\explain: () => Strings.make('list[' spec.spec\explain() ']')
+
+    spec\explain: () => 'List[$]'.sprintf(spec.spec\explain)
   }
 
   pred
@@ -894,10 +900,12 @@ record\predicate = (k_spec v_spec) => do
             (true:, self, value)
           end)
       end
-    spec\gen: () => { k_spec.spec\gen,  v_spec.spec\gen }
-    spec\explain: () => do
-        Strings.make('Map[' k_spec.spec\explain ', ' v_spec.spec\explain ']')
-    end
+
+    spec\gen: ()
+      => { k_spec.spec\gen,  v_spec.spec\gen }
+
+    spec\explain: ()
+      => 'Map[$, $]'.sprintf( k_spec.spec\explain, v_spec.spec\explain)
   }
 
   pred
@@ -1158,13 +1166,10 @@ spec\message\define:.defcase {
 
     spec\explain:.def(
       pred
-      () => Strings.make(
+      () => '$.$ $ => $'.sprintf(
         args.receiver.spec\name
-        '.'
         args.message
-        ' '
         args.input.spec\name
-        ' => '
         args.output.spec\name))
 
     pred
@@ -1181,15 +1186,13 @@ spec\labeled: .def label => {
 }
 
 [LabeledSpec] .defmodule {
-  spec\explain: () => Strings.make(
+  spec\explain: () => '$: $'.sprintf(
       self.spec\label
-      ': '
       self.spec\spec.spec\explain)
 
   spec\name: () => do
-    Strings.make(
+    '$: $'.sprintf(
       self.spec\label
-      ': '
       self.spec\spec.spec\name)
   end
 
@@ -1281,7 +1284,6 @@ end
             .split '\\'
             .to\m,
           k))
-      #|> Streams.tap((v m k) => "v: $, m: $, k: $".sprintf(v m k).println)
       |> Streams.filter ((_ m) => m == mod)
       |> Streams.map ((v m k) => do
         e = k.to\spec.spec\explain
@@ -1289,14 +1291,14 @@ end
         (ok, h) = k.to\spec.spec\help
         h = ok.and(h).or ''
 
-        Strings.make(k '\n' h '\n\t' e)
+        '$\n$\n\t$'.sprintf(k h e)
       end)
       |> Streams.interpose '\n\n'
 
     Messages
       .specializations
       .spec
-      .transduce("" +: xf)
+      .join(xf)
   end
 }
 
