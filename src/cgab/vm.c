@@ -39,19 +39,19 @@ static handler handlers[] = {
 #define DISPATCH_ARGS() GAB(), IP(), KB(), FB(), SP()
 
 #define CHECK_SIGNAL()                                                         \
-  if (gab_sigwaiting(GAB())) {                                                 \
-    STORE_SP();                                                                \
+  if (gab_sigwaiting(GAB()))                                                   \
     switch (gab_yield(GAB())) {                                                \
     case sGAB_COLL:                                                            \
+      STORE_SP();                                                              \
       gab_gcepochnext(GAB());                                                  \
       gab_sigpropagate(GAB());                                                 \
       break;                                                                   \
     case sGAB_TERM:                                                            \
+      STORE_SP();                                                              \
       VM_TERM();                                                               \
     default:                                                                   \
       break;                                                                   \
-    }                                                                          \
-  }
+    }
 
 #define DISPATCH(op)                                                           \
   ({                                                                           \
@@ -974,6 +974,7 @@ uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc, gab_value argv[argc]) {
     if (__gab_unlikely(res.status == gab_cvalid))                              \
       return res;                                                              \
                                                                                \
+    assert(SP() >= before);                                                    \
     uint64_t have = SP() - before;                                             \
                                                                                \
     if (!have)                                                                 \
@@ -2461,6 +2462,8 @@ CASE_CODE(SEND_PRIMITIVE_PUT) {
   STORE_SP();
 
   if (REENTRANT() == c) {
+    CHECK_SIGNAL();
+
     // If we're reentering, check that our channel
     // is still holding our data ptr.
     // I *believe* this is sound based on the following principles:

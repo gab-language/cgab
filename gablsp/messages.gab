@@ -1,5 +1,5 @@
-'lsp/logs'.use
-'lsp/diagnostics'.use
+'gablsp/logs'.use
+'gablsp/diagnostics'.use
 
 lsp\messages\into:.def(
   Records.t
@@ -23,15 +23,17 @@ lsp\messages\into:.def(
 def\lsp\handler:.def(
   Strings.t
   handler => do
-    lsp\handle:.def(Shapes.make(self.to\m, id:, params:), handler)
+    lsp\handle:.def(
+      Shapes.make(self.to\m, id:, params:)
+      handler)
   end)
 
 # Dispatch a message into its handler, if we have one
 lsp\dispatch:.def(
   server => do
     message = self
-
-    lsp\handle:.at message .then () => do
+    
+    lsp\handle:.at message .ok .then () => do
         server.log("Dispatch" lsp\handle:.at message)
         (ok: message.lsp\handle server)
     end
@@ -85,7 +87,6 @@ end
 # SYNCHRONIZATION
 #
 
-
 "textDocument/didOpen" .def\lsp\handler server => do
   uri = self.params.at 'textDocument' .unwrap.at 'uri' .unwrap
   text= self.params.at 'textDocument' .unwrap.at 'text' .unwrap
@@ -125,19 +126,19 @@ end
   uri = self.params.at 'textDocument' .unwrap.at 'uri' .unwrap
   (ok, changes) = self.params.at 'contentChanges'
 
-  server.log("Changed", uri)
-  text = changes.at 0 .unwrap .at "text" .unwrap
+  ok
+    .then () => do
+      server.log("Changed", uri)
+      text = changes.at 0 .unwrap .at "text" .unwrap
 
-  data = server.server\data.put(uri, text)
+      updated_server = server.put_via(server\data: uri, text)
 
-  updated_server = server.put(server\data: data)
+      updated_server.diagnostics\queue(text uri)
 
-  updated_server.diagnostics\queue(text uri)
-
-  (ok, updated_server) .unwrap.or (server)
-
-  # TODO: Handle incremental changes in documents
-  updated_server
+      # TODO: Handle incremental changes in documents
+      updated_server
+    end
+    .or server
 end
 
 

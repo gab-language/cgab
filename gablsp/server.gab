@@ -1,6 +1,6 @@
 'Json'.use
 
-log\row\t = 'lsp/logs'.use
+log\row\t = 'gablsp/logs'.use
 
 diag\job\t = Shapes.make(
   server:
@@ -101,15 +101,22 @@ _read_header:.defcase {
       .server\in
       .until('\n'.to\b)
       .unwrap
+      .as\s
+      .unwrap
       .trim '\n'
 
     (blank name value) = (next_header.is\blank, next_header.split ':')
     
     m = blank .and m .or(m.put(name, value))
 
-    option:.(blank!, lsp, m)._read_header
+    option:.make(blank!, lsp, m)._read_header
   end
   none: (lsp m) => m
+}
+
+_read_request:.defcase {
+  true: (lsp) => (ok: nil: lsp._read_request)
+  false: none:
 }
 
 [lsp\server\t].defmodule {
@@ -129,7 +136,9 @@ _read_header:.defcase {
 
     body = self
       .server\in
-      .scan len
+      .read len
+      .unwrap
+      .as\s
       .unwrap
 
     msg = body
@@ -144,22 +153,16 @@ _read_header:.defcase {
 
     self
       .server\open_ch
-      .cond {
-        is\open: () => (ok: nil: server._read_request)
-        is\closed: () => none:
-      }
-      .
+      .is\open
+      ._read_request self
   end
   seq\next: () => do
     server = self
 
     self
       .server\open_ch
-      .cond {
-        is\open: () => (ok: nil: server._read_request)
-        is\closed: () => none:
-      }
-      .
+      .is\open
+      ._read_request self
   end
   # Helpers for sending data to client
   respond: (id result) => do
@@ -170,6 +173,7 @@ _read_header:.defcase {
     res = Strings.make(
       'Content-Length:'content\length
       '\r\n\r\n'msg)
+      .to\b
 
     self.log("Response" id res)
 
@@ -187,6 +191,7 @@ _read_header:.defcase {
     notif = Strings.make(
       'Content-Length:'content\length
       '\r\n\r\n'msg)
+      .to\b
 
     self.server\out.write notif .unwrap
   end

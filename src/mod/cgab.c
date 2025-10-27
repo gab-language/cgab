@@ -17,14 +17,14 @@ GAB_DYNLIB_NATIVE_FN(gab, build) {
                                                 .argv = modules,
                                             });
 
+  assert(mod.vresult != gab_cundefined);
+
   if (mod.status != gab_cinvalid) {
     gab_vmpush(gab_thisvm(gab), gab_ok, mod.vresult);
     return gab_union_cvalid(gab_nil);
   }
 
-  gab_value rec = mod.vresult;
-
-  gab_vmpush(gab_thisvm(gab), gab_err, rec);
+  gab_vmpush(gab_thisvm(gab), gab_err, mod.vresult);
   return gab_union_cvalid(gab_nil);
 }
 

@@ -893,6 +893,8 @@ union gab_value_pair gab_parse(struct gab_triple gab,
 
   gab_gcunlock(gab);
 
+  assert(ast != gab_cinvalid || parser.err != gab_cundefined);
+
   if (ast == gab_cinvalid)
     return (union gab_value_pair){.status = gab_cinvalid,
                                   .vresult = parser.err};
@@ -2021,6 +2023,7 @@ union gab_value_pair gab_build(struct gab_triple gab,
   gab_value mod = gab_string(gab, args.name);
 
   union gab_value_pair ast = gab_parse(gab, args);
+  assert(ast.vresult != gab_cundefined);
 
   if (ast.status != gab_cvalid)
     return gab_gcunlock(gab), ast;
@@ -2053,6 +2056,7 @@ union gab_value_pair gab_build(struct gab_triple gab,
                                                   .mod = mod,
                                                   .bindings = bindings,
                                               });
+  assert(res.vresult != gab_cundefined);
 
   if (res.status == gab_cinvalid)
     return gab_gcunlock(gab), res;

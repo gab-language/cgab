@@ -15,11 +15,7 @@ sock
   .write(req.to\b)
   .unwrap
 
-head = sock.until('\0'.to\b).unwrap.as\s.unwrap
-
-http_res = head.as\http.unwrap
-
-http_res.to\s.println
+data = sock.until('\0'.to\b).unwrap.as\s.unwrap
 
 #sock = Socket
 #  .make tcp:
@@ -32,31 +28,21 @@ http_res.to\s.println
 #sock
 #  .write(req.to\b)
 #  .unwrap
-#
-## In practice, this reads until the socket is closed.
-#head = sock.until('\0'.to\b).unwrap.as\s.unwrap
-#
-#http_res = head.as\http.unwrap
-#
-#http_res.to\s.println
 
-#data = sock
-#  .read
-#  .unwrap
-#  .as\s
-#  .unwrap
-##
-##http_res = data
-##  .as\http
-##  .unwrap
-##
-##'STATUS: $\nHEADERS:\n$\nBODY:\n$'
-##  .sprintf(
-##    http_res.http\status
-##    http_res.http\headers.join(
-##      Streams.map((value field) => do
-##        '$: $'.sprintf(field value)
-##      end)
-##      |> Streams.interpose '\n')
-##    http_res.http\body)
-##  .println
+# In practice, this reads until the socket is closed.
+#data = sock.until('\0'.to\b).unwrap.as\s.unwrap
+
+http_res = data
+  .as\http
+  .unwrap
+
+'STATUS: $\nHEADERS:\n$\nBODY:\n$'
+  .sprintf(
+    http_res.http\status
+    http_res.http\headers.join(
+      Streams.map((value field) => do
+        '$: $'.sprintf(field value)
+      end)
+      |> Streams.interpose '\n')
+    http_res.http\body)
+  .println

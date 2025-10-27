@@ -1,12 +1,17 @@
 #include "core.h"
 #include "gab.h"
 #include <locale.h>
+#include <stddef.h>
 
 #include "crossline/crossline.c"
 #include "crossline/crossline.h"
 
 #include "miniz/amalgamation/miniz.c"
 #include "miniz/amalgamation/miniz.h"
+
+#define SOKOL_IMPL
+#include "sokol/sokol_fetch.h"
+#include "sokol/sokol_log.h"
 
 #include "colors.h"
 #include "platform.h"
@@ -67,6 +72,95 @@ void cliinfo(const char *fmt, ...) {
   vfprintf(stderr, fmt, args);
 
   va_end(args);
+}
+
+void fetch_cb(const sfetch_response_t *res) {
+  if (res->fetched) {
+    FILE *dst = *(FILE **)res->user_data;
+    cliinfo("Writing %lu bytes\n", res->data.size);
+    size_t bytes = fwrite(res->data.ptr, res->data.size, 1, dst);
+    if (bytes < res->data.size)
+      clierror("Wrote too few bytes\n");
+  }
+
+  if (res->failed) {
+    clierror("Response failed for %s: %i\n", res->path, res->error_code);
+  }
+
+  if (res->failed) {
+    FILE *dst = *(FILE **)res->user_data;
+    fflush(dst);
+    fclose(dst);
+  }
+}
+
+void nfetch(size_t n, const char *url[n], const char *file[n]) {
+  sfetch_setup(&(sfetch_desc_t){
+      .max_requests = 1024,
+      .num_channels = 4,
+      .num_lanes = 8,
+      .logger.func = slog_func,
+  });
+
+  sfetch_handle_t handles[n];
+
+  for (size_t i = 0; i < n; i++) {
+    FILE *dst = fopen(file[i], "w");
+
+    if (!dst) {
+      clierror("Unable to open file: %s", file[i]);
+      return;
+    };
+
+    cliinfo("REQUESTING %s\n", url[i]);
+
+    void *buf = malloc(4096);
+    sfetch_handle_t handle = sfetch_send(&(sfetch_request_t){
+        .path = url[i],
+        .callback = fetch_cb,
+        .chunk_size = 4096,
+        .user_data =
+            {
+                .ptr = &dst,
+                .size = sizeof(FILE *),
+            },
+        .buffer =
+            {
+                .ptr = buf,
+                .size = 4096,
+            },
+    });
+    handles[i] = handle;
+
+    if (!sfetch_handle_valid(handle)) {
+      clierror("Error creating sfetch request\n");
+    }
+  }
+
+  for (;;) {
+    bool workdone = true;
+
+    // When all handles return false, our work is done.
+    for (size_t i = 0; i < n; i++) {
+      if (sfetch_handle_valid(handles[i])) {
+        cliinfo("Handle %i is still going\n", i);
+        workdone = false;
+        break;
+      } else {
+        cliinfo("Handle %i is done\n", i);
+      }
+    }
+
+    cliinfo("Work done? %b\n", workdone);
+    if (workdone)
+      break;
+
+    sfetch_dowork();
+  }
+
+  clisuccess("Downloaded %lu resources.\n", n);
+
+  sfetch_shutdown();
 }
 
 void print_err(struct gab_triple gab, gab_value err) {
@@ -367,7 +461,8 @@ int run_repl(int flags, uint32_t wait, size_t nmodules, const char **modules) {
   gab_repl(gab, (struct gab_repl_argt){
                     .name = MAIN_MODULE,
                     .flags = flags,
-                    .welcome_message = "Gab version " GAB_VERSION_TAG "\tPress ^C to exit.",
+                    .welcome_message =
+                        "Gab version " GAB_VERSION_TAG "\tPress ^C to exit.",
                     .prompt_prefix = ">>> ",
                     .promptmore_prefix = ">   ",
                     .result_prefix = "",
@@ -871,7 +966,7 @@ struct command_arguments parse_options(int argc, const char **argv,
 }
 
 #define GAB_RELEASE_DOWNLOAD_URL                                               \
-  "https://github.com/gab-language/cgab/releases/download/"
+  "http://github.com/gab-language/cgab/releases/download/"
 
 const char *split_pkg(char *pkg) {
   char *cursor = pkg;
@@ -1006,6 +1101,22 @@ int download_gab(const char *pkg, const char *tag, const char *triple) {
   };
 
   clisuccess("(1) Validated installation location.\n");
+
+  nfetch(3,
+         (const char *[]){
+             binary_url.data,
+             modules_url.data,
+             dev_url.data,
+         },
+         (const char *[]){
+             binary_location.data,
+             modules_location.data,
+             dev_location.data,
+         }
+
+  );
+
+  return 1;
 
   // Fetch release binary
   int res = gab_osproc("curl", "-f", "-s", "-L", "-o", binary_location.data,

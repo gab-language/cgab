@@ -67,18 +67,20 @@ cond: .def (vs*, branches) => do
   v.cond\eval(self)
 end
 
-:.def(
+make:.def(
   option:
   (cond, data*) => do
-    (cond.to\option, data*)
+    status = cond.to\option
+
+    (status, data*)
   end)
 
-:.def(
+make:.def(
   result:
   (cond, data*) => (cond.to\result, data*))
 
 [ok:] .defmodule {
-  ok: (args*) => (true:, args*)
+  ok: true:
   unwrap: (args*) => args*
 }
 

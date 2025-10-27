@@ -817,6 +817,9 @@ GAB_API uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t len, gab_value *argv);
  */
 GAB_API gab_value gab_vmpeek(struct gab_vm *vm, uint64_t dist);
 
+/**
+ * @brief Pop values off the top of the vm.
+ */
 GAB_API gab_value gab_vmpop(struct gab_vm *vm);
 
 /**
@@ -2245,11 +2248,20 @@ GAB_API void *gab_fibmalloc(gab_value fiber, uint64_t n);
 
 /*
  * @brief Push a byte onto the fiber's bump allocator.
+ *
+ * @return the byte-offset of the pushed byte.
  */
-GAB_API void gab_fibpush(gab_value fiber, uint8_t b);
+GAB_API uint64_t gab_fibpush(gab_value fiber, uint8_t b);
 
 /*
- * @brief Get a pointer into the bump allocator, at offset n.
+ * @brief Push a word (8 bytes) onto the fiber's bump allocator.
+ *
+ * @return the byte-offset of the pushed word.
+ */
+GAB_API uint64_t gab_wfibpush(gab_value fiber, uint64_t w);
+
+/*
+ * @brief Get a pointer into the bump allocator, at byte offset n.
  */
 GAB_API void *gab_fibat(gab_value fiber, uint64_t n);
 
@@ -2257,6 +2269,11 @@ GAB_API void *gab_fibat(gab_value fiber, uint64_t n);
  * @brief Get the size of the arena.
  */
 GAB_API uint64_t gab_fibsize(gab_value fiber);
+
+/*
+ *@brief clear the arena memory.
+ */
+GAB_API void gab_fibclear(gab_value fiber);
 
 GAB_API_INLINE bool gab_fibisrunning(gab_value fiber) {
   return gab_valkind(fiber) == kGAB_FIBERRUNNING;

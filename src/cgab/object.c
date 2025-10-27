@@ -1596,10 +1596,24 @@ void *gab_fibmalloc(gab_value f, uint64_t n) {
   return ptr;
 }
 
-void gab_fibpush(gab_value f, uint8_t b) {
+uint64_t gab_fibpush(gab_value f, uint8_t b) {
   assert(gab_valkind(f) >= kGAB_FIBER && gab_valkind(f) <= kGAB_FIBERRUNNING);
   struct gab_ofiber *fiber = GAB_VAL_TO_FIBER(f);
-  v_uint8_t_push(&fiber->allocator, b);
+  return v_uint8_t_push(&fiber->allocator, b);
+}
+
+uint64_t gab_wfibpush(gab_value f, uint64_t w) {
+  assert(gab_valkind(f) >= kGAB_FIBER && gab_valkind(f) <= kGAB_FIBERRUNNING);
+  struct gab_ofiber *fiber = GAB_VAL_TO_FIBER(f);
+  uint64_t idx = v_uint8_t_push(&fiber->allocator, w & 0xff);
+  v_uint8_t_push(&fiber->allocator, (w >> 8) & 0xff);
+  v_uint8_t_push(&fiber->allocator, (w >> 16) & 0xff);
+  v_uint8_t_push(&fiber->allocator, (w >> 24) & 0xff);
+  v_uint8_t_push(&fiber->allocator, (w >> 32) & 0xff);
+  v_uint8_t_push(&fiber->allocator, (w >> 40) & 0xff);
+  v_uint8_t_push(&fiber->allocator, (w >> 48) & 0xff);
+  v_uint8_t_push(&fiber->allocator, (w >> 56) & 0xff);
+  return idx;
 }
 
 void *gab_fibat(gab_value f, uint64_t n) {
@@ -1612,6 +1626,12 @@ uint64_t gab_fibsize(gab_value f) {
   assert(gab_valkind(f) >= kGAB_FIBER && gab_valkind(f) <= kGAB_FIBERRUNNING);
   struct gab_ofiber *fiber = GAB_VAL_TO_FIBER(f);
   return fiber->allocator.len;
+}
+
+void gab_fibclear(gab_value f) {
+  assert(gab_valkind(f) >= kGAB_FIBER && gab_valkind(f) <= kGAB_FIBERRUNNING);
+  struct gab_ofiber *fiber = GAB_VAL_TO_FIBER(f);
+  fiber->allocator.len = 0;
 }
 
 gab_value gab_fibawaite(struct gab_triple gab, gab_value f) {

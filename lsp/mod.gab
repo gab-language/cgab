@@ -1,5 +1,0 @@
-lsp\server = 'lsp/server' .use
-'lsp/messages'.use
-'lsp/diagnostics'.use
-
-lsp\server.make.run

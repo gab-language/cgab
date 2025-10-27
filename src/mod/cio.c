@@ -57,7 +57,8 @@
  * Is it unsafe to directly send pointers into gab strings to the io syscalls?
  *
  * I ask because all the IO is happening asynchronously,
- * it may be that the engine is freed and exiting while IO operations are still queued.
+ * it may be that the engine is freed and exiting while IO operations are still
+ * queued.
  *
  * What if the engine closes std/in/out/err before destroying the engine?
  *
@@ -276,7 +277,7 @@ static int run_until(struct gab_ssl_sock *sock, unsigned target) {
       if (wlen < 0)
         return br_ssl_engine_close(ctx->engine), -1;
 
-      if (wlen > 0)
+      if (wlen >= 0)
         br_ssl_engine_sendrec_ack(ctx->engine, wlen);
 
       sock->io_operations[BR_SSL_SENDREC_CHANNEL] = -1;
@@ -387,7 +388,6 @@ io_op_res sslio_read_available(struct gab_triple gab, struct gab_ssl_sock *sock,
   out->data = (char *)buf;
 
   br_ssl_engine_recvapp_ack(ctx->engine, len);
-
   return (io_op_res){.amount = len};
 }
 
@@ -640,7 +640,8 @@ union gab_value_pair resume_filerecv(struct gab_triple gab,
   int64_t res = qd_destroy(reentrant - 1);
 
   if (res < 0)
-    return gab_vmpush(gab_thisvm(gab), gab_err,
+    return out->len = -1,
+           gab_vmpush(gab_thisvm(gab), gab_err,
                       gab_string(gab, strerror(-res))),
            gab_union_cvalid(gab_nil);
 
@@ -679,7 +680,8 @@ union gab_value_pair resume_sockrecv(struct gab_triple gab,
   int64_t res = qd_destroy(reentrant - 1);
 
   if (res < 0)
-    return gab_vmpush(gab_thisvm(gab), gab_err,
+    return out->len = -1,
+           gab_vmpush(gab_thisvm(gab), gab_err,
                       gab_string(gab, strerror(-res))),
            gab_union_cvalid(gab_nil);
 
@@ -698,12 +700,16 @@ union gab_value_pair resume_sslsockrecv(struct gab_triple gab,
 
   if (result.status < 0) {
     // TODO: Handle an SSL error gracefully
-    // int err = br_ssl_engine_last_error(&sock->client.cc.eng);
-    //
-    // if (err)
-    //   gab_vmpush(gab_thisvm(gab), gab_string(gab, "Internal SSL Error"));
+    int err = br_ssl_engine_last_error(&sock->client.cc.eng);
 
-    return gab_union_cvalid(gab_nil);
+    // If we had an ssl engine error, then this was a real error.
+    // Else, the connection just closed.
+
+    if (err)
+      return out->len = -1,
+             gab_vmpush(gab_thisvm(gab), gab_err,
+                        gab_string(gab, "Internal SSL Error")),
+             gab_union_cvalid(gab_nil);
   }
 
   if (result.status > 0)
@@ -968,20 +974,33 @@ GAB_DYNLIB_NATIVE_FN(io, sock) {
   return gab_vmpush(gab_thisvm(gab), gab_ok, sock), gab_union_cvalid(gab_nil);
 }
 
-union gab_value_pair resume_filesend(struct gab_triple gab,
+union gab_value_pair complete_filesend(struct gab_triple gab, struct gab_io *io,
+                                       const char *data, size_t len);
+
+union gab_value_pair resume_filesend(struct gab_triple gab, struct gab_io *io,
                                      uintptr_t reentrant) {
   if (!qd_status(reentrant - 1))
     return gab_union_ctimeout(reentrant);
 
   int64_t result = qd_destroy(reentrant - 1);
 
-  if (result < 0) {
-    gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, strerror(-result)));
-    return gab_union_cvalid(gab_nil);
-  }
+  const char *data = *(void **)gab_fibat(gab_thisfiber(gab), 0);
+  size_t len = *(size_t *)gab_fibat(gab_thisfiber(gab), 8);
+  gab_fibclear(gab_thisfiber(gab));
 
-  assert(result > 0);
+  // We encountered an error.
+  if (result < 0)
+    return gab_vmpush(gab_thisvm(gab), gab_err,
+                      gab_string(gab, strerror(-result))),
+           gab_union_cvalid(gab_nil);
 
+  // We wrote fewer than len bytes.
+  if (result < len)
+    return complete_filesend(gab, io, ((const char *)data) + result,
+                             len - result);
+
+  // We wrote len bytes!)
+  assert(result == len);
   gab_vmpush(gab_thisvm(gab), gab_ok);
   return gab_union_cvalid(gab_nil);
 }
@@ -989,6 +1008,12 @@ union gab_value_pair resume_filesend(struct gab_triple gab,
 union gab_value_pair complete_filesend(struct gab_triple gab, struct gab_io *io,
                                        const char *data, size_t len) {
   qd_t qd = qwrite(io->fd, len, (uint8_t *)data);
+
+  // It is safe to store these data values on the stack, as the vm will treat
+  // them as numbers.
+  gab_wfibpush(gab_thisfiber(gab), (uintptr_t)data);
+  gab_wfibpush(gab_thisfiber(gab), len);
+
   return gab_union_ctimeout(qd + 1);
 }
 
@@ -1035,7 +1060,7 @@ GAB_DYNLIB_NATIVE_FN(io, send) {
   switch (io->k) {
   case IO_FILE:
     if (reentrant)
-      return resume_filesend(gab, reentrant);
+      return resume_filesend(gab, io, reentrant);
     else
       return complete_filesend(gab, io, data, len);
   case IO_SOCK_CLIENT:
@@ -1096,19 +1121,29 @@ GAB_DYNLIB_NATIVE_FN(io, recv) {
 
   struct gab_io *io = gab_boxdata(vsock);
 
-  s_char out;
+  s_char out = {};
   union gab_value_pair res = gab_io_read(gab, io, reentrant, len, &out);
 
   // If we error or yield, do that.
-  if (res.status != gab_cvalid)
+  if (res.status != gab_cundefined)
     return res;
 
-  // Else we succeeded, so create a binary and push it up.
-  assert(out.data && out.len);
-  assert(out.len == len);
-  return gab_vmpush(gab_thisvm(gab), gab_ok,
-                    gab_nbinary(gab, out.len, (const uint8_t *)out.data)),
-         gab_union_cvalid(gab_nil);
+  // We saw an error
+  if (out.len == (uint64_t)-1)
+    return res;
+
+  if (out.data && out.len)
+    assert(!len || out.len == len);
+
+  // We may not have read any data, if (for example), the connection closed.
+  if (out.data && out.len)
+    return gab_vmpush(gab_thisvm(gab), gab_ok,
+                      gab_nbinary(gab, out.len, (const uint8_t *)out.data)),
+           gab_union_cvalid(gab_nil);
+  else
+    return gab_vmpush(gab_thisvm(gab), gab_none), gab_union_cvalid(gab_nil);
+
+  return gab_panicf(gab, "UNREACHABLE");
 }
 
 GAB_DYNLIB_NATIVE_FN(io, until) {
@@ -1149,6 +1184,9 @@ GAB_DYNLIB_NATIVE_FN(io, until) {
      */
     reentrant = 0;
 
+    if (out.len == (uint64_t)-1)
+      return res;
+
     if (!out.len)
       break;
 
@@ -1158,7 +1196,7 @@ GAB_DYNLIB_NATIVE_FN(io, until) {
           .len = gab_fibsize(gab_thisfiber(gab)),
       };
 
-      if (acc.len > delim.len) {
+      if (acc.len >= delim.len) {
         uint64_t back = acc.len - (delim.len - 1);
 
         if (!memcmp(acc.data + back, delim.data, delim.len - 1))

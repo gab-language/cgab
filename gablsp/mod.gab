@@ -1,0 +1,5 @@
+lsp\server = 'gablsp/server' .use
+'gablsp/messages'.use
+'gablsp/diagnostics'.use
+
+lsp\server.make.run
