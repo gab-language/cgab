@@ -874,7 +874,6 @@ union gab_value_pair complete_sslsockconnect(struct gab_triple gab,
                                              struct gab_ssl_sock *sock,
                                              const char *hostname,
                                              gab_int port) {
-  // We immediately yield, so this becomes corrupted immediately.
   if (qio_addrfrom(hostname, port, &sock->addr) < 0) {
     // When the connect, fails, reset the socket
     atomic_store(&sock->io.k, IO_SOCK_SSLUNSPECIFIED);
