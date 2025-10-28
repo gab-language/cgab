@@ -669,9 +669,7 @@ io\should_make_working_tls_request\test: .def t => do
 
   t.expect(ok ==: ok:)
 
-  ok = sock.connect("www.google.com" 443)
-
-  t.expect(ok ==: ok:)
+  sock.connect("www.google.com" 443).unwrap
 
   ok = sock.write('GET / HTTP/1.0\r\nHost:www.google.com\r\n\r\n'.to\b)
 
