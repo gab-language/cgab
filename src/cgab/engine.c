@@ -17,6 +17,8 @@ struct errdetails {
   int wkid;
 };
 
+uint64_t gab_eglen(struct gab_eg *eg) { return eg->len; }
+
 gab_value *gab_egerrs(struct gab_eg *eg) {
   v_gab_value_thrd errs;
   v_gab_value_thrd_drain(&eg->err, &errs);
@@ -982,7 +984,7 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
     if (repl_check_vresult(gab, block))
       goto fin;
 
-    gab_value before_env = gab_blkenv(block.vresult);
+    gab_value before_env = gab_blkshp(block.vresult);
 
     union gab_value_pair fiber = gab_arun(gab, (struct gab_run_argt){
                                                    .flags = args.flags,
@@ -1011,7 +1013,7 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
       env = new_env;
     // If the block's environment is equal to the fiber's final environment
     // then we know we *didn't* tailcall out of the block.
-    else if (before_env == new_env)
+    else if (before_env == gab_recshp(new_env))
       env = gab_reccat(gab, env, new_env);
 
     assert(env != gab_cinvalid);

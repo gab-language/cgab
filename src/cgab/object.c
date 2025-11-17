@@ -1440,6 +1440,12 @@ gab_value gab_shpwithout(struct gab_triple gab, gab_value shape,
   return gab_gcunlock(gab), shp;
 }
 
+int compare_value(const void *l, const void *r) {
+  gab_value lhs = *(gab_value*)l;
+  gab_value rhs = *(gab_value*)r;
+  return lhs - rhs;
+};
+
 gab_value gab_shpwith(struct gab_triple gab, gab_value shp, gab_value key) {
   mtx_lock(&gab.eg->shapes_mtx);
 

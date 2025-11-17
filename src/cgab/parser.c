@@ -846,14 +846,14 @@ gab_value parse(struct gab_triple gab, struct parser *parser) {
   size_t begin = parser->offset;
 
   if (curr_tok(parser) == TOKEN_EOF)
-    return gab_cinvalid;
+    return eat_token(gab, parser),
+           parser_error(gab, parser, GAB_UNEXPECTED_EOF, ""), gab_cinvalid;
 
-  if (curr_tok(parser) == TOKEN_ERROR) {
-    eat_token(gab, parser);
-    parser_error(gab, parser, GAB_MALFORMED_TOKEN,
-                 "This token is malformed or unrecognized.");
-    return gab_cinvalid;
-  }
+  if (curr_tok(parser) == TOKEN_ERROR)
+    return eat_token(gab, parser),
+           parser_error(gab, parser, GAB_MALFORMED_TOKEN,
+                        "This token is malformed or unrecognized."),
+           gab_cinvalid;
 
   gab_value ast = parse_expressions_body(gab, parser, TOKEN_EOF);
 
@@ -1737,6 +1737,11 @@ gab_value compile_assign(struct gab_triple gab, struct bc *bc, gab_value node,
   if (env == gab_cinvalid)
     return gab_cinvalid;
 
+  // TODO: This emits a *trim node* in certain situations.
+  // The trim node sets the tuple to 0 currently, which creates inconsistent
+  // behavior with assignment expressions. EG: a = 1 => 1 EG: a = 1 + 1 => ()
+  // The trim node *should* instead leave the tuple on the stack with want
+  // length. This causes another bug somewhere else
   env = unpack_bindings_into_env(gab, bc, lhs_node, env, rhs_node);
 
   if (env == gab_cinvalid)
@@ -1944,6 +1949,13 @@ union gab_value_pair gab_compile(struct gab_triple gab,
 
   assert(bc.bc.len == bc.bc_toks.len);
 
+  /*
+   * The first tuple in a block is its *arguments*. We don't want to return
+   * this tuple from the block when the block returns.
+   * We push another, empty tuple here. This will be returned by the block.
+   **/
+  push_op(&bc, OP_TUPLE, args.ast);
+
   bool explicit = false;
   args.env = compile_tuple(gab, &bc, args.ast, args.env, &explicit);
 
@@ -2023,15 +2035,16 @@ union gab_value_pair gab_build(struct gab_triple gab,
   gab_value mod = gab_string(gab, args.name);
 
   union gab_value_pair ast = gab_parse(gab, args);
-  assert(ast.vresult != gab_cundefined);
 
+  assert(ast.vresult != gab_cundefined);
   if (ast.status != gab_cvalid)
     return gab_gcunlock(gab), ast;
 
   struct gab_src *src = d_gab_src_read(&gab.eg->sources, mod);
 
   if (src == nullptr)
-    return gab_gcunlock(gab), (union gab_value_pair){.status = gab_cinvalid};
+    return gab_gcunlock(gab), (union gab_value_pair){.status = gab_cinvalid,
+                                                     .vresult = gab_cundefined};
 
   // Default to empty list here
   gab_value bindings = gab_listof(gab);
@@ -2064,6 +2077,7 @@ union gab_value_pair gab_build(struct gab_triple gab,
   gab_srccomplete(gab, src);
 
   gab_value main = gab_block(gab, res.vresult);
+  assert(main != gab_cundefined);
 
   gab_iref(gab, main);
   gab_iref(gab, res.vresult);

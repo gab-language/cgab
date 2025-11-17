@@ -425,6 +425,26 @@ static const char *default_modules[] = {
 };
 static const size_t ndefault_modules = LEN_CARRAY(default_modules) - 1;
 
+static const struct gab_resource file_resources[] = {
+    {"mod/", GAB_DYNLIB_FILEENDING, gab_use_dynlib, file_exister},
+    {"", GAB_DYNLIB_FILEENDING, gab_use_dynlib, file_exister},
+    {"", "/mod.gab", gab_use_source, file_exister},
+    {"mod/", ".gab", gab_use_source, file_exister},
+    {"", ".gab", gab_use_source, file_exister},
+    {}, // List terminator.
+};
+
+static const struct gab_resource zip_resources[] = {
+    {"mod/", GAB_DYNLIB_FILEENDING, gab_use_dynlib, file_exister},
+    {"", GAB_DYNLIB_FILEENDING, gab_use_dynlib, file_exister},
+    {"", "/mod.gab", gab_use_source, file_exister},
+    {"mod/", ".gab", gab_use_source, file_exister},
+    {"", ".gab", gab_use_source, file_exister},
+    {}, // List terminator.
+};
+
+static const char *roots[3] = {};
+
 static char prompt_buffer[4096];
 char *readline(const char *prompt) {
   return crossline_readline(prompt, prompt_buffer, sizeof(prompt_buffer));
@@ -437,21 +457,8 @@ int run_repl(int flags, uint32_t wait, size_t nmodules, const char **modules) {
       (struct gab_create_argt){
           .wait = wait ? wait : 50000,
           .modules = modules,
-          .roots =
-              (const char *[]){
-                  "./",
-                  gab_osprefix(GAB_VERSION_TAG "." GAB_TARGET_TRIPLE),
-                  nullptr, // List terminator.
-              },
-          .resources =
-              (struct gab_resource[]){
-                  {"mod/", GAB_DYNLIB_FILEENDING, gab_use_dynlib, file_exister},
-                  {"", GAB_DYNLIB_FILEENDING, gab_use_dynlib, file_exister},
-                  {"", "/mod.gab", gab_use_source, file_exister},
-                  {"mod/", ".gab", gab_use_source, file_exister},
-                  {"", ".gab", gab_use_source, file_exister},
-                  {}, // List terminator.
-              },
+          .roots = roots,
+          .resources = file_resources,
       },
       &gab);
 
@@ -492,21 +499,8 @@ int run_string(const char *string, int flags, uint32_t wait, size_t jobs,
           .wait = wait,
           .jobs = jobs,
           .modules = modules,
-          .roots =
-              (const char *[]){
-                  "./",
-                  gab_osprefix(GAB_VERSION_TAG "." GAB_TARGET_TRIPLE),
-                  nullptr, // List terminator.
-              },
-          .resources =
-              (struct gab_resource[]){
-                  {"mod/", GAB_DYNLIB_FILEENDING, gab_use_dynlib, file_exister},
-                  {"", GAB_DYNLIB_FILEENDING, gab_use_dynlib, file_exister},
-                  {"", "/mod.gab", gab_use_source, file_exister},
-                  {"mod/", ".gab", gab_use_source, file_exister},
-                  {"", ".gab", gab_use_source, file_exister},
-                  {}, // List terminator.
-              },
+          .roots = roots,
+          .resources = file_resources,
       },
       &gab);
 
@@ -554,21 +548,14 @@ int run_bundle(const char *mod) {
   union gab_value_pair res = gab_create(
       (struct gab_create_argt){
           .modules = default_modules,
+          /* Unique to bundled apps, the only root is for *within* the bundle.
+           */
           .roots =
               (const char *[]){
                   "",
                   nullptr,
               },
-          .resources =
-              (struct gab_resource[]){
-                  {"mod/", GAB_DYNLIB_FILEENDING, gab_use_zip_dynlib,
-                   zip_exister},
-                  {"", GAB_DYNLIB_FILEENDING, gab_use_zip_dynlib, zip_exister},
-                  {"", "/mod.gab", gab_use_zip_source, zip_exister},
-                  {"mod/", ".gab", gab_use_zip_source, zip_exister},
-                  {"", ".gab", gab_use_zip_source, zip_exister},
-                  {},
-              },
+          .resources = zip_resources,
       },
       &gab);
 
@@ -600,21 +587,8 @@ int run_file(const char *path, int flags, uint32_t wait, size_t jobs,
           .wait = wait,
           .jobs = jobs,
           .modules = modules,
-          .roots =
-              (const char *[]){
-                  "./",
-                  gab_osprefix(GAB_VERSION_TAG "." GAB_TARGET_TRIPLE),
-                  nullptr, // List terminator.
-              },
-          .resources =
-              (struct gab_resource[]){
-                  {"mod/", GAB_DYNLIB_FILEENDING, gab_use_dynlib, file_exister},
-                  {"", GAB_DYNLIB_FILEENDING, gab_use_dynlib, file_exister},
-                  {"", "/mod.gab", gab_use_source, file_exister},
-                  {"mod/", ".gab", gab_use_source, file_exister},
-                  {"", ".gab", gab_use_source, file_exister},
-                  {}, // List terminator.
-              },
+          .roots = roots,
+          .resources = file_resources,
       },
       &gab);
 
@@ -659,6 +633,7 @@ struct command {
   const char *name;
   const char *desc;
   const char *long_desc;
+  const char *example;
   int (*handler)(struct command_arguments *);
   struct option options[MAX_OPTIONS];
 };
@@ -809,7 +784,8 @@ static struct command commands[] = {
         "With no arguments, prints a general help message summarizing all "
         "available subcommands and their flags.\n"
         "With a subcommand given by <arg>, print more specific information "
-        "related to that subcommand.\n\n\tEG: gab help get",
+        "related to that subcommand.",
+        .example = "gab help get",
         .handler = help,
     },
     {
@@ -821,8 +797,9 @@ static struct command commands[] = {
         "\n\t- <package> corresponds to a valid gab package"
         "\n\t- <tag> corresponds to a valid, local gab version"
         "\n\nNote that the tag does not correspond to a version *of the "
-        "package*,"
+        "package*, "
         "it refers to the local destination gab version.",
+        .example = "gab get @0.0.5",
         .handler = get,
     },
     {
@@ -830,6 +807,7 @@ static struct command commands[] = {
         "Build a standalone executable for the module <arg>.",
         "Bundle the gab binary and source code for the module <arg> into a "
         "single executable.",
+        .example = "gab build -m IO,Strings my_app",
         .handler = build,
         {
             modules_option,
@@ -846,19 +824,19 @@ static struct command commands[] = {
         "run",
         "Compile and run the module at path <args>",
         "Expects one argument, the name of the module to run. "
-        "The module is invoked as if by '<arg>' .use.\n"
-        "The search path for use: is as follows:"
-        "\n\t- ./<arg>.gab"
-        "\n\t- ./mod/<arg>.gab"
-        "\n\t- ./<arg>/mod.gab"
-        "\n\t- ./<arg>.[so | dll]"
-        "\n\t- ./mod/<arg>.[so | dll]"
-        "\n\t- <install_dir>/<arg>.gab"
-        "\n\t- <install_dir>/mod/<arg>.gab"
-        "\n\t- <install_dir>/<arg>/mod.gab"
-        "\n\t- <install_dir>/<arg>.[so | dll]"
-        "\n\t- <install_dir>/mod/<arg>.[so | dll]"
-        "\nNote that relative locations are prioritized over installed ones.",
+        "The module is invoked as if by '<arg>'.use.\n\n"
+        "The search path begins at the first root. Roots and resources are checked in descending order.\n"
+        "Each resource is checked at that root before moving on to the next.\n"
+        "\nROOTS:"
+        "\n\t./"
+        "\n\t<install_dir>\n"
+        "\nRESOURCES:"
+        "\n\t<arg>.gab"
+        "\n\tmod/<arg>.gab"
+        "\n\t<arg>/mod.gab"
+        "\n\t<arg>.[so | dylib | dll]"
+        "\n\tmod/<arg>.[so | dylib | dll]",
+        .example = "gab run -m Json,http -j 16 my_project",
         .handler = run,
         {
             dumpast_option,
@@ -879,6 +857,7 @@ static struct command commands[] = {
         "exec",
         "Compile and run the string <args>",
         "Compile the string <arg> as Gab code and execute it immediately.",
+        .example = "gab exec -a -d \"'hello'.println\"",
         .handler = exec,
         {
             dumpast_option,
@@ -892,6 +871,7 @@ static struct command commands[] = {
         "repl",
         "Enter the read-eval-print loop",
         "A read-eval-print-loop is a convenient tool for expiremtnation.",
+        .example = "gab repl -m Json",
         .handler = repl,
         {
             dumpast_option,
@@ -1352,7 +1332,7 @@ void cmd_summary(int i) {
 
 void cmd_details(int i) {
   struct command cmd = commands[i];
-  printf("USAGE:\n\tgab %4s [opts] <args>\n\n%s", cmd.name, cmd.long_desc);
+  printf("USAGE:\n\tgab %4s [opts] <args>\n\n%s\n\nEXAMPLE:\n\t%s", cmd.name, cmd.long_desc, cmd.example);
 
   if (cmd.options[0].name == nullptr)
     return;
@@ -1411,7 +1391,7 @@ int copy_file(FILE *in, FILE *out) {
 }
 
 bool add_module(mz_zip_archive *zip_o, const char **roots,
-                struct gab_resource *resources, s_char module) {
+                const struct gab_resource *resources, s_char module) {
 
   char cstr_module[module.len + 1];
   memcpy(cstr_module, module.data, module.len);
@@ -1495,6 +1475,11 @@ int build(struct command_arguments *args) {
     }
   }
 
+  /* We need our own custom roots here when building a bundled app.
+   * This is because we can cross-compile our builds for os/architectures other
+   * than our own.
+   **/
+
   v_char location = {};
   v_char_spush(&location, s_char_cstr(GAB_VERSION_TAG));
   v_char_push(&location, '.');
@@ -1505,15 +1490,6 @@ int build(struct command_arguments *args) {
       "./",
       gab_osprefix(location.data),
       nullptr,
-  };
-
-  struct gab_resource resources[] = {
-      {"mod/", dynlib_fileending, gab_use_dynlib, file_exister},
-      {"", dynlib_fileending, gab_use_dynlib, file_exister},
-      {"", "/mod.gab", gab_use_source, file_exister},
-      {"mod/", ".gab", gab_use_source, file_exister},
-      {"", ".gab", gab_use_source, file_exister},
-      {},
   };
 
   if (args->argc < 1) {
@@ -1580,7 +1556,7 @@ int build(struct command_arguments *args) {
   v_s_char_push(&args->modules, s_char_cstr(module));
 
   for (int i = 0; i < args->modules.len; i++)
-    if (!add_module(&zip_o, roots, resources,
+    if (!add_module(&zip_o, roots, file_resources,
                     v_s_char_val_at(&args->modules, i)))
       return 1;
 
@@ -1649,6 +1625,13 @@ int main(int argc, const char **argv) {
    * Pull locale from ENV
    */
   setlocale(LC_ALL, "");
+
+  /*
+   * Populate roots list.
+   */
+  roots[0] = "./";
+  roots[1] = gab_osprefix(GAB_VERSION_TAG "." GAB_TARGET_TRIPLE);
+  roots[2] = nullptr;
 
   if (check_not_gab(argv[0]) && check_valid_zip())
     return run_bundle(argv[0]);

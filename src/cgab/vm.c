@@ -344,7 +344,7 @@ static handler handlers[] = {
       MISS_CACHED_TRIM();                                                      \
                                                                                \
     DROP_N(n);                                                                 \
-    SET_VAR(0);                                                                \
+    SET_VAR(want);                                                             \
                                                                                \
     NEXT();                                                                    \
   }                                                                            \
@@ -354,7 +354,6 @@ static handler handlers[] = {
     if (__gab_unlikely(VAR() != n))                                            \
       MISS_CACHED_TRIM();                                                      \
                                                                                \
-    SET_VAR(0);                                                                \
     NEXT();                                                                    \
   }                                                                            \
   CASE_CODE(TRIM_UP##n) {                                                      \
@@ -366,7 +365,7 @@ static handler handlers[] = {
     for (int i = 0; i < n; i++)                                                \
       PUSH(gab_nil);                                                           \
                                                                                \
-    SET_VAR(0);                                                                \
+    SET_VAR(want);                                                             \
     NEXT();                                                                    \
   }
 
@@ -1342,7 +1341,6 @@ CASE_CODE(POPSTORE_LOCAL) {
   LOCAL(READ_BYTE) = POP();
 
   SET_VAR(0);
-
   NEXT();
 }
 
@@ -1353,7 +1351,6 @@ CASE_CODE(NPOPSTORE_LOCAL) {
     LOCAL(READ_BYTE) = POP();
 
   SET_VAR(0);
-
   NEXT();
 }
 
@@ -2006,7 +2003,7 @@ CASE_CODE(TRIM) {
   while (nulls--)
     PEEK_N(nulls + 1) = gab_nil;
 
-  SET_VAR(0);
+  SET_VAR(want);
 
   NEXT();
 }

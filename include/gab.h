@@ -521,7 +521,7 @@ struct gab_create_argt {
    * This list should be terminated with an empty structure (specifically, an
    * empty prefix)
    */
-  struct gab_resource {
+  const struct gab_resource {
     const char *prefix;
     const char *suffix;
     union gab_value_pair (*loader)(struct gab_triple, const char *, size_t len,
@@ -657,6 +657,11 @@ GAB_API int gab_nsprintf(char *dst, size_t n, const char *fmt, uint64_t argc,
                          gab_value *argv);
 GAB_API int gab_npsprintf(char *dst, size_t n, const char *fmt, uint64_t argc,
                           gab_value *argv);
+
+/**
+ * @brief Get the "length" of the engine, aka, the max number of jobs (working threads).
+ */
+GAB_API uint64_t gab_eglen(struct gab_eg *eg);
 
 /**
  * @brief Give the engine ownership of the values.
