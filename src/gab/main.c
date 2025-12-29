@@ -291,40 +291,69 @@ union gab_value_pair gab_use_zip_dynlib(struct gab_triple gab, const char *path,
     return gab_panicf(gab, "Failed to load module: $", gab_string(gab, estr));
   };
 
-  v_char dst = {};
+  v_char temppath = {0};
+  v_char_spush(&temppath, s_char_cstr("/gab@" GAB_VERSION_TAG "/mod/"));
+  v_char_spush(&temppath, s_char_cstr(path));
+  v_char_push(&temppath, '\0');
 
-#ifdef GAB_PLATFORM_UNIX
-  // TODO: This should really be organized per-process, as multiple gab-apps
-  // can be opened at the same time, and we don't want them to stomp over each
-  // other.
-  // TODO: Properly create directories that are nested.
-  // The filename here can be something like 'mod/other_lib/sub/example'
-  // We need to walk down this path, creating directories in /tmp/gab
-  if (!gab_osmkdirp("/tmp/gab"))
+  char *dst = gab_osprefix_temp(temppath.data);
+
+  FILE *tried = fopen(dst, "r");
+  if (tried) {
+    fclose(tried);
+    goto exists;
+  }
+
+  /**
+   * Make the <temp>/gab Folder if it does not exist.
+   */
+  dst = gab_osprefix_temp("/gab@" GAB_VERSION_TAG);
+
+  if (!dst)
+    return gab_panicf(gab, "Failed to determine temporary directory prefix");
+
+  if (!gab_osmkdirp(dst))
     return gab_panicf(gab, "Failed to create temporary file folder.");
 
-  if (!gab_osmkdirp("/tmp/gab/mod"))
+  free(dst);
+
+  /**
+   * Make the <temp>/gab/mod Folder if it does not exist.
+   */
+  dst = gab_osprefix_temp("/gab@" GAB_VERSION_TAG "/mod");
+
+  if (!dst)
+    return gab_panicf(gab, "Failed to determine temporary directory prefix");
+
+  if (!gab_osmkdirp(dst))
     return gab_panicf(gab, "Failed to create temporary file folder.");
 
-  v_char_spush(&dst, s_char_cstr("/tmp/gab/"));
-  v_char_spush(&dst, s_char_cstr(stat.m_filename));
-  v_char_push(&dst, '\0');
-#elifdef GAB_PLATFORM_WIN
-#error WINDOWS NOT IMPLEMENTED YET
-#else
-#error UNKNOWN PLATFORM
-#endif
+  /**
+   * Should also check if the file exists, and then we don't need to do
+   * extraction. Maybe we should just extract in memory, and then compare the
+   * two byte-for-byte to ensure they are the same.
+   *
+   * TODO: This should really be organized per-process, as multiple gab-apps
+   * can be opened at the same time, and we don't want them to stomp over each
+   * other. *maybe* this is fixed by checking if the file exists first.
+   *
+   * TODO: Properly create directories that are nested.
+   * The filename here can be something like 'mod/other_lib/sub/example'
+   * We need to walk down this path, creating directories in /tmp/gab
+   * *maybe mz takes care of this?*
+   */
 
-  if (!mz_zip_reader_extract_file_to_file(&zip, stat.m_filename, dst.data, 0)) {
+  if (!mz_zip_reader_extract_file_to_file(&zip, stat.m_filename, dst, 0)) {
     mz_zip_error e = mz_zip_get_last_error(&zip);
     const char *estr = mz_zip_get_error_string(e);
     return gab_panicf(gab, "Failed to load zipped module: $",
                       gab_string(gab, estr));
   }
 
-  union gab_value_pair res = gab_use_dynlib(gab, dst.data, len, sargs, vargs);
+exists:
+  union gab_value_pair res = gab_use_dynlib(gab, dst, len, sargs, vargs);
 
-  v_char_destroy(&dst);
+  free(dst);
 
   return res;
 }
@@ -825,7 +854,8 @@ static struct command commands[] = {
         "Compile and run the module at path <args>",
         "Expects one argument, the name of the module to run. "
         "The module is invoked as if by '<arg>'.use.\n\n"
-        "The search path begins at the first root. Roots and resources are checked in descending order.\n"
+        "The search path begins at the first root. Roots and resources are "
+        "checked in descending order.\n"
         "Each resource is checked at that root before moving on to the next.\n"
         "\nROOTS:"
         "\n\t./"
@@ -974,11 +1004,11 @@ int download_gab(const char *pkg, const char *tag, const char *triple) {
   strncpy(locbuf + taglen + 1, triple, triple_len);
   locbuf[taglen + triple_len + 1] = '\0';
 
-  const char *location_prefix = gab_osprefix(locbuf);
+  const char *location_prefix = gab_osprefix_install(locbuf);
 
   if (location_prefix == nullptr) {
     clierror("Could not determine installation prefix.\n");
-    return false;
+    return 1;
   }
 
   cliinfo("Resolved installation prefix: " GAB_MAGENTA "%s" GAB_RESET ".\n",
@@ -1055,48 +1085,32 @@ int download_gab(const char *pkg, const char *tag, const char *triple) {
   int ch = getc(stdin);
   if (ch != 'y' && ch != 'Y') {
     clierror("Installation cancelled.\n");
-    return false;
+    return 1;
   }
 
   /// Ensure that the ~/gab folder exists.
-  const char *gab_prefix = gab_osprefix("");
+  const char *gab_prefix = gab_osprefix_install("");
 
   if (gab_prefix == nullptr) {
     clierror("(1) Could not determine installation prefix.\n");
-    return false;
+    return 1;
   }
 
   if (!gab_osmkdirp(gab_prefix)) {
-    clierror("(1) Failed to create directory at " GAB_MAGENTA "%s" GAB_RESET
-             ".\n",
+    clierror("(1) Failed to create directory global prefix at " GAB_MAGENTA
+             "%s" GAB_RESET ".\n",
              gab_prefix);
-    return false;
+    return 1;
   };
 
   if (!gab_osmkdirp(location_prefix)) {
-    clierror("(1) Failed to create directory at " GAB_MAGENTA "%s" GAB_RESET
-             ".\n",
+    clierror("(1) Failed to create directory prefix at " GAB_MAGENTA
+             "%s" GAB_RESET ".\n",
              location_prefix);
-    return false;
+    return 1;
   };
 
   clisuccess("(1) Validated installation location.\n");
-
-  nfetch(3,
-         (const char *[]){
-             binary_url.data,
-             modules_url.data,
-             dev_url.data,
-         },
-         (const char *[]){
-             binary_location.data,
-             modules_location.data,
-             dev_location.data,
-         }
-
-  );
-
-  return 1;
 
   // Fetch release binary
   int res = gab_osproc("curl", "-f", "-s", "-L", "-o", binary_location.data,
@@ -1104,9 +1118,9 @@ int download_gab(const char *pkg, const char *tag, const char *triple) {
 
   if (res) {
     clierror("(2) Failed to download release " GAB_YELLOW "%s" GAB_RESET
-             " for target " GAB_YELLOW "%s" GAB_RESET ".\n",
-             tag, triple);
-    return false;
+             " for target " GAB_YELLOW "%s" GAB_RESET ".\n\tError: %s.\n",
+             tag, triple, strerror(res));
+    return 1;
   }
 
   clisuccess("(2) Downloaded binary for release: " GAB_YELLOW "%s" GAB_RESET
@@ -1124,7 +1138,7 @@ int download_gab(const char *pkg, const char *tag, const char *triple) {
     clierror("(3) Failed to download modules for release " GAB_YELLOW
              "%s" GAB_RESET ".",
              tag);
-    return false;
+    return 1;
   }
 
   res = gab_osproc("curl", "-f", "-s", "-L", "-o", dev_location.data,
@@ -1135,7 +1149,7 @@ int download_gab(const char *pkg, const char *tag, const char *triple) {
 
   if (res) {
     clierror("(4) Failed to download development files for release %s", tag);
-    return false;
+    return 1;
   }
 
   res = gab_osproc("(5) tar", "xzf", modules_location.data, "-C",
@@ -1145,7 +1159,7 @@ int download_gab(const char *pkg, const char *tag, const char *triple) {
     clierror("(5) Failed to extract module files for release " GAB_YELLOW
              "%s" GAB_RESET ".",
              tag);
-    return false;
+    return 1;
   }
 
   clisuccess("(5) Extracted modules.\n");
@@ -1157,7 +1171,7 @@ int download_gab(const char *pkg, const char *tag, const char *triple) {
     clierror("(6) Failed to extract development files for release " GAB_YELLOW
              "%s" GAB_RESET "",
              tag);
-    return false;
+    return 1;
   }
 
   clisuccess("(6) Extracted development files.\n");
@@ -1174,7 +1188,7 @@ int download_gab(const char *pkg, const char *tag, const char *triple) {
         pkg, tag, location_prefix, location_prefix, location_prefix);
   }
 
-  return true;
+  return 0;
 }
 
 int get(struct command_arguments *args) {
@@ -1182,7 +1196,7 @@ int get(struct command_arguments *args) {
   const char *pkg = args->argc ? args->argv[0] : "@";
 
   /// Ensure that the ~/gab folder exists.
-  const char *gab_prefix = gab_osprefix("");
+  const char *gab_prefix = gab_osprefix_install("");
 
   if (gab_prefix == nullptr) {
     clierror("Could not determine installation prefix.\n");
@@ -1252,8 +1266,7 @@ int get(struct command_arguments *args) {
 
   // If we match the special Gab package, then defer to that helper.
   if (!strcmp(pkgbuf, "Gab"))
-    if (download_gab(pkgbuf, tagbuf, GAB_TARGET_TRIPLE))
-      return 0;
+    return download_gab(pkgbuf, tagbuf, GAB_TARGET_TRIPLE);
 
   clierror("The 'get' subcommand does not support downloading other "
            "packages yet.\n");
@@ -1332,7 +1345,8 @@ void cmd_summary(int i) {
 
 void cmd_details(int i) {
   struct command cmd = commands[i];
-  printf("USAGE:\n\tgab %4s [opts] <args>\n\n%s\n\nEXAMPLE:\n\t%s", cmd.name, cmd.long_desc, cmd.example);
+  printf("USAGE:\n\tgab %4s [opts] <args>\n\n%s\n\nEXAMPLE:\n\t%s", cmd.name,
+         cmd.long_desc, cmd.example);
 
   if (cmd.options[0].name == nullptr)
     return;
@@ -1488,7 +1502,7 @@ int build(struct command_arguments *args) {
 
   const char *roots[] = {
       "./",
-      gab_osprefix(location.data),
+      gab_osprefix_install(location.data),
       nullptr,
   };
 
@@ -1512,7 +1526,7 @@ int build(struct command_arguments *args) {
   v_char_push(&exepath, '.');
   v_char_spush(&exepath, s_char_cstr(platform));
   v_char_push(&exepath, '\0');
-  const char *path = gab_osprefix(exepath.data);
+  const char *path = gab_osprefix_install(exepath.data);
 
   v_char_destroy(&exepath);
   v_char_spush(&exepath, s_char_cstr(path));
@@ -1630,7 +1644,7 @@ int main(int argc, const char **argv) {
    * Populate roots list.
    */
   roots[0] = "./";
-  roots[1] = gab_osprefix(GAB_VERSION_TAG "." GAB_TARGET_TRIPLE);
+  roots[1] = gab_osprefix_install(GAB_VERSION_TAG "." GAB_TARGET_TRIPLE);
   roots[2] = nullptr;
 
   if (check_not_gab(argv[0]) && check_valid_zip())

@@ -91,6 +91,10 @@ GAB_DYNLIB_NATIVE_FN(row, exec) {
     return gab_union_cvalid(gab_nil);
   }
 
+  /*
+   * Rework this function significantly
+   */
+
   while ((res = sqlite3_step(stmts)) != SQLITE_DONE) {
     switch (res) {
     case SQLITE_ROW:

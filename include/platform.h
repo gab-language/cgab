@@ -64,7 +64,11 @@
  * %----------------------------%
  * | Gab/Platform Install Stuff |
  * %----------------------------%
- * gab_osprefix(version)
+ * gab_osprefix_install(version)
+ * Determine the gab_prefix for the given operating system, with the given gab
+ * version.
+ *
+ * gab_osprefix_tmp(version)
  * Determine the gab_prefix for the given operating system, with the given gab
  * version.
  *
@@ -166,7 +170,7 @@ GAB_API_INLINE bool gab_osfisready(FILE *f) {
 GAB_API_INLINE const char *gab_osexepath() {
 #ifdef GAB_PLATFORM_MACOS
   uint32_t size = GAB_MAXEXEPATH;
-  if (_NSGetExecutablePath((char*) &_exepath, &size) != 0)
+  if (_NSGetExecutablePath((char *)&_exepath, &size) != 0)
     return nullptr;
 
   return _exepath;
@@ -202,7 +206,17 @@ GAB_API_INLINE const bool gab_osmkdirp(const char *path) {
   return false;
 }
 
-GAB_API_INLINE const char *gab_osprefix(const char *v) {
+GAB_API_INLINE char *gab_osprefix_temp(const char *v) {
+  v_char str = {0};
+  v_char_spush(&str, s_char_cstr("/tmp/"));
+  v_char_spush(&str, s_char_cstr(v));
+  v_char_push(&str, '/');
+  v_char_push(&str, '\0');
+
+  return str.data;
+}
+
+GAB_API_INLINE char *gab_osprefix_install(const char *v) {
   char *home = getenv("HOME");
 
   if (!home)
@@ -279,6 +293,7 @@ GAB_API_INLINE int gab_nosproc(char *cmd, size_t nargs, char *args[]) {
 
 #define gab_ossignal(sig, handler) signal(sig, handler)
 
+#define gab_osfileno(f) (_fileno(f))
 #define gab_osfisatty(f) _isatty(_fileno(f))
 
 #define gab_osdynlib HMODULE
@@ -288,27 +303,15 @@ GAB_API_INLINE int gab_nosproc(char *cmd, size_t nargs, char *args[]) {
 #define gab_osmkdirp(path) mkdir(path)
 
 GAB_API_INLINE const char *gab_osexepath() {
-  char buffer[GAB_MAXEXEPATH];
-  DWORD len = GetModuleFileNameA(NULL, buffer, GAB_MAXEXEPATH);
+  DWORD len = GetModuleFileNameA(NULL, _exepath, GAB_MAXEXEPATH);
 
   if (len == 0)
     return nullptr;
 
-  mbstate_t state = {0};
-  size_t length = wcsrtombs(NULL, &buffer, 0, &state);
-
-  if (length == -1)
-    return nullptr;
-
-  if (length >= GAB_MAXEXEPATH)
-    return nullptr;
-
-  wcsrtombs(_exepath, &buffer, length, &state);
-
   return _exepath;
 }
 
-GAB_API_INLINE const char *gab_osprefix(const char *v) {
+GAB_API_INLINE char *gab_osprefix_temp(const char *v) {
   PWSTR path = NULL;
 
   HRESULT status = SHGetKnownFolderPath(&FOLDERID_LocalAppData, 0, NULL, &path);
@@ -324,12 +327,42 @@ GAB_API_INLINE const char *gab_osprefix(const char *v) {
 
   char buffer[length + 1];
   wcsrtombs(buffer, &path, length, &state);
+  buffer[length] = '\0';
 
   v_char str = {0};
 
   v_char_spush(&str, s_char_cstr(buffer));
-  v_char_spush(&str, s_char_cstr("/gab/"));
+  v_char_spush(&str, s_char_cstr("\\Temp\\"));
   v_char_spush(&str, s_char_cstr(v));
+  v_char_push(&str, '\\');
+  v_char_push(&str, '\0');
+
+  return str.data;
+}
+GAB_API_INLINE char *gab_osprefix_install(const char *v) {
+  PWSTR path = NULL;
+
+  HRESULT status = SHGetKnownFolderPath(&FOLDERID_LocalAppData, 0, NULL, &path);
+
+  if (!SUCCEEDED(status))
+    return nullptr;
+
+  mbstate_t state = {0};
+  size_t length = wcsrtombs(NULL, &path, 0, &state);
+
+  if (length == -1)
+    return nullptr;
+
+  char buffer[length + 1];
+  wcsrtombs(buffer, &path, length, &state);
+  buffer[length] = '\0';
+
+  v_char str = {0};
+
+  v_char_spush(&str, s_char_cstr(buffer));
+  v_char_spush(&str, s_char_cstr("\\gab\\"));
+  v_char_spush(&str, s_char_cstr(v));
+  v_char_push(&str, '\\');
   v_char_push(&str, '\0');
 
   return str.data;
@@ -373,7 +406,7 @@ GAB_API_INLINE int gab_nosproc(char *cmd, size_t nargs, char *args[]) {
                      &si,     // Pointer to STARTUPINFO structure
                      &pi)     // Pointer to PROCESS_INFORMATION structure
   ) {
-    return 1;
+    return GetLastError();
   }
 
   // Wait until child process exits.
