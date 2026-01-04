@@ -1,6 +1,21 @@
 CC  =zig cc
 CXX =zig c++
 
+# TODO: Proper defaults by detecting OS somehow
+# ifndef GAB_TARGETS
+# GAB_TARGETS = native
+# endif
+#
+# ifndef GAB_CCFLAGS
+# GAB_CCFLAGS = -g \
+# 							-O0 \
+# 							-fsanitize=address,undefined,leak,memory
+# endif
+#
+# ifndef GAB_DYNLIB_FILEENDING
+# GAB_DYNLIB_FILEENDING = .so
+# endif
+
 SRC_PREFIX 	 	 	= src/**
 BUILD_PREFIX 	 	= build-$(GAB_TARGETS)
 INCLUDE_PREFIX 	= include
