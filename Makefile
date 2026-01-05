@@ -135,33 +135,49 @@ $(VENDOR_PREFIX)/duckdb.cc:
 		python scripts/amalgamation.py
 	cp $(VENDOR_PREFIX)/duckdb/src/amalgamation/duckdb.cpp $(VENDOR_PREFIX)/duckdb.cc
 
-# This rule generates libgraphemes code to be later compiled
-# to specific targets
-libgrapheme_generated: 
-	make CC="$(CC)" -s -C $(VENDOR_PREFIX)/libgrapheme
-	echo "libgrapheme generation done." >> libgrapheme_generated
-	# Clean up native outputs, but leave our generated files.
-	rm $(VENDOR_PREFIX)/libgrapheme/libgrapheme.a $(VENDOR_PREFIX)/libgrapheme/src/*.o
+# These rules generates header files for libgrapheme
+$(VENDOR_PREFIX)/libgrapheme/gen/%.h: 
+	make CC="$(CC)" -s -C $(VENDOR_PREFIX)/libgrapheme $<
 
-# This rule generates the header file for llhttp
-# To be later compiled to specific targets
-libllhttp_generated:
+$(VENDOR_PREFIX)/libgrapheme/gen2/%.h: 
+	make CC="$(CC)" -s -C $(VENDOR_PREFIX)/libgrapheme $<
+
+$(VENDOR_PREFIX)/llhttp.h:
 	cd $(VENDOR_PREFIX)/llhttp && npm i
 	make CC="$(CC)" -s -C $(VENDOR_PREFIX)/llhttp
 	mv $(VENDOR_PREFIX)/llhttp/build/llhttp.h $(VENDOR_PREFIX)/
-	echo "libllhttp generation done." >> libllhttp_generated
 	make clean -s -C $(VENDOR_PREFIX)/llhttp
 
 $(VENDOR_PREFIX)/miniz/amalgamation/miniz.c:
 	cd $(VENDOR_PREFIX)/miniz && \
 		./amalgamate.sh
 
-$(BUILD_PREFIX)/libgrapheme.a:
-	rm -f $(VENDOR_PREFIX)/libgrapheme/libgrapheme.a $(VENDOR_PREFIX)/libgrapheme/src/*.o
+
+# These two rules clean before generating the library. This is because the target *may* have been different from our last call,
+# so any intermediate object files may no longer be valid.
+
+# This is a little funky. We request that all the header files are generated ahead of time, so that these may be preserved across
+# targets. (As they are actually target-agnostic).
+$(BUILD_PREFIX)/libgrapheme.a:  $(VENDOR_PREFIX)/libgrapheme/gen/bidirectional.h \
+																$(VENDOR_PREFIX)/libgrapheme/gen/bidirectional-test.h \
+																$(VENDOR_PREFIX)/libgrapheme/gen/case.h \
+																$(VENDOR_PREFIX)/libgrapheme/gen/character.h \
+																$(VENDOR_PREFIX)/libgrapheme/gen/character-test.h \
+																$(VENDOR_PREFIX)/libgrapheme/gen/line.h \
+																$(VENDOR_PREFIX)/libgrapheme/gen/line-test.h \
+																$(VENDOR_PREFIX)/libgrapheme/gen/sentence.h \
+																$(VENDOR_PREFIX)/libgrapheme/gen/sentence-test.h \
+																$(VENDOR_PREFIX)/libgrapheme/gen/word.h \
+																$(VENDOR_PREFIX)/libgrapheme/gen/word-test.h \
+																$(VENDOR_PREFIX)/libgrapheme/gen2/character.gen.h
+	# Bit of a funky clean here. The makefile doesn't provide a way to clean *without* hitting the generated headers.
+	find $(VENDOR_PREFIX)/libgrapheme -name "*.o" | xargs rm
+	# Make for our given target.
 	make libgrapheme.a CC="$(CC) --target=$(GAB_TARGETS)" -s -C $(VENDOR_PREFIX)/libgrapheme
+	# Move the library in.
 	mv $(VENDOR_PREFIX)/libgrapheme/libgrapheme.a $(BUILD_PREFIX)/
 
-$(BUILD_PREFIX)/libllhttp.a:
+$(BUILD_PREFIX)/libllhttp.a: $(VENDOR_PREFIX)/llhttp.h
 	make clean -s -C $(VENDOR_PREFIX)/llhttp
 	make CLANG="$(CC) --target=$(GAB_TARGETS)" -s -C $(VENDOR_PREFIX)/llhttp
 	mv $(VENDOR_PREFIX)/llhttp/build/libllhttp.a $(BUILD_PREFIX)/
@@ -179,7 +195,7 @@ lib: $(BUILD_PREFIX)/libcgab.a
 
 cxxmodules: $(CXXMOD_SHARED)
 
-cmodules: $(VENDOR_PREFIX)/ta.h libllhttp_generated libgrapheme_generated $(CMOD_SHARED)
+cmodules: $(VENDOR_PREFIX)/ta.h $(CMOD_SHARED)
 
 test: gab cmodules cxxmodules
 	mv $(BUILD_PREFIX)/mod/* mod/
@@ -188,8 +204,6 @@ test: gab cmodules cxxmodules
 clean:
 	rm -rf $(BUILD_PREFIX)*
 	rm -f configuration
-	rm -f libgrapheme_generated
-	rm -f libllhttp_generated
 	rm -f cacert.pem
 	rm -f etag.txt
 
