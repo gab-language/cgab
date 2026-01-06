@@ -55,8 +55,6 @@ static handler handlers[] = {
 
 #define DISPATCH(op)                                                           \
   ({                                                                           \
-    CHECK_SIGNAL();                                                            \
-                                                                               \
     uint8_t o = (op);                                                          \
                                                                                \
     LOG(GAB(), o);                                                             \
@@ -67,7 +65,11 @@ static handler handlers[] = {
     [[clang::musttail]] return handlers[o](DISPATCH_ARGS());                   \
   })
 
-#define NEXT() DISPATCH(*(IP()++));
+#define NEXT()                                                                 \
+  ({                                                                           \
+    CHECK_SIGNAL();                                                            \
+    DISPATCH(*(IP()++));                                                       \
+  })
 
 #define VM_PANIC(status, help, ...)                                            \
   ({                                                                           \
@@ -420,19 +422,17 @@ uint64_t encode_fb(struct gab_vm *vm, gab_value *fb, uint64_t have) {
 
 static inline uint8_t *proto_srcbegin(struct gab_triple gab,
                                       struct gab_oprototype *p) {
-  assert(gab.wkid != 0);
-  return p->src->thread_bytecode[gab.wkid - 1].bytecode;
+  return p->src->thread_bytecode[gab.wkid].bytecode;
+}
+
+static inline gab_value *proto_ks(struct gab_triple gab,
+                                  struct gab_oprototype *p) {
+  return p->src->thread_bytecode[gab.wkid].constants;
 }
 
 static inline uint8_t *proto_ip(struct gab_triple gab,
                                 struct gab_oprototype *p) {
   return proto_srcbegin(gab, p) + p->offset;
-}
-
-static inline gab_value *proto_ks(struct gab_triple gab,
-                                  struct gab_oprototype *p) {
-  assert(gab.wkid != 0);
-  return p->src->thread_bytecode[gab.wkid - 1].constants;
 }
 
 static inline gab_value *frame_parent(gab_value *f) { return (void *)f[-1]; }
@@ -1057,6 +1057,7 @@ union gab_value_pair do_vmexecfiber(struct gab_triple gab, gab_value f) {
   uint8_t *ip = fiber->vm.ip;
 
   uint8_t op = *ip++;
+
   // We can't return *to* this frame because it has no block.
   // But we *should* return here so that the environment returned
   // to the fiber is as expected

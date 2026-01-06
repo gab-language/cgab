@@ -473,7 +473,7 @@ union gab_value_pair resume_sslsockaccept(struct gab_triple gab,
   int64_t result = qd_destroy(reentrant - 1);
 
   if (result < 0) {
-    gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, strerror(-result)));
+    gab_push(gab, gab_err, gab_string(gab, strerror(-result)));
     return gab_union_cvalid(gab_nil);
   }
 

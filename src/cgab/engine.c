@@ -310,6 +310,9 @@ void gab_busywait(struct gab_triple gab) {
     thrd_sleep(&(const struct timespec){.tv_nsec = gab.eg->wait}, nullptr);
 }
 
+/*
+ * Is it a problem that the GC thread and original user thread are both wkid 0?
+ */
 int32_t gc_job(void *data) {
   struct gab_triple *g = data;
   struct gab_triple gab = *g;
@@ -559,7 +562,6 @@ union gab_value_pair gab_create(struct gab_create_argt args,
 
   eg->wait = args.wait;
   eg->len = njobs + 1;
-  eg->njobs = 0;
   eg->hash_seed = time(nullptr);
   eg->sig.schedule = -1;
 

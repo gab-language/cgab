@@ -137,10 +137,7 @@ $(VENDOR_PREFIX)/duckdb.cc:
 
 # These rules generates header files for libgrapheme
 $(VENDOR_PREFIX)/libgrapheme/gen/%.h: 
-	make CC="$(CC)" -s -C $(VENDOR_PREFIX)/libgrapheme $<
-
-$(VENDOR_PREFIX)/libgrapheme/gen2/%.h: 
-	make CC="$(CC)" -s -C $(VENDOR_PREFIX)/libgrapheme $<
+	make CC="$(CC)" -s -C $(VENDOR_PREFIX)/libgrapheme gen/$*.h
 
 $(VENDOR_PREFIX)/llhttp.h:
 	cd $(VENDOR_PREFIX)/llhttp && npm i
@@ -168,8 +165,7 @@ $(BUILD_PREFIX)/libgrapheme.a:  $(VENDOR_PREFIX)/libgrapheme/gen/bidirectional.h
 																$(VENDOR_PREFIX)/libgrapheme/gen/sentence.h \
 																$(VENDOR_PREFIX)/libgrapheme/gen/sentence-test.h \
 																$(VENDOR_PREFIX)/libgrapheme/gen/word.h \
-																$(VENDOR_PREFIX)/libgrapheme/gen/word-test.h \
-																$(VENDOR_PREFIX)/libgrapheme/gen2/character.gen.h
+																$(VENDOR_PREFIX)/libgrapheme/gen/word-test.h
 	# Bit of a funky clean here. The makefile doesn't provide a way to clean *without* hitting the generated headers.
 	find $(VENDOR_PREFIX)/libgrapheme -name "*.o" | xargs rm
 	# Make for our given target.

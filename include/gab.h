@@ -259,11 +259,11 @@ GAB_API_INLINE gab_value __gab_dtoval(gab_float value) {
 #define gab_valisnew(val) (gab_valiso(val) && GAB_OBJ_IS_NEW(gab_valtoo(val)))
 
 /*
- * The gab values true and false are implemented with sigils.
+ * The gab values true and false are implemented with messages.
  *
- * These are simple gab strings, but serve as their own type, allowing
- * specialization on messages for sigils like true, false, ok, some, none,
- * etc.
+ * These are basically strings, but serve as their own type, allowing
+ * specialization on messages for other messages like true, false, ok, some,
+ * none, etc.
  */
 
 #define gab_nil                                                                \
@@ -316,6 +316,10 @@ GAB_API_INLINE gab_value __gab_dtoval(gab_float value) {
 #define gab_cundefined (gab_primitive(INT32_MAX - 2))
 #define gab_cvalid (gab_primitive(INT32_MAX) - 3)
 
+/*
+ * More useful definitions for the c-api. Lots of the c-api functions return
+ * this gab_value_pair union type.
+ */
 #define gab_union_cinvalid ((union gab_value_pair){{gab_cinvalid}})
 #define gab_union_ctimeout(r) ((union gab_value_pair){{gab_ctimeout, r}})
 
@@ -410,6 +414,12 @@ GAB_API_INLINE gab_uint __gab_valtou(gab_value v) {
 #define GAB_OBJ_IS_FREED(obj) ((obj)->flags & fGAB_OBJ_FREED)
 #define GAB_OBJ_FREED(obj) ((obj)->flags |= fGAB_OBJ_FREED)
 
+/*
+ * Datastructure definitions.
+ *
+ * These are generic, header only data structures for c.
+ */
+
 #define T gab_value
 #define DEF_T gab_cinvalid
 #define SIZE cGAB_WORKER_LOCALQUEUE_MAX
@@ -432,6 +442,21 @@ struct gab_eg;
 struct gab_src;
 struct gab_obj;
 
+/*
+ * The core handle that users will use to interact with Gab and it's engine.
+ *
+ * The (struct gab_eg*) is a pointer to the allocated engine state. This
+ * contains the "global" state needed to run gab code. It is possible to
+ * instantiate any number of engines in a single process - their state is
+ * isolated and they will not interfere with one another.
+ *
+ * The flags field dictate some behavior in c-api functions. This is usually
+ * used to enable logging or other debugging features.
+ *
+ * The wkid corresponds to a worker in the engine's internal list of workers.
+ * This is list is static and created when the engine is allocated.
+ * OS-thread-specific state needed to run gab code is kept here.
+ */
 struct gab_triple {
   /* Pointer to the engine itself */
   struct gab_eg *eg;
@@ -442,6 +467,9 @@ struct gab_triple {
   int32_t wkid;
 };
 
+/*
+ * Various callbacks used by the gab_box and gab_native types.
+ */
 typedef void (*gab_gcvisit_f)(struct gab_triple, struct gab_obj *obj);
 
 typedef union gab_value_pair (*gab_native_f)(struct gab_triple, uint64_t argc,
@@ -453,11 +481,6 @@ typedef void (*gab_boxdestroy_f)(struct gab_triple gab, uint64_t len,
 
 typedef void (*gab_boxvisit_f)(struct gab_triple gab, gab_gcvisit_f visitor,
                                uint64_t len, char *data);
-
-typedef gab_value (*gab_atomswap_f)(struct gab_triple gab, gab_value current);
-
-typedef gab_value (*gab_atomvswap_f)(struct gab_triple gab, gab_value current,
-                                     va_list va);
 
 /**
  * @brief INTERNAL: Free memory held by an object.
@@ -472,11 +495,7 @@ GAB_API void gab_objdestroy(struct gab_triple gab, struct gab_obj *obj);
  *
  * @param obj The object.
  */
-GAB_API uint64_t gab_obj_size(struct gab_obj *obj);
-
-#define GAB_DYNAMIC_MODULE_SYMBOL "gab_lib"
-typedef a_gab_value *(*gab_osdynmod_load)(struct gab_triple, const char *path);
-typedef a_gab_value *(*gab_osdynmod)(struct gab_triple);
+GAB_API uint64_t gab_objsize(struct gab_obj *obj);
 
 /*
  * @enum Gab Flags
@@ -509,7 +528,15 @@ enum gab_flags {
  */
 struct gab_create_argt {
   /*
+   * @field flags
    * @see enum gab_flags
+   *
+   * @field jobs
+   * @brief The maximum number of os-threads to run gab-code concurrently.
+   *
+   * @field wait
+   * @brief A setting for the number of nanoseconds to *busywait*, at points
+   * when the engine needs to *spin*.
    */
   uint32_t flags, jobs, wait;
 
@@ -522,12 +549,25 @@ struct gab_create_argt {
    * empty prefix)
    */
   const struct gab_resource {
+    /* A prefix, something like 'mod/', 'src/', '' for example. */
     const char *prefix;
+    /* A suffix, something like '.gab', '/mod.gab' for example. */
     const char *suffix;
+    /*
+     * A callback function to perform the loading.
+     *
+     * Will receive the same path as the exister, as well as a list of arguments
+     * that are passed to the module. The names of the arguments are passed in
+     * sargs, and the values in vargs.
+     **/
     union gab_value_pair (*loader)(struct gab_triple, const char *, size_t len,
                                    const char *sargs[len],
                                    gab_value vargs[len]);
-
+    /*
+     * A callback function to check if the module exists.
+     *
+     * Will recieve a path string: "<root><prefix><module><suffix>"
+     **/
     bool (*exister)(const char *);
   } *resources;
 
@@ -552,7 +592,7 @@ struct gab_create_argt {
 };
 
 /**
- * @brief Initialize a gab runtime.
+ * @brief Initialize a gab engine.
  *
  * @param args Parameters for initialization.
  * @param gab_out The struct to initialize.
@@ -576,6 +616,7 @@ GAB_API const char *gab_mresolve(const char **roots,
 
 /**
  * @brief Free the memory owned by this triple.
+ * This will block until a safe shut-down point is reached.
  *
  * @param gab The triple to free.
  */
@@ -659,7 +700,8 @@ GAB_API int gab_npsprintf(char *dst, size_t n, const char *fmt, uint64_t argc,
                           gab_value *argv);
 
 /**
- * @brief Get the "length" of the engine, aka, the max number of jobs (working threads).
+ * @brief Get the "length" of the engine, aka, the max number of jobs (working
+ * threads).
  */
 GAB_API uint64_t gab_eglen(struct gab_eg *eg);
 
@@ -693,7 +735,7 @@ GAB_API uint64_t gab_negkeep(struct gab_eg *eg, uint64_t len, gab_value *argv);
  * in the engine. It is up to the user to choose *when* to drain
  * said errors and handle/present to a user.
  *
- * The errors are in a sentine-terminated array of gab\records.
+ * The errors are in a sentinel-terminated array of gab\records.
  * It is the callers responsibility to free the pointer.
  * The array ends in gab_nil:.
  */
@@ -703,9 +745,12 @@ GAB_API gab_value *gab_egerrs(struct gab_eg *eg);
  * @brief A convenient structure for returning results from c-code.
  */
 union gab_value_pair {
+
   gab_value data[2];
+
   struct {
     gab_value status;
+
     union {
       /* A single result value. */
       gab_value vresult;
@@ -715,37 +760,6 @@ union gab_value_pair {
       uintptr_t bresult;
     };
   };
-};
-
-/**
- * @enum The possible result states of a call to gab_egimpl.
- * @see gab_egimpl_rest
- * @see gab_egimpl
- */
-enum gab_impl_resk {
-  /*
-   * No implementation was found for this value and message.
-   */
-  kGAB_IMPL_NONE = 0,
-  /*
-   * The *type* of the receiver implements the message.
-   * EG: The actual gab\shape of the record implements this message, not just
-   * 'gab\record'
-   */
-  kGAB_IMPL_TYPE,
-  /*
-   * The *kind* of the receiver implements the message.
-   * EG: gab\record as opposed to the record's actual gab\shape.
-   */
-  kGAB_IMPL_KIND,
-  /*
-   * There is a general/default implementation to fall back on.
-   */
-  kGAB_IMPL_GENERAL,
-  /*
-   * The receiver is a record with a matching property.
-   */
-  kGAB_IMPL_PROPERTY,
 };
 
 /**
@@ -775,10 +789,33 @@ struct gab_impl_rest {
   } as;
 
   /**
-   * @brief The status of this implementation resolution.
-   * @see gab_impl_resk
+   * @enum The possible result states of a call to gab_egimpl.
    */
-  enum gab_impl_resk status;
+  enum gab_impl_resk {
+    /*
+     * No implementation was found for this value and message.
+     */
+    kGAB_IMPL_NONE = 0,
+    /*
+     * The *type* of the receiver implements the message.
+     * EG: The actual gab\shape of the record implements this message, not just
+     * 'gab\record'
+     */
+    kGAB_IMPL_TYPE,
+    /*
+     * The *kind* of the receiver implements the message.
+     * EG: gab\record as opposed to the record's actual gab\shape.
+     */
+    kGAB_IMPL_KIND,
+    /*
+     * There is a general/default implementation to fall back on.
+     */
+    kGAB_IMPL_GENERAL,
+    /*
+     * The receiver is a record with a matching property.
+     */
+    kGAB_IMPL_PROPERTY,
+  } status;
 };
 
 /**
@@ -808,6 +845,12 @@ GAB_API struct gab_impl_rest gab_impl(struct gab_triple gab, gab_value message,
   })
 
 /**
+ * @brief push values onto the VM's internal stack of the
+ * currently-executing fiber in the worker dictated by the gab triple.
+ */
+#define gab_push(gab, ...) gab_vmpush(gab_thisvm(gab), __VA_ARGS__)
+
+/**
  * @brief Push multiple values onto the given vm's internal stack.
  * @see gab_vmpush.
  *
@@ -818,7 +861,7 @@ GAB_API struct gab_impl_rest gab_impl(struct gab_triple gab, gab_value message,
 GAB_API uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t len, gab_value *argv);
 
 /**
- * @brief Peek into the stack of the vm.
+ * @brief Peek into the stack of the vm by dist.
  */
 GAB_API gab_value gab_vmpeek(struct gab_vm *vm, uint64_t dist);
 
@@ -883,9 +926,12 @@ struct gab_use_argt {
 
 /*
  * @param gab The triple
- * @param name The name of the module, as a gab_value
- * @return The values returned by the module, or nullptr if the module was not
- * found.
+ * @param args The arguments.
+ * @return A gab value pair:
+ *  If status == gab_cvalid, then aresult contains the result of running the
+ * module. The aresult array itself contains the result of a module execution,
+ * which *may have failed*. Check the first element of the array for `gab_ok` to
+ * determine if the module executed successfully.
  */
 GAB_API union gab_value_pair gab_use(struct gab_triple gab,
                                      struct gab_use_argt args);
@@ -895,7 +941,7 @@ GAB_API union gab_value_pair gab_use(struct gab_triple gab,
  *
  * @param eg The engine.
  * @param name The name of the import.
- * @returns The module if it exists, nullptr otherwise.
+ * @returns The module's results if it exists, nullptr otherwise.
  */
 GAB_API a_gab_value *gab_segmodat(struct gab_eg *eg, const char *name);
 
@@ -944,7 +990,7 @@ struct gab_parse_argt {
   /**
    * Optional flags for compilation.
    */
-  int flags;
+  uint32_t flags;
 };
 
 /**

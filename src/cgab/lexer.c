@@ -408,12 +408,12 @@ struct gab_src *gab_src(struct gab_triple gab, gab_value name,
   }
 
   uint64_t sz =
-      sizeof(struct gab_src) + (gab.eg->len - 1) * sizeof(struct src_bytecode);
+      sizeof(struct gab_src) + (gab.eg->len) * sizeof(struct src_bytecode);
 
   struct gab_src *src = malloc(sz);
   memset(src, 0, sz);
 
-  src->len = gab.eg->len - 1;
+  src->len = gab.eg->len;
   src->source = a_char_create(source, len);
   src->name = name;
 

@@ -313,7 +313,7 @@ union gab_value_pair gab_use_source(struct gab_triple gab, const char *path,
   }
 
   union gab_value_pair fiber =
-      gab_aexec(gab, (struct gab_exec_argt){
+      gab_exec(gab, (struct gab_exec_argt){
                          .name = path,
                          .source = (const char *)src->data,
                          .flags = gab.flags,
@@ -324,10 +324,7 @@ union gab_value_pair gab_use_source(struct gab_triple gab, const char *path,
 
   a_char_destroy(src);
 
-  if (fiber.status != gab_cvalid)
-    return fiber;
-
-  return gab_tfibawait(gab, fiber.vresult, cGAB_WORKER_IDLE_TRIES);
+  return fiber;
 }
 
 bool file_exister(const char *path) {

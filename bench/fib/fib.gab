@@ -1,12 +1,10 @@
-'cmessages' :use
-
-\do_fib:defcase {
-  .true n => n
-  .false n => (n - 1):fib + (n - 2):fib
+do_fib: .defcase {
+  true: n => n
+  false: n => (n - 1).fib + (n - 2).fib
 }
 
-\fib:def(
-  'gab.number'
-  () => (self < 2):do_fib self)
+fib: .def (
+  "gab\number"
+  () => (self < 2) .do_fib self)
 
-30:fib
+35.fib

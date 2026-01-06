@@ -42,7 +42,7 @@ struct gab_obj *gab_obj_create(struct gab_triple gab, uint64_t sz,
   return self;
 }
 
-uint64_t gab_obj_size(struct gab_obj *obj) {
+uint64_t gab_objsize(struct gab_obj *obj) {
   switch (obj->kind) {
   case kGAB_CHANNEL:
     return sizeof(struct gab_ochannel);
