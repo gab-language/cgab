@@ -8,8 +8,8 @@
 #include "lexer.h"
 
 #define OP_HANDLER_ARGS                                                        \
-  struct gab_triple __gab, uint8_t *__ip, gab_value *__kb, gab_value *__fb,    \
-      gab_value *__sp
+  struct gab_triple *__gab, struct gab_vm *__vm, uint8_t *__ip,                \
+      gab_value *__kb, gab_value *__fb, gab_value *__sp
 
 typedef union gab_value_pair (*handler)(OP_HANDLER_ARGS);
 
@@ -36,7 +36,7 @@ static handler handlers[] = {
 #define CASE_CODE(name)                                                        \
   ATTRIBUTES union gab_value_pair OP_##name##_HANDLER(OP_HANDLER_ARGS)
 
-#define DISPATCH_ARGS() GAB(), IP(), KB(), FB(), SP()
+#define DISPATCH_ARGS() __gab, __vm, __ip, __kb, __fb, __sp
 
 #define CHECK_SIGNAL()                                                         \
   if (gab_sigwaiting(GAB()))                                                   \
@@ -65,7 +65,9 @@ static handler handlers[] = {
     [[clang::musttail]] return handlers[o](DISPATCH_ARGS());                   \
   })
 
-#define NEXT()                                                                 \
+#define NEXT() ({ DISPATCH(*(IP()++)); })
+
+#define NEXT_CHECKED()                                                         \
   ({                                                                           \
     CHECK_SIGNAL();                                                            \
     DISPATCH(*(IP()++));                                                       \
@@ -86,14 +88,14 @@ static handler handlers[] = {
 /*
   Lots of helper macros.
 */
-#define GAB() (__gab)
+#define GAB() (*__gab)
 #define EG() (GAB().eg)
 #define FIBER() (GAB_VAL_TO_FIBER(gab_thisfiber(GAB())))
 #define REENTRANT() (FIBER()->reentrant)
 #define RESET_REENTRANT() (FIBER()->reentrant = 0)
 #define RESET_BUMP() (FIBER()->allocator.len = 0)
 #define GC() (GAB().eg->gc)
-#define VM() (gab_thisvm(GAB()))
+#define VM() (__vm)
 #define SET_BLOCK(b) (FB()[-3] = (uintptr_t)(b));
 #define BLOCK() ((struct gab_oblock *)(uintptr_t)FB()[-3])
 #define BLOCK_PROTO() (GAB_VAL_TO_PROTOTYPE(BLOCK()->p))
@@ -875,7 +877,7 @@ uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc, gab_value argv[argc]) {
                                                                                \
     SET_VAR(have);                                                             \
                                                                                \
-    NEXT();                                                                    \
+    NEXT_CHECKED();                                                            \
   })
 
 #define LOCALCALL_BLOCK(blk, have)                                             \
@@ -890,7 +892,7 @@ uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc, gab_value argv[argc]) {
                                                                                \
     SET_VAR(have);                                                             \
                                                                                \
-    NEXT();                                                                    \
+    NEXT_CHECKED();                                                            \
   })
 
 #define TAILCALL_BLOCK(blk, have)                                              \
@@ -910,7 +912,7 @@ uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc, gab_value argv[argc]) {
     SET_BLOCK(blk);                                                            \
     SET_VAR(have);                                                             \
                                                                                \
-    NEXT();                                                                    \
+    NEXT_CHECKED();                                                            \
   })
 
 #define LOCALTAILCALL_BLOCK(blk, have)                                         \
@@ -929,7 +931,7 @@ uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc, gab_value argv[argc]) {
     SET_BLOCK(blk);                                                            \
     SET_VAR(have);                                                             \
                                                                                \
-    NEXT();                                                                    \
+    NEXT_CHECKED();                                                            \
   })
 
 #define PROPERTY_RECORD(r, have, below_have)                                   \
@@ -985,7 +987,7 @@ uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc, gab_value argv[argc]) {
     SET_VAR(below_have + have);                                                \
                                                                                \
     assert(returnptr == RETURN_FB());                                          \
-    NEXT();                                                                    \
+    NEXT_CHECKED();                                                            \
   })
 
 static inline gab_value block(struct gab_triple gab, gab_value p,
@@ -1067,7 +1069,8 @@ union gab_value_pair do_vmexecfiber(struct gab_triple gab, gab_value f) {
 
   LOG(gab, op);
 
-  return handlers[op](gab, ip, fiber->vm.kb, fiber->vm.fp, fiber->vm.sp);
+  return handlers[op](&gab, &fiber->vm, ip, fiber->vm.kb, fiber->vm.fp,
+                      fiber->vm.sp);
 };
 
 union gab_value_pair gab_vmexec(struct gab_triple gab, gab_value f) {
@@ -1139,8 +1142,7 @@ union gab_value_pair gab_vmexec(struct gab_triple gab, gab_value f) {
  * to the current rec.
  */
 #define SEND_GUARD_CACHED_MESSAGE_SPECS()                                      \
-  SEND_GUARD(gab_valeq(gab_thisfibmsgrec(GAB(), ks[GAB_SEND_KMESSAGE]),        \
-                       ks[GAB_SEND_KSPECS]))
+  SEND_GUARD(gab_valeq(EG()->messages, ks[GAB_SEND_KSPECS]))
 
 /*
  * SEND guard which checks that the world is
@@ -1151,7 +1153,7 @@ union gab_value_pair gab_vmexec(struct gab_triple gab, gab_value f) {
   SEND_GUARD(gab_valisa(GAB(), r, ks[GAB_SEND_KTYPE]))
 
 #define SEND_GUARD_CACHED_GENERIC_CALL_SPECS(m)                                \
-  SEND_GUARD(gab_valeq(gab_thisfibmsgrec(GAB(), m),                            \
+  SEND_GUARD(gab_valeq(gab_recat(EG()->messages, m),                           \
                        ks[GAB_SEND_KGENERIC_CALL_SPECS]))
 
 CASE_CODE(MATCHTAILSEND_BLOCK) {
@@ -1263,7 +1265,7 @@ static inline bool try_setup_localmatch(struct gab_triple gab, gab_value m,
     ks[GAB_SEND_KOFFSET + idx] = (intptr_t)ip;
   }
 
-  ks[GAB_SEND_KSPECS] = specs;
+  ks[GAB_SEND_KSPECS] = gab.eg->messages;
   return true;
 }
 
@@ -1318,40 +1320,47 @@ CASE_CODE(NLOAD_LOCAL) {
   NEXT();
 }
 
-/*
- * The store-local opcodes should basically
- * be side-effects, not popping values from the stack at all.
- */
-
 CASE_CODE(STORE_LOCAL) {
   LOCAL(READ_BYTE) = PEEK();
   NEXT();
 }
 
-CASE_CODE(NSTORE_LOCAL) {
-  uint8_t n = READ_BYTE;
-  const uint8_t c = n;
-
-  while (n--)
-    LOCAL(READ_BYTE) = PEEK_N(c - n);
-
-  NEXT();
-}
-
 CASE_CODE(POPSTORE_LOCAL) {
+  uint64_t have = VAR();
+
   LOCAL(READ_BYTE) = POP();
 
-  SET_VAR(0);
+  SET_VAR(have - 1);
   NEXT();
 }
 
 CASE_CODE(NPOPSTORE_LOCAL) {
+  uint64_t have = VAR();
+
   uint8_t n = READ_BYTE;
+
+  have -= n;
 
   while (n--)
     LOCAL(READ_BYTE) = POP();
 
-  SET_VAR(0);
+  SET_VAR(have);
+  NEXT();
+}
+
+CASE_CODE(NPOPSTORE_STORE_LOCAL) {
+  uint64_t have = VAR();
+
+  uint8_t n = READ_BYTE;
+
+  have -= n;
+
+  while (n-- > 1)
+    LOCAL(READ_BYTE) = POP();
+
+  LOCAL(READ_BYTE) = PEEK();
+
+  SET_VAR(have + 1);
   NEXT();
 }
 
@@ -1933,6 +1942,20 @@ CASE_CODE(TUPLE) {
   NEXT();
 }
 
+CASE_CODE(NTUPLE) {
+  uint8_t n = READ_BYTE;
+
+  while (n--) {
+    uint64_t have = VAR();
+
+    PUSH(have);
+
+    SET_VAR(0);
+  }
+
+  NEXT();
+}
+
 CASE_CODE(CONS) {
   uint64_t have = VAR();
   uint64_t below_have = PEEK_N(have + 1);
@@ -1945,6 +1968,146 @@ CASE_CODE(CONS) {
 
   // Combine length of each tuple.
   SET_VAR(have + below_have);
+
+  NEXT();
+}
+
+CASE_CODE(TUPLE_CONSTANT) {
+  uint64_t have = VAR();
+
+  PUSH(have);
+
+  PUSH(READ_CONSTANT);
+
+  SET_VAR(1);
+
+  NEXT();
+}
+
+CASE_CODE(TUPLE_NCONSTANT) {
+  uint64_t have = VAR();
+
+  PUSH(have);
+
+  uint8_t n = READ_BYTE;
+
+  VM_PANIC_GUARD_STACKSPACE(n);
+
+  SP()[n] = n;
+
+  while (n--)
+    PUSH(READ_CONSTANT);
+
+  NEXT();
+}
+
+CASE_CODE(TUPLE_LOAD_LOCAL) {
+  uint64_t have = VAR();
+
+  PUSH(have);
+
+  PUSH(LOCAL(READ_BYTE));
+
+  SET_VAR(1);
+
+  NEXT();
+}
+
+CASE_CODE(TUPLE_NLOAD_LOCAL) {
+  uint64_t have = VAR();
+
+  PUSH(have);
+
+  uint8_t n = READ_BYTE;
+
+  VM_PANIC_GUARD_STACKSPACE(n);
+
+  SP()[n] = n;
+
+  while (n--)
+    PUSH(LOCAL(READ_BYTE));
+
+  NEXT();
+}
+
+CASE_CODE(NTUPLE_LOAD_LOCAL) {
+  uint8_t n = READ_BYTE;
+
+  while (n--) {
+    uint64_t have = VAR();
+
+    PUSH(have);
+
+    SET_VAR(0);
+  }
+
+  PUSH(LOCAL(READ_BYTE));
+
+  SET_VAR(1);
+
+  NEXT();
+}
+
+CASE_CODE(NTUPLE_NLOAD_LOCAL) {
+  uint8_t n = READ_BYTE;
+
+  while (n--) {
+    uint64_t have = VAR();
+
+    PUSH(have);
+
+    SET_VAR(0);
+  }
+
+  n = READ_BYTE;
+
+  VM_PANIC_GUARD_STACKSPACE(n);
+
+  SP()[n] = n;
+
+  while (n--)
+    PUSH(LOCAL(READ_BYTE));
+
+  NEXT();
+}
+
+CASE_CODE(NTUPLE_CONSTANT) {
+  uint8_t n = READ_BYTE;
+
+  while (n--) {
+    uint64_t have = VAR();
+
+    PUSH(have);
+
+    SET_VAR(0);
+  }
+
+  PUSH(READ_CONSTANT);
+
+  SET_VAR(1);
+
+  NEXT();
+}
+
+CASE_CODE(NTUPLE_NCONSTANT) {
+  uint8_t n = READ_BYTE;
+
+  while (n--) {
+    uint64_t have = VAR();
+
+    PUSH(have);
+
+    SET_VAR(0);
+  }
+
+  n = READ_BYTE;
+
+  VM_PANIC_GUARD_STACKSPACE(n);
+
+  SP()[n] = n;
+
+  while (n--)
+    PUSH(READ_CONSTANT);
 
   NEXT();
 }
@@ -2100,7 +2263,7 @@ CASE_CODE(SEND) {
                        ? gab_primitive(OP_SEND_PROPERTY)
                        : res.as.spec;
 
-  ks[GAB_SEND_KSPECS] = gab_thisfibmsgrec(GAB(), m);
+  ks[GAB_SEND_KSPECS] = EG()->messages;
   ks[GAB_SEND_KTYPE] = gab_valtype(GAB(), r);
   ks[GAB_SEND_KSPEC] = res.as.spec;
 
@@ -2343,7 +2506,7 @@ CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE) {
 
   ks[GAB_SEND_KTYPE] = t;
   ks[GAB_SEND_KSPEC] = res.as.spec;
-  ks[GAB_SEND_KGENERIC_CALL_SPECS] = gab_thisfibmsgrec(GAB(), m);
+  ks[GAB_SEND_KGENERIC_CALL_SPECS] = gab_recat(EG()->messages, m);
   // ks[GAB_SEND_KGENERIC_CALL_MESSAGE] = m;
 
   if (res.status == kGAB_IMPL_PROPERTY) {

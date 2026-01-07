@@ -826,6 +826,8 @@ struct command_arguments parse_options(int argc, const char **argv,
   for (int i = 0; i < ndefault_modules; i++)
     v_s_char_push(&args.modules, s_char_cstr(default_modules[i]));
 
+  // v_s_char_push(&args.modules, s_char_cstr("cmessages"));
+
   while (args.argc) {
     const char *arg = *args.argv;
     if (arg[0] != '-')

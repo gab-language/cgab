@@ -983,43 +983,399 @@ static inline uint16_t addk(struct gab_triple gab, struct bc *bc,
   return v_gab_value_push(bc->ks, value);
 }
 
-static inline void push_k(struct bc *bc, uint16_t k, gab_value node) {
+/*
+ * SUPER INSTRUCTION OPTIMIZATION
+ */
+
+enum super_instruction_transition_k : uint8_t {
+  kSI_REPLACE,
+
+  kSI_MAKE_MULTI,
+  kSI_MULTI_APPEND,
+
+  kSI_BYTE_ARG_MAKE_MULTI,
+  kSI_MULTI_BYTE_ARG_APPEND,
+
+  // Sometimes the second argument-byte contains
+  // the multi-byte that needs to be incremented.
+  kSI_BYTE_ARG_MAKE_MULTI2,
+  kSI_MULTI2_BYTE_ARG_APPEND,
+
+  kSI_SHORT_ARG_MAKE_MULTI,
+  kSI_MULTI_SHORT_ARG_APPEND,
+
+  // Sometimes the second argument-byte contains
+  // the multi-byte that needs to be incremented.
+  kSI_SHORT_ARG_MAKE_MULTI2,
+  kSI_MULTI2_SHORT_ARG_APPEND,
+};
+
+struct super_instruction {
+  uint8_t from, via, to, k;
+};
+
+struct super_instruction super_instructions[] = {
+    {
+        OP_LOAD_LOCAL,
+        OP_LOAD_LOCAL,
+        OP_NLOAD_LOCAL,
+        kSI_BYTE_ARG_MAKE_MULTI,
+    },
+    {
+        OP_NLOAD_LOCAL,
+        OP_LOAD_LOCAL,
+        OP_NLOAD_LOCAL,
+        kSI_MULTI_BYTE_ARG_APPEND,
+    },
+    {
+        OP_STORE_LOCAL,
+        OP_POP,
+        OP_POPSTORE_LOCAL,
+        kSI_REPLACE,
+    },
+    {
+        OP_POPSTORE_LOCAL,
+        OP_STORE_LOCAL,
+        OP_NPOPSTORE_STORE_LOCAL,
+        kSI_BYTE_ARG_MAKE_MULTI,
+    },
+    {
+        OP_NPOPSTORE_LOCAL,
+        OP_STORE_LOCAL,
+        OP_NPOPSTORE_STORE_LOCAL,
+        kSI_MULTI_BYTE_ARG_APPEND,
+    },
+    {
+        OP_NPOPSTORE_STORE_LOCAL,
+        OP_POP,
+        OP_NPOPSTORE_LOCAL,
+        kSI_REPLACE,
+    },
+    {
+        OP_LOAD_UPVALUE,
+        OP_LOAD_UPVALUE,
+        OP_NLOAD_UPVALUE,
+        kSI_BYTE_ARG_MAKE_MULTI,
+    },
+    {
+        OP_NLOAD_UPVALUE,
+        OP_LOAD_UPVALUE,
+        OP_NLOAD_UPVALUE,
+        kSI_MULTI_BYTE_ARG_APPEND,
+    },
+    {
+        OP_CONSTANT,
+        OP_CONSTANT,
+        OP_NCONSTANT,
+        kSI_SHORT_ARG_MAKE_MULTI,
+    },
+    {
+        OP_NCONSTANT,
+        OP_CONSTANT,
+        OP_NCONSTANT,
+        kSI_MULTI_SHORT_ARG_APPEND,
+    },
+    {
+        OP_TUPLE,
+        OP_TUPLE,
+        OP_NTUPLE,
+        kSI_MAKE_MULTI,
+    },
+    {
+        OP_NTUPLE,
+        OP_TUPLE,
+        OP_NTUPLE,
+        kSI_MULTI_APPEND,
+    },
+    {
+        OP_NTUPLE,
+        OP_CONSTANT,
+        OP_NTUPLE_CONSTANT,
+        kSI_REPLACE,
+    },
+    {
+        OP_NTUPLE_CONSTANT,
+        OP_CONSTANT,
+        OP_NTUPLE_NCONSTANT,
+        kSI_SHORT_ARG_MAKE_MULTI2,
+    },
+    {
+        OP_NTUPLE_NCONSTANT,
+        OP_CONSTANT,
+        OP_NTUPLE_NCONSTANT,
+        kSI_MULTI2_SHORT_ARG_APPEND,
+    },
+    {
+        OP_TUPLE,
+        OP_CONSTANT,
+        OP_TUPLE_CONSTANT,
+        kSI_REPLACE,
+    },
+    {
+        OP_TUPLE_CONSTANT,
+        OP_CONSTANT,
+        OP_TUPLE_NCONSTANT,
+        kSI_SHORT_ARG_MAKE_MULTI,
+    },
+    {
+        OP_TUPLE_NCONSTANT,
+        OP_CONSTANT,
+        OP_TUPLE_NCONSTANT,
+        kSI_MULTI_SHORT_ARG_APPEND,
+    },
+    {
+        OP_TUPLE,
+        OP_LOAD_LOCAL,
+        OP_TUPLE_LOAD_LOCAL,
+        kSI_REPLACE,
+    },
+    {
+        OP_TUPLE_LOAD_LOCAL,
+        OP_LOAD_LOCAL,
+        OP_TUPLE_NLOAD_LOCAL,
+        kSI_BYTE_ARG_MAKE_MULTI,
+    },
+    {
+        OP_TUPLE_NLOAD_LOCAL,
+        OP_LOAD_LOCAL,
+        OP_TUPLE_NLOAD_LOCAL,
+        kSI_MULTI_BYTE_ARG_APPEND,
+    },
+    {
+        OP_NTUPLE,
+        OP_LOAD_LOCAL,
+        OP_NTUPLE_LOAD_LOCAL,
+        kSI_REPLACE,
+    },
+    {
+        OP_NTUPLE_LOAD_LOCAL,
+        OP_LOAD_LOCAL,
+        OP_NTUPLE_NLOAD_LOCAL,
+        kSI_BYTE_ARG_MAKE_MULTI2,
+    },
+    {
+        OP_NTUPLE_NLOAD_LOCAL,
+        OP_LOAD_LOCAL,
+        OP_NTUPLE_NLOAD_LOCAL,
+        kSI_MULTI2_BYTE_ARG_APPEND,
+    },
+};
+
+const int nsuper_instructions = LEN_CARRAY(super_instructions);
+
+struct inst_arg {
+  uint8_t op;
+
+  enum : uint8_t {
+    kINST_ARG_NONE,
+    kINST_ARG_BYTE,
+    kINST_ARG_SHORT,
+  } k;
+
+  union {
+    uint8_t byte_arg;
+    uint16_t short_arg;
+  } as;
+};
+
+static inline void byte_arg_make_multi(struct bc *bc, struct inst_arg arg,
+                                       struct super_instruction si,
+                                       gab_value node, int multiarg_offset) {
+  // Transition a single-byte-arg instruction to a multi-byte-arg
+  // instruction.
+  size_t prev_byte_arg = bc->prev_op_at + multiarg_offset;
+  uint8_t prev_byte = v_uint8_t_val_at(&bc->bc, prev_byte_arg);
+
+  // Change the previous byte arg to now correspond to the number of bytes
+  // to follow (2).
+  v_uint8_t_set(&bc->bc, prev_byte_arg, 2);
+
+  // Push the previous byte value, and the new one.
+  push_byte(bc, prev_byte, node);
+  push_byte(bc, arg.as.byte_arg, node);
+
+  // Update the old instruction to the new, and the previous op.
+  v_uint8_t_set(&bc->bc, bc->prev_op_at, si.to);
+  bc->prev_op = si.to;
+}
+
+static inline void multi_byte_arg_append(struct bc *bc, struct inst_arg arg,
+                                         struct super_instruction si,
+                                         gab_value node, int multiarg_offset) {
+  // Append a new byte arg to a multi-byte instruction.
+  size_t multi_arg = bc->prev_op_at + multiarg_offset;
+  uint8_t multi = v_uint8_t_val_at(&bc->bc, multi_arg);
+
+  // Increment the multi-arg count.
+  v_uint8_t_set(&bc->bc, multi_arg, multi + multiarg_offset);
+
+  // Push the additional byte argument.
+  push_byte(bc, arg.as.byte_arg, node);
+
+  if (si.from == si.to)
+    return;
+
+  // Update the old instruction to the new, and the previous op.
+  // We can skip this if the super instruction's from and to ops are the
+  // same.
+  v_uint8_t_set(&bc->bc, bc->prev_op_at, si.to);
+  bc->prev_op = si.to;
+}
+
+static inline void short_arg_make_multi(struct bc *bc, struct inst_arg arg,
+                                        struct super_instruction si,
+                                        gab_value node, int multiarg_offset) {
+  size_t multi_arg = bc->prev_op_at + multiarg_offset;
+
+  // Reconstruct the short argument from the bytecode.
+  uint8_t prev_arg_a = v_uint8_t_val_at(&bc->bc, multi_arg);
+  uint8_t prev_arg_b = v_uint8_t_val_at(&bc->bc, multi_arg + 1);
+
+  uint16_t prev_arg = prev_arg_a << 8 | prev_arg_b;
+
+  // Pop off the old short argument, it isn't salvageable.
+  v_uint8_t_pop(&bc->bc);
+  v_uint8_t_pop(&bc->bc);
+  v_uint64_t_pop(&bc->bc_toks);
+  v_uint64_t_pop(&bc->bc_toks);
+
+  // Push on a new count argument.
+  push_byte(bc, 2, node);
+
+  // Push the original short argument, and the new second one.
+  push_short(bc, prev_arg, node);
+  push_short(bc, arg.as.short_arg, node);
+
+  // Update the old instruction to the new, and the previous op.
+  v_uint8_t_set(&bc->bc, bc->prev_op_at, si.to);
+  bc->prev_op = si.to;
+}
+
+static inline void multi_short_arg_append(struct bc *bc, struct inst_arg arg,
+                                          struct super_instruction si,
+                                          gab_value node, int multiarg_offset) {
+  // Append a new short arg to a multi-byte instruction.
+  size_t multi_arg = bc->prev_op_at + multiarg_offset;
+  uint8_t multi = v_uint8_t_val_at(&bc->bc, multi_arg);
+
+  // Increment the multi-arg count.
+  v_uint8_t_set(&bc->bc, multi_arg, multi + 1);
+
+  // Push the additional short.
+  push_short(bc, arg.as.short_arg, node);
+
+  if (si.from == si.to)
+    return;
+
+  // Update the old instruction to the new, and the previous op.
+  // We can skip this if the super instruction's from and to ops are the
+  // same.
+  v_uint8_t_set(&bc->bc, bc->prev_op_at, si.to);
+  bc->prev_op = si.to;
+}
+
+static inline void push_inst(struct bc *bc, struct inst_arg arg,
+                             gab_value node) {
 #if cGAB_SUPERINSTRUCTIONS
-  switch (bc->prev_op) {
-  case OP_CONSTANT: {
-    size_t prev_local_arg = bc->prev_op_at + 1;
+  for (int i = 0; i < nsuper_instructions; i++) {
+    struct super_instruction si = super_instructions[i];
 
-    uint8_t prev_ka = v_uint8_t_val_at(&bc->bc, prev_local_arg);
-    uint8_t prev_kb = v_uint8_t_val_at(&bc->bc, prev_local_arg + 1);
+    if (si.from == bc->prev_op && si.via == arg.op) {
 
-    uint16_t prev_k = prev_ka << 8 | prev_kb;
+      switch (si.k) {
+      default:
+        assert(false);
+        break;
+      case kSI_REPLACE: {
+        // Push the arg for this new instruction
+        switch (arg.k) {
+        case kINST_ARG_NONE:
+          break;
+        case kINST_ARG_BYTE:
+          push_byte(bc, arg.as.byte_arg, node);
+          break;
+        case kINST_ARG_SHORT:
+          push_short(bc, arg.as.short_arg, node);
+          break;
+        }
 
-    v_uint8_t_pop(&bc->bc);
-    v_uint8_t_pop(&bc->bc);
-    v_uint64_t_pop(&bc->bc_toks);
-    v_uint64_t_pop(&bc->bc_toks);
+        // Update the old instruction to the new, and the previous op.
+        v_uint8_t_set(&bc->bc, bc->prev_op_at, si.to);
+        bc->prev_op = si.to;
+        break;
+      }
+      case kSI_MAKE_MULTI: {
+        // Push a 2, to include previous op and this repetition.
+        push_byte(bc, 2, node);
 
-    bc->prev_op = OP_NCONSTANT;
-    v_uint8_t_set(&bc->bc, bc->prev_op_at, OP_NCONSTANT);
+        // Update the instruction to the repeatable target.
+        v_uint8_t_set(&bc->bc, bc->prev_op_at, si.to);
+        bc->prev_op = si.to;
 
-    push_byte(bc, 2, node);
-    push_short(bc, prev_k, node);
-    push_short(bc, k, node);
+        break;
+      }
+      case kSI_MULTI_APPEND: {
+        size_t multi_arg = bc->prev_op_at + 1;
+        uint8_t multi = v_uint8_t_val_at(&bc->bc, multi_arg);
 
-    return;
-  }
-  case OP_NCONSTANT: {
-    size_t prev_local_arg = bc->prev_op_at + 1;
-    uint8_t prev_n = v_uint8_t_val_at(&bc->bc, prev_local_arg);
-    v_uint8_t_set(&bc->bc, prev_local_arg, prev_n + 1);
-    push_short(bc, k, node);
-    return;
-  }
+        // Increment the multi-arg count.
+        v_uint8_t_set(&bc->bc, multi_arg, multi + 1);
+
+        // Leave the instruction, as we are just adding a repetition
+        break;
+      }
+      case kSI_BYTE_ARG_MAKE_MULTI:
+        byte_arg_make_multi(bc, arg, si, node, 1);
+        break;
+      case kSI_BYTE_ARG_MAKE_MULTI2:
+        byte_arg_make_multi(bc, arg, si, node, 2);
+        break;
+      case kSI_MULTI_BYTE_ARG_APPEND:
+        multi_byte_arg_append(bc, arg, si, node, 1);
+        break;
+      case kSI_MULTI2_BYTE_ARG_APPEND:
+        multi_byte_arg_append(bc, arg, si, node, 2);
+        break;
+      case kSI_SHORT_ARG_MAKE_MULTI:
+        short_arg_make_multi(bc, arg, si, node, 1);
+        break;
+      case kSI_SHORT_ARG_MAKE_MULTI2:
+        short_arg_make_multi(bc, arg, si, node, 2);
+        break;
+      case kSI_MULTI_SHORT_ARG_APPEND:
+        multi_short_arg_append(bc, arg, si, node, 1);
+        break;
+      case kSI_MULTI2_SHORT_ARG_APPEND:
+        multi_short_arg_append(bc, arg, si, node, 2);
+        break;
+      };
+      return;
+    }
   }
 #endif
 
-  push_op(bc, OP_CONSTANT, node);
-  push_short(bc, k, node);
+  push_op(bc, arg.op, node);
+
+  switch (arg.k) {
+  case kINST_ARG_NONE:
+    break;
+  case kINST_ARG_BYTE:
+    push_byte(bc, arg.as.byte_arg, node);
+    break;
+  case kINST_ARG_SHORT:
+    push_short(bc, arg.as.short_arg, node);
+    break;
+  }
+};
+
+static inline void push_k(struct bc *bc, uint16_t k, gab_value node) {
+  push_inst(bc,
+            (struct inst_arg){
+                .op = OP_CONSTANT,
+                .k = kINST_ARG_SHORT,
+                .as.short_arg = k,
+            },
+            node);
 }
 
 static inline void push_loadi(struct bc *bc, gab_value i, gab_value node) {
@@ -1061,87 +1417,34 @@ static inline void push_loadk(struct gab_triple gab, struct bc *bc, gab_value k,
 }
 
 static inline void push_loadl(struct bc *bc, uint8_t local, gab_value node) {
-#if cGAB_SUPERINSTRUCTIONS
-  switch (bc->prev_op) {
-  case OP_LOAD_LOCAL: {
-    size_t prev_local_arg = bc->prev_op_at + 1;
-    uint8_t prev_local = v_uint8_t_val_at(&bc->bc, prev_local_arg);
-    push_byte(bc, prev_local, node);
-    push_byte(bc, local, node);
-    v_uint8_t_set(&bc->bc, prev_local_arg, 2);
-    v_uint8_t_set(&bc->bc, bc->prev_op_at, OP_NLOAD_LOCAL);
-    bc->prev_op = OP_NLOAD_LOCAL;
-    return;
-  }
-  case OP_NLOAD_LOCAL: {
-    size_t prev_local_arg = bc->prev_op_at + 1;
-    uint8_t old_arg = v_uint8_t_val_at(&bc->bc, prev_local_arg);
-    v_uint8_t_set(&bc->bc, prev_local_arg, old_arg + 1);
-    push_byte(bc, local, node);
-    return;
-  }
-  }
-#endif
-
-  push_op(bc, OP_LOAD_LOCAL, node);
-  push_byte(bc, local, node);
-  return;
-}
-
-static inline void push_loadu(struct bc *bc, uint8_t upv, gab_value node) {
-#if cGAB_SUPERINSTRUCTIONS
-  switch (bc->prev_op) {
-  case OP_LOAD_UPVALUE: {
-    size_t prev_upv_arg = bc->prev_op_at + 1;
-    uint8_t prev_upv = v_uint8_t_val_at(&bc->bc, prev_upv_arg);
-    push_byte(bc, prev_upv, node);
-    push_byte(bc, upv, node);
-    v_uint8_t_set(&bc->bc, prev_upv_arg, 2);
-    v_uint8_t_set(&bc->bc, bc->prev_op_at, OP_NLOAD_UPVALUE);
-    bc->prev_op = OP_NLOAD_UPVALUE;
-    return;
-  }
-  case OP_NLOAD_UPVALUE: {
-    size_t prev_upv_arg = bc->prev_op_at + 1;
-    uint8_t old_arg = v_uint8_t_val_at(&bc->bc, prev_upv_arg);
-    v_uint8_t_set(&bc->bc, prev_upv_arg, old_arg + 1);
-    push_byte(bc, upv, node);
-    return;
-  }
-  }
-#endif
-
-  push_op(bc, OP_LOAD_UPVALUE, node);
-  push_byte(bc, upv, node);
+  push_inst(bc,
+            (struct inst_arg){
+                .k = kINST_ARG_BYTE,
+                .op = OP_LOAD_LOCAL,
+                .as.byte_arg = local,
+            },
+            node);
   return;
 }
 
 static inline void push_storel(struct bc *bc, uint8_t local, gab_value node) {
-#if cGAB_SUPERINSTRUCTIONS
-  switch (bc->prev_op) {
-  case OP_STORE_LOCAL: {
-    size_t prev_local_arg = bc->prev_op_at + 1;
-    uint8_t prev_local = v_uint8_t_val_at(&bc->bc, prev_local_arg);
-    push_byte(bc, prev_local, node);
-    push_byte(bc, local, node);
-    v_uint8_t_set(&bc->bc, prev_local_arg, 2);
-    v_uint8_t_set(&bc->bc, bc->prev_op_at, OP_NSTORE_LOCAL);
-    bc->prev_op = OP_NSTORE_LOCAL;
-    return;
-  }
-  case OP_NSTORE_LOCAL: {
-    size_t prev_loc_arg = bc->prev_op_at + 1;
-    uint8_t old_arg = v_uint8_t_val_at(&bc->bc, prev_loc_arg);
-    v_uint8_t_set(&bc->bc, prev_loc_arg, old_arg + 1);
-    push_byte(bc, local, node);
-    return;
-  }
-  }
-#endif
+  push_inst(bc,
+            (struct inst_arg){
+                .k = kINST_ARG_BYTE,
+                .op = OP_STORE_LOCAL,
+                .as.byte_arg = local,
+            },
+            node);
+}
 
-  push_op(bc, OP_STORE_LOCAL, node);
-  push_byte(bc, local, node);
-  return;
+static inline void push_loadu(struct bc *bc, uint8_t upv, gab_value node) {
+  push_inst(bc,
+            (struct inst_arg){
+                .k = kINST_ARG_BYTE,
+                .op = OP_LOAD_UPVALUE,
+                .as.byte_arg = upv,
+            },
+            node);
 }
 
 [[nodiscard]]
@@ -1172,25 +1475,12 @@ static inline void push_pop(struct bc *bc, uint8_t n, gab_value node) {
     return;
   }
 
-#if cGAB_SUPERINSTRUCTIONS
-  switch (bc->prev_op) {
-  case OP_STORE_LOCAL:
-    bc->prev_op_at = bc->bc.len - 2;
-    bc->bc.data[bc->prev_op_at] = OP_POPSTORE_LOCAL;
-    bc->prev_op = OP_POPSTORE_LOCAL;
-    return;
-
-  case OP_NSTORE_LOCAL:
-    bc->bc.data[bc->prev_op_at] = OP_NPOPSTORE_LOCAL;
-    bc->prev_op = OP_NPOPSTORE_LOCAL;
-    return;
-
-  default:
-    break;
-  }
-#endif
-
-  push_op(bc, OP_POP, node);
+  push_inst(bc,
+            (struct inst_arg){
+                .k = kINST_ARG_NONE,
+                .op = OP_POP,
+            },
+            node);
 }
 
 // fix this to work with sends in the middle of tuples, doesn't trim properly
@@ -1672,6 +1962,8 @@ gab_value unpack_bindings_into_env(struct gab_triple gab, struct bc *bc,
       switch (res.k) {
       case kLOOKUP_LOC:
         push_storel(bc, res.idx, bindings);
+        if (i + 1 != actual_targets)
+          push_pop(bc, 1, bindings);
         break;
       case kLOOKUP_UPV:
         assert(false && "INVALID UPV TARGET");
@@ -1780,7 +2072,7 @@ gab_value compile_record(struct gab_triple gab, struct bc *bc, gab_value tuple,
     if (msg_is_specialform(gab, msg))
       return compile_specialform(gab, bc, tuple, node, env);
 
-    push_op(bc, OP_TUPLE, node);
+    push_inst(bc, (struct inst_arg){OP_TUPLE}, node);
 
     bool explicit = false;
     env = compile_tuple(gab, bc, lhs_node, env, &explicit);
@@ -1954,7 +2246,7 @@ union gab_value_pair gab_compile(struct gab_triple gab,
    * this tuple from the block when the block returns.
    * We push another, empty tuple here. This will be returned by the block.
    **/
-  push_op(&bc, OP_TUPLE, args.ast);
+  push_inst(&bc, (struct inst_arg){OP_TUPLE}, args.ast);
 
   bool explicit = false;
   args.env = compile_tuple(gab, &bc, args.ast, args.env, &explicit);

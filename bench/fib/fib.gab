@@ -7,4 +7,4 @@ fib: .def (
   "gab\number"
   () => (self < 2) .do_fib self)
 
-35.fib
+30.fib

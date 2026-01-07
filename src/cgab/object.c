@@ -1441,8 +1441,8 @@ gab_value gab_shpwithout(struct gab_triple gab, gab_value shape,
 }
 
 int compare_value(const void *l, const void *r) {
-  gab_value lhs = *(gab_value*)l;
-  gab_value rhs = *(gab_value*)r;
+  gab_value lhs = *(gab_value *)l;
+  gab_value rhs = *(gab_value *)r;
   return lhs - rhs;
 };
 
@@ -2073,10 +2073,11 @@ static uint64_t dumpSendInstruction(FILE *stream, struct gab_oprototype *self,
 }
 
 static uint64_t dumpByteInstruction(FILE *stream, struct gab_oprototype *self,
-                                    uint64_t offset) {
-  uint8_t operand = v_uint8_t_val_at(&self->src->bytecode, offset + 1);
+                                    uint64_t offset, bool extra) {
   const char *name =
       gab_opcode_names[v_uint8_t_val_at(&self->src->bytecode, offset)];
+  offset += extra;
+  uint8_t operand = v_uint8_t_val_at(&self->src->bytecode, offset + 1);
   fprintf(stream, "%-25s%hhx\n", name, operand);
   return offset + 2;
 }
@@ -2108,24 +2109,32 @@ static uint64_t dumpPackInstruction(FILE *stream, struct gab_oprototype *self,
 
 static uint64_t dumpConstantInstruction(FILE *stream,
                                         struct gab_oprototype *self,
-                                        uint64_t offset) {
+                                        uint64_t offset, bool extra) {
+  const char *name =
+      gab_opcode_names[v_uint8_t_val_at(&self->src->bytecode, offset)];
+
+  offset += extra;
+
   uint16_t constant =
       ((uint16_t)v_uint8_t_val_at(&self->src->bytecode, offset + 1)) << 8 |
       v_uint8_t_val_at(&self->src->bytecode, offset + 2);
-  const char *name =
-      gab_opcode_names[v_uint8_t_val_at(&self->src->bytecode, offset)];
+
   fprintf(stream, "%-25s", name);
   gab_fvalinspect(stdout, v_gab_value_val_at(&self->src->constants, constant),
                   0);
+
   fprintf(stream, "\n");
   return offset + 3;
 }
 
 static uint64_t dumpNConstantInstruction(FILE *stream,
                                          struct gab_oprototype *self,
-                                         uint64_t offset) {
+                                         uint64_t offset, bool extra) {
   const char *name =
       gab_opcode_names[v_uint8_t_val_at(&self->src->bytecode, offset)];
+
+  offset += extra;
+
   fprintf(stream, "%-25s", name);
 
   uint8_t n = v_uint8_t_val_at(&self->src->bytecode, offset + 1);
@@ -2159,10 +2168,17 @@ static uint64_t dumpInstruction(FILE *stream, struct gab_oprototype *self,
   case OP_PACK_RECORD:
   case OP_PACK_LIST:
     return dumpPackInstruction(stream, self, offset);
+  case OP_TUPLE_NCONSTANT:
   case OP_NCONSTANT:
-    return dumpNConstantInstruction(stream, self, offset);
+    return dumpNConstantInstruction(stream, self, offset, false);
+  case OP_TUPLE_CONSTANT:
   case OP_CONSTANT:
-    return dumpConstantInstruction(stream, self, offset);
+    return dumpConstantInstruction(stream, self, offset, false);
+    // TODO: Write these better
+  case OP_NTUPLE_CONSTANT:
+    return dumpConstantInstruction(stream, self, offset, true);
+  case OP_NTUPLE_NCONSTANT:
+    return dumpNConstantInstruction(stream, self, offset, true);
   case OP_SEND:
   case OP_SEND_BLOCK:
   case OP_SEND_NATIVE:
@@ -2196,16 +2212,39 @@ static uint64_t dumpInstruction(FILE *stream, struct gab_oprototype *self,
   case OP_MATCHSEND_BLOCK:
   case OP_MATCHTAILSEND_BLOCK:
     return dumpSendInstruction(stream, self, offset);
+  case OP_NTUPLE:
   case OP_POP_N:
   case OP_STORE_LOCAL:
   case OP_POPSTORE_LOCAL:
   case OP_LOAD_UPVALUE:
   case OP_LOAD_LOCAL:
-    return dumpByteInstruction(stream, self, offset);
-  case OP_NSTORE_LOCAL:
+  case OP_TUPLE_LOAD_LOCAL:
+    return dumpByteInstruction(stream, self, offset, false);
+  case OP_NTUPLE_LOAD_LOCAL:
+    return dumpByteInstruction(stream, self, offset, true);
+  case OP_NTUPLE_NLOAD_LOCAL: {
+    const char *name =
+        gab_opcode_names[v_uint8_t_val_at(&self->src->bytecode, offset)];
+
+    uint8_t operand = v_uint8_t_val_at(&self->src->bytecode, offset + 2);
+
+    fprintf(stream, "%-25s%hhx: ", name, operand);
+
+    for (int i = 0; i < operand - 1; i++) {
+      fprintf(stream, "%hhx, ",
+              v_uint8_t_val_at(&self->src->bytecode, offset + 2 + i));
+    }
+
+    fprintf(stream, "%hhx\n",
+            v_uint8_t_val_at(&self->src->bytecode, offset + 1 + operand));
+
+    return offset + 2 + operand;
+  }
   case OP_NPOPSTORE_LOCAL:
+  case OP_NPOPSTORE_STORE_LOCAL:
   case OP_NLOAD_UPVALUE:
-  case OP_NLOAD_LOCAL: {
+  case OP_NLOAD_LOCAL:
+  case OP_TUPLE_NLOAD_LOCAL: {
     const char *name =
         gab_opcode_names[v_uint8_t_val_at(&self->src->bytecode, offset)];
 
