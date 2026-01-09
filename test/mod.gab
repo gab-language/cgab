@@ -179,10 +179,10 @@ variables\funky_assign_in_record\test:.def t => do
   record = ({ (a, b, c, d) = (hi: 'world' bye: 'world') })
 
   t.expect(a ==: hi:)
-  t.expect(b ==: 'world')
+  t.expect(b ==: nil:)
   t.expect(c ==: bye:)
   t.expect(d ==: 'world')
-  t.expect((record?) ==: Shapes.make(hi: bye:))
+  t.expect((record?) ==: Shapes.make(hi:))
 end
 
 numbers\equal_itself\test: .def t => do

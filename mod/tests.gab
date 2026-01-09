@@ -121,8 +121,9 @@ queue_tests = (filter_by_suite) => do
 
     fibers.map await:
 
-    events.close
-    app.close
+# TODO: Make this configurable from the cmdline
+    #events.close
+    #app.close
   end
 end
 

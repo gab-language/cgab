@@ -1183,15 +1183,15 @@ static inline void byte_arg_make_multi(struct bc *bc, struct inst_arg arg,
                                        gab_value node, int multiarg_offset) {
   // Transition a single-byte-arg instruction to a multi-byte-arg
   // instruction.
-  size_t prev_byte_arg = bc->prev_op_at + multiarg_offset;
-  uint8_t prev_byte = v_uint8_t_val_at(&bc->bc, prev_byte_arg);
+  size_t multi_arg = bc->prev_op_at + multiarg_offset;
+  uint8_t prev_multi = v_uint8_t_val_at(&bc->bc, multi_arg);
 
   // Change the previous byte arg to now correspond to the number of bytes
   // to follow (2).
-  v_uint8_t_set(&bc->bc, prev_byte_arg, 2);
+  v_uint8_t_set(&bc->bc, multi_arg, 2);
 
   // Push the previous byte value, and the new one.
-  push_byte(bc, prev_byte, node);
+  push_byte(bc, prev_multi, node);
   push_byte(bc, arg.as.byte_arg, node);
 
   // Update the old instruction to the new, and the previous op.
@@ -1207,7 +1207,7 @@ static inline void multi_byte_arg_append(struct bc *bc, struct inst_arg arg,
   uint8_t multi = v_uint8_t_val_at(&bc->bc, multi_arg);
 
   // Increment the multi-arg count.
-  v_uint8_t_set(&bc->bc, multi_arg, multi + multiarg_offset);
+  v_uint8_t_set(&bc->bc, multi_arg, multi + 1);
 
   // Push the additional byte argument.
   push_byte(bc, arg.as.byte_arg, node);

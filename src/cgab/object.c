@@ -2076,7 +2076,9 @@ static uint64_t dumpByteInstruction(FILE *stream, struct gab_oprototype *self,
                                     uint64_t offset, bool extra) {
   const char *name =
       gab_opcode_names[v_uint8_t_val_at(&self->src->bytecode, offset)];
+
   offset += extra;
+
   uint8_t operand = v_uint8_t_val_at(&self->src->bytecode, offset + 1);
   fprintf(stream, "%-25s%hhx\n", name, operand);
   return offset + 2;
@@ -2226,9 +2228,10 @@ static uint64_t dumpInstruction(FILE *stream, struct gab_oprototype *self,
     const char *name =
         gab_opcode_names[v_uint8_t_val_at(&self->src->bytecode, offset)];
 
+    uint8_t tuple_operand = v_uint8_t_val_at(&self->src->bytecode, offset + 1);
     uint8_t operand = v_uint8_t_val_at(&self->src->bytecode, offset + 2);
 
-    fprintf(stream, "%-25s%hhx: ", name, operand);
+    fprintf(stream, "%-25s(%hhx)%hhx: ", name, tuple_operand, operand);
 
     for (int i = 0; i < operand - 1; i++) {
       fprintf(stream, "%hhx, ",
@@ -2236,9 +2239,9 @@ static uint64_t dumpInstruction(FILE *stream, struct gab_oprototype *self,
     }
 
     fprintf(stream, "%hhx\n",
-            v_uint8_t_val_at(&self->src->bytecode, offset + 1 + operand));
+            v_uint8_t_val_at(&self->src->bytecode, offset + 2 + operand));
 
-    return offset + 2 + operand;
+    return offset + 3 + operand;
   }
   case OP_NPOPSTORE_LOCAL:
   case OP_NPOPSTORE_STORE_LOCAL:

@@ -65,13 +65,15 @@ static handler handlers[] = {
     [[clang::musttail]] return handlers[o](DISPATCH_ARGS());                   \
   })
 
-#define NEXT() ({ DISPATCH(*(IP()++)); })
-
 #define NEXT_CHECKED()                                                         \
   ({                                                                           \
     CHECK_SIGNAL();                                                            \
     DISPATCH(*(IP()++));                                                       \
   })
+
+
+#define NEXT() ({ DISPATCH(*(IP()++)); })
+// #define NEXT() NEXT_CHECKED()
 
 #define VM_PANIC(status, help, ...)                                            \
   ({                                                                           \
@@ -2567,8 +2569,6 @@ CASE_CODE(SEND_PRIMITIVE_TAKE) {
 
   gab_value v =
       gab_ntchntake(GAB(), c, stackspace, SP() + 1, cGAB_VM_CHANNEL_TAKE_TRIES);
-
-  // gab_fprintf(stdout, "TAKE: $\n", v);
 
   RESET_REENTRANT();
 

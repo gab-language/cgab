@@ -79,6 +79,7 @@ CMOD_SHARED = $(CMOD_SRC:src/mod/%.c=$(BUILD_PREFIX)/mod/%$(GAB_DYNLIB_FILEENDIN
 
 CXXMOD_SRC 	 = $(wildcard src/mod/*.cc)
 CXXMOD_SHARED = $(CXXMOD_SRC:src/mod/%.cc=$(BUILD_PREFIX)/mod/%$(GAB_DYNLIB_FILEENDING))
+
 all: gab cmodules cxxmodules
 
 -include $(CGAB_OBJ:.o=.d) $(GAB_OBJ:.o=.d) $(CMOD_SHARED:$(GAB_DYNLIB_FILEENDING)=.d)
@@ -95,9 +96,8 @@ $(BUILD_PREFIX)/libcgab.a: $(CGAB_OBJ)
 	zig ar rcs $@ $^
 
 # This rule builds the gab executable, linking with libcgab.a
-$(BUILD_PREFIX)/gab: $(GAB_OBJ) 													\
-							$(BUILD_PREFIX)/libcgab.a
-	$(CC) $(CFLAGS) $(BINARY_FLAGS) $(GAB_OBJ) -o $@
+$(BUILD_PREFIX)/gab: $(GAB_OBJ) $(BUILD_PREFIX)/libcgab.a
+	$(CC) $(CFLAGS) $(BINARY_FLAGS) -o $@ $^
 
 # This rule builds each c++ module shared library.
 $(BUILD_PREFIX)/mod/%$(GAB_DYNLIB_FILEENDING): $(SRC_PREFIX)/%.cc
@@ -149,6 +149,8 @@ $(VENDOR_PREFIX)/miniz/amalgamation/miniz.c:
 	cd $(VENDOR_PREFIX)/miniz && \
 		./amalgamate.sh
 
+$(VENDOR_PREFIX)/unthread/bin/unthread.o:
+	make CC="$(CC)" CFLAGS="$(CFLAGS)" -s -C $(VENDOR_PREFIX)/unthread bin/unthread.o bin/unthread-fuzz
 
 # These two rules clean before generating the library. This is because the target *may* have been different from our last call,
 # so any intermediate object files may no longer be valid.
