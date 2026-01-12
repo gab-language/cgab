@@ -15,7 +15,6 @@ for f in src/cgab/*.c; do
   zig cc -std=c23 -fPIC -Wall -c \
     --target=x86_64-linux-gnu \
     -fno-sanitize=undefined \
-    -fno-stack-protector \
     -Iinclude -isystemvendor \
     -Ivendor/unthread/include \
     -DGAB_TARGET_TRIPLE=\"x86_64-linux-gnu\" \
@@ -36,7 +35,6 @@ for f in src/gab/*.c; do
   zig cc -std=c23 -fPIC -Wall -c \
     --target=x86_64-linux-gnu \
     -fno-sanitize=undefined \
-    -fno-stack-protector \
     -Iinclude -isystemvendor \
     -Ivendor/unthread/include \
     -DGAB_TARGET_TRIPLE=\"x86_64-linux-gnu\" \
@@ -48,22 +46,15 @@ for f in src/gab/*.c; do
     "$f"
 done
 
-echo "Linking gabd-det with unthread and ucontext..."
+echo "Linking gabd with unthread"
 zig cc  \
   --target=x86_64-linux-gnu \
   -fno-sanitize=undefined \
-  -fno-stack-protector \
   -Ivendor/unthread/include \
   -rdynamic \
-  -o /tmp/gabd-det \
+  -o gabd \
   vendor/unthread/bin/unthread.o \
   /tmp/main.o \
   /tmp/libcgab-gnu.a
 
 echo "Build complete!"
-echo ""
-echo "Checking for pthread symbols..."
-nm /tmp/gabd-det | grep pthread_create
-echo ""
-echo "Checking if dynamically linked..."
-ldd /tmp/gabd-det 2>&1 | head -1
