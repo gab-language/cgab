@@ -431,6 +431,9 @@ GAB_API_INLINE gab_uint __gab_valtou(gab_value v) {
 #define T gab_value
 #include "vector.h"
 
+// #include <threads.h>
+#include "cthreads.h"
+
 #define T gab_value
 #define NAME gab_value_thrd
 #define V_CONCURRENT

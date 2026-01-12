@@ -1,14 +1,14 @@
 #include "BearSSL/inc/bearssl.h"
 #include "core.h"
 
+#include "gab.h"
+#include "platform.h"
+
 #define QIO_LOOP_INTERVAL_NS 50000
 #define QIO_INTERNAL_QUEUE_INITIAL_LEN 2056
 #include "qio/qio.h"
 
 #include "ta.h"
-
-#include "gab.h"
-#include "platform.h"
 
 /*
  * MASSIVE TODO:
@@ -106,7 +106,7 @@ struct gab_io {
 struct gab_file {
   struct gab_io io;
 
-  mtx_t mtx;
+  // mtx_t mtx;
 
   uint16_t bfront, bback;
   unsigned char buffer[BUFFER_SIZE];
@@ -126,7 +126,7 @@ struct gab_sock {
 
   struct qio_addr addr;
 
-  mtx_t mtx;
+  // mtx_t mtx;
 
   uint16_t bfront, bback;
   unsigned char buffer[BUFFER_SIZE];
@@ -140,7 +140,7 @@ struct gab_ssl_sock {
 
   struct qio_addr addr;
 
-  mtx_t mtx;
+  // mtx_t mtx;
 
   qd_t io_operations[2];
 

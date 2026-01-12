@@ -3,8 +3,8 @@
 
 #include "core.h"
 #include "gab.h"
+#include "platform.h"
 #include <stdint.h>
-#include <threads.h>
 
 #ifdef GAB_STATUS_NAMES_IMPL
 static const char *gab_status_names[] = {

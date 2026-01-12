@@ -25,15 +25,10 @@
   ((type *)realloc(loc, sizeof(type) * (new_count)))
 
 #ifdef V_CONCURRENT
-#if __has_include("threads.h")
-#include "threads.h"
 #define INIT_LOCK(self) (mtx_init(&self->mtx, mtx_plain))
 #define DESTROY_LOCK(self) (mtx_destroy(&self->mtx))
 #define AQUIRE_LOCK(self) (mtx_lock(&self->mtx))
 #define RELEASE_LOCK(self) (mtx_unlock(&self->mtx))
-#else
-#error V_CONCURRENT set without threads.h
-#endif
 #else
 #define INIT_LOCK(self)
 #define DESTROY_LOCK(self)

@@ -5,22 +5,6 @@
 #include <stdio.h>
 
 /**
- * C11 Threads are not well supported cross-platforms.
- *
- * Even the c-standard-required feature macro __STDC_NOTHREADS__
- * isn't well supported.
- *
- * Instead of mucking about, just check for the standard threads with
- * a good 'ol __has_include.
- *
- * As of 2025, I believe only linux GNU is shipping this (at least in zig's
- * cross compiling toolchain).
- *
- * In the other cases, use our vendored, cthreads submodule as a cross platform
- * replacement until c11 threads is supported.
- */
-
-/**
  * PLATFORM INTERFACE
  * %--------------------------------%
  * | Dynamic-Shared Library Loading |
@@ -85,7 +69,7 @@
     gab_nosproc(cmd, sizeof(_args) / sizeof(char *), _args);                   \
   })
 
-a_char *gab_fosread(FILE *fd) {
+GAB_API_INLINE a_char *gab_fosread(FILE *fd) {
   v_char buffer = {0};
 
   while (1) {
@@ -106,7 +90,7 @@ a_char *gab_fosread(FILE *fd) {
   return data;
 }
 
-a_char *gab_osread(const char *path) {
+GAB_API_INLINE a_char *gab_osread(const char *path) {
   FILE *file = fopen(path, "rb");
 
   if (file == nullptr)
@@ -118,7 +102,7 @@ a_char *gab_osread(const char *path) {
   return data;
 }
 
-a_char *gab_fosreadl(FILE *fd) {
+GAB_API_INLINE a_char *gab_fosreadl(FILE *fd) {
   v_char buffer;
   v_char_create(&buffer, 1024);
 

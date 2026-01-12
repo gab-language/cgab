@@ -1,6 +1,5 @@
 #include "core.h"
 #include <stdint.h>
-#include <threads.h>
 
 // GL/gl.h won't work because some OS's have files which override.
 // Use glad/gl.h instead.

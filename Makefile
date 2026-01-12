@@ -1,21 +1,6 @@
 CC  =zig cc
 CXX =zig c++
 
-# TODO: Proper defaults by detecting OS somehow
-# ifndef GAB_TARGETS
-# GAB_TARGETS = native
-# endif
-#
-# ifndef GAB_CCFLAGS
-# GAB_CCFLAGS = -g \
-# 							-O0 \
-# 							-fsanitize=address,undefined,leak,memory
-# endif
-#
-# ifndef GAB_DYNLIB_FILEENDING
-# GAB_DYNLIB_FILEENDING = .so
-# endif
-
 SRC_PREFIX 	 	 	= src/**
 BUILD_PREFIX 	 	= build-$(GAB_TARGETS)
 INCLUDE_PREFIX 	= include
@@ -80,7 +65,7 @@ CMOD_SHARED = $(CMOD_SRC:src/mod/%.c=$(BUILD_PREFIX)/mod/%$(GAB_DYNLIB_FILEENDIN
 CXXMOD_SRC 	 = $(wildcard src/mod/*.cc)
 CXXMOD_SHARED = $(CXXMOD_SRC:src/mod/%.cc=$(BUILD_PREFIX)/mod/%$(GAB_DYNLIB_FILEENDING))
 
-all: gab cmodules cxxmodules
+all: gab cmodules cxxmodules unthread
 
 -include $(CGAB_OBJ:.o=.d) $(GAB_OBJ:.o=.d) $(CMOD_SHARED:$(GAB_DYNLIB_FILEENDING)=.d)
 
@@ -149,8 +134,13 @@ $(VENDOR_PREFIX)/miniz/amalgamation/miniz.c:
 	cd $(VENDOR_PREFIX)/miniz && \
 		./amalgamate.sh
 
+$(VENDOR_PREFIX)/unthread/bin/unthread-fuzz:
+	make CC="$(CC)" CFLAGS="$(CFLAGS)" -s -C $(VENDOR_PREFIX)/unthread bin/unthread-fuzz
+
 $(VENDOR_PREFIX)/unthread/bin/unthread.o:
-	make CC="$(CC)" CFLAGS="$(CFLAGS)" -s -C $(VENDOR_PREFIX)/unthread bin/unthread.o bin/unthread-fuzz
+	make CC="$(CC)" CFLAGS="$(CFLAGS)" -s -C $(VENDOR_PREFIX)/unthread bin/unthread.o
+
+unthread: $(VENDOR_PREFIX)/unthread/bin/unthread.o $(VENDOR_PREFIX)/unthread/bin/unthread-fuzz
 
 # These two rules clean before generating the library. This is because the target *may* have been different from our last call,
 # so any intermediate object files may no longer be valid.
@@ -196,8 +186,11 @@ cxxmodules: $(CXXMOD_SHARED)
 cmodules: $(VENDOR_PREFIX)/ta.h $(CMOD_SHARED)
 
 test: gab cmodules cxxmodules
-	mv $(BUILD_PREFIX)/mod/* mod/
+	cp $(BUILD_PREFIX)/mod/* mod/
 	$(BUILD_PREFIX)/gab run test
+
+test-deterministic: gab unthread
+	LD_PRELOAD=$(VENDOR_PREFIX)/unthread/bin/unthread.o $(VENDOR_PREFIX)/unthread/bin/unthread-fuzz $(BUILD_PREFIX)/gabd exec "1 + 1"
 
 clean:
 	rm -rf $(BUILD_PREFIX)*

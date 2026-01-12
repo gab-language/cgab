@@ -1,3 +1,4 @@
+#include <pthread.h>
 #include <stdatomic.h>
 #define GAB_STATUS_NAMES_IMPL
 #define GAB_STATUS_MESSAGES_IMPL
@@ -292,6 +293,10 @@ static const struct timespec t = {.tv_nsec = GAB_YIELD_SLEEPTIME_NS};
 #endif
 
 enum gab_signal gab_yield(struct gab_triple gab) {
+
+  // Annoying :(
+  pthread_yield();
+
   if (gab_sigwaiting(gab)) {
 #if cGAB_LOG_EG
     fprintf(stderr, "[WORKER %i] RECV SIG: %i\n", gab.wkid, gab.eg->sig.signal);
@@ -302,6 +307,7 @@ enum gab_signal gab_yield(struct gab_triple gab) {
 #if GAB_YIELD_SLEEPTIME_NS != 0
   thrd_sleep(&t, nullptr);
 #endif
+
   return sGAB_IGN;
 }
 
@@ -742,8 +748,10 @@ void gab_destroy(struct gab_triple gab) {
 
   gab_chnclose(gab.eg->work_channel);
 
-  while (gab.eg->njobs > 0)
-    continue;
+  while (gab.eg->njobs > 0) {
+    pthread_yield();
+    // continue;
+  }
 
   gab_dref(gab, gab.eg->work_channel);
   gab_ndref(gab, 1, gab.eg->scratch.len, gab.eg->scratch.data);

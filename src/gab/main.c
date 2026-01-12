@@ -1,3 +1,6 @@
+#include "miniz/amalgamation/miniz.c"
+#include "miniz/amalgamation/miniz.h"
+
 #include "core.h"
 #include "gab.h"
 #include <locale.h>
@@ -6,11 +9,10 @@
 #include "crossline/crossline.c"
 #include "crossline/crossline.h"
 
-#include "miniz/amalgamation/miniz.c"
-#include "miniz/amalgamation/miniz.h"
-
 #include "colors.h"
 #include "platform.h"
+
+#include <stdio.h>
 
 #define TOSTRING(x) #x
 #define STR(x) TOSTRING(x)
