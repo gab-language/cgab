@@ -1,6 +1,6 @@
-NATIVECC  =~/zig/zig cc
-TARGETCC	=~/zig/zig cc --target=$(GAB_TARGETS)
-TARGETCXX 			=~/zig/zig c++
+NATIVECC  = zig cc
+TARGETCC	= zig cc --target=$(GAB_TARGETS)
+TARGETCXX = zig c++
 
 SRC_PREFIX 	 	 	= src/**
 BUILD_PREFIX 	 	= build-$(GAB_TARGETS)
