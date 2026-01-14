@@ -33,7 +33,7 @@
 
 // Combine common consecutive instruction patterns into one superinstruction
 #ifndef cGAB_SUPERINSTRUCTIONS
-#define cGAB_SUPERINSTRUCTIONS 1
+#define cGAB_SUPERINSTRUCTIONS 0
 #endif
 
 // Emit tailcalls where possible
@@ -76,15 +76,6 @@
 #define cGAB_LOG_GC 0
 #endif
 
-// Make sure functions don't break out of their frame
-#ifndef cGAB_DEBUG_VM
-#define cGAB_DEBUG_VM 0
-#endif
-
-#ifndef cGAB_DEBUG_BC
-#define cGAB_DEBUG_BC 0
-#endif
-
 #ifndef cGAB_LOG_EG
 #define cGAB_LOG_EG 0
 #endif
@@ -92,6 +83,15 @@
 // Log what is happening during execution.
 #ifndef cGAB_LOG_VM
 #define cGAB_LOG_VM 0
+#endif
+
+// Make sure functions don't break out of their frame
+#ifndef cGAB_DEBUG_VM
+#define cGAB_DEBUG_VM 0
+#endif
+
+#ifndef cGAB_DEBUG_BC
+#define cGAB_DEBUG_BC 0
 #endif
 
 // Define how many jobs should be used, default to 8.

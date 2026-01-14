@@ -76,6 +76,13 @@ static handler handlers[] = {
 #undef OP_CODE
 };
 
+static const char *gab_opcode_names[] = {
+#define OP_CODE(name) #name,
+#include "bytecode.h"
+#undef OP_CODE
+#undef GAB_OPCODE_NAMES_IMPL
+};
+
 #if cGAB_LOG_VM
 #define LOG(gab, op) printf("OP_%s (%i)\n", gab_opcode_names[op], gab.wkid);
 #else
@@ -1383,6 +1390,7 @@ CASE_CODE(POPSTORE_LOCAL) {
 
   LOCAL(READ_BYTE) = POP();
 
+  assert(have >= 1);
   SET_VAR(have - 1);
   NEXT();
 }
@@ -1392,6 +1400,7 @@ CASE_CODE(NPOPSTORE_LOCAL) {
 
   uint8_t n = READ_BYTE;
 
+  assert(have >= n);
   have -= n;
 
   while (n--)
@@ -1406,6 +1415,7 @@ CASE_CODE(NPOPSTORE_STORE_LOCAL) {
 
   uint8_t n = READ_BYTE;
 
+  assert(have >= n);
   have -= n;
 
   while (n-- > 1)
@@ -1946,14 +1956,23 @@ CASE_CODE(NCONSTANT) {
 }
 
 CASE_CODE(POP) {
+  uint64_t have = VAR();
+
   DROP();
-  SET_VAR(0);
+
+  assert(have >= 1);
+  SET_VAR(have - 1);
   NEXT();
 }
 
 CASE_CODE(POP_N) {
-  DROP_N(READ_BYTE);
-  SET_VAR(0);
+  uint64_t have = VAR();
+
+  uint8_t n = READ_BYTE;
+  DROP_N(n);
+  
+  assert(have >= n);
+  SET_VAR(have - n);
   NEXT();
 }
 
@@ -2291,8 +2310,8 @@ CASE_CODE(SEND) {
   gab_value *ks = READ_SENDCONSTANTS_ANDTAIL(adjust);
   uint64_t have = COMPUTE_TUPLE();
 
-  // Have can not be 0. We need a receiver!
-  if (!have) {
+  // Have can not be 0. We need a receiver.
+  if (__gab_unlikely(!have)) {
     PUSH(gab_nil);
     SET_VAR(1);
     have++;

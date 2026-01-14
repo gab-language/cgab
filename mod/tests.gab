@@ -3,9 +3,11 @@ ui = 'cgui'.use
 
 (events, app) = (Channels.make, Channels.make)
 
-ui
-  .run\tui(events, app)
-  .unwrap
+#ui
+#  .run\tui(events, app)
+#  .unwrap
+
+Fibers.make () => app.each(x => x)
 
 is\unittest:.def(
   Messages.t
@@ -121,9 +123,9 @@ queue_tests = (filter_by_suite) => do
 
     fibers.map await:
 
-# TODO: Make this configurable from the cmdline
-    #events.close
-    #app.close
+    # TODO: Make this configurable from the cmdline
+    events.close
+    app.close
   end
 end
 

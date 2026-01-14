@@ -287,6 +287,7 @@ static const struct timespec t = {.tv_nsec = GAB_YIELD_SLEEPTIME_NS};
 enum gab_signal gab_yield(struct gab_triple gab) {
 
   // This might not be optimal
+  // Without thrd_yield here, we can't find the bug.
   thrd_yield();
 
   if (gab_sigwaiting(gab)) {
@@ -537,7 +538,7 @@ bool gab_jbcreate(struct gab_triple gab, struct gab_job *job, int(fn)(void *),
     if (!q_gab_value_push(&job->queue, fiber))
       assert(false && "BAD");
 
-  struct gab_triple *gabcpy = malloc(sizeof(struct gab_triple));
+  struct gab_triple * gabcpy = malloc(sizeof(struct gab_triple));
   memcpy(gabcpy, &gab, sizeof(struct gab_triple));
   gabcpy->wkid = job - gab.eg->jobs;
 
