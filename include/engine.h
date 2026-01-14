@@ -3,50 +3,23 @@
 
 #include "core.h"
 #include "gab.h"
-#include "platform.h"
 #include <stdint.h>
 
-#ifdef GAB_STATUS_NAMES_IMPL
-static const char *gab_status_names[] = {
-#define STATUS(name, message) #name,
-#include "status_code.h"
-#undef STATUS
+#ifndef GAB_COLORS_IMPL
+static const char *ANSI_COLORS[] = {
+    GAB_GREEN,  GAB_MAGENTA, GAB_RED,
+    GAB_YELLOW, GAB_BLUE,    GAB_CYAN,
 };
-#undef GAB_STATUS_NAMES_IMPL
+#define GAB_COLORS_IMPL
 #endif
 
-#ifdef GAB_STATUS_MESSAGES_IMPL
-static const char *gab_status_messages[] = {
-#define STATUS(name, message) message,
-#include "status_code.h"
-#undef STATUS
-};
-#undef GAB_STATUS_MESSAGES_IMPL
-#endif
-
-#ifdef GAB_TOKEN_NAMES_IMPL
-static const char *gab_token_names[] = {
-#define TOKEN(message) #message,
-#include "token.h"
-#undef TOKEN
-};
-#undef GAB_TOKEN_NAMES_IMPL
-#endif
+#define GAB_COLORS_LEN (sizeof(ANSI_COLORS) / sizeof(ANSI_COLORS[0]))
 
 typedef enum gab_opcode {
 #define OP_CODE(name) OP_##name,
 #include "bytecode.h"
 #undef OP_CODE
 } gab_opcode;
-
-#ifdef GAB_OPCODE_NAMES_IMPL
-static const char *gab_opcode_names[] = {
-#define OP_CODE(name) #name,
-#include "bytecode.h"
-#undef OP_CODE
-#undef GAB_OPCODE_NAMES_IMPL
-};
-#endif
 
 /**
  * Structure used to actually execute bytecode
@@ -469,6 +442,27 @@ struct gab_src {
     gab_value *constants;
   } thread_bytecode[];
 };
+
+struct gab_src *gab_src(struct gab_triple gab, gab_value name, const char *src,
+                        uint64_t len);
+
+uint64_t gab_srcappend(struct gab_src *self, uint64_t len,
+                       uint8_t bc[static len], uint64_t toks[static len]);
+
+static inline void gab_srccomplete(struct gab_triple gab,
+                                   struct gab_src *self) {
+  for (int i = 0; i < self->len; i++) {
+    uint8_t *bc = malloc(self->bytecode.len);
+    memcpy(bc, self->bytecode.data, self->bytecode.len);
+
+    gab_value *ks = malloc(self->constants.len * sizeof(gab_value));
+    memcpy(ks, self->constants.data, self->constants.len * sizeof(gab_value));
+
+    self->thread_bytecode[i] = (struct src_bytecode){bc, ks};
+  }
+}
+
+void gab_srcdestroy(struct gab_src *self);
 
 /**
  * @class The 'engine'. Stores the long-lived data

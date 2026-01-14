@@ -1,11 +1,62 @@
+/**
+ * @file
+ * @brief This file contains the interpreter for Gab's bytecode.
+ *
+ * This interpreter is stack-based, which is quite conventional. There are
+ * however some unconventional pieces to it.
+ *
+ * --< INTERPRETER DISPATCH >--
+ *
+ * Most implementations of a bytecode interpreter
+ * include a switch statement in a big loop, or sometimes a more optimized goto-loop.
+ * In Gab, we use a tail-calling interpreter. Each opcode is implemented as a function
+ * adhering to the same interface (defined here with macros, @see handler and @see OP_HANDLER_ARGS).
+ *
+ * When these opcodes finish their work, they tail-call into the next opcode (@see DISPATCH). We annotate
+ * each of these return statements with [[clang::musttail]], to ensure that the compiler can and does
+ * emit a tail call at each of these call sites.
+ *
+ * - PROS -
+ * Each instruction is its own function. This is easier to reason about when implementing op codes, as there
+ * is no mutable state global to the interpreting function. On top of that, it is more likely that the compiler keeps
+ * crucial VM variables like the stack pointer and instruction pointer in REGISTERS, because they are confined to registers
+ * by calling convention. (It is for this reason that the stack pointer, constant pointer, and instruction pointer are
+ * unboxed and passed as arguments, as opposed to just updating the values in the gab_vm struct).
+ *
+ * Since each of our op-codes are individual functions, debugging tools like callgrind can be used to create
+ * web-like visualizations, which show what opcodes often follow others, and how much time is spent in each.
+ *
+ * - CONS -
+ * Implementation requires more understanding of how c function calls work - and there are limitations on these functions
+ * that are unclear. (Such as, no dynamic stack allocations, like using int a[n], where n is not known at compile time.)
+ *
+ * Tail-calling also makes for somewhat confusing stack traces, and can confuse some debugging / performance tools.
+ * (Most do a good enough job though).
+ *
+ * --< STACK BASED TUPLES >--
+ *
+ * Gab as a language makes heavy use of ~tuples~. (returning multiple values from a function, etc). To avoid allocating
+ * these as slices in memory, Gab stores these tuples on its internal VM stack. The top of the stack (pointed to by SP()), stores
+ * the *number of values* in the tuple below it. When a value is pushed, that number is incremented. This is how function calls and
+ * returns know how many values are present. (and how something like (1, 2, func.send, 5, 6) => (1, 2, 3, 4, 5, 6) is able to work.
+ *
+ * There is plenty of runtime overhead in tracking this. But it is made up for by the amount of allocation that is *Saved* through using this
+ * system instead.
+ *
+ * --< INVARIANTS >--
+ * There are some invariants which must hold true in these opcodes. It is impossible to encode them into the c-typesystem,
+ * so I try to write them down here. There may be more in my head which aren't written down.
+ *  
+ *  1. Before calling out to a gab_* api function, STORE() must be called. This stores the cached variables for the stack pointer and frame
+ *  pointer into the VM struct. Without this call, the gab_* api function will see an out-of-date version of the fiber's stack.
+ *
+ *  2. Opcodes which may yield (by calling VM_YIELD()), much first make a call to CHECK_SIGNAL(). This is to guarantee
+ *  that a signal is received and processed if the interpreter resumes at that specific opcode.
+ *
+ */
 #include "core.h"
 #include "gab.h"
-
-#define GAB_OPCODE_NAMES_IMPL
 #include "engine.h"
-
-#include "colors.h"
-#include "lexer.h"
 
 #define OP_HANDLER_ARGS                                                        \
   struct gab_triple *__gab, struct gab_vm *__vm, uint8_t *__ip,                \
@@ -1622,6 +1673,8 @@ CASE_CODE(SEND_PRIMITIVE_USE) {
 
   SEND_GUARD_KIND(r, kGAB_STRING);
 
+  CHECK_SIGNAL();
+
   STORE();
   uintptr_t reentrant = REENTRANT();
   union gab_value_pair mod;
@@ -2561,6 +2614,8 @@ CASE_CODE(SEND_PRIMITIVE_TAKE) {
 
   STORE_SP();
 
+  CHECK_SIGNAL();
+
   /*
    * Adjust for the tuple-len value at *SP() on the stack.
    * Store above it, and subract one from the stackspace to reserve it.
@@ -2622,9 +2677,9 @@ CASE_CODE(SEND_PRIMITIVE_PUT) {
 
   STORE_SP();
 
-  if (REENTRANT() == c) {
-    CHECK_SIGNAL();
+  CHECK_SIGNAL();
 
+  if (REENTRANT() == c) {
     // If we're reentering, check that our channel
     // is still holding our data ptr.
     // I *believe* this is sound based on the following principles:
@@ -2680,6 +2735,8 @@ CASE_CODE(SEND_PRIMITIVE_FIBER) {
   VM_PANIC_GUARD_KIND(block, kGAB_BLOCK);
 
   STORE_SP();
+
+  CHECK_SIGNAL();
 
   // We cannot have a low (0-1) value here for some reason
   union gab_value_pair fb = gab_tarun(GAB(), 1 << 16,

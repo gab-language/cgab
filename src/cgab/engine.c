@@ -1,15 +1,7 @@
-#include <pthread.h>
 #include <stdatomic.h>
-#define GAB_STATUS_NAMES_IMPL
-#define GAB_STATUS_MESSAGES_IMPL
-#define GAB_TOKEN_NAMES_IMPL
 #include "engine.h"
-
-#include "colors.h"
-
 #include "core.h"
 #include "gab.h"
-#include "lexer.h"
 
 struct errdetails {
   const char *src_name, *tok_name, *msg_name;
@@ -294,8 +286,8 @@ static const struct timespec t = {.tv_nsec = GAB_YIELD_SLEEPTIME_NS};
 
 enum gab_signal gab_yield(struct gab_triple gab) {
 
-  // Annoying :(
-  pthread_yield();
+  // This might not be optimal
+  thrd_yield();
 
   if (gab_sigwaiting(gab)) {
 #if cGAB_LOG_EG
@@ -749,7 +741,7 @@ void gab_destroy(struct gab_triple gab) {
   gab_chnclose(gab.eg->work_channel);
 
   while (gab.eg->njobs > 0) {
-    pthread_yield();
+    thrd_yield();
     // continue;
   }
 
@@ -896,7 +888,7 @@ bool repl_check_aresult(struct gab_triple gab, union gab_value_pair res) {
 
 void repl_wait_for(struct gab_triple gab, struct gab_repl_argt *args,
                    gab_value fib) {
-  for (int i = 0; !gab_fibisdone(fib); i++) {
+  while (!gab_fibisdone(fib)) {
     switch (gab_yield(gab)) {
     case sGAB_COLL:
       gab_gcepochnext(gab);
@@ -1390,6 +1382,24 @@ int gab_vsprintf(char *dest, size_t n, const char *fmt, va_list varargs) {
 
   return n - remaining;
 }
+
+static const char *gab_status_names[] = {
+#define STATUS(name, message) #name,
+#include "status_code.h"
+#undef STATUS
+};
+
+static const char *gab_token_names[] = {
+#define TOKEN(message) #message,
+#include "token.h"
+#undef TOKEN
+};
+
+static const char *gab_status_messages[] = {
+#define STATUS(name, message) message,
+#include "status_code.h"
+#undef STATUS
+};
 
 int sprint_pretty_err(struct gab_triple gab, char **buf, size_t *len,
                       struct errdetails *args, const char *hint) {

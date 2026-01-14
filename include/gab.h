@@ -431,8 +431,14 @@ GAB_API_INLINE gab_uint __gab_valtou(gab_value v) {
 #define T gab_value
 #include "vector.h"
 
-// #include <threads.h>
+// If this configuration macro is defined, try to use the native threads. If not available, this will fall back
+// to our threads wrapper compat layer.
+// If it is not defined, always use the compat layer.
+#ifdef cGAB_THREADS_NATIVE
+#include <threads.h>
+#else
 #include "cthreads.h"
+#endif
 
 #define T gab_value
 #define NAME gab_value_thrd

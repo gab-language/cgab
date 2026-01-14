@@ -1,5 +1,6 @@
-CC  =zig cc
-CXX =zig c++
+NATIVECC  =~/zig/zig cc
+TARGETCC	=~/zig/zig cc --target=$(GAB_TARGETS)
+TARGETCXX 			=~/zig/zig c++
 
 SRC_PREFIX 	 	 	= src/**
 BUILD_PREFIX 	 	= build-$(GAB_TARGETS)
@@ -13,7 +14,6 @@ CFLAGS = -std=c23 \
 				 -Wall \
 				 -MMD  \
 				 -fno-lto \
-				 --target=$(GAB_TARGETS) \
 				 -DGAB_TARGET_TRIPLE=\"$(GAB_TARGETS)\"\
 				 -DGAB_DYNLIB_FILEENDING=\"$(GAB_DYNLIB_FILEENDING)\" \
 				 $(INCLUDE) \
@@ -31,8 +31,9 @@ CXXFLAGS = -std=c++23 \
 # A binary executable needs to keep all cgab symbols,
 # in case they are used by a dynamically loaded c-module.
 # This is why -rdynamic is used.
+#
 GAB_LINK_DEPS = -lcgab
-BINARY_FLAGS 	= -rdynamic -DGAB_CORE $(GAB_LINK_DEPS)
+BINARY_FLAGS 	= -rdynamic -DGAB_CORE $(GAB_LINK_DEPS) $(GAB_BINARYFLAGS)
 
 # A shared module needs undefined dynamic lookup
 # As it is not linked with cgab. The symbols from cgab
@@ -48,12 +49,14 @@ CXXSHARED_FLAGS = -shared -undefined dynamic_lookup $(CXXMOD_LINK_DEPS) $(CXXMOD
 
 # Source files in src/cgab are part of libcgab.
 # Their object files are compiled and archived together into libcgab.a
+# There are corresponding *determinstic* versions, prefixed with d.
 CGAB_SRC = $(wildcard src/cgab/*.c)
 CGAB_OBJ = $(CGAB_SRC:src/cgab/%.c=$(BUILD_PREFIX)/%.o)
 
 # Source files in src/gab are part of gab's cli, which depends on libcgab
 # They are compiled into an executable and linked statically
 # with libcgab.a
+# There are corresponding *determinstic* versions, prefixed with d.
 GAB_SRC = $(wildcard src/gab/*.c)
 GAB_OBJ = $(GAB_SRC:src/gab/%.c=$(BUILD_PREFIX)/%.o)
 
@@ -65,7 +68,12 @@ CMOD_SHARED = $(CMOD_SRC:src/mod/%.c=$(BUILD_PREFIX)/mod/%$(GAB_DYNLIB_FILEENDIN
 CXXMOD_SRC 	 = $(wildcard src/mod/*.cc)
 CXXMOD_SHARED = $(CXXMOD_SRC:src/mod/%.cc=$(BUILD_PREFIX)/mod/%$(GAB_DYNLIB_FILEENDING))
 
-all: gab cmodules cxxmodules unthread
+# Don't try to build unthread if we aren't on Linux-gnu. Its all we got.
+ifeq ($(GAB_TARGETS), "x86_64-linux-gnu")
+all: amalgamation unthread gab cmodules cxxmodules
+else
+all: amalgamation gab cmodules cxxmodules
+endif
 
 -include $(CGAB_OBJ:.o=.d) $(GAB_OBJ:.o=.d) $(CMOD_SHARED:$(GAB_DYNLIB_FILEENDING)=.d)
 
@@ -74,19 +82,23 @@ all: gab cmodules cxxmodules unthread
 # but that is because the main *object file* is created before the executable,
 # and the object file cannot compile without the header and impl from this.
 $(BUILD_PREFIX)/%.o: $(SRC_PREFIX)/%.c $(VENDOR_PREFIX)/miniz/amalgamation/miniz.c
-	$(CC) $(CFLAGS) $< -c -o $@
+	$(TARGETCC) $(CFLAGS) $< -c -o $@
 
 # This rule builds libcgab by archiving the cgab object files together.
 $(BUILD_PREFIX)/libcgab.a: $(CGAB_OBJ)
 	zig ar rcs $@ $^
 
+# This rule builds a gab.c *amalgamation* style cfile.
+$(BUILD_PREFIX)/gab.c: $(CGAB_SRC)
+	cat $^ > $@
+
 # This rule builds the gab executable, linking with libcgab.a
 $(BUILD_PREFIX)/gab: $(GAB_OBJ) $(BUILD_PREFIX)/libcgab.a
-	$(CC) $(CFLAGS) $(BINARY_FLAGS) -o $@ $^
+	$(TARGETCC) $(CFLAGS) $(BINARY_FLAGS) -o $@ $^
 
 # This rule builds each c++ module shared library.
 $(BUILD_PREFIX)/mod/%$(GAB_DYNLIB_FILEENDING): $(SRC_PREFIX)/%.cc
-	$(CXX) $(CXXFLAGS) $(CXXSHARED_FLAGS) $< -o $@
+	$(TARGETCXX) $(CXXFLAGS) $(CXXSHARED_FLAGS) $< -o $@
 
 # This rule builds each c module shared library.
 $(BUILD_PREFIX)/mod/%$(GAB_DYNLIB_FILEENDING): $(SRC_PREFIX)/%.c \
@@ -95,7 +107,7 @@ $(BUILD_PREFIX)/mod/%$(GAB_DYNLIB_FILEENDING): $(SRC_PREFIX)/%.c \
 							$(BUILD_PREFIX)/libgrapheme.a \
 							$(VENDOR_PREFIX)/sqlite3.c    \
 							$(VENDOR_PREFIX)/duckdb.cc
-	$(CC) $(CFLAGS) $(CSHARED_FLAGS) $< -o $@
+	$(TARGETCC) $(CFLAGS) $(CSHARED_FLAGS) $< -o $@
 
 # This curls a mozilla cert used for TLS clients.
 cacert.pem:
@@ -104,7 +116,7 @@ cacert.pem:
 # This rule is the bear-ssl generated file equating to our certificate.
 # Used in TLS clients.
 $(VENDOR_PREFIX)/ta.h: cacert.pem
-	make CC="$(CC)" -s -C $(VENDOR_PREFIX)/BearSSL
+	make CC="$(NATIVECC)" -C $(VENDOR_PREFIX)/BearSSL
 	$(VENDOR_PREFIX)/BearSSL/build/brssl ta cacert.pem > vendor/ta.h
 	make clean -s -C $(VENDOR_PREFIX)/BearSSL
 
@@ -112,7 +124,7 @@ $(VENDOR_PREFIX)/sqlite3.c:
 	mkdir -p $(VENDOR_PREFIX)/sqlite/$(BUILD_PREFIX)
 	cd $(VENDOR_PREFIX)/sqlite/$(BUILD_PREFIX) && \
 		../configure --enable-all
-	make -s -C $(VENDOR_PREFIX)/sqlite/$(BUILD_PREFIX) sqlite3.c
+	make -C $(VENDOR_PREFIX)/sqlite/$(BUILD_PREFIX) sqlite3.c
 	cp $(VENDOR_PREFIX)/sqlite/$(BUILD_PREFIX)/sqlite3.c $(VENDOR_PREFIX)/
 
 $(VENDOR_PREFIX)/duckdb.cc:
@@ -122,11 +134,11 @@ $(VENDOR_PREFIX)/duckdb.cc:
 
 # These rules generates header files for libgrapheme
 $(VENDOR_PREFIX)/libgrapheme/gen/%.h: 
-	make CC="$(CC)" -s -C $(VENDOR_PREFIX)/libgrapheme gen/$*.h
+	make CC="$(NATIVECC)" -C $(VENDOR_PREFIX)/libgrapheme gen/$*.h
 
 $(VENDOR_PREFIX)/llhttp.h:
 	cd $(VENDOR_PREFIX)/llhttp && npm i
-	make CC="$(CC)" -s -C $(VENDOR_PREFIX)/llhttp
+	make -C $(VENDOR_PREFIX)/llhttp
 	mv $(VENDOR_PREFIX)/llhttp/build/llhttp.h $(VENDOR_PREFIX)/
 	make clean -s -C $(VENDOR_PREFIX)/llhttp
 
@@ -134,13 +146,8 @@ $(VENDOR_PREFIX)/miniz/amalgamation/miniz.c:
 	cd $(VENDOR_PREFIX)/miniz && \
 		./amalgamate.sh
 
-$(VENDOR_PREFIX)/unthread/bin/unthread-fuzz:
-	make CC="$(CC)" CFLAGS="$(CFLAGS)" -s -C $(VENDOR_PREFIX)/unthread bin/unthread-fuzz
-
 $(VENDOR_PREFIX)/unthread/bin/unthread.o:
-	make CC="$(CC)" CFLAGS="$(CFLAGS)" -s -C $(VENDOR_PREFIX)/unthread bin/unthread.o
-
-unthread: $(VENDOR_PREFIX)/unthread/bin/unthread.o $(VENDOR_PREFIX)/unthread/bin/unthread-fuzz
+	make CC="$(TARGETCC)" CFLAGS="$(CFLAGS)" -s -C $(VENDOR_PREFIX)/unthread bin/unthread.o
 
 # These two rules clean before generating the library. This is because the target *may* have been different from our last call,
 # so any intermediate object files may no longer be valid.
@@ -158,21 +165,19 @@ $(BUILD_PREFIX)/libgrapheme.a:  $(VENDOR_PREFIX)/libgrapheme/gen/bidirectional.h
 																$(VENDOR_PREFIX)/libgrapheme/gen/sentence-test.h \
 																$(VENDOR_PREFIX)/libgrapheme/gen/word.h \
 																$(VENDOR_PREFIX)/libgrapheme/gen/word-test.h
-	# Bit of a funky clean here. The makefile doesn't provide a way to clean *without* hitting the generated headers.
-	find $(VENDOR_PREFIX)/libgrapheme -name "*.o" | xargs rm
 	# Make for our given target.
-	make libgrapheme.a CC="$(CC) --target=$(GAB_TARGETS)" -s -C $(VENDOR_PREFIX)/libgrapheme
+	make CC="$(TARGETCC)" -s -C $(VENDOR_PREFIX)/libgrapheme libgrapheme.a 
 	# Move the library in.
 	mv $(VENDOR_PREFIX)/libgrapheme/libgrapheme.a $(BUILD_PREFIX)/
 
 $(BUILD_PREFIX)/libllhttp.a: $(VENDOR_PREFIX)/llhttp.h
 	make clean -s -C $(VENDOR_PREFIX)/llhttp
-	make CLANG="$(CC) --target=$(GAB_TARGETS)" -s -C $(VENDOR_PREFIX)/llhttp
+	make CLANG="$(TARGETCC)" -s -C $(VENDOR_PREFIX)/llhttp
 	mv $(VENDOR_PREFIX)/llhttp/build/libllhttp.a $(BUILD_PREFIX)/
 
 $(BUILD_PREFIX)/libbearssl.a:
 	make clean -s -C $(VENDOR_PREFIX)/BearSSL
-	make lib AR="zig ar" LD="$(CC) --target=$(GAB_TARGETS)" CC="$(CC) --target=$(GAB_TARGETS)" -s -C $(VENDOR_PREFIX)/BearSSL
+	make AR="zig ar" LD="$(TARGETCC)" CC="$(TARGETCC)" -s -C $(VENDOR_PREFIX)/BearSSL lib
 	mv $(VENDOR_PREFIX)/BearSSL/build/libbearssl.a $(BUILD_PREFIX)/
 
 # These are some convenience rules for making the cli simpler.
@@ -181,22 +186,29 @@ gab: $(BUILD_PREFIX)/gab
 
 lib: $(BUILD_PREFIX)/libcgab.a
 
+amalgamation: $(BUILD_PREFIX)/gab.c
+
 cxxmodules: $(CXXMOD_SHARED)
 
 cmodules: $(VENDOR_PREFIX)/ta.h $(CMOD_SHARED)
 
+unthread: $(VENDOR_PREFIX)/unthread/bin/unthread.o
+
 test: gab cmodules cxxmodules
 	cp $(BUILD_PREFIX)/mod/* mod/
 	$(BUILD_PREFIX)/gab run test
-
-test-deterministic: gab unthread
-	LD_PRELOAD=$(VENDOR_PREFIX)/unthread/bin/unthread.o $(VENDOR_PREFIX)/unthread/bin/unthread-fuzz $(BUILD_PREFIX)/gabd exec "1 + 1"
 
 clean:
 	rm -rf $(BUILD_PREFIX)*
 	rm -f configuration
 	rm -f cacert.pem
 	rm -f etag.txt
+
+clean-mod:
+	make clean -C vendor/BearSSL
+	make clean -C vendor/libgrapheme
+	make clean -C vendor/llhttp
+	make clean -C vendor/unthread
 
 compile_commands:
 	make clean

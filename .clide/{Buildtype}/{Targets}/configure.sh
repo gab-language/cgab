@@ -11,12 +11,22 @@ cd "$CLIDE_PATH/../" || exit
 rm -f configuration # Remove the conf file if it exists
 
 export cflags
+export binflags
 
 # Create a small script which will export the variables we need, and then 
 case "$buildtype" in
-  debug)          cflags="-g -O0 -fsanitize=address,undefined,leak,memory" ;;
-  debugoptimized) cflags="-g -O2" ;;
-  release)        cflags="-Os -DNDEBUG"    ;;
+  debug)          cflags="-g -O0 -fsanitize=address,undefined,leak,memory -DcGAB_THREADS_NATIVE" ;;
+  debugoptimized) cflags="-g -O2 -DcGAB_THREADS_NATIVE" ;;
+  deterministic)  cflags="-g -Ivendor/unthread/include" ;;
+  release)        cflags="-Os -DcGAB_THREADS_NATIVE -DNDEBUG"    ;;
+esac
+
+# For the deterministic build, we have to include the unthread.o library.
+case "$buildtype" in
+  debug)          binflags="" ;;
+  debugoptimized) binflags="" ;;
+  deterministic)  binflags="vendor/unthread/bin/unthread.o" ;;
+  release)        binflags=""    ;;
 esac
 
 unixflags="-DGAB_PLATFORM_UNIX -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE"
@@ -40,6 +50,7 @@ fi
 
 echo "#!/usr/bin/env bash" >> configuration
 echo "export GAB_CCFLAGS=\""$cflags"\"" >> configuration
+echo "export GAB_BINARYFLAGS=\""$binflags"\"" >> configuration
 echo "export GAB_TARGETS=\""$targets"\"" >> configuration
 echo "export GAB_DYNLIB_FILEENDING=\""$dynlib_fileending"\"" >> configuration
 echo "mkdir -p build-$targets" >> configuration

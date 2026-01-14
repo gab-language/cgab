@@ -1,11 +1,8 @@
-#include "colors.h"
 #include "core.h"
 #include <stddef.h>
 #include <stdint.h>
-#define GAB_TOKEN_NAMES_IMPL
 #include "engine.h"
 #include "gab.h"
-#include "lexer.h"
 
 #define FMT_EXPECTED_EXPRESSION                                                \
   "Expected a value - one of:\n\n"                                             \
@@ -137,11 +134,6 @@ static gab_value prev_id(struct gab_triple gab, struct parser *parser) {
   s_char s = prev_src(parser);
 
   return gab_nstring(gab, s.len, s.data);
-}
-
-static gab_value tok_id(struct gab_triple gab, gab_token tok) {
-  // These can cause collections during compilation.
-  return gab_string(gab, gab_token_names[tok]);
 }
 
 bool msg_is_specialform(struct gab_triple gab, gab_value msg) {

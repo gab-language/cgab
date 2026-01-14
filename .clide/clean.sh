@@ -2,4 +2,4 @@
 
 cd "$CLIDE_PATH/../" || exit
 
-make clean
+make clean clean-mod

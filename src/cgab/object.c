@@ -1,12 +1,6 @@
-#include "colors.h"
-#include "core.h"
 #include <stdatomic.h>
-#define GAB_COLORS_IMPL
-#include "colors.h"
-#define GAB_OPCODE_NAMES_IMPL
 #include "engine.h"
 #include "gab.h"
-#include "lexer.h"
 
 #define GAB_CREATE_OBJ(obj_type, kind)                                         \
   ((struct obj_type *)gab_obj_create(gab, sizeof(struct obj_type), kind))
@@ -165,6 +159,13 @@ int srec_dumpproperties(char **dest, size_t *n, gab_value rec, int depth) {
 
   return snprintf_through(dest, n, " ");
 }
+
+static const char *gab_opcode_names[] = {
+#define OP_CODE(name) #name,
+#include "bytecode.h"
+#undef OP_CODE
+#undef GAB_OPCODE_NAMES_IMPL
+};
 
 int sinspectval(char **dest, size_t *n, gab_value self, int depth) {
   switch (gab_valkind(self)) {
