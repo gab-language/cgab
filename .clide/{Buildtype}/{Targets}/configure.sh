@@ -27,6 +27,7 @@ case "$buildtype" in
   debug)          binflags="" ;;
   debugoptimized) binflags="" ;;
   deterministic)  binflags="vendor/unthread/bin/unthread.o" ;;
+  deterministicoptimized)  binflags="vendor/unthread/bin/unthread.o" ;;
   release)        binflags=""    ;;
 esac
 

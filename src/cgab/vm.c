@@ -238,8 +238,6 @@ static const char *gab_opcode_names[] = {
 #define MISS_CACHED_SEND(reason)                                               \
   ({                                                                           \
     IP() -= SEND_CACHE_DIST - 1;                                               \
-    const char *name = __func__;                                              \
-    printf("[%i] CACHEMISS %s: %s\n", GAB().wkid, name, reason);                           \
     [[clang::musttail]] return OP_SEND_HANDLER(DISPATCH_ARGS());               \
   })
 
@@ -1219,9 +1217,12 @@ union gab_value_pair gab_vmexec(struct gab_triple gab, gab_value f) {
 /*
  * SEND guard which compares the message record checked against last time
  * to the current rec.
+ *
+ * IS IT POSSIBLE THAT THE MESSAGE SPECS are *replaced* by another at the same address
+ * after a collection happens, and then some sends *think* they have it cached but they havent?
  */
 #define SEND_GUARD_CACHED_MESSAGE_SPECS()                                      \
-  SEND_GUARD(gab_valeq(atomic_load(&EG()->messages), ks[GAB_SEND_KSPECS]),     \
+  SEND_GUARD(gab_valeq(atomic_load(&EG()->messages_epoch), ks[GAB_SEND_KSPECS]),     \
              "Global message change detected.")
 
 /*
@@ -1231,10 +1232,6 @@ union gab_value_pair gab_vmexec(struct gab_triple gab, gab_value f) {
  */
 #define SEND_GUARD_CACHED_RECEIVER_TYPE(r)                                     \
   SEND_GUARD(gab_valisa(GAB(), r, ks[GAB_SEND_KTYPE]), "Receiver changed")
-
-#define SEND_GUARD_KIND_CACHED_GENERIC_CALL_MESSAGE(m)                         \
-  SEND_GUARD(gab_valeq(m, ks[GAB_SEND_KGENERIC_CALL_MESSAGE]),                 \
-             "Cached generic message send changed")
 
 CASE_CODE(MATCHTAILSEND_BLOCK) {
   bool istail;
@@ -1345,7 +1342,7 @@ static inline bool try_setup_localmatch(struct gab_triple gab, gab_value m,
     ks[GAB_SEND_KOFFSET + idx] = (intptr_t)ip;
   }
 
-  ks[GAB_SEND_KSPECS] = atomic_load(&gab.eg->messages);
+  ks[GAB_SEND_KSPECS] = atomic_load(&gab.eg->messages_epoch);
   return true;
 }
 
@@ -2358,7 +2355,7 @@ CASE_CODE(SEND) {
                        ? gab_primitive(OP_SEND_PROPERTY)
                        : res.as.spec;
 
-  ks[GAB_SEND_KSPECS] = res.messages;
+  ks[GAB_SEND_KSPECS] = atomic_load(&EG()->messages_epoch);
   ks[GAB_SEND_KTYPE] = gab_valtype(GAB(), r);
   ks[GAB_SEND_KSPEC] = res.as.spec;
 
@@ -2405,280 +2402,6 @@ CASE_CODE(SEND) {
 
   IP() -= SEND_CACHE_DIST;
 
-  NEXT();
-}
-
-CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE_PROPERTY) {
-  gab_value *ks = READ_SENDCONSTANTS;
-  uint64_t have = COMPUTE_TUPLE();
-  uint64_t below_have = PEEK_N(have + 1);
-
-  gab_value m = PEEK_N(have);
-  gab_value r = PEEK_N(have - 1);
-
-  // Guard that our callee is still a message
-  SEND_GUARD_KIND(m, kGAB_MESSAGE);
-  // Guard that implementations for this message haven't changed
-  SEND_GUARD_CACHED_MESSAGE_SPECS();
-  // Guard that true-receivers type hasn't changed
-  SEND_GUARD_CACHED_RECEIVER_TYPE(r);
-
-  memmove(SP() - (have), SP() - (have - 1), (have - 1) * sizeof(gab_value));
-  have--;
-  DROP();
-
-  PROPERTY_RECORD(r, have, below_have);
-}
-
-CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE_BLOCK) {
-  bool istail;
-  gab_value *ks = READ_SENDCONSTANTS_ANDTAIL(istail);
-  uint64_t have = COMPUTE_TUPLE();
-  assert(!istail);
-
-  gab_value m = PEEK_N(have);
-  gab_value r = PEEK_N(have - 1);
-
-  // Guard that our callee is still a message
-  SEND_GUARD_KIND(m, kGAB_MESSAGE);
-  // Guard that implementations for this message haven't changed
-  SEND_GUARD_CACHED_MESSAGE_SPECS();
-  // Guard that true-receivers type hasn't changed
-  SEND_GUARD_CACHED_RECEIVER_TYPE(r);
-
-  memmove(SP() - (have), SP() - (have - 1), (have - 1) * sizeof(gab_value));
-  have--;
-  DROP();
-
-  struct gab_oblock *spec = (void *)ks[GAB_SEND_KSPEC];
-
-  CALL_BLOCK(spec, have);
-}
-
-CASE_CODE(TAILSEND_PRIMITIVE_CALL_MESSAGE_BLOCK) {
-  bool istail;
-  gab_value *ks = READ_SENDCONSTANTS_ANDTAIL(istail);
-  uint64_t have = COMPUTE_TUPLE();
-  assert(istail);
-
-  gab_value m = PEEK_N(have);
-  gab_value r = PEEK_N(have - 1);
-
-  // Guard that our callee is still a message
-  SEND_GUARD_KIND(m, kGAB_MESSAGE);
-  // Guard that implementations for this message haven't changed
-  SEND_GUARD_CACHED_MESSAGE_SPECS();
-  // Guard that true-receivers type hasn't changed
-  SEND_GUARD_CACHED_RECEIVER_TYPE(r);
-
-  memmove(SP() - (have), SP() - (have - 1), (have - 1) * sizeof(gab_value));
-  have--;
-  DROP();
-
-  struct gab_oblock *spec = (void *)ks[GAB_SEND_KSPEC];
-
-  TAILCALL_BLOCK(spec, have);
-}
-
-CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE_NATIVE) {
-  gab_value *ks = READ_SENDCONSTANTS;
-  uint64_t have = COMPUTE_TUPLE();
-  uint64_t below_have = PEEK_N(have + 1);
-
-  gab_value m = PEEK_N(have);
-  gab_value r = PEEK_N(have - 1);
-
-  // Guard that our callee is still a message
-  SEND_GUARD_KIND(m, kGAB_MESSAGE);
-  // Guard that implementations for this message haven't changed
-  SEND_GUARD_CACHED_MESSAGE_SPECS();
-  // Guard that true-receivers type hasn't changed
-  SEND_GUARD_CACHED_RECEIVER_TYPE(r);
-
-  struct gab_onative *spec = (void *)ks[GAB_SEND_KSPEC];
-
-  CALL_NATIVE(spec, have, below_have, true, true);
-}
-
-CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE_PRIMITIVE) {
-  gab_value *ks = READ_SENDCONSTANTS;
-  uint64_t have = COMPUTE_TUPLE();
-
-  // TODO: More resilient and correct implementation
-  // for handling primitives that yield.
-  //
-  // It is improper for this op to modify the stack,
-  // As the op we dispatch to *may* yield.
-  //
-  // In the case where it does yield, we still reenter
-  // into *this* opcode.
-  //
-  // Sadly, I can't think of a reasonable way to make dispatch work
-  // here without memmove
-  //
-  // This is okay for now, as we only make this modification once, and
-  // reentries assume it has already been made.
-  //
-  // TODO BIG BIG BUG:
-  //
-  // This isn't properly re-entrant. What if a message is defined while we're
-  // yielded?
-  //
-  // We reenter here, see that all is reentrant, and so we dispatch right to our
-  // primitive. The primitive says "oh, messages have changed. I gotta cache
-  // miss." The send then looks and sees a *different receiver* than the first
-  // time we did this, because we've memmove'd. This is a bug.
-  // Even trying to *undo* this memmove later doesn't work.
-  // If we happen to take the *undo* codepath twice in a row,
-  // (because we miss on a cache again in a bizarre-but-possible chain of
-  // events) Then we will undo twice, breaking the stack again. We need a
-  // solution for calling the primitives that doesn't memmove - this is the
-  // fragile part.
-  //
-  // THIS THIS THIS: Has naught to do with put, but the fact that the cache can be invalidated
-  // after this dispatch.
-  // The issue is more that between us deciding here that we are dispatching
-  // correctly, and when we actually get to the dispatching, the cache can be
-  // invalidated by another thread (Because the global message rec has changed.)
-  //
-  // And what should happen if the SEND would miss on a reentrant call? If
-  // something is reentrant, we should continue through with it yes?
-  //
-  // The solution is to maybe have unchecked ops?
-  // Check in this opcode in a reentrant way?
-  // Not mess with the stack at all by implementing different versions of the
-  // primitives?
-  //
-  // The issue leaves us with some options:
-  // remove the calling of messages like this in the first place
-  // write unchecked versions of each primitive that *specifically this* can dispatch to
-  //   - which don't check the SEND caches
-  //   - or maybe they just expect the stack to have this shape?
-
-  if (!REENTRANT()) {
-    gab_value m = PEEK_N(have);
-    gab_value r = PEEK_N(have - 1);
-    // Guard that implementations for this message haven't changed
-    SEND_GUARD_CACHED_MESSAGE_SPECS();
-    // Guard that true-receivers type hasn't changed
-    SEND_GUARD_CACHED_RECEIVER_TYPE(r);
-    // Guard that the message is as we expect.
-    SEND_GUARD_KIND_CACHED_GENERIC_CALL_MESSAGE(m);
-
-    memmove(SP() - (have), SP() - (have - 1), (have - 1) * sizeof(gab_value));
-    have--;
-    DROP();
-    SET_VAR(have);
-  }
-
-  if (REENTRANT()) {
-    bool cachemiss_messages =
-        !gab_valeq(atomic_load(&EG()->messages), ks[GAB_SEND_KSPECS]);
-
-    bool cachemiss_type = !gab_valisa(GAB(), PEEK_N(have), ks[GAB_SEND_KTYPE]);
-
-    gab_fprintf(stdout,
-                "[$] REENTERING via $ $ on $.\n\tMESSAGES CHANGED?: $\n\tREC $ "
-                "vs $: $\n",
-                gab_number(GAB().wkid), REENTRANT(),
-                ks[GAB_SEND_KGENERIC_CALL_MESSAGE], PEEK_N(have),
-                gab_bool(cachemiss_messages), PEEK_N(have), ks[GAB_SEND_KTYPE],
-                gab_bool(cachemiss_type));
-  }
-
-  uint8_t spec = ks[GAB_SEND_KSPEC];
-
-  uint8_t op = gab_valtop(spec);
-
-  // Spoof the IP so that the op we dispatch to thinks it has the same
-  // arguments.
-  IP() -= SEND_CACHE_DIST - 1;
-  DISPATCH(op);
-}
-
-CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE_CONSTANT) {
-  gab_value *ks = READ_SENDCONSTANTS;
-  uint64_t have = COMPUTE_TUPLE();
-  uint64_t below_have = PEEK_N(have + 1);
-
-  gab_value m = PEEK_N(have);
-  gab_value r = PEEK_N(have - 1);
-
-  // Guard that our callee is still a message
-  SEND_GUARD_KIND(m, kGAB_MESSAGE);
-  // Guard that implementations for this message haven't changed
-  SEND_GUARD_CACHED_MESSAGE_SPECS();
-  // Guard that true-receivers type hasn't changed
-  SEND_GUARD_CACHED_RECEIVER_TYPE(r);
-
-  gab_value spec = ks[GAB_SEND_KSPEC];
-
-  DROP_N(have + 1);
-  PUSH(spec);
-
-  SET_VAR(below_have + 1);
-
-  NEXT();
-}
-
-CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE) {
-  uint8_t adjust;
-  gab_value *ks = READ_SENDCONSTANTS_ANDTAIL(adjust);
-  uint64_t have = COMPUTE_TUPLE();
-
-  gab_value m = PEEK_N(have);
-  gab_value r = PEEK_N(have - 1);
-  gab_value t = gab_valtype(GAB(), r);
-
-  SEND_GUARD_KIND(m, kGAB_MESSAGE);
-
-  struct gab_impl_rest res = gab_impl(GAB(), m, r);
-
-  if (__gab_unlikely(!res.status)) {
-    STORE();
-    VM_PANIC(GAB_SPECIALIZATION_MISSING, FMT_MISSINGIMPL, m, r,
-             gab_valtype(GAB(), r));
-  }
-
-  ks[GAB_SEND_KTYPE] = t;
-  ks[GAB_SEND_KSPEC] = res.as.spec;
-  ks[GAB_SEND_KGENERIC_CALL_MESSAGE] = m;
-
-  if (res.status == kGAB_IMPL_PROPERTY) {
-    WRITE_BYTE(SEND_CACHE_DIST, OP_SEND_PRIMITIVE_CALL_MESSAGE_PROPERTY);
-  } else {
-    gab_value spec = res.as.spec;
-
-    switch (gab_valkind(spec)) {
-    case kGAB_PRIMITIVE: {
-      ks[GAB_SEND_KSPEC] = gab_valtop(spec);
-
-      WRITE_BYTE(SEND_CACHE_DIST, OP_SEND_PRIMITIVE_CALL_MESSAGE_PRIMITIVE);
-      break;
-    }
-    case kGAB_BLOCK: {
-      ks[GAB_SEND_KSPEC] = (uintptr_t)GAB_VAL_TO_BLOCK(spec);
-
-      WRITE_BYTE(SEND_CACHE_DIST,
-                 OP_SEND_PRIMITIVE_CALL_MESSAGE_BLOCK + adjust);
-      break;
-    }
-    case kGAB_NATIVE: {
-      ks[GAB_SEND_KSPEC] = (uintptr_t)GAB_VAL_TO_NATIVE(spec);
-
-      WRITE_BYTE(SEND_CACHE_DIST, OP_SEND_PRIMITIVE_CALL_MESSAGE_NATIVE);
-      break;
-    }
-    default: {
-      ks[GAB_SEND_KSPEC] = spec;
-
-      WRITE_BYTE(SEND_CACHE_DIST, OP_SEND_PRIMITIVE_CALL_MESSAGE_CONSTANT);
-      break;
-    }
-    }
-  }
-
-  IP() -= SEND_CACHE_DIST;
   NEXT();
 }
 
@@ -2754,10 +2477,6 @@ CASE_CODE(SEND_PRIMITIVE_PUT) {
   uint64_t below_have = PEEK_N(have + 1);
 
   gab_value c = PEEK_N(have);
-
-  gab_fprintf(stdout, "[$] PUTTING $ TO $.\n\tREENTRANT: $\n",
-              gab_number(GAB().wkid), gab_number(have - 1), c,
-              REENTRANT() ? REENTRANT() : gab_cundefined);
 
   if (!REENTRANT()) {
     SEND_GUARD_CACHED_MESSAGE_SPECS();

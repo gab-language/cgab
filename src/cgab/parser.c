@@ -1,8 +1,8 @@
 #include "core.h"
-#include <stddef.h>
-#include <stdint.h>
 #include "engine.h"
 #include "gab.h"
+#include <stddef.h>
+#include <stdint.h>
 
 #define FMT_EXPECTED_EXPRESSION                                                \
   "Expected a value - one of:\n\n"                                             \
@@ -373,16 +373,17 @@ size_t node_getinfo_end(struct gab_src *src, gab_value node) {
   return d_uint64_t_read(&src->node_end_toks, node);
 }
 
-void node_storeinfo(struct gab_src *src, gab_value node, size_t begin,
-                    size_t end) {
+gab_value node_storeinfo(struct gab_src *src, gab_value node, size_t begin,
+                         size_t end) {
   d_uint64_t_insert(&src->node_begin_toks, node, begin);
   d_uint64_t_insert(&src->node_end_toks, node, end);
+  return node;
 }
 
-void node_stealinfo(struct gab_src *src, gab_value from, gab_value to) {
+gab_value node_stealinfo(struct gab_src *src, gab_value from, gab_value to) {
   size_t begin = d_uint64_t_read(&src->node_begin_toks, from);
   size_t end = d_uint64_t_read(&src->node_end_toks, from);
-  node_storeinfo(src, to, begin, end);
+  return node_storeinfo(src, to, begin, end);
 }
 
 gab_value node_value(struct gab_triple gab, gab_value node) {
@@ -1813,7 +1814,14 @@ gab_value unpack_binding(struct gab_triple gab, struct bc *bc,
   switch (gab_valkind(binding)) {
 
   case kGAB_BINARY:
-    assert(gab_valkind(gab_recat(ctx, binding)) != kGAB_NUMBER);
+    if (gab_valkind(gab_recat(ctx, binding)) == kGAB_NUMBER) {
+      return bc_error(gab, bc, bindings, GAB_MALFORMED_ASSIGNMENT,
+                      FMT_MALFORMED_ASSIGNMENT FMT_MALFORMED_ASSIGNMENT_NOTE
+                      "Cannot assign to a captured variable: $.",
+                      gab_bintostr(binding)),
+             gab_cinvalid;
+    }
+
     ctx = gab_recput(gab, ctx, binding, gab_nil);
     v_gab_value_push(targets, binding);
     return ctx;

@@ -200,17 +200,6 @@ numbers\compare\test: .def t => do
   t.expect(10 > 5 ==: true:)
 end
 
-numbers\dynamic_do_math\test: .def t => do
-  t.expect(+:.(1 2) ==: 3)
-  t.expect(+:.(1 2 ignore_me:) ==: 3)
-  t.expect(-:.(1 2) ==: -1)
-
-  t.expect(<<:.(1 2) ==: 4)
-  t.expect(>>:.(2 1) ==: 1)
-  t.expect(>>:.(2 100) ==: 0)
-  t.expect(<<:.(2 100) ==: 0)
-end
-
 numbers\shift\test: .def t => do
   t.expect(1 << 2 ==: 4)
   t.expect(8 >> 2 ==: 2)
@@ -244,11 +233,6 @@ end)
 
 strings\concatenate\test: .def (t => do
   t.expect('hello world' ==: 'hello' + ' world')
-end)
-
-strings\dynamic_interpolate\test: .def (t => do
-  t.expect(+:.('hi ' 'world') ==: 'hi world')
-  t.expect(+:.('hi ' 'world' ignore_me:) ==: 'hi world')
 end)
 
 strings\length\test: .def t => do
@@ -507,21 +491,48 @@ overloads\overload_comparison\test: .def (t => do
   t.expect(a <: b)
 end)
 
+at: .def (Numbers.t, key => do
+  (ok: self)
+end)
+
 overloads\handle_changing_overloads\test: .def (t => do
   get = (obj key) => obj.at key
 
-# This Test isn't idempotent, because it redefines at:
   t.expect(get.({ x: 1 y: 2 } x:).unwrap, ==: 1)
+  t.expect(get.({ x: 1 y: 2 } y:).unwrap, ==: 2)
 
+# Is it possible that a collection happens at this point,
+# after other defs have taken place. The old messages struct is collected.
+
+# Now, this def coincidentally reuses the same allocation as the previous cached value. 
   at: .def (vec\t key => do
     v = self
     (ok: 
-      (key == 'mag') .then (_ => do
-      (((v.x) * (v.x)) + ((v.y) * (v.y)))
-    end))
+      (key == 'mag') 
+        .then (_ => do
+          (((v.x) * (v.x)) + ((v.y) * (v.y)))
+        end)
+        .else (_ => do
+          (v2, val) = v.take key
+          (v2 == ok: !).assert
+          val
+        end)
+    )
   end)
 
+#  t.expect(get.({ x: 1 y: 2 z: 3 } y:).unwrap, ==: 2)
+
+# Then at this point, we coincidentally have a cache hit. oops!
+# Maybe it is possible to include the epoch number in the cache. Or keep a "last valid epoch" value on the engine.
+# Or, we keep a reference to the old map in the cache. This way it isn't collected and we can't have this coincidence happen.
+
   t.expect(get.({ x: 2 y: 2 } 'mag').unwrap, ==: 8)
+#  t.expect(get.({ x: 2 y: 2 } y:).unwrap, ==: 2)
+#  t.expect(get.(8 'mag').unwrap, ==: 8)
+  
+#  t.expect(get.({ x: 1 y: 2 z: 3 } y:).unwrap, ==: 2)
+#  t.expect(get.({ x: 2 y: 2 } 'mag').unwrap, ==: 8)
+#  t.expect(get.({ x: 1 y: 2 z: 3 } y:).unwrap, ==: 2)
 end)
 
 overloads\handle_switching_types\test: .def (t => do
@@ -554,7 +565,7 @@ messages\cache\test: .def (t => do
 end)
 
 messages\use_more_specific_spec\test: .def (t => do
-  test: .def ('gab\\number' _ => do
+  test: .def (Numbers.t, _ => do
       self + 1
   end)
 
@@ -573,43 +584,9 @@ messages\send_receive_var\test: .def (t => do
 end)
 
 messages\send_constants\test: .def (t => do
-  hi: .def ('gab\\number' test:)
+  hi: .def (Numbers.t, test:)
 
   t.expect(1.hi, ==: test:)
-end)
-
-messages\send_dynamically\test: .def (t => do
-  sum = (a b) => do
-    +:.(a b)
-  end
-
-  result = sum.(1 1)
-
-  t.expect(result ==: 2)
-
-  result = sum.(2 2)
-
-  t.expect(result ==: 4)
-
-  result = sum.('hi' ' world')
-
-  t.expect(result ==: 'hi world')
-
-  result = hi:.{ hi: 8 }
-
-  t.expect(result ==: 8)
-
-  result = put:.({ hi: 8 } hi:  2)
-
-  t.expect(result.hi, ==: 2)
-
-  result = *:.['hi']
-
-  t.expect(result ==: 'hi')
-
-  result = put:.({ hi: nil: } hi: 4)
-
-  t.expect(result.hi, ==: 4)
 end)
 
 channels\basic\test: .def t => do

@@ -7,8 +7,7 @@
 
 #ifndef GAB_COLORS_IMPL
 static const char *ANSI_COLORS[] = {
-    GAB_GREEN,  GAB_MAGENTA, GAB_RED,
-    GAB_YELLOW, GAB_BLUE,    GAB_CYAN,
+    GAB_GREEN, GAB_MAGENTA, GAB_RED, GAB_YELLOW, GAB_BLUE, GAB_CYAN,
 };
 #define GAB_COLORS_IMPL
 #endif
@@ -491,6 +490,7 @@ struct gab_eg {
   struct gab_gc gc;
 
   _Atomic gab_value messages;
+  _Atomic uint64_t messages_epoch;
   gab_value work_channel;
 
   mtx_t shapes_mtx;

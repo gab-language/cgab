@@ -34,10 +34,17 @@ suites\all = tests\all.reduce(
   (suites _ suite) => suites.put(suite Channels.make)
 )
 
-test\compare: .def (
-  Blocks.t, Messages.t
-  (lhs rhs) => self.(lhs, rhs)
-)
+test\compare: .defcase {
+  Blocks.t, (lhs rhs) => self.(lhs, rhs)
+
+  ==: (lhs rhs) => lhs == rhs
+
+  <: (lhs rhs) => lhs < rhs
+
+  is\nan: (lhs) => lhs.is\nan
+
+  is\inf: (lhs) => lhs.is\inf
+}
 
 test\result\t = { test\path: nil: test\receiver: nil: }?
 
@@ -121,7 +128,7 @@ queue_tests = (filter_by_suite) => do
     
     fibers = tests\all.collect xf
 
-    fibers.map await:
+    fibers.map f => f.await
 
     # TODO: Make this configurable from the cmdline
     events.close
@@ -290,8 +297,8 @@ events
     Streams.take_until((e, key) => do
       (e == key:) & (key == escape:)
     end)
-    |> Streams.reduce(model app\controller:)
-    |> Streams.map(app\view:)
+    |> Streams.reduce(model (model, args*) => model.app\controller (args*))
+    |> Streams.map(app => app.app\view)
   )
 
 app.close

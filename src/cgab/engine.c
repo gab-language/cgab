@@ -254,11 +254,6 @@ struct primitive kind_primitives[] = {
         .primitive = gab_primitive(OP_SEND_PRIMITIVE_CALL_BLOCK),
     },
     {
-        .name = mGAB_CALL,
-        .kind = kGAB_MESSAGE,
-        .primitive = gab_primitive(OP_SEND_PRIMITIVE_CALL_MESSAGE),
-    },
-    {
         .name = mGAB_PUT,
         .kind = kGAB_CHANNEL,
         .primitive = gab_primitive(OP_SEND_PRIMITIVE_PUT),
@@ -563,6 +558,7 @@ union gab_value_pair gab_create(struct gab_create_argt args,
   eg->len = njobs + 1;
   eg->hash_seed = time(nullptr);
   atomic_init(&eg->sig.schedule, -1);
+  atomic_init(&eg->messages_epoch, 0);
 
   // The only non-zero initialization that jobs need is epoch = 1
   for (uint64_t i = 0; i < eg->len; i++)
@@ -1098,14 +1094,12 @@ gab_value dodef(struct gab_triple gab, gab_value messages, uint64_t len,
 
 bool gab_ndef(struct gab_triple gab, uint64_t len,
               struct gab_def_argt args[static len]) {
-  for (;;) {
-    gab_value messages = atomic_load(&gab.eg->messages);
+  gab_value messages = atomic_load(&gab.eg->messages);
 
-    gab_value m = dodef(gab, messages, len, args);
-
-    if (atomic_compare_exchange_weak(&gab.eg->messages, &messages, m))
-      return true;
-  }
+  for (;;)
+    if (atomic_compare_exchange_weak(&gab.eg->messages, &messages,
+                                     dodef(gab, messages, len, args)))
+      return atomic_fetch_add(&gab.eg->messages_epoch, 1), true;
 
   return false;
 }

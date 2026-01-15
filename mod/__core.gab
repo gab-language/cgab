@@ -124,7 +124,7 @@ def\seq: .def do
       self.reduce(acc, td .td\apply r)
     end,
     each: f => do
-      self.transduce(nil:, all:, td:.tap f)
+      self.transduce(nil:, () => nil:, td:.tap f)
     end,
     map: f => do
       self.collect(td:.map f)
@@ -148,13 +148,13 @@ def\seq: .def do
       self.collect xf .is\empty.!
     end,
     join: xf => do
-      self.transduce("" +: xf)
+      self.transduce("" (acc x) => acc + x, xf)
     end,
     collect: xf => do
-      self.transduce({} cons: xf)
+      self.transduce({} (acc x) => acc .cons x,  xf)
     end,
     pipe: (ch, xf) =>do
-      self.transduce(ch <!: xf)
+      self.transduce(ch (acc x) => acc <! x, xf)
     end
   }
 end
@@ -177,8 +177,8 @@ end
 
 Channels.t.def\seq
 
-# Implement the reducer protocol for blocks and messages
-[Blocks.t, Messages.t] .defmodule {
+# Implement the reducer protocol for blocks
+[Blocks.t] .defmodule {
   reduce\step: (acc, xs*) => do
     (next:, self, self.(acc, xs*))
   end
