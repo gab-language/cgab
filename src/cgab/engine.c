@@ -1,7 +1,7 @@
-#include <stdatomic.h>
 #include "engine.h"
 #include "core.h"
 #include "gab.h"
+#include <stdatomic.h>
 
 struct errdetails {
   const char *src_name, *tok_name, *msg_name;
@@ -294,7 +294,7 @@ enum gab_signal gab_yield(struct gab_triple gab) {
 #if cGAB_LOG_EG
     fprintf(stderr, "[WORKER %i] RECV SIG: %i\n", gab.wkid, gab.eg->sig.signal);
 #endif
-    return gab.eg->sig.signal;
+    return atomic_load(&gab.eg->sig.signal);
   }
 
 #if GAB_YIELD_SLEEPTIME_NS != 0
@@ -319,7 +319,7 @@ int32_t gc_job(void *data) {
 
   struct gab_job *job = gab.eg->jobs + gab.wkid;
 
-  while (gab.eg->njobs >= 0) {
+  while (atomic_load(&gab.eg->njobs) >= 0) {
     switch (gab_yield(gab)) {
     case sGAB_TERM:
       gab_sigclear(gab);
@@ -538,7 +538,7 @@ bool gab_jbcreate(struct gab_triple gab, struct gab_job *job, int(fn)(void *),
     if (!q_gab_value_push(&job->queue, fiber))
       assert(false && "BAD");
 
-  struct gab_triple * gabcpy = malloc(sizeof(struct gab_triple));
+  struct gab_triple *gabcpy = malloc(sizeof(struct gab_triple));
   memcpy(gabcpy, &gab, sizeof(struct gab_triple));
   gabcpy->wkid = job - gab.eg->jobs;
 
@@ -562,7 +562,7 @@ union gab_value_pair gab_create(struct gab_create_argt args,
   eg->wait = args.wait;
   eg->len = njobs + 1;
   eg->hash_seed = time(nullptr);
-  eg->sig.schedule = -1;
+  atomic_init(&eg->sig.schedule, -1);
 
   // The only non-zero initialization that jobs need is epoch = 1
   for (uint64_t i = 0; i < eg->len; i++)
@@ -612,7 +612,7 @@ union gab_value_pair gab_create(struct gab_create_argt args,
   gab_negkeep(gab.eg, kGAB_NKINDS, eg->types);
 
   eg->shapes = __gab_shape(gab, 0);
-  eg->messages = gab_erecord(gab);
+  atomic_init(&eg->messages, gab_erecord(gab));
 
   eg->work_channel = gab_channel(gab);
   gab_iref(gab, eg->work_channel);
@@ -741,7 +741,7 @@ void gab_destroy(struct gab_triple gab) {
 
   gab_chnclose(gab.eg->work_channel);
 
-  while (gab.eg->njobs > 0) {
+  while (atomic_load(&gab.eg->njobs) > 0) {
     thrd_yield();
     // continue;
   }
@@ -756,10 +756,10 @@ void gab_destroy(struct gab_triple gab) {
   if (gab_valkind(gab.eg->shapes) == kGAB_SHAPELIST)
     dec_child_shapes(gab, gab.eg->shapes);
 
-  gab.eg->messages = gab_cinvalid;
+  atomic_store(&gab.eg->messages, gab_cinvalid);
   gab.eg->shapes = gab_cinvalid;
 
-  assert(gab.eg->njobs == 0);
+  assert(atomic_load(&gab.eg->njobs) == 0);
 
   /**
    * Four consececutive collections are needed here because
@@ -792,8 +792,8 @@ void gab_destroy(struct gab_triple gab) {
   gab_gcassertdone(gab);
 
   /*assert(gab.eg->bytes_allocated == 0);*/
-  assert(gab.eg->njobs == 0);
-  gab.eg->njobs = -1;
+  assert(atomic_load(&gab.eg->njobs) == 0);
+  atomic_store(&gab.eg->njobs, -1);
 
   thrd_join(gab.eg->jobs[0].td, nullptr);
   gab_gcdestroy(gab);
@@ -1976,7 +1976,7 @@ GAB_API gab_value gab_thisfiber(struct gab_triple gab) {
 }
 
 GAB_API gab_value gab_thisfibmsg(struct gab_triple gab) {
-  return gab.eg->messages;
+  return atomic_load(&gab.eg->messages);
   /*gab_value fiber = gab_thisfiber(gab);*/
   /**/
   /*if (fiber == gab_cinvalid)*/
@@ -1986,14 +1986,15 @@ GAB_API gab_value gab_thisfibmsg(struct gab_triple gab) {
   /*return gab_atmat(gab, f->messages);*/
 }
 
+GAB_API inline bool gab_sigwaiting(struct gab_triple gab) {
+  return atomic_load_explicit(&gab.eg->sig.schedule, memory_order_acquire) ==
+         gab.wkid;
+}
+
 GAB_API inline bool gab_is_signaling(struct gab_triple gab) {
   /*printf("SCHEDULE: %i, SIGNALING: %d\n", gab.eg->sig.schedule,
    * gab.eg->sig.schedule >= 0);*/
-  return atomic_load(&gab.eg->sig.schedule) >= 0;
-}
-
-GAB_API inline bool gab_sigwaiting(struct gab_triple gab) {
-  return atomic_load(&gab.eg->sig.schedule) == gab.wkid;
+  return atomic_load_explicit(&gab.eg->sig.schedule, memory_order_acquire) >= 0;
 }
 
 /*
@@ -2005,6 +2006,7 @@ GAB_API inline bool gab_signext(struct gab_triple gab, int wkid) {
   fprintf(stderr, "[WORKER %i] TRY NEXT %i\n", gab.wkid, wkid);
 #endif
   int8_t current = atomic_load(&gab.eg->sig.schedule);
+  int8_t signal = atomic_load(&gab.eg->sig.signal);
 
   // Wrap around the number of jobs. Since
   // The 0th job is the GC job, we will wrap around
@@ -2018,7 +2020,7 @@ GAB_API inline bool gab_signext(struct gab_triple gab, int wkid) {
 
   // If the worker we're scheduling for isn't alive, skip it
   if (!gab.eg->jobs[wkid].alive) {
-    if (gab.eg->sig.signal == sGAB_COLL)
+    if (signal == sGAB_COLL)
       gab.eg->jobs[wkid].epoch++;
 #if cGAB_LOG_EG
     fprintf(stderr, "[WORKER %i] SKIP NEXT %i\n", gab.wkid, wkid);
@@ -2044,7 +2046,7 @@ GAB_API inline bool gab_sigclear(struct gab_triple gab) {
     return false;
 
   atomic_store(&gab.eg->sig.signal, sGAB_IGN);
-  gab.eg->sig.schedule = -1;
+  atomic_store(&gab.eg->sig.schedule, -1);
   return true;
 }
 
@@ -2081,6 +2083,7 @@ GAB_API inline bool gab_signal(struct gab_triple gab, enum gab_signal s,
 #endif
 
   current = atomic_load(&gab.eg->sig.signal);
+
   if (atomic_compare_exchange_strong(&gab.eg->sig.signal, &current, s))
     return gab_signext(gab, wkid);
   else

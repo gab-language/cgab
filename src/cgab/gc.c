@@ -674,7 +674,7 @@ void gab_gcdocollect(struct gab_triple gab) {
    * as we're collecting. Just save the snapshot
    * of it now.
    */
-  gab.eg->gc.msg[epoch] = gab.eg->messages;
+  gab.eg->gc.msg[epoch] = atomic_load(&gab.eg->messages);
 
   gab_value messages = gab.eg->gc.msg[epoch];
 

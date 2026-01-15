@@ -8,55 +8,71 @@
  * --< INTERPRETER DISPATCH >--
  *
  * Most implementations of a bytecode interpreter
- * include a switch statement in a big loop, or sometimes a more optimized goto-loop.
- * In Gab, we use a tail-calling interpreter. Each opcode is implemented as a function
- * adhering to the same interface (defined here with macros, @see handler and @see OP_HANDLER_ARGS).
+ * include a switch statement in a big loop, or sometimes a more optimized
+ * goto-loop. In Gab, we use a tail-calling interpreter. Each opcode is
+ * implemented as a function adhering to the same interface (defined here with
+ * macros, @see handler and @see OP_HANDLER_ARGS).
  *
- * When these opcodes finish their work, they tail-call into the next opcode (@see DISPATCH). We annotate
- * each of these return statements with [[clang::musttail]], to ensure that the compiler can and does
- * emit a tail call at each of these call sites.
+ * When these opcodes finish their work, they tail-call into the next opcode
+ * (@see DISPATCH). We annotate each of these return statements with
+ * [[clang::musttail]], to ensure that the compiler can and does emit a tail
+ * call at each of these call sites.
  *
  * - PROS -
- * Each instruction is its own function. This is easier to reason about when implementing op codes, as there
- * is no mutable state global to the interpreting function. On top of that, it is more likely that the compiler keeps
- * crucial VM variables like the stack pointer and instruction pointer in REGISTERS, because they are confined to registers
- * by calling convention. (It is for this reason that the stack pointer, constant pointer, and instruction pointer are
- * unboxed and passed as arguments, as opposed to just updating the values in the gab_vm struct).
+ * Each instruction is its own function. This is easier to reason about when
+ * implementing op codes, as there is no mutable state global to the
+ * interpreting function. On top of that, it is more likely that the compiler
+ * keeps crucial VM variables like the stack pointer and instruction pointer in
+ * REGISTERS, because they are confined to registers by calling convention. (It
+ * is for this reason that the stack pointer, constant pointer, and instruction
+ * pointer are unboxed and passed as arguments, as opposed to just updating the
+ * values in the gab_vm struct).
  *
- * Since each of our op-codes are individual functions, debugging tools like callgrind can be used to create
- * web-like visualizations, which show what opcodes often follow others, and how much time is spent in each.
+ * Since each of our op-codes are individual functions, debugging tools like
+ * callgrind can be used to create web-like visualizations, which show what
+ * opcodes often follow others, and how much time is spent in each.
  *
  * - CONS -
- * Implementation requires more understanding of how c function calls work - and there are limitations on these functions
- * that are unclear. (Such as, no dynamic stack allocations, like using int a[n], where n is not known at compile time.)
+ * Implementation requires more understanding of how c function calls work - and
+ * there are limitations on these functions that are unclear. (Such as, no
+ * dynamic stack allocations, like using int a[n], where n is not known at
+ * compile time.)
  *
- * Tail-calling also makes for somewhat confusing stack traces, and can confuse some debugging / performance tools.
- * (Most do a good enough job though).
+ * Tail-calling also makes for somewhat confusing stack traces, and can confuse
+ * some debugging / performance tools. (Most do a good enough job though).
  *
  * --< STACK BASED TUPLES >--
  *
- * Gab as a language makes heavy use of ~tuples~. (returning multiple values from a function, etc). To avoid allocating
- * these as slices in memory, Gab stores these tuples on its internal VM stack. The top of the stack (pointed to by SP()), stores
- * the *number of values* in the tuple below it. When a value is pushed, that number is incremented. This is how function calls and
- * returns know how many values are present. (and how something like (1, 2, func.send, 5, 6) => (1, 2, 3, 4, 5, 6) is able to work.
+ * Gab as a language makes heavy use of ~tuples~. (returning multiple values
+ * from a function, etc). To avoid allocating these as slices in memory, Gab
+ * stores these tuples on its internal VM stack. The top of the stack (pointed
+ * to by SP()), stores the *number of values* in the tuple below it. When a
+ * value is pushed, that number is incremented. This is how function calls and
+ * returns know how many values are present. (and how something like (1, 2,
+ * func.send, 5, 6) => (1, 2, 3, 4, 5, 6) is able to work.
  *
- * There is plenty of runtime overhead in tracking this. But it is made up for by the amount of allocation that is *Saved* through using this
- * system instead.
+ * There is plenty of runtime overhead in tracking this. But it is made up for
+ * by the amount of allocation that is *Saved* through using this system
+ * instead.
  *
  * --< INVARIANTS >--
- * There are some invariants which must hold true in these opcodes. It is impossible to encode them into the c-typesystem,
- * so I try to write them down here. There may be more in my head which aren't written down.
- *  
- *  1. Before calling out to a gab_* api function, STORE() must be called. This stores the cached variables for the stack pointer and frame
- *  pointer into the VM struct. Without this call, the gab_* api function will see an out-of-date version of the fiber's stack.
+ * There are some invariants which must hold true in these opcodes. It is
+ * impossible to encode them into the c-typesystem, so I try to write them down
+ * here. There may be more in my head which aren't written down.
  *
- *  2. Opcodes which may yield (by calling VM_YIELD()), much first make a call to CHECK_SIGNAL(). This is to guarantee
- *  that a signal is received and processed if the interpreter resumes at that specific opcode.
+ *  1. Before calling out to a gab_* api function, STORE() must be called. This
+ * stores the cached variables for the stack pointer and frame pointer into the
+ * VM struct. Without this call, the gab_* api function will see an out-of-date
+ * version of the fiber's stack.
+ *
+ *  2. Opcodes which may yield (by calling VM_YIELD()), much first make a call
+ * to CHECK_SIGNAL(). This is to guarantee that a signal is received and
+ * processed if the interpreter resumes at that specific opcode.
  *
  */
 #include "core.h"
-#include "gab.h"
 #include "engine.h"
+#include "gab.h"
 
 #define OP_HANDLER_ARGS                                                        \
   struct gab_triple *__gab, struct gab_vm *__vm, uint8_t *__ip,                \
@@ -128,7 +144,6 @@ static const char *gab_opcode_names[] = {
     CHECK_SIGNAL();                                                            \
     DISPATCH(*(IP()++));                                                       \
   })
-
 
 #define NEXT() ({ DISPATCH(*(IP()++)); })
 // #define NEXT() NEXT_CHECKED()
@@ -220,9 +235,11 @@ static const char *gab_opcode_names[] = {
     KB() + (shrt & ~(fHAVE_TAIL << 8));                                        \
   })
 
-#define MISS_CACHED_SEND(clause)                                               \
+#define MISS_CACHED_SEND(reason)                                               \
   ({                                                                           \
     IP() -= SEND_CACHE_DIST - 1;                                               \
+    static const char *name = __func__;                                        \
+    printf("[%i]CACHED SEND MISS IN %s: %s\n", GAB().wkid, name, reason);      \
     [[clang::musttail]] return OP_SEND_HANDLER(DISPATCH_ARGS());               \
   })
 
@@ -236,6 +253,9 @@ static const char *gab_opcode_names[] = {
   ({                                                                           \
     IP() -= SEND_CACHE_DIST;                                                   \
     STORE();                                                                   \
+    const char *name = __func__;                                               \
+    gab_fprintf(stdout, "[$] YIELDING $ from $\n", gab_number(GAB().wkid),     \
+                value, gab_string(GAB(), name));                               \
     return vm_yield(GAB(), value);                                             \
   })
 
@@ -1170,11 +1190,11 @@ union gab_value_pair gab_vmexec(struct gab_triple gab, gab_value f) {
              value, gab_valtype(GAB(), value), gab_type(GAB(), kGAB_STRING));  \
   }
 
-#define SEND_GUARD(clause)                                                     \
+#define SEND_GUARD(clause, reason)                                             \
   if (__gab_unlikely(!(clause)))                                               \
-  MISS_CACHED_SEND(clause)
+    MISS_CACHED_SEND(reason);
 
-#define SEND_GUARD_KIND(r, k) SEND_GUARD(gab_valkind(r) == k)
+#define SEND_GUARD_KIND(r, k) SEND_GUARD(gab_valkind(r) == k, "Unexpected kind")
 
 /*
  * SEND guard which checks that the
@@ -1182,7 +1202,8 @@ union gab_value_pair gab_vmexec(struct gab_triple gab, gab_value f) {
  * */
 #define SEND_GUARD_ISCHN(r)                                                    \
   SEND_GUARD(gab_valkind(r) >= kGAB_CHANNEL &&                                 \
-             gab_valkind(r) <= kGAB_CHANNELCLOSED)
+                 gab_valkind(r) <= kGAB_CHANNELCLOSED,                         \
+             "Not Channel")
 
 /*
  * SEND guard which checks that the world
@@ -1195,14 +1216,16 @@ union gab_value_pair gab_vmexec(struct gab_triple gab, gab_value f) {
  * is as we expect, and the receiver is a shape.
  */
 #define SEND_GUARD_ISSHP(r)                                                    \
-  SEND_GUARD(gab_valkind(r) == kGAB_SHAPE || gab_valkind(r) == kGAB_SHAPELIST)
+  SEND_GUARD(gab_valkind(r) == kGAB_SHAPE || gab_valkind(r) == kGAB_SHAPELIST, \
+             "Not shape")
 
 /*
  * SEND guard which compares the message record checked against last time
  * to the current rec.
  */
 #define SEND_GUARD_CACHED_MESSAGE_SPECS()                                      \
-  SEND_GUARD(gab_valeq(EG()->messages, ks[GAB_SEND_KSPECS]))
+  SEND_GUARD(gab_valeq(atomic_load(&EG()->messages), ks[GAB_SEND_KSPECS]),     \
+             "Global message change detected.")
 
 /*
  * SEND guard which checks that the world is
@@ -1210,11 +1233,11 @@ union gab_value_pair gab_vmexec(struct gab_triple gab, gab_value f) {
  * same as seen last time.
  */
 #define SEND_GUARD_CACHED_RECEIVER_TYPE(r)                                     \
-  SEND_GUARD(gab_valisa(GAB(), r, ks[GAB_SEND_KTYPE]))
+  SEND_GUARD(gab_valisa(GAB(), r, ks[GAB_SEND_KTYPE]), "Receiver changed")
 
-#define SEND_GUARD_CACHED_GENERIC_CALL_SPECS(m)                                \
-  SEND_GUARD(gab_valeq(gab_recat(EG()->messages, m),                           \
-                       ks[GAB_SEND_KGENERIC_CALL_SPECS]))
+#define SEND_GUARD_KIND_CACHED_GENERIC_CALL_MESSAGE(m)                         \
+  SEND_GUARD(gab_valeq(m, ks[GAB_SEND_KGENERIC_CALL_MESSAGE]),                 \
+             "Cached generic message send changed")
 
 CASE_CODE(MATCHTAILSEND_BLOCK) {
   bool istail;
@@ -1232,7 +1255,7 @@ CASE_CODE(MATCHTAILSEND_BLOCK) {
 
   // TODO: Handle undefined and record case
   if (__gab_unlikely(ks[GAB_SEND_KTYPE + idx] != t))
-    MISS_CACHED_SEND();
+    MISS_CACHED_SEND("Unexpected type");
 
   struct gab_oblock *b = (void *)ks[GAB_SEND_KSPEC + idx];
 
@@ -1266,7 +1289,7 @@ CASE_CODE(MATCHSEND_BLOCK) {
 
   // TODO: Handle undefined and record case
   if (__gab_unlikely(ks[GAB_SEND_KTYPE + idx] != t))
-    MISS_CACHED_SEND();
+    MISS_CACHED_SEND("Unexpected type");
 
   struct gab_oblock *blk = (void *)ks[GAB_SEND_KSPEC + idx];
 
@@ -1325,7 +1348,7 @@ static inline bool try_setup_localmatch(struct gab_triple gab, gab_value m,
     ks[GAB_SEND_KOFFSET + idx] = (intptr_t)ip;
   }
 
-  ks[GAB_SEND_KSPECS] = gab.eg->messages;
+  ks[GAB_SEND_KSPECS] = atomic_load(&gab.eg->messages);
   return true;
 }
 
@@ -1970,7 +1993,7 @@ CASE_CODE(POP_N) {
 
   uint8_t n = READ_BYTE;
   DROP_N(n);
-  
+
   assert(have >= n);
   SET_VAR(have - n);
   NEXT();
@@ -2329,15 +2352,17 @@ CASE_CODE(SEND) {
   /* Do the expensive lookup */
   struct gab_impl_rest res = gab_impl(GAB(), m, r);
 
-  if (__gab_unlikely(!res.status))
+  if (__gab_unlikely(!res.status)) {
+    printf("[%i]NOSPEC\n", GAB().wkid);
     VM_PANIC(GAB_SPECIALIZATION_MISSING, FMT_MISSINGIMPL, m, r,
              gab_valtype(GAB(), r));
+  }
 
   gab_value spec = res.status == kGAB_IMPL_PROPERTY
                        ? gab_primitive(OP_SEND_PROPERTY)
                        : res.as.spec;
 
-  ks[GAB_SEND_KSPECS] = EG()->messages;
+  ks[GAB_SEND_KSPECS] = atomic_load(&EG()->messages);
   ks[GAB_SEND_KTYPE] = gab_valtype(GAB(), r);
   ks[GAB_SEND_KSPEC] = res.as.spec;
 
@@ -2401,8 +2426,6 @@ CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE_PROPERTY) {
   SEND_GUARD_CACHED_MESSAGE_SPECS();
   // Guard that true-receivers type hasn't changed
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
-  // Guard that implementations for the true-message (m) haven't changed
-  SEND_GUARD_CACHED_GENERIC_CALL_SPECS(m);
 
   memmove(SP() - (have), SP() - (have - 1), (have - 1) * sizeof(gab_value));
   have--;
@@ -2426,8 +2449,6 @@ CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE_BLOCK) {
   SEND_GUARD_CACHED_MESSAGE_SPECS();
   // Guard that true-receivers type hasn't changed
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
-  // Guard that implementations for the true-message (m) haven't changed
-  SEND_GUARD_CACHED_GENERIC_CALL_SPECS(m);
 
   memmove(SP() - (have), SP() - (have - 1), (have - 1) * sizeof(gab_value));
   have--;
@@ -2453,8 +2474,6 @@ CASE_CODE(TAILSEND_PRIMITIVE_CALL_MESSAGE_BLOCK) {
   SEND_GUARD_CACHED_MESSAGE_SPECS();
   // Guard that true-receivers type hasn't changed
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
-  // Guard that implementations for the true-message (m) haven't changed
-  SEND_GUARD_CACHED_GENERIC_CALL_SPECS(m);
 
   memmove(SP() - (have), SP() - (have - 1), (have - 1) * sizeof(gab_value));
   have--;
@@ -2479,8 +2498,6 @@ CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE_NATIVE) {
   SEND_GUARD_CACHED_MESSAGE_SPECS();
   // Guard that true-receivers type hasn't changed
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
-  // Guard that implementations for the true-message (m) haven't changed
-  SEND_GUARD_CACHED_GENERIC_CALL_SPECS(m);
 
   struct gab_onative *spec = (void *)ks[GAB_SEND_KSPEC];
 
@@ -2490,9 +2507,6 @@ CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE_NATIVE) {
 CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE_PRIMITIVE) {
   gab_value *ks = READ_SENDCONSTANTS;
   uint64_t have = COMPUTE_TUPLE();
-
-  gab_value m = PEEK_N(have);
-  gab_value r = PEEK_N(have - 1);
 
   // TODO: More resilient and correct implementation
   // for handling primitives that yield.
@@ -2508,16 +2522,40 @@ CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE_PRIMITIVE) {
   //
   // This is okay for now, as we only make this modification once, and
   // reentries assume it has already been made.
+  //
+  // TODO BIG BIG BUG:
+  //
+  // This isn't properly re-entrant. What if a message is defined while we're
+  // yielded?
+  //
+  // We reenter here, see that all is reentrant, and so we dispatch right to our
+  // primitive. The primitive says "oh, messages have changed. I gotta cache
+  // miss." The send then looks and sees a *different receiver* than the first
+  // time we did this, because we've memmove'd. This is a bug.
+  // Even trying to *undo* this memmove later doesn't work.
+  // If we happen to take the *undo* codepath twice in a row,
+  // (because we miss on a cache again in a bizarre-but-possible chain of
+  // events) Then we will undo twice, breaking the stack again. We need a
+  // solution for calling the primitives that doesn't memmove - this is the
+  // fragile part.
+  // 
+  // The issue is more that between us deciding here that we are dispatching correctly,
+  // and when we actually get to the dispatching, the cache can be invalidated by another
+  // thread (Because the global message rec has changed.)
+  //
+  // The solution is to maybe have unchecked ops?
+  // Check in this opcode in a reentrant way?
+  // Not mess with the stack at all by implementing different versions of the primitives?
 
   if (!REENTRANT()) {
-    // Guard that our callee is still a message
-    SEND_GUARD_KIND(m, kGAB_MESSAGE);
+    gab_value m = PEEK_N(have);
+    gab_value r = PEEK_N(have - 1);
     // Guard that implementations for this message haven't changed
     SEND_GUARD_CACHED_MESSAGE_SPECS();
     // Guard that true-receivers type hasn't changed
     SEND_GUARD_CACHED_RECEIVER_TYPE(r);
-    // Guard that implementations for the true-message (m) haven't changed
-    SEND_GUARD_CACHED_GENERIC_CALL_SPECS(m);
+    // Guard that the message is as we expect.
+    SEND_GUARD_KIND_CACHED_GENERIC_CALL_MESSAGE(m);
 
     memmove(SP() - (have), SP() - (have - 1), (have - 1) * sizeof(gab_value));
     PEEK() = gab_nil;
@@ -2527,8 +2565,9 @@ CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE_PRIMITIVE) {
 
   uint8_t op = gab_valtop(spec);
 
+  // Spoof the IP so that the op we dispatch to thinks it has the same
+  // arguments.
   IP() -= SEND_CACHE_DIST - 1;
-
   DISPATCH(op);
 }
 
@@ -2546,8 +2585,6 @@ CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE_CONSTANT) {
   SEND_GUARD_CACHED_MESSAGE_SPECS();
   // Guard that true-receivers type hasn't changed
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
-  // Guard that implementations for the true-message (m) haven't changed
-  SEND_GUARD_CACHED_GENERIC_CALL_SPECS(m);
 
   gab_value spec = ks[GAB_SEND_KSPEC];
 
@@ -2580,8 +2617,7 @@ CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE) {
 
   ks[GAB_SEND_KTYPE] = t;
   ks[GAB_SEND_KSPEC] = res.as.spec;
-  ks[GAB_SEND_KGENERIC_CALL_SPECS] = gab_recat(EG()->messages, m);
-  // ks[GAB_SEND_KGENERIC_CALL_MESSAGE] = m;
+  ks[GAB_SEND_KGENERIC_CALL_MESSAGE] = m;
 
   if (res.status == kGAB_IMPL_PROPERTY) {
     WRITE_BYTE(SEND_CACHE_DIST, OP_SEND_PRIMITIVE_CALL_MESSAGE_PROPERTY);
@@ -2699,6 +2735,7 @@ CASE_CODE(SEND_PRIMITIVE_PUT) {
   CHECK_SIGNAL();
 
   if (REENTRANT() == c) {
+
     // If we're reentering, check that our channel
     // is still holding our data ptr.
     // I *believe* this is sound based on the following principles:
