@@ -238,8 +238,8 @@ static const char *gab_opcode_names[] = {
 #define MISS_CACHED_SEND(reason)                                               \
   ({                                                                           \
     IP() -= SEND_CACHE_DIST - 1;                                               \
-    static const char *name = __func__;                                        \
-    printf("[%i]CACHED SEND MISS IN %s: %s\n", GAB().wkid, name, reason);      \
+    const char *name = __func__;                                              \
+    printf("[%i] CACHEMISS %s: %s\n", GAB().wkid, name, reason);                           \
     [[clang::musttail]] return OP_SEND_HANDLER(DISPATCH_ARGS());               \
   })
 
@@ -253,9 +253,6 @@ static const char *gab_opcode_names[] = {
   ({                                                                           \
     IP() -= SEND_CACHE_DIST;                                                   \
     STORE();                                                                   \
-    const char *name = __func__;                                               \
-    gab_fprintf(stdout, "[$] YIELDING $ from $\n", gab_number(GAB().wkid),     \
-                value, gab_string(GAB(), name));                               \
     return vm_yield(GAB(), value);                                             \
   })
 
@@ -2353,7 +2350,6 @@ CASE_CODE(SEND) {
   struct gab_impl_rest res = gab_impl(GAB(), m, r);
 
   if (__gab_unlikely(!res.status)) {
-    printf("[%i]NOSPEC\n", GAB().wkid);
     VM_PANIC(GAB_SPECIALIZATION_MISSING, FMT_MISSINGIMPL, m, r,
              gab_valtype(GAB(), r));
   }
@@ -2362,7 +2358,7 @@ CASE_CODE(SEND) {
                        ? gab_primitive(OP_SEND_PROPERTY)
                        : res.as.spec;
 
-  ks[GAB_SEND_KSPECS] = atomic_load(&EG()->messages);
+  ks[GAB_SEND_KSPECS] = res.messages;
   ks[GAB_SEND_KTYPE] = gab_valtype(GAB(), r);
   ks[GAB_SEND_KSPEC] = res.as.spec;
 
@@ -2538,14 +2534,26 @@ CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE_PRIMITIVE) {
   // events) Then we will undo twice, breaking the stack again. We need a
   // solution for calling the primitives that doesn't memmove - this is the
   // fragile part.
-  // 
-  // The issue is more that between us deciding here that we are dispatching correctly,
-  // and when we actually get to the dispatching, the cache can be invalidated by another
-  // thread (Because the global message rec has changed.)
+  //
+  // THIS THIS THIS: Has naught to do with put, but the fact that the cache can be invalidated
+  // after this dispatch.
+  // The issue is more that between us deciding here that we are dispatching
+  // correctly, and when we actually get to the dispatching, the cache can be
+  // invalidated by another thread (Because the global message rec has changed.)
+  //
+  // And what should happen if the SEND would miss on a reentrant call? If
+  // something is reentrant, we should continue through with it yes?
   //
   // The solution is to maybe have unchecked ops?
   // Check in this opcode in a reentrant way?
-  // Not mess with the stack at all by implementing different versions of the primitives?
+  // Not mess with the stack at all by implementing different versions of the
+  // primitives?
+  //
+  // The issue leaves us with some options:
+  // remove the calling of messages like this in the first place
+  // write unchecked versions of each primitive that *specifically this* can dispatch to
+  //   - which don't check the SEND caches
+  //   - or maybe they just expect the stack to have this shape?
 
   if (!REENTRANT()) {
     gab_value m = PEEK_N(have);
@@ -2558,7 +2566,24 @@ CASE_CODE(SEND_PRIMITIVE_CALL_MESSAGE_PRIMITIVE) {
     SEND_GUARD_KIND_CACHED_GENERIC_CALL_MESSAGE(m);
 
     memmove(SP() - (have), SP() - (have - 1), (have - 1) * sizeof(gab_value));
-    PEEK() = gab_nil;
+    have--;
+    DROP();
+    SET_VAR(have);
+  }
+
+  if (REENTRANT()) {
+    bool cachemiss_messages =
+        !gab_valeq(atomic_load(&EG()->messages), ks[GAB_SEND_KSPECS]);
+
+    bool cachemiss_type = !gab_valisa(GAB(), PEEK_N(have), ks[GAB_SEND_KTYPE]);
+
+    gab_fprintf(stdout,
+                "[$] REENTERING via $ $ on $.\n\tMESSAGES CHANGED?: $\n\tREC $ "
+                "vs $: $\n",
+                gab_number(GAB().wkid), REENTRANT(),
+                ks[GAB_SEND_KGENERIC_CALL_MESSAGE], PEEK_N(have),
+                gab_bool(cachemiss_messages), PEEK_N(have), ks[GAB_SEND_KTYPE],
+                gab_bool(cachemiss_type));
   }
 
   uint8_t spec = ks[GAB_SEND_KSPEC];
@@ -2664,8 +2689,11 @@ CASE_CODE(SEND_PRIMITIVE_TAKE) {
 
   gab_value c = PEEK_N(have);
 
-  SEND_GUARD_CACHED_MESSAGE_SPECS();
-  SEND_GUARD_ISCHN(c);
+  if (!REENTRANT()) {
+    // If we're reentering, skip these checks.
+    SEND_GUARD_CACHED_MESSAGE_SPECS();
+    SEND_GUARD_ISCHN(c);
+  }
 
   STORE_SP();
 
@@ -2727,15 +2755,20 @@ CASE_CODE(SEND_PRIMITIVE_PUT) {
 
   gab_value c = PEEK_N(have);
 
-  SEND_GUARD_CACHED_MESSAGE_SPECS();
-  SEND_GUARD_ISCHN(c);
+  gab_fprintf(stdout, "[$] PUTTING $ TO $.\n\tREENTRANT: $\n",
+              gab_number(GAB().wkid), gab_number(have - 1), c,
+              REENTRANT() ? REENTRANT() : gab_cundefined);
+
+  if (!REENTRANT()) {
+    SEND_GUARD_CACHED_MESSAGE_SPECS();
+    SEND_GUARD_ISCHN(c);
+  }
 
   STORE_SP();
 
   CHECK_SIGNAL();
 
   if (REENTRANT() == c) {
-
     // If we're reentering, check that our channel
     // is still holding our data ptr.
     // I *believe* this is sound based on the following principles:
@@ -2751,8 +2784,11 @@ CASE_CODE(SEND_PRIMITIVE_PUT) {
 
     // If not, our put is complete and we can move on
     DROP_N(have + 1);
+
     PUSH(c);
+
     SET_VAR(below_have + 1);
+
     NEXT();
   }
 
@@ -2764,7 +2800,7 @@ CASE_CODE(SEND_PRIMITIVE_PUT) {
   case gab_cinvalid:
     VM_TERM();
   case gab_ctimeout:
-    // The put timed-out (The channel already held values)
+    // The put timed-out
     VM_YIELD(gab_ctimeout);
   default:
     // The put succeeded, we must yield until it completes.

@@ -778,6 +778,12 @@ union gab_value_pair {
  */
 struct gab_impl_rest {
   /**
+   * @brief The messages struct as it was atomically-loaded for
+   * this impl check.
+   */
+  gab_value messages;
+
+  /**
    * @brief The type of the relevant type of the receiver.
    *
    * gab_value have multiple types - a gab_record has its shape, as well as

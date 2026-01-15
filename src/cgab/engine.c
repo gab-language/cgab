@@ -1096,13 +1096,6 @@ gab_value dodef(struct gab_triple gab, gab_value messages, uint64_t len,
   return gab_gcunlock(gab), messages;
 }
 
-gab_value swapdef(struct gab_triple gab, gab_value messages, va_list va) {
-  uint64_t len = va_arg(va, uint64_t);
-  struct gab_def_argt *args = va_arg(va, struct gab_def_argt *);
-
-  return dodef(gab, messages, len, args);
-}
-
 bool gab_ndef(struct gab_triple gab, uint64_t len,
               struct gab_def_argt args[static len]) {
   for (;;) {
@@ -1901,6 +1894,15 @@ bool gab_sigcoll(struct gab_triple gab) {
 
 struct gab_impl_rest gab_impl(struct gab_triple gab, gab_value message,
                               gab_value receiver) {
+  gab_value messages = gab_thisfibmsg(gab);
+  gab_value specs = gab_recat(messages, message);
+
+  // There are no specs for this message.
+  // *maybe* this is a rec and property situation.
+  // So jump straight there.
+  if (specs == gab_cundefined)
+    goto property;
+
   gab_value spec = gab_cundefined;
   gab_value type = receiver;
 
@@ -1908,10 +1910,11 @@ struct gab_impl_rest gab_impl(struct gab_triple gab, gab_value message,
    * the message. ie <gab.shape 0 1>*/
   if (gab_valhast(receiver)) {
     type = gab_valtype(gab, receiver);
-    spec = gab_thisfibmsgat(gab, message, type);
+    spec = gab_recat(specs, type);
     if (spec != gab_cundefined)
       return (struct gab_impl_rest){
-          type,
+          .messages = messages,
+          .type = type,
           .as.spec = spec,
           kGAB_IMPL_TYPE,
       };
@@ -1919,10 +1922,11 @@ struct gab_impl_rest gab_impl(struct gab_triple gab, gab_value message,
 
   /* Check for the kind of the receiver. ie 'gab\record' */
   type = gab_type(gab, gab_valkind(receiver));
-  spec = gab_thisfibmsgat(gab, message, type);
+  spec = gab_recat(specs, type);
   if (spec != gab_cundefined)
     return (struct gab_impl_rest){
-        type,
+        .messages = messages,
+        .type = type,
         .as.spec = spec,
         kGAB_IMPL_KIND,
     };
@@ -1936,25 +1940,29 @@ struct gab_impl_rest gab_impl(struct gab_triple gab, gab_value message,
    * for every message in the system.
    */
   type = gab_cundefined;
-  spec = gab_thisfibmsgat(gab, message, type);
+  spec = gab_recat(specs, type);
   if (spec != gab_cundefined)
     return (struct gab_impl_rest){
+        .messages = messages,
+        .type = type,
         .as.spec = spec,
         kGAB_IMPL_GENERAL,
     };
 
   /* Check if the receiver is a record and has a matching property */
+property:
   if (gab_valkind(receiver) == kGAB_RECORD) {
     type = gab_recshp(receiver);
     if (gab_rechas(receiver, message))
       return (struct gab_impl_rest){
-          type,
+          .messages = messages,
+          .type = type,
           .as.offset = gab_recfind(receiver, message),
           kGAB_IMPL_PROPERTY,
       };
   }
 
-  return (struct gab_impl_rest){.status = kGAB_IMPL_NONE};
+  return (struct gab_impl_rest){.messages = messages, .status = kGAB_IMPL_NONE};
 }
 
 GAB_API enum gab_kind gab_valkind(gab_value value) {
