@@ -23,15 +23,18 @@ model = {
   foods: []
 }
 
+move: .defcase {
+  left:  model => model.put_by(x: x => x - MOVE_DIST)
+  right: model => model.put_by(x: x => x + MOVE_DIST)
+  up:    model => model.put_by(y: y => y - MOVE_DIST)
+  down:  model => model.put_by(y: y => y + MOVE_DIST)
+}
+
 Cells = snake\cell: .defclass (
   x: y: facing:
   default:
   {
-    left:  () => self.put_by(x: x => x - MOVE_DIST)
-    right: () => self.put_by(x: x => x + MOVE_DIST)
-    up:    () => self.put_by(y: y => y - MOVE_DIST)
-    down:  () => self.put_by(y: y => y + MOVE_DIST)
-    move:  () => self.facing.(self)
+    move:  () => self.facing.move self
     render\snake: () => [
       rect:
       { x: self.x, y: self.y, w: CELL_SIZE, h: CELL_SIZE, color: red }
@@ -135,11 +138,11 @@ handle\key: .defcase {
 handle\type: .defcase {
   tick:  (ev model) => do
     # Tick time
-    model = model.put_via_by(time: ++:)
+    model = model.put_via_by(time: x => x++)
 
     model
-   		.when(model.time % FOOD_INTERVAL == 0, spawn_food:)
-   		.when(model.time % MOVE_INTERVAL == 0, move_snake:)
+   		.when(model.time % FOOD_INTERVAL == 0, model => model.spawn_food)
+   		.when(model.time % MOVE_INTERVAL == 0, model => model.move_snake)
   end
   mouse: (ev model) => do
     ev.println
@@ -153,48 +156,48 @@ handle\type: .defcase {
 }
 
 behaviors = {
-  behavior\eat_food: () => do
-    head = self.head
+  behavior\eat_food: (model) => do
+    head = model.head
 
-    non_colliding_foods = self
+    non_colliding_foods = model
       .foods
       .filter(food => food.within_n(head, 10)!)
 
-    ate = non_colliding_foods.len < self.foods.len
+    ate = non_colliding_foods.len < model.foods.len
 
-    self
-      .when(ate put: foods: non_colliding_foods)
-      .when(ate put: eaten: self.eaten + self.foods.len - non_colliding_foods.len)
-      .when(ate append_tail:)
+    model
+      .when(ate model => model.put(foods: non_colliding_foods))
+      .when(ate model => model.put(eaten: model.eaten + model.foods.len - non_colliding_foods.len))
+      .when(ate model => model.append_tail)
   end
-  behavior\collide_self: () => do
-    head = self.head
+  behavior\collide_self: (model) => do
+    head = model.head
 
-    colliding_cells = self
+    colliding_cells = model
       .body
       .filter(cell => cell.within_n(head, 10))
 
     collided = colliding_cells.len > 0
 
-    self
-      .when(collided put: gameover: true:)
+    model
+      .when(collided model => model.put(gameover: true:))
   end
-  behavior\collide_wall: () => do
-    head = self.head
+  behavior\collide_wall: (model) => do
+    head = model.head
 
-    oob_left = self.head.x < 0
-    oob_right = self.head.x > WIDTH
-    oob_up = self.head.y < 0
-    oob_down = self.head.y > HEIGHT
+    oob_left = model.head.x < 0
+    oob_right = model.head.x > WIDTH
+    oob_up = model.head.y < 0
+    oob_down = model.head.y > HEIGHT
 
-    self
+    model
       .when(
         oob_left | oob_right | oob_up | oob_down
-        put: gameover: true:)
+        model => model.put(gameover: true:))
   end
 }
 
-behavior = [behaviors.?.*].transduce(self: |>:)
+behavior = [behaviors*].transduce(x => x, (acc x) => acc |> x)
 
 [model?] .defmodule {
   # Reduce events into new models
@@ -241,14 +244,14 @@ view: .def (
             ]
           ]
 
-          (model.snake.map render\snake:)*
-          (model.foods.map render\food:)*
+          (model.snake.map model => model.render\snake)*
+          (model.foods.map model => model.render\food)*
         ])
   end)
 
 events
   .pipe(
     app,
-    Streams.reduce(model controller:)
-    |> Streams.map view:
+    Streams.reduce(model (app, args*) => app.controller(args*))
+    |> Streams.map(app => app.view)
   )

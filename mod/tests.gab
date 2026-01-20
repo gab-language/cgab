@@ -3,11 +3,9 @@ ui = 'cgui'.use
 
 (events, app) = (Channels.make, Channels.make)
 
-#ui
-#  .run\tui(events, app)
-#  .unwrap
-
-Fibers.make () => app.each(x => x)
+ui
+  .run\tui(events, app)
+  .unwrap
 
 is\unittest:.def(
   Messages.t
@@ -173,7 +171,7 @@ handle\key: .defcase {
 handle\type: .defcase {
   tick:  (ev model) => do
     # Tick time
-    model.put_via_by(time: ++:)
+    model.put_via_by(time: t => t++)
   end
   mouse: (ev model) => do
     model

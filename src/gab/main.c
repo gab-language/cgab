@@ -314,13 +314,13 @@ union gab_value_pair gab_use_source(struct gab_triple gab, const char *path,
 
   union gab_value_pair fiber =
       gab_exec(gab, (struct gab_exec_argt){
-                         .name = path,
-                         .source = (const char *)src->data,
-                         .flags = gab.flags,
-                         .len = len,
-                         .sargv = sargs,
-                         .argv = vargs,
-                     });
+                        .name = path,
+                        .source = (const char *)src->data,
+                        .flags = gab.flags,
+                        .len = len,
+                        .sargv = sargs,
+                        .argv = vargs,
+                    });
 
   a_char_destroy(src);
 
@@ -379,6 +379,14 @@ char *readline(const char *prompt) {
   return crossline_readline(prompt, prompt_buffer, sizeof(prompt_buffer));
 }
 
+const char *welcome_message =
+    ""
+    "  ________   ___  |\n"
+    " / ___/ _ | / _ ) | Welcome to the Gab(" GAB_VERSION_TAG ") REPL.\n"
+    "/ (_ / __ |/ _  | | For help, press Ctrl-C or Ctrl-D to exit and run `gab "
+    "help`.\n"
+    "\\___/_/ |_/____/  |\n";
+
 int run_repl(int flags, uint32_t wait, size_t nmodules, const char **modules) {
   gab_ossignal(SIGINT, propagate_term);
 
@@ -397,10 +405,9 @@ int run_repl(int flags, uint32_t wait, size_t nmodules, const char **modules) {
   gab_repl(gab, (struct gab_repl_argt){
                     .name = MAIN_MODULE,
                     .flags = flags,
-                    .welcome_message =
-                        "Gab version " GAB_VERSION_TAG "\tPress ^C to exit.",
+                    .welcome_message = welcome_message,
                     .prompt_prefix = ">>> ",
-                    .promptmore_prefix = ">   ",
+                    .promptmore_prefix = "|   ",
                     .result_prefix = "",
                     .readline = readline,
                     .len = nmodules,
@@ -572,6 +579,7 @@ int run(struct command_arguments *args);
 int exec(struct command_arguments *args);
 int repl(struct command_arguments *args);
 int help(struct command_arguments *args);
+int welcome(struct command_arguments *args);
 int build(struct command_arguments *args);
 
 #define DEFAULT_COMMAND commands[0]
@@ -707,9 +715,15 @@ const struct option modules_option = {
 
 static struct command commands[] = {
     {
+        "welcome",
+        "Print the welcome message.",
+        "Print hte welcome message.",
+        .example = "gab",
+        .handler = welcome,
+    },
+    {
         "help",
-        "Print this message, or learn more about the subcommand given by "
-        "<args>",
+        "Print this message, or describe the subcommand given by <arg>",
         "With no arguments, prints a general help message summarizing all "
         "available subcommands and their flags.\n"
         "With a subcommand given by <arg>, print more specific information "
@@ -734,8 +748,14 @@ static struct command commands[] = {
     {
         "build",
         "Build a standalone executable for the module <arg>.",
-        "Bundle the gab binary and source code for the module <arg> into a "
-        "single executable.",
+        "Bundle the module <arg> and any given with -m into a "
+        "single executable.\n\nMultiple platforms are supported:\n"
+        "\tx86_64-linux-gnu    (Linux Intel)\n"
+        "\taarch64-linux-gnu   (Linux ARM)\n"
+        "\tx86_64-windows-gnu  (Windows Intel)\n"
+        "\taarch64-windows-gnu (Windows ARM)\n"
+        "\tx86_64-macos-none   (MacOS Intel)\n"
+        "\taarch64-macos-none  (MacOS ARM)",
         .example = "gab build -m IO,Strings my_app",
         .handler = build,
         {
@@ -776,9 +796,8 @@ static struct command commands[] = {
             busywait_option,
             {
                 "jobs",
-                "Specify the number of os threads which should serve as "
-                "workers for running fibers. Default is " STR(
-                    cGAB_DEFAULT_NJOBS),
+                "Specify the maximum number of threads which Gab may spawn in "
+                "parallel." STR(cGAB_DEFAULT_NJOBS),
                 'j',
             },
         },
@@ -799,8 +818,8 @@ static struct command commands[] = {
     },
     {
         "repl",
-        "Enter the read-eval-print loop",
-        "A read-eval-print-loop is a convenient tool for expiremtnation.",
+        "Enter the REPL",
+        "A REPL is a convenient tool for experimentation.",
         .example = "gab repl -m Json",
         .handler = repl,
         {
@@ -1233,16 +1252,7 @@ int repl(struct command_arguments *args) {
 
 void cmd_summary(int i) {
   struct command cmd = commands[i];
-  printf("\ngab %4s [opts] <args>\t%s\n", cmd.name, cmd.desc);
-
-  for (int j = 0; j < MAX_OPTIONS; j++) {
-    struct option opt = cmd.options[j];
-
-    if (!opt.name)
-      break;
-
-    printf("\t--%-5s\t-%c\t%s.\n", opt.name, opt.shorthand, opt.desc);
-  }
+  printf("\n\tgab %-8s [opts] <args>\t%s", cmd.name, cmd.desc);
 }
 
 void cmd_details(int i) {
@@ -1264,9 +1274,25 @@ void cmd_details(int i) {
   }
 }
 
+const char *help_welcome_message =
+    ""
+    "  ________   ___  | Welcome to Gab " GAB_VERSION_TAG "!\n"
+    " / ___/ _ | / _ ) |\n"
+    "/ (_ / __ |/ _  | | Gab is a small, dynamic language designed for "
+    "building systems.\n"
+    "\\___/_/ |_/____/  | To get started, run `gab help` to see a list of "
+    "commands.\n";
+
+int welcome(struct command_arguments *args) {
+  puts(help_welcome_message);
+  return 0;
+}
+
 int help(struct command_arguments *args) {
   if (args->argc < 1) {
-    printf("gab\\cli version %s.\n", GAB_VERSION_TAG);
+    printf("Gab version %s.\n\nTo see more details about each command, "
+           "run:\n\n\tgab help <cmd>\n\nCOMMANDS:",
+           GAB_VERSION_TAG);
 
     // Print command summaries
     for (int i = 0; i < N_COMMANDS; i++)

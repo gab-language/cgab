@@ -342,6 +342,12 @@ int32_t gc_job(void *data) {
   return 0;
 }
 
+/*
+ * TODO: Implement some form of work stealing (Or preemption).
+ *
+ * Sometimes work can get 'stuck' behind a
+ */
+
 int32_t worker_job(void *data) {
   struct gab_triple *g = data;
   struct gab_triple gab = *g;
@@ -1524,7 +1530,6 @@ gab_value gab_vspanicf(struct gab_triple gab, va_list va,
   char hint[cGAB_ERR_SPRINTF_BUF_MAX] = {0};
   if (args.note_fmt) {
     gab_vsprintf(hint, sizeof(hint), args.note_fmt, va);
-    // assert(res >= 0);
   }
 
   gab_value rec = gab_recordof(

@@ -431,9 +431,9 @@ GAB_API_INLINE gab_uint __gab_valtou(gab_value v) {
 #define T gab_value
 #include "vector.h"
 
-// If this configuration macro is defined, try to use the native threads. If not available, this will fall back
-// to our threads wrapper compat layer.
-// If it is not defined, always use the compat layer.
+// If this configuration macro is defined, try to use the native threads. If not
+// available, this will fall back to our threads wrapper compat layer. If it is
+// not defined, always use the compat layer.
 #ifdef cGAB_THREADS_NATIVE
 #include <threads.h>
 #else
@@ -677,6 +677,22 @@ GAB_API int gab_psvalinspect(char **dest, size_t *n, gab_value value,
  */
 GAB_API int gab_sprintf(char *dst, size_t n, const char *fmt, ...);
 GAB_API int gab_psprintf(char *dst, size_t n, const char *fmt, ...);
+
+/**
+ * @brief Format the given string to the given stream.
+ *
+ * This format function does *not* respect the %-style formatters like printf.
+ * The only supported formatter is $, which will use the next gab_value in the
+ * var args.
+ *
+ * eg:
+ * `gab_fprintf(stdout, "foo $", gab_string(gab, "bar"));`c
+ *
+ * @param stream The stream to print to
+ * @param fmt The format string
+ * @return the number of bytes written to the stream.
+ */
+GAB_API int gab_fprintf(FILE *stream, const char *fmt, ...);
 
 /**
  * @brief Format the given string into the given buffer, with varargs. @see
@@ -1497,20 +1513,37 @@ GAB_API gab_value gab_dref(struct gab_triple gab, gab_value value);
 /**
  * @brief Increment the reference count of the value(s)
  *
- * @param vm The vm.
+ * @param gab The triple.
  * @param value The value.
  */
 GAB_API void gab_niref(struct gab_triple gab, uint64_t stride, uint64_t len,
                        gab_value *values);
 
 /**
+ * @brief Increment all the following values' reference counts.
+ *
+ * @param gab The triple.
+ */
+#define gab_irefall(gab, ...)                                                 \
+  ({                                                                           \
+    gab_value values[] = {__VA_ARGS__};                                        \
+    gab_niref(gab, 1, sizeof(values) / sizeof(gab_value), values);                \
+  })
+
+/**
  * @brief Decrement the reference count of the value(s)
  *
- * @param vm The vm.
+ * @param gab The triple.
  * @param value The value.
  */
 GAB_API void gab_ndref(struct gab_triple gab, uint64_t stride, uint64_t len,
                        gab_value *values);
+
+#define gab_drefall(gab, ...)                                                 \
+  ({                                                                           \
+    gab_value values[] = {__VA_ARGS__};                                        \
+    gab_ndref(gab, 1, sizeof(values) / sizeof(gab_value), values);                \
+  })
 
 #endif
 

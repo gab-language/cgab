@@ -586,22 +586,6 @@ gab_value gab_vspanicf(struct gab_triple gab, va_list vastruct,
                        struct gab_err_argt args);
 
 /**
- * @brief Format the given string to the given stream.
- *
- * This format function does *not* respect the %-style formatters like printf.
- * The only supported formatter is $, which will use the next gab_value in the
- * var args.
- *
- * eg:
- * `gab_fprintf(stdout, "foo $", gab_string(gab, "bar"));`c
- *
- * @param stream The stream to print to
- * @param fmt The format string
- * @return the number of bytes written to the stream.
- */
-GAB_API int gab_fprintf(FILE *stream, const char *fmt, ...);
-
-/**
  * @brief Print the bytecode to the stream - useful for debugging.
  *
  * @param stream The stream to print to
@@ -670,6 +654,8 @@ static inline int gsnprintf_through(char **dst, size_t *n, const char *fmt,
 
   return res;
 }
+
+bool gab_wkspawn(struct gab_triple gab, gab_value fiber);
 
 gab_value __gab_shape(struct gab_triple gab, uint64_t len);
 

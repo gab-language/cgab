@@ -526,7 +526,10 @@ static inline uint64_t compute_token_from_ip(struct gab_triple gab,
   struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(b->p);
 
   assert(ip > proto_srcbegin(gab, p));
-  uint64_t offset = ip - proto_srcbegin(gab, p) - 1;
+  uint64_t offset = ip - proto_srcbegin(gab, p);
+
+  if (offset)
+    offset--;
 
   uint64_t token = v_uint64_t_val_at(&p->src->bytecode_toks, offset);
 
@@ -1218,12 +1221,14 @@ union gab_value_pair gab_vmexec(struct gab_triple gab, gab_value f) {
  * SEND guard which compares the message record checked against last time
  * to the current rec.
  *
- * IS IT POSSIBLE THAT THE MESSAGE SPECS are *replaced* by another at the same address
- * after a collection happens, and then some sends *think* they have it cached but they havent?
+ * IS IT POSSIBLE THAT THE MESSAGE SPECS are *replaced* by another at the same
+ * address after a collection happens, and then some sends *think* they have it
+ * cached but they havent?
  */
 #define SEND_GUARD_CACHED_MESSAGE_SPECS()                                      \
-  SEND_GUARD(gab_valeq(atomic_load(&EG()->messages_epoch), ks[GAB_SEND_KSPECS]),     \
-             "Global message change detected.")
+  SEND_GUARD(                                                                  \
+      gab_valeq(atomic_load(&EG()->messages_epoch), ks[GAB_SEND_KSPECS]),      \
+      "Global message change detected.")
 
 /*
  * SEND guard which checks that the world is
@@ -2549,26 +2554,41 @@ CASE_CODE(SEND_PRIMITIVE_FIBER) {
 
   CHECK_SIGNAL();
 
-  // We cannot have a low (0-1) value here for some reason
-  union gab_value_pair fb = gab_tarun(GAB(), 1 << 16,
-                                      (struct gab_run_argt){
-                                          .flags = GAB().flags,
-                                          .main = block,
-                                      });
+  gab_value fb = REENTRANT();
 
-  if (fb.status == gab_ctimeout)
-    VM_YIELD(gab_ctimeout);
-  else
+  if (!REENTRANT()) {
+    fb = gab_fiber(GAB(), (struct gab_fiber_argt){
+                              .message = gab_message(GAB(), mGAB_CALL),
+                              .receiver = block,
+                              .flags = GAB().flags,
+                          });
+  }
+
+  bool spawned = gab_wkspawn(GAB(), fb);
+
+  if (spawned)
+    goto fin;
+
+  gab_value result = gab_tchnput(GAB(), EG()->work_channel, fb, 1 << 16);
+
+  switch (result) {
+  case gab_ctimeout:
+    VM_YIELD(fb);
+  case gab_cinvalid:
+    VM_TERM();
+  case gab_cvalid:
+  fin:
     RESET_REENTRANT();
 
-  assert(fb.status == gab_cvalid);
+    DROP_N(have + 1);
+    PUSH(fb);
 
-  DROP_N(have + 1);
-  PUSH(fb.vresult);
+    SET_VAR(below_have + 1);
 
-  SET_VAR(below_have + 1);
-
-  NEXT();
+    NEXT();
+  default:
+    assert(false && "UNEXPECTED");
+  }
 }
 
 CASE_CODE(SEND_PRIMITIVE_CHANNEL) {

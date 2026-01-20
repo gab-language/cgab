@@ -61,7 +61,14 @@ struct gui {
   gab_value appch, evch;
   uint64_t n;
   bool ready;
-} gui;
+};
+
+gab_value gab_gui(struct gab_triple gab) {
+  return gab_box(gab, (struct gab_box_argt){
+                          .size = sizeof(struct gui),
+                          .type = gab_string(gab, "gab\\gui"),
+                      });
+}
 
 void HandleClayErrors(Clay_ErrorData errorData) {
   fprintf(stderr, "%s\n", errorData.errorText.chars);
@@ -73,9 +80,10 @@ void HandleClayErrors(Clay_ErrorData errorData) {
  * of other fibers, the UI can appear to lock-up, as the user-fiber operating on
  * these channels *does* yield.
  */
-bool putevent(struct gab_triple gab, const char *type, const char *event,
-              gab_value data1, gab_value data2, gab_value data3) {
-  if (gui.evch != gab_cundefined) {
+bool putevent(struct gab_triple gab, struct gui *gui, const char *type,
+              const char *event, gab_value data1, gab_value data2,
+              gab_value data3) {
+  if (gui->evch != gab_cundefined) {
     gab_value ev[] = {
         gab_message(gab, type), gab_message(gab, event), data1, data2, data3,
     };
@@ -84,7 +92,7 @@ bool putevent(struct gab_triple gab, const char *type, const char *event,
 
     gab_niref(gab, 1, LEN_CARRAY(ev), ev);
 
-    if (gab_nchnput(gab, gui.evch, len, ev) == gab_cinvalid)
+    if (gab_nchnput(gab, gui->evch, len, ev) == gab_cinvalid)
       return true;
 
     gab_ndref(gab, 1, LEN_CARRAY(ev), ev);
@@ -95,7 +103,7 @@ bool putevent(struct gab_triple gab, const char *type, const char *event,
 
 #define RGFW_KEY_CASE(keyname, str)                                            \
   case RGFW_##keyname:                                                         \
-    return putevent(gab, "key", #str, gab_number(ev->key.mod),                 \
+    return putevent(gab, gui, "key", #str, gab_number(ev->key.mod),            \
                     gab_bool(ev->type == RGFW_keyPressed), gab_cundefined);
 
 gab_value clayGetTopmostId(struct gab_triple gab) {
@@ -114,7 +122,7 @@ gab_value clayGetTopmostId(struct gab_triple gab) {
 }
 
 Clay_Vector2 mousePosition;
-bool clay_RGFW_update(struct gab_triple gab, RGFW_window *win, double deltaTime,
+bool clay_RGFW_update(struct gab_triple gab, struct gui *gui, double deltaTime,
                       RGFW_event *ev) {
   switch (ev->type) {
   case RGFW_mouseButtonPressed: {
@@ -125,10 +133,10 @@ bool clay_RGFW_update(struct gab_triple gab, RGFW_window *win, double deltaTime,
       //                             deltaTime);
       return false;
     case RGFW_mouseLeft:
-      return putevent(gab, "mouse", "left", target, gab_nil, gab_nil);
+      return putevent(gab, gui, "mouse", "left", target, gab_nil, gab_nil);
       // Clay_SetPointerState(mousePosition, true);
     case RGFW_mouseRight:
-      return putevent(gab, "mouse", "right", target, gab_nil, gab_nil);
+      return putevent(gab, gui, "mouse", "right", target, gab_nil, gab_nil);
       // Clay_SetPointerState(mousePosition, true);
     }
 
@@ -138,10 +146,10 @@ bool clay_RGFW_update(struct gab_triple gab, RGFW_window *win, double deltaTime,
     gab_value target = clayGetTopmostId(gab);
     switch (ev->button.value) {
     case RGFW_mouseLeft:
-      return putevent(gab, "mouse", "left", target, gab_nil, gab_nil);
+      return putevent(gab, gui, "mouse", "left", target, gab_nil, gab_nil);
       // Clay_SetPointerState(mousePosition, true);
     case RGFW_mouseRight:
-      return putevent(gab, "mouse", "right", target, gab_nil, gab_nil);
+      return putevent(gab, gui, "mouse", "right", target, gab_nil, gab_nil);
       // Clay_SetPointerState(mousePosition, true);
     }
 
@@ -180,7 +188,7 @@ bool clay_RGFW_update(struct gab_triple gab, RGFW_window *win, double deltaTime,
       RGFW_KEY_CASE(F12, f12);
     default:
       const char event[] = {ev->key.sym, '\0'};
-      return putevent(gab, "key", event, gab_number(ev->key.mod),
+      return putevent(gab, gui, "key", event, gab_number(ev->key.mod),
                       gab_bool(ev->type == RGFW_keyPressed), gab_cundefined);
     }
 
@@ -193,17 +201,17 @@ bool clay_RGFW_update(struct gab_triple gab, RGFW_window *win, double deltaTime,
 
 #define TERMBOX_KEY_CASE(key, str)                                             \
   case TB_KEY_##key:                                                           \
-    return putevent(gab, "key", #str, gab_number(e->mod), gab_bool(true),      \
+    return putevent(gab, gui, "key", #str, gab_number(e->mod), gab_bool(true), \
                     gab_cundefined);
 
-bool clay_termbox_update(struct gab_triple gab, struct tb_event *e,
-                         double deltaTime) {
+bool clay_termbox_update(struct gab_triple gab, struct gui *gui,
+                         struct tb_event *e, double deltaTime) {
   switch (e->type) {
   case TB_EVENT_RESIZE:
     return false;
   case TB_EVENT_KEY:
     switch (e->key) {
-      case TB_KEY_BACKSPACE2:
+    case TB_KEY_BACKSPACE2:
       TERMBOX_KEY_CASE(BACKSPACE, backspace);
       TERMBOX_KEY_CASE(ENTER, enter);
       TERMBOX_KEY_CASE(ESC, escape);
@@ -227,31 +235,31 @@ bool clay_termbox_update(struct gab_triple gab, struct tb_event *e,
       TERMBOX_KEY_CASE(F12, f12);
     default:
       const char ev[] = {e->ch, '\0'};
-      return putevent(gab, "key", ev, gab_number(e->mod), gab_bool(true),
+      return putevent(gab, gui, "key", ev, gab_number(e->mod), gab_bool(true),
                       gab_cundefined);
     }
   case TB_EVENT_MOUSE:
     switch (e->key) {
     case TB_KEY_MOUSE_RELEASE:
       // Clay_SetPointerState((Clay_Vector2){e->x, e->y}, false);
-      return putevent(gab, "mouse", "left", gab_number(0), gab_false,
+      return putevent(gab, gui, "mouse", "left", gab_number(0), gab_false,
                       clayGetTopmostId(gab));
     case TB_KEY_MOUSE_RIGHT:
       // Clay_SetPointerState((Clay_Vector2){e->x, e->y}, false);
-      return putevent(gab, "mouse", "right", gab_number(0), gab_true,
+      return putevent(gab, gui, "mouse", "right", gab_number(0), gab_true,
                       clayGetTopmostId(gab));
     case TB_KEY_MOUSE_LEFT:
       // Clay_SetPointerState((Clay_Vector2){e->x, e->y}, true);
-      return putevent(gab, "mouse", "left", gab_number(0), gab_true,
+      return putevent(gab, gui, "mouse", "left", gab_number(0), gab_true,
                       clayGetTopmostId(gab));
     case TB_KEY_MOUSE_WHEEL_UP:
       // Clay_UpdateScrollContainers(false, (Clay_Vector2){0, e->y}, deltaTime);
-      return putevent(gab, "mouse", "scroll\\up", gab_number(0), gab_false,
+      return putevent(gab, gui, "mouse", "scroll\\up", gab_number(0), gab_false,
                       clayGetTopmostId(gab));
     case TB_KEY_MOUSE_WHEEL_DOWN:
       // Clay_UpdateScrollContainers(false, (Clay_Vector2){0, e->y}, deltaTime);
-      return putevent(gab, "mouse", "scroll\\down", gab_number(0), gab_false,
-                      clayGetTopmostId(gab));
+      return putevent(gab, gui, "mouse", "scroll\\down", gab_number(0),
+                      gab_false, clayGetTopmostId(gab));
     default:
       goto err;
     }
@@ -385,11 +393,12 @@ Clay_LayoutConfig parseLayout(struct gab_triple gab, gab_value props) {
   };
 }
 
-union gab_value_pair render_componentlist(struct gab_triple gab, gab_value app,
+union gab_value_pair render_componentlist(struct gab_triple gab,
+                                          struct gui *gui, gab_value app,
                                           Clay_LayoutDirection dir);
 
-union gab_value_pair render_box(struct gab_triple gab, gab_value props,
-                                gab_value children) {
+union gab_value_pair render_box(struct gab_triple gab, struct gui *gui,
+                                gab_value props, gab_value children) {
   if (gab_valkind(props) != kGAB_RECORD)
     return gab_pktypemismatch(gab, props, kGAB_RECORD);
 
@@ -430,7 +439,7 @@ union gab_value_pair render_box(struct gab_triple gab, gab_value props,
 
   Clay_LayoutConfig layout = parseLayout(gab, props);
 
-  CLAY(vid == gab_cundefined ? CLAY_IDI("", gui.n++)
+  CLAY(vid == gab_cundefined ? CLAY_IDI("", gui->n++)
                              : CLAY_SID(((Clay_String){
                                    .length = gab_strlen(vid),
                                    .chars = gab_strdata(&vid),
@@ -456,13 +465,14 @@ union gab_value_pair render_box(struct gab_triple gab, gab_value props,
                        },
                },
        }) {
-    render_componentlist(gab, children, layout.layoutDirection);
+    render_componentlist(gab, gui, children, layout.layoutDirection);
   };
 
   return gab_union_cvalid(gab_nil);
 }
 
-union gab_value_pair render_rect(struct gab_triple gab, gab_value props) {
+union gab_value_pair render_rect(struct gab_triple gab, struct gui *gui,
+                                 gab_value props) {
   if (gab_valkind(props) != kGAB_RECORD)
     return gab_pktypemismatch(gab, props, kGAB_RECORD);
 
@@ -505,7 +515,7 @@ union gab_value_pair render_rect(struct gab_triple gab, gab_value props) {
   if (vid != gab_cundefined && gab_valkind(vid) != kGAB_MESSAGE)
     return gab_pktypemismatch(gab, vid, kGAB_MESSAGE);
 
-  CLAY(vid == gab_cundefined ? CLAY_IDI("", gui.n++)
+  CLAY(vid == gab_cundefined ? CLAY_IDI("", gui->n++)
                              : CLAY_SID(((Clay_String){
                                    .length = gab_strlen(vid),
                                    .chars = gab_strdata(&vid),
@@ -524,7 +534,8 @@ union gab_value_pair render_rect(struct gab_triple gab, gab_value props) {
   return gab_union_cvalid(gab_nil);
 }
 
-union gab_value_pair render_image(struct gab_triple gab, gab_value props) {
+union gab_value_pair render_image(struct gab_triple gab, struct gui *gui,
+                                  gab_value props) {
   if (gab_valkind(props) != kGAB_RECORD)
     return gab_pktypemismatch(gab, props, kGAB_RECORD);
 
@@ -554,7 +565,7 @@ union gab_value_pair render_image(struct gab_triple gab, gab_value props) {
   if (vid != gab_cundefined && gab_valkind(vid) != kGAB_MESSAGE)
     return gab_pktypemismatch(gab, vid, kGAB_MESSAGE);
 
-  CLAY(vid == gab_cundefined ? CLAY_IDI("", gui.n++)
+  CLAY(vid == gab_cundefined ? CLAY_IDI("", gui->n++)
                              : CLAY_SID(((Clay_String){
                                    .length = gab_strlen(vid),
                                    .chars = gab_strdata(&vid),
@@ -577,7 +588,8 @@ union gab_value_pair render_image(struct gab_triple gab, gab_value props) {
   return gab_union_cvalid(gab_nil);
 }
 
-union gab_value_pair render_text(struct gab_triple gab, gab_value props) {
+union gab_value_pair render_text(struct gab_triple gab, struct gui *gui,
+                                 gab_value props) {
   if (gab_valkind(props) != kGAB_RECORD)
     return gab_pktypemismatch(gab, props, kGAB_RECORD);
 
@@ -635,9 +647,9 @@ union gab_value_pair render_text(struct gab_triple gab, gab_value props) {
 
   gab_uint height = gab_valtou(vheight);
 
-  CLAY(CLAY_IDI("", gui.n++), {
-                                  .layout = parseLayout(gab, props),
-                              }) {
+  CLAY(CLAY_IDI("", gui->n++), {
+                                   .layout = parseLayout(gab, props),
+                               }) {
     CLAY_TEXT(text, CLAY_TEXT_CONFIG({
                         .fontSize = size,
                         .letterSpacing = spacing,
@@ -649,7 +661,7 @@ union gab_value_pair render_text(struct gab_triple gab, gab_value props) {
   return gab_union_cvalid(gab_nil);
 }
 
-union gab_value_pair render_component(struct gab_triple gab,
+union gab_value_pair render_component(struct gab_triple gab, struct gui *gui,
                                       gab_value component) {
   if (gab_valkind(component) != kGAB_RECORD)
     return gab_pktypemismatch(gab, component, kGAB_RECORD);
@@ -665,14 +677,14 @@ union gab_value_pair render_component(struct gab_triple gab,
   gab_value props = gab_lstat(component, 1);
 
   if (kind == gab_message(gab, "text"))
-    return render_text(gab, props);
+    return render_text(gab, gui, props);
 
   if (kind == gab_message(gab, "rect"))
-    return render_rect(gab, props);
+    return render_rect(gab, gui, props);
 
   // Currently unsupported by sokol_clay.h
   if (kind == gab_message(gab, "img"))
-    return render_image(gab, props);
+    return render_image(gab, gui, props);
 
   if (gab_reclen(component) < 3)
     return gab_panicf(gab, "Expected a list of at least 3 elements, found $",
@@ -681,12 +693,13 @@ union gab_value_pair render_component(struct gab_triple gab,
   gab_value children = gab_lstat(component, 2);
 
   if (kind == gab_message(gab, "box"))
-    return render_box(gab, props, children);
+    return render_box(gab, gui, props, children);
 
   return gab_panicf(gab, "Unknown component type $", kind);
 }
 
-union gab_value_pair render_componentlist(struct gab_triple gab, gab_value app,
+union gab_value_pair render_componentlist(struct gab_triple gab,
+                                          struct gui *gui, gab_value app,
                                           Clay_LayoutDirection dir) {
   if (gab_valkind(app) != kGAB_RECORD)
     return gab_pktypemismatch(gab, app, kGAB_RECORD);
@@ -695,20 +708,21 @@ union gab_value_pair render_componentlist(struct gab_triple gab, gab_value app,
     return gab_panicf(gab, "Expected a list, found $", app);
 
   gab_uint len = gab_reclen(app);
-  CLAY(CLAY_IDI("", gui.n++), {
-                                  .layout =
-                                      {
-                                          .layoutDirection = dir,
-                                          .sizing =
-                                              {
-                                                  .width = CLAY_SIZING_GROW(1),
-                                                  .height = CLAY_SIZING_GROW(1),
-                                              },
-                                      },
-                              }) {
+  CLAY(CLAY_IDI("", gui->n++),
+       {
+           .layout =
+               {
+                   .layoutDirection = dir,
+                   .sizing =
+                       {
+                           .width = CLAY_SIZING_GROW(1),
+                           .height = CLAY_SIZING_GROW(1),
+                       },
+               },
+       }) {
     for (uint64_t i = 0; i < len; i++) {
       gab_value component = gab_lstat(app, i);
-      union gab_value_pair res = render_component(gab, component);
+      union gab_value_pair res = render_component(gab, gui, component);
 
       if (res.status != gab_cundefined)
         return res; // TODO: Put an error event into the channel
@@ -720,12 +734,13 @@ union gab_value_pair render_componentlist(struct gab_triple gab, gab_value app,
 
 sclay_font_t fonts[1];
 
-bool render(struct gab_triple gab, Clay_RenderCommandArray *array_out) {
+bool render(struct gab_triple gab, struct gui *gui,
+            Clay_RenderCommandArray *array_out) {
   // Reset our id counter;
-  gui.n = 0;
+  gui->n = 0;
 
-  assert(!gab_chnisclosed(gui.appch));
-  gab_value app = gab_chntake(gab, gui.appch);
+  assert(!gab_chnisclosed(gui->appch));
+  gab_value app = gab_chntake(gab, gui->appch);
 
   if (app == gab_cundefined)
     return false;
@@ -735,7 +750,8 @@ bool render(struct gab_triple gab, Clay_RenderCommandArray *array_out) {
 
   Clay_BeginLayout();
 
-  union gab_value_pair res = render_componentlist(gab, app, CLAY_TOP_TO_BOTTOM);
+  union gab_value_pair res =
+      render_componentlist(gab, gui, app, CLAY_TOP_TO_BOTTOM);
 
   if (res.status != gab_cundefined)
     return false; // Put an error event into the channel
@@ -744,10 +760,9 @@ bool render(struct gab_triple gab, Clay_RenderCommandArray *array_out) {
   return true;
 }
 
-#ifdef GAB_PLATFORM_UNIX
-bool dotuirender(struct gab_triple gab) {
+bool dotuirender(struct gab_triple gab, struct gui *gui) {
   Clay_RenderCommandArray renderCommands;
-  if (!render(gab, &renderCommands))
+  if (!render(gab, gui, &renderCommands))
     return false;
 
   tb_clear();
@@ -755,18 +770,17 @@ bool dotuirender(struct gab_triple gab) {
   tb_present();
   return true;
 }
-#endif
 
-bool doguirender(struct gab_triple gab) {
+bool doguirender(struct gab_triple gab, struct gui *gui) {
   Clay_Dimensions dim = {
-      .width = gui.win.w,
-      .height = gui.win.h,
+      .width = gui->win.w,
+      .height = gui->win.h,
   };
 
   sclay_set_layout_dimensions(dim, 1);
 
   Clay_RenderCommandArray renderCommands;
-  if (!render(gab, &renderCommands))
+  if (!render(gab, gui, &renderCommands))
     return false;
 
   sg_begin_pass(&(sg_pass){
@@ -794,18 +808,25 @@ bool doguirender(struct gab_triple gab) {
   sg_end_pass();
   sg_commit();
 
-  RGFW_window_swapBuffers_OpenGL(&gui.win);
+  RGFW_window_swapBuffers_OpenGL(&gui->win);
   return true;
 }
 
 #ifdef GAB_PLATFORM_UNIX
 
 GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
+  gab_value vgui = gab_arg(0);
+
+  if (gab_valtype(gab, vgui) != gab_string(gab, "gab\\gui"))
+    return gab_ptypemismatch(gab, vgui, gab_string(gab, "gab\\gui"));
+
+  struct gui *gui = gab_boxdata(vgui);
+
   for (;;) {
-    if (gab_chnisclosed(gui.appch))
+    if (gab_chnisclosed(gui->appch))
       goto fin;
 
-    if (gab_chnisclosed(gui.evch))
+    if (gab_chnisclosed(gui->evch))
       goto fin;
 
     struct tb_event e;
@@ -815,7 +836,7 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
     case TB_ERR_NO_EVENT:
       break;
     case TB_OK:
-      if (clay_termbox_update(gab, &e, 10))
+      if (clay_termbox_update(gab, gui, &e, 10))
         goto fin;
 
       continue;
@@ -842,21 +863,27 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
     break;
   }
 
-  gab_chnput(gab, gui.evch, gab_message(gab, "tick"));
+  gab_chnput(gab, gui->evch, gab_message(gab, "tick"));
   return gab_union_ctimeout(gab_cundefined);
 
 fin:
-  gab_chnclose(gui.appch);
-  gab_chnclose(gui.evch);
+  gab_chnclose(gui->appch);
+  gab_chnclose(gui->evch);
   return gab_union_cvalid(gab_ok);
 }
 
 GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
+  gab_value vgui = gab_arg(0);
+
+  if (gab_valtype(gab, vgui) != gab_string(gab, "gab\\gui"))
+    return gab_ptypemismatch(gab, vgui, gab_string(gab, "gab\\gui"));
+
+  struct gui *gui = gab_boxdata(vgui);
   for (;;) {
-    if (gab_chnisclosed(gui.appch))
+    if (gab_chnisclosed(gui->appch))
       goto fin;
 
-    if (gab_chnisclosed(gui.evch))
+    if (gab_chnisclosed(gui->evch))
       goto fin;
 
     Clay_SetLayoutDimensions((Clay_Dimensions){
@@ -864,7 +891,7 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
         .height = Clay_Termbox_Height(),
     });
 
-    if (!dotuirender(gab))
+    if (!dotuirender(gab, gui))
       goto fin;
 
     switch (gab_yield(gab)) {
@@ -882,23 +909,30 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
   return gab_union_ctimeout(gab_cundefined);
 
 fin:
-  gab_chnclose(gui.appch);
-  gab_chnclose(gui.evch);
+  gab_chnclose(gui->appch);
+  gab_chnclose(gui->evch);
   Clay_Termbox_Close();
   return gab_union_cinvalid;
 }
 #endif
 GAB_DYNLIB_NATIVE_FN(ui, gui_render) {
-  if (!gui.ready) {
+  gab_value vgui = gab_arg(0);
+
+  if (gab_valtype(gab, vgui) != gab_string(gab, "gab\\gui"))
+    return gab_ptypemismatch(gab, vgui, gab_string(gab, "gab\\gui"));
+
+  struct gui *gui = gab_boxdata(vgui);
+
+  if (!gui->ready) {
     RGFW_glHints *hints = RGFW_getGlobalHints_OpenGL();
     hints->samples = 1;
     hints->major = 3;
     hints->minor = 1;
     RGFW_setGlobalHints_OpenGL(hints);
 
-    gui.win.userPtr = &gui;
+    gui->win.userPtr = &gui;
     if (!RGFW_createWindowPtr("", 500, 500, 500, 500, RGFW_windowOpenGL,
-                              &gui.win))
+                              &gui->win))
       return gab_vmpush(gab_thisvm(gab), gab_err,
                         gab_string(gab, "Failed to create window")),
              gab_union_cvalid(gab_nil);
@@ -908,7 +942,7 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_render) {
                         gab_string(gab, "Failed to load OpenGL")),
              gab_union_cvalid(gab_nil);
 
-    RGFW_window_makeCurrentContext_OpenGL(&gui.win);
+    RGFW_window_makeCurrentContext_OpenGL(&gui->win);
 
     sg_setup(&(sg_desc){
         .logger.func = slog_func,
@@ -943,8 +977,8 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_render) {
 
     Clay_Initialize(clayMemory,
                     (Clay_Dimensions){
-                        .width = gui.win.w,
-                        .height = gui.win.h,
+                        .width = gui->win.w,
+                        .height = gui->win.h,
                     },
                     (Clay_ErrorHandler){
                         HandleClayErrors,
@@ -952,17 +986,17 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_render) {
 
     Clay_SetMeasureTextFunction(sclay_measure_text, &fonts);
 
-    gui.ready = true;
+    gui->ready = true;
   }
 
   for (;;) {
-    if (gab_chnisclosed(gui.appch))
+    if (gab_chnisclosed(gui->appch))
       goto fin;
 
-    if (gab_chnisclosed(gui.evch))
+    if (gab_chnisclosed(gui->evch))
       goto fin;
 
-    if (!doguirender(gab))
+    if (!doguirender(gab, gui))
       goto fin;
 
     switch (gab_yield(gab)) {
@@ -980,38 +1014,44 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_render) {
   return gab_union_ctimeout(gab_cundefined);
 
 fin:
-  gab_chnclose(gui.appch);
-  gab_chnclose(gui.evch);
+  gab_chnclose(gui->appch);
+  gab_chnclose(gui->evch);
   sclay_shutdown();
-  RGFW_window_closePtr(&gui.win);
+  RGFW_window_closePtr(&gui->win);
   return gab_union_cinvalid;
 }
 
 GAB_DYNLIB_NATIVE_FN(ui, gui_event) {
-  if (!gui.ready)
+  gab_value vgui = gab_arg(0);
+
+  if (gab_valtype(gab, vgui) != gab_string(gab, "gab\\gui"))
+    return gab_ptypemismatch(gab, vgui, gab_string(gab, "gab\\gui"));
+
+  struct gui *gui = gab_boxdata(vgui);
+  if (!gui->ready)
     return gab_union_ctimeout(gab_cundefined);
 
-  if (RGFW_window_shouldClose(&gui.win) == RGFW_TRUE)
+  if (RGFW_window_shouldClose(&gui->win) == RGFW_TRUE)
     goto fin;
 
-  if (gab_chnisclosed(gui.appch))
+  if (gab_chnisclosed(gui->appch))
     goto fin;
 
-  if (gab_chnisclosed(gui.evch))
+  if (gab_chnisclosed(gui->evch))
     goto fin;
 
   RGFW_event ev;
-  while (RGFW_window_checkEvent(&gui.win, &ev)) {
-    if (gab_chnisclosed(gui.appch))
+  while (RGFW_window_checkEvent(&gui->win, &ev)) {
+    if (gab_chnisclosed(gui->appch))
       goto fin;
 
-    if (gab_chnisclosed(gui.evch))
+    if (gab_chnisclosed(gui->evch))
       goto fin;
 
     if (ev.type == RGFW_quit)
       goto fin;
 
-    if (clay_RGFW_update(gab, &gui.win, 10, &ev))
+    if (clay_RGFW_update(gab, gui, 10, &ev))
       goto fin;
   }
 
@@ -1026,12 +1066,12 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_event) {
     break;
   }
 
-  gab_chnput(gab, gui.evch, gab_message(gab, "tick"));
+  gab_chnput(gab, gui->evch, gab_message(gab, "tick"));
   return gab_union_ctimeout(gab_cundefined);
 
 fin:
-  gab_chnclose(gui.appch);
-  gab_chnclose(gui.evch);
+  gab_chnclose(gui->appch);
+  gab_chnclose(gui->evch);
   return gab_union_cinvalid;
 }
 
@@ -1161,34 +1201,41 @@ GAB_DYNLIB_NATIVE_FN(ui, run_gui) {
   gab_value evch = gab_arg(1);
   gab_value appch = gab_arg(2);
 
+  gab_value vgui = gab_gui(gab);
+  struct gui *gui = gab_boxdata(vgui);
+
   if (!gab_valischn(evch))
     return gab_pktypemismatch(gab, appch, kGAB_CHANNEL);
 
   if (!gab_valischn(appch))
     return gab_pktypemismatch(gab, evch, kGAB_CHANNEL);
 
-  gui.appch = appch;
-  gui.evch = evch;
+  gui->appch = appch;
+  gui->evch = evch;
 
   union gab_value_pair res =
       gab_asend(gab, (struct gab_send_argt){
                          .message = gab_message(gab, mGAB_CALL),
                          .receiver = gab_snative(gab, "ui\\gui\\loop\\event",
                                                  gab_mod_ui_gui_event),
+                         .len = 1,
+                         .argv = (gab_value[]){vgui},
                      });
 
   if (res.status != gab_cvalid) {
-    return gab_panicf(gab, "Couldn't start render thread");
+    return gab_panicf(gab, "Couldn't start event thread");
   }
 
   res = gab_asend(gab, (struct gab_send_argt){
                            .message = gab_message(gab, mGAB_CALL),
                            .receiver = gab_snative(gab, "ui\\gui\\loop\\render",
                                                    gab_mod_ui_gui_render),
+                           .len = 1,
+                           .argv = (gab_value[]){vgui},
                        });
 
   if (res.status != gab_cvalid) {
-    return gab_panicf(gab, "Couldn't start event thread");
+    return gab_panicf(gab, "Couldn't start render thread");
   }
 
   return gab_vmpush(gab_thisvm(gab), gab_ok), gab_union_cvalid(gab_nil);
@@ -1199,17 +1246,19 @@ GAB_DYNLIB_NATIVE_FN(ui, run_tui) {
   gab_value evch = gab_arg(1);
   gab_value appch = gab_arg(2);
 
+  gab_value vgui = gab_gui(gab);
+  struct gui *gui = gab_boxdata(vgui);
+
   if (!gab_valischn(evch))
     return gab_pktypemismatch(gab, appch, kGAB_CHANNEL);
 
   if (!gab_valischn(appch))
     return gab_pktypemismatch(gab, evch, kGAB_CHANNEL);
 
-  gab_iref(gab, evch);
-  gab_iref(gab, appch);
+  gab_irefall(gab, evch, appch, vgui);
 
-  gui.appch = appch;
-  gui.evch = evch;
+  gui->appch = appch;
+  gui->evch = evch;
 
   Clay_Termbox_Initialize(TB_OUTPUT_256, CLAY_TB_BORDER_MODE_DEFAULT,
                           CLAY_TB_BORDER_CHARS_DEFAULT,
@@ -1236,6 +1285,8 @@ GAB_DYNLIB_NATIVE_FN(ui, run_tui) {
                          .message = gab_message(gab, mGAB_CALL),
                          .receiver = gab_snative(gab, "ui\\tui\\loop\\render",
                                                  gab_mod_ui_tui_render),
+                         .len = 1,
+                         .argv = (gab_value[]){vgui},
                      });
 
   if (res.status != gab_cvalid) {
@@ -1247,6 +1298,8 @@ GAB_DYNLIB_NATIVE_FN(ui, run_tui) {
                            .message = gab_message(gab, mGAB_CALL),
                            .receiver = gab_snative(gab, "ui\\tui\\loop\\event",
                                                    gab_mod_ui_tui_event),
+                           .len = 1,
+                           .argv = (gab_value[]){vgui},
                        });
 
   if (res.status != gab_cvalid) {
