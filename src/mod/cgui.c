@@ -878,6 +878,26 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
   if (gab_valtype(gab, vgui) != gab_string(gab, "gab\\gui"))
     return gab_ptypemismatch(gab, vgui, gab_string(gab, "gab\\gui"));
 
+  Clay_Termbox_Initialize(TB_OUTPUT_256, CLAY_TB_BORDER_MODE_DEFAULT,
+                          CLAY_TB_BORDER_CHARS_DEFAULT,
+                          CLAY_TB_IMAGE_MODE_DEFAULT, false);
+
+  uint64_t totalMemorySize = Clay_MinMemorySize();
+  Clay_Arena clayMemory = Clay_CreateArenaWithCapacityAndMemory(
+      totalMemorySize, malloc(totalMemorySize));
+
+  Clay_Initialize(clayMemory,
+                  (Clay_Dimensions){.height = Clay_Termbox_Width(),
+                                    .width = Clay_Termbox_Height()},
+                  (Clay_ErrorHandler){HandleClayErrors});
+
+  Clay_SetMeasureTextFunction(Clay_Termbox_MeasureText, nullptr);
+
+  Clay_SetLayoutDimensions((Clay_Dimensions){
+      .width = Clay_Termbox_Width(),
+      .height = Clay_Termbox_Height(),
+  });
+
   struct gui *gui = gab_boxdata(vgui);
   for (;;) {
     if (gab_chnisclosed(gui->appch))
@@ -906,6 +926,7 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
     }
   }
 
+  Clay_Termbox_Close();
   return gab_union_ctimeout(gab_cundefined);
 
 fin:
@@ -1210,6 +1231,8 @@ GAB_DYNLIB_NATIVE_FN(ui, run_gui) {
   if (!gab_valischn(appch))
     return gab_pktypemismatch(gab, evch, kGAB_CHANNEL);
 
+  gab_irefall(gab, evch, appch, vgui);
+
   gui->appch = appch;
   gui->evch = evch;
 
@@ -1260,26 +1283,6 @@ GAB_DYNLIB_NATIVE_FN(ui, run_tui) {
   gui->appch = appch;
   gui->evch = evch;
 
-  Clay_Termbox_Initialize(TB_OUTPUT_256, CLAY_TB_BORDER_MODE_DEFAULT,
-                          CLAY_TB_BORDER_CHARS_DEFAULT,
-                          CLAY_TB_IMAGE_MODE_DEFAULT, false);
-
-  uint64_t totalMemorySize = Clay_MinMemorySize();
-  Clay_Arena clayMemory = Clay_CreateArenaWithCapacityAndMemory(
-      totalMemorySize, malloc(totalMemorySize));
-
-  Clay_Initialize(clayMemory,
-                  (Clay_Dimensions){.height = Clay_Termbox_Width(),
-                                    .width = Clay_Termbox_Height()},
-                  (Clay_ErrorHandler){HandleClayErrors});
-
-  Clay_SetMeasureTextFunction(Clay_Termbox_MeasureText, nullptr);
-
-  Clay_SetLayoutDimensions((Clay_Dimensions){
-      .width = Clay_Termbox_Width(),
-      .height = Clay_Termbox_Height(),
-  });
-
   union gab_value_pair res =
       gab_asend(gab, (struct gab_send_argt){
                          .message = gab_message(gab, mGAB_CALL),
@@ -1290,7 +1293,6 @@ GAB_DYNLIB_NATIVE_FN(ui, run_tui) {
                      });
 
   if (res.status != gab_cvalid) {
-    Clay_Termbox_Close();
     return gab_panicf(gab, "Couldn't start render thread");
   }
 
@@ -1303,7 +1305,6 @@ GAB_DYNLIB_NATIVE_FN(ui, run_tui) {
                        });
 
   if (res.status != gab_cvalid) {
-    Clay_Termbox_Close();
     return gab_panicf(gab, "Couldn't start event thread");
   }
 
