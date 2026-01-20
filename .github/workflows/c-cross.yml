@@ -28,10 +28,10 @@ jobs:
         target:
           - x86_64-linux-gnu
           - x86_64-macos-none
-          # - x86_64-windows-gnu
+          - x86_64-windows-gnu
           - aarch64-linux-gnu
           - aarch64-macos-none
-          # - aarch64-windows-gnu
+          - aarch64-windows-gnu
         build_type:
           - release
           - debugoptimized
@@ -102,7 +102,7 @@ jobs:
         os: 
           - ubuntu-latest
           - macos-latest
-          # - windows-latest
+          - windows-latest
         include:
           - os: ubuntu-latest
             target: x86_64-linux-gnu
@@ -110,9 +110,9 @@ jobs:
           - os: macos-latest
             target: aarch64-macos-none
             cmd: ./build-aarch64-macos-none/gab
-          # - os: windows-latest
-          #   target: x86_64-windows-gnu
-          #   cmd: .\build-x86_64-windows-gnu\gab
+          - os: windows-latest
+            target: x86_64-windows-gnu
+            cmd: .\build-x86_64-windows-gnu\gab
 
     runs-on: ${{ matrix.os }}
     needs: build_artifacts
