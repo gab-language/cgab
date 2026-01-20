@@ -1011,6 +1011,8 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_render) {
   }
 
   for (;;) {
+    RGFW_pollEvents();
+
     if (gab_chnisclosed(gui->appch))
       goto fin;
 
@@ -1062,7 +1064,7 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_event) {
     goto fin;
 
   RGFW_event ev;
-  while (RGFW_window_checkEvent(&gui->win, &ev)) {
+  while (RGFW_window_checkQueuedEvent(&gui->win, &ev)) {
     if (gab_chnisclosed(gui->appch))
       goto fin;
 
@@ -1096,140 +1098,18 @@ fin:
   return gab_union_cinvalid;
 }
 
-GAB_DYNLIB_NATIVE_FN(ui, gui_test) {
-  RGFW_glHints *hints = RGFW_getGlobalHints_OpenGL();
-  hints->major = 4;
-  hints->minor = 6;
-  hints->profile = RGFW_glCore;
-  RGFW_setGlobalHints_OpenGL(hints);
-
-  RGFW_setClassName("RGFW Example");
-  RGFW_window *win =
-      RGFW_createWindow("RGFW Example Window", 500, 500, 500, 500,
-                        RGFW_windowCenter | RGFW_windowOpenGL);
-
-  RGFW_window_setExitKey(win, RGFW_escape);
-
-  RGFW_window_makeCurrentContext_OpenGL(win);
-
-  if (!gladLoadGL(RGFW_getProcAddress_OpenGL))
-    return gab_panicf(gab, "Failed to load OpenGL");
-
-  sg_setup(&(sg_desc){
-      .logger.func = slog_func,
-      .environment =
-          {
-              .defaults =
-                  {
-                      .sample_count = 1,
-                      .color_format = SG_PIXELFORMAT_RGBA8,
-                      .depth_format = SG_PIXELFORMAT_DEPTH_STENCIL,
-                  },
-          },
-  });
-
-  sgl_setup(&(sgl_desc_t){
-      .logger.func = slog_func,
-  });
-
-  while (!RGFW_window_shouldClose(win)) {
-    if (!sg_isvalid())
-      printf("INVLAID SG\n");
-
-    RGFW_pollEvents();
-
-    sgl_defaults();
-
-    sgl_viewport(0, 0, win->w, win->h, true);
-
-    sgl_matrix_mode_projection();
-    sgl_ortho(0.0f, (float)win->w, (float)win->h, 0.0f, -1.0f, 1.0f);
-    sgl_matrix_mode_modelview();
-    sgl_load_identity();
-
-    // Scale and translate to center coordinates
-    sgl_translate((float)win->w * 0.5f, (float)win->h * 0.5f, 0.0f);
-    sgl_scale((float)win->w * 0.5f, (float)win->h * 0.5f, 1.0f);
-
-    sgl_begin_triangles();
-
-    sgl_c4f(1.f, 0.f, 0.f, 1.f);
-    sgl_v2f(-0.5f, -0.5f);
-
-    sgl_c4f(0.f, 1.f, 0.f, 1.f);
-    sgl_v2f(0.5f, -0.5f);
-
-    sgl_c4f(0.f, 0.f, 1.f, 1.f);
-    sgl_v2f(0.0f, 0.5f);
-
-    sgl_end();
-
-    sg_begin_pass(&(sg_pass){
-        .swapchain =
-            {
-                .width = win->w,
-                .height = win->h,
-                .gl.framebuffer = 0,
-                .sample_count = 1,
-                .color_format = SG_PIXELFORMAT_RGBA8,
-                .depth_format = SG_PIXELFORMAT_DEPTH_STENCIL,
-            },
-    });
-
-    sgl_error_t err = sgl_error();
-    if (err.any) {
-      printf("vs full: %i\n", err.vertices_full);
-      printf("us full: %i\n", err.uniforms_full);
-      printf("cs full: %i\n", err.commands_full);
-      printf("stack overflow %i\n", err.stack_overflow);
-      printf("stack underflow: %i\n", err.stack_underflow);
-      printf("no ctx: %i\n", err.no_context);
-    }
-
-    sgl_draw();
-
-    err = sgl_error();
-    if (err.any) {
-      printf("vs full: %i\n", err.vertices_full);
-      printf("us full: %i\n", err.uniforms_full);
-      printf("cs full: %i\n", err.commands_full);
-      printf("stack overflow %i\n", err.stack_overflow);
-      printf("stack underflow: %i\n", err.stack_underflow);
-      printf("no ctx: %i\n", err.no_context);
-    }
-
-    sg_end_pass();
-    sg_commit();
-
-    err = sgl_error();
-    if (err.any) {
-      printf("vs full: %i\n", err.vertices_full);
-      printf("us full: %i\n", err.uniforms_full);
-      printf("cs full: %i\n", err.commands_full);
-      printf("stack overflow %i\n", err.stack_overflow);
-      printf("stack underflow: %i\n", err.stack_underflow);
-      printf("no ctx: %i\n", err.no_context);
-    }
-
-    RGFW_window_swapBuffers_OpenGL(win);
-  }
-
-  RGFW_window_close(win);
-  return gab_union_cvalid(gab_ok);
-}
-
 GAB_DYNLIB_NATIVE_FN(ui, run_gui) {
   gab_value evch = gab_arg(1);
   gab_value appch = gab_arg(2);
-
-  gab_value vgui = gab_gui(gab);
-  struct gui *gui = gab_boxdata(vgui);
 
   if (!gab_valischn(evch))
     return gab_pktypemismatch(gab, appch, kGAB_CHANNEL);
 
   if (!gab_valischn(appch))
     return gab_pktypemismatch(gab, evch, kGAB_CHANNEL);
+
+  gab_value vgui = gab_gui(gab);
+  struct gui *gui = gab_boxdata(vgui);
 
   gab_irefall(gab, evch, appch, vgui);
 
@@ -1239,26 +1119,26 @@ GAB_DYNLIB_NATIVE_FN(ui, run_gui) {
   union gab_value_pair res =
       gab_asend(gab, (struct gab_send_argt){
                          .message = gab_message(gab, mGAB_CALL),
-                         .receiver = gab_snative(gab, "ui\\gui\\loop\\event",
-                                                 gab_mod_ui_gui_event),
+                         .receiver = gab_snative(gab, "ui\\gui\\loop\\render",
+                                                 gab_mod_ui_gui_render),
                          .len = 1,
                          .argv = (gab_value[]){vgui},
                      });
 
   if (res.status != gab_cvalid) {
-    return gab_panicf(gab, "Couldn't start event thread");
+    return gab_panicf(gab, "Couldn't start render thread");
   }
 
   res = gab_asend(gab, (struct gab_send_argt){
                            .message = gab_message(gab, mGAB_CALL),
-                           .receiver = gab_snative(gab, "ui\\gui\\loop\\render",
-                                                   gab_mod_ui_gui_render),
+                           .receiver = gab_snative(gab, "ui\\gui\\loop\\event",
+                                                   gab_mod_ui_gui_event),
                            .len = 1,
                            .argv = (gab_value[]){vgui},
                        });
 
   if (res.status != gab_cvalid) {
-    return gab_panicf(gab, "Couldn't start render thread");
+    return gab_panicf(gab, "Couldn't start event thread");
   }
 
   return gab_vmpush(gab_thisvm(gab), gab_ok), gab_union_cvalid(gab_nil);
