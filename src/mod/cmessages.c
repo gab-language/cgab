@@ -77,6 +77,9 @@ GAB_DYNLIB_NATIVE_FN(message, specs) {
   return gab_union_cvalid(gab_nil);
 }
 
+GAB_DYNLIB_NATIVE_FN(message, to_block) {
+}
+
 GAB_DYNLIB_NATIVE_FN(message, has) {
   switch (argc) {
   case 2: {

@@ -15,6 +15,7 @@ test = Specs.cat(
 [test.spec\fits(42 'hello' 12)].to\s.println
 
 ints = Specs*(Specs.int)
+
 atleastoneString = Specs+(Specs.string)
 
 nextest = Specs.cat(

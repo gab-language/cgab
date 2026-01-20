@@ -33,7 +33,7 @@
 
 // Combine common consecutive instruction patterns into one superinstruction
 #ifndef cGAB_SUPERINSTRUCTIONS
-#define cGAB_SUPERINSTRUCTIONS 0
+#define cGAB_SUPERINSTRUCTIONS 1
 #endif
 
 // Emit tailcalls where possible

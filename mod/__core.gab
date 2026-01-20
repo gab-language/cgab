@@ -40,7 +40,6 @@ falsey_values .defmodule {
 
 cond\check: .defcase {
   Blocks.t,   (args*) => self.(args*)
-  Messages.t, (args*) => self.(args*)
   else: ok:
 }
 

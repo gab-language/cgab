@@ -2165,7 +2165,6 @@ static uint64_t dumpInstruction(FILE *stream, struct gab_oprototype *self,
   switch (op) {
   case OP_POP:
   case OP_TUPLE:
-  case OP_CONS:
   case OP_NOP:
     return dumpSimpleInstruction(stream, self, offset);
   case OP_PACK_RECORD:
@@ -2177,7 +2176,6 @@ static uint64_t dumpInstruction(FILE *stream, struct gab_oprototype *self,
   case OP_TUPLE_CONSTANT:
   case OP_CONSTANT:
     return dumpConstantInstruction(stream, self, offset, false);
-    // TODO: Write these better
   case OP_NTUPLE_CONSTANT:
     return dumpConstantInstruction(stream, self, offset, true);
   case OP_NTUPLE_NCONSTANT:

@@ -2052,22 +2052,6 @@ CASE_CODE(NTUPLE) {
   NEXT();
 }
 
-CASE_CODE(CONS) {
-  uint64_t have = VAR();
-  uint64_t below_have = PEEK_N(have + 1);
-
-  // Move the given tuple down one.
-  memmove(SP() - (have + 1), SP() - have, have * sizeof(gab_value));
-
-  // Drop the tuple len for the below tuple.
-  DROP();
-
-  // Combine length of each tuple.
-  SET_VAR(have + below_have);
-
-  NEXT();
-}
-
 CASE_CODE(TUPLE_CONSTANT) {
   uint64_t have = VAR();
 
