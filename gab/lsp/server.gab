@@ -1,6 +1,6 @@
 'Json'.use
 
-log\row\t = 'gablsp/logs'.use
+log\row\t = 'gab/lsp/logs'.use
 
 diag\job\t = Shapes.make(
   server:
@@ -18,11 +18,11 @@ lsp\server\t = Shapes.make(
 position:.def(
   Strings.t
   (row col) => do
-    xf = Streams.map self:
+    xf = Streams.map(x => x)
       |> Streams.split '\n'
       |> Streams.drop row
       |> Streams.take 1
-      |> Streams.map join:
+      |> Streams.map((l r) => l.join r)
 
     line = self.collect xf .at 0 .unwrap
 
@@ -209,7 +209,7 @@ _read_request:.defcase {
     Fibers
       .make () => server
         .server\logs
-        .each log\tofile:
+        .each(m => m.log\tofile)
 
     self.log "Server started!"
 

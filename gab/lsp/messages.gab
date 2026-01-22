@@ -1,5 +1,5 @@
-'gablsp/logs'.use
-'gablsp/diagnostics'.use
+'gab/lsp/logs'.use
+'gab/lsp/diagnostics'.use
 
 lsp\messages\into:.def(
   Records.t

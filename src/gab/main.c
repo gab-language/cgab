@@ -380,12 +380,10 @@ char *readline(const char *prompt) {
 }
 
 const char *welcome_message =
-    ""
     "  ________   ___  |\n"
-    " / ___/ _ | / _ ) | Welcome to the Gab(" GAB_VERSION_TAG ") REPL.\n"
-    "/ (_ / __ |/ _  | | For help, press Ctrl-C or Ctrl-D to exit and run `gab "
-    "help`.\n"
-    "\\___/_/ |_/____/  |\n";
+    " / ___/ _ | / _ ) | v" GAB_VERSION_TAG "\n"
+    "/ (_ / __ |/ _  | |  on: " GAB_TARGET_TRIPLE "\n"
+    "\\___/_/ |_/____/  |  in: " GAB_BUILDTYPE "\n";
 
 int run_repl(int flags, uint32_t wait, size_t nmodules, const char **modules) {
   gab_ossignal(SIGINT, propagate_term);

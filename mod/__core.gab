@@ -150,7 +150,10 @@ def\seq: .def do
       self.transduce("" (acc x) => acc + x, xf)
     end,
     collect: xf => do
-      self.transduce({} (acc x) => acc .cons x,  xf)
+      self.transduce({} (acc x) => acc.cons x,  xf)
+    end,
+    zip: xf => do
+      self.transduce({} (acc v k) => acc.put(k v), xf)
     end,
     pipe: (ch, xf) =>do
       self.transduce(ch (acc x) => acc <! x, xf)
@@ -174,8 +177,6 @@ end
   is\open: _ => self.is\closed!
 }
 
-Channels.t.def\seq
-
 # Implement the reducer protocol for blocks
 [Blocks.t] .defmodule {
   reduce\step: (acc, xs*) => do
@@ -185,6 +186,8 @@ Channels.t.def\seq
 }
 
 cons: .def (nil:, o => [o])
+
+Channels.t.def\seq
 
 Records.t.def\seq
 

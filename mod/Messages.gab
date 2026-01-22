@@ -15,10 +15,15 @@ add: .defm (
   (other) => self + other)
 
 to\class_cxtor: .defcase {
-  default: () => (t) => (args*) => t.make(args*)
-}
+  default:
+  () => (t) => (args*) => t.make(args*)
 
-to\class_cxtor: .def () => self
+  "gab\block"
+  () => do
+    block = self
+    (t) => (args*) => block.(t args*)
+  end
+}
 
 # Helper message for defining 'class'-esque types.
 defclass: .def (fields*, cxtor, module) => do

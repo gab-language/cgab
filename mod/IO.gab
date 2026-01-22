@@ -28,4 +28,12 @@ _doconnect: .defcase {
   end
 }
 
+[io.Sockets.t, io.Files.t] .defmodule {
+  <!: (arg) => do 
+    self.write(arg.to\s.to\b)
+
+    self
+  end
+}
+
 io

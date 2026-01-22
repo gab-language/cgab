@@ -16,6 +16,7 @@ CFLAGS = -std=c23 \
 				 -fno-lto \
 				 -DGAB_TARGET_TRIPLE=\"$(GAB_TARGETS)\"\
 				 -DGAB_DYNLIB_FILEENDING=\"$(GAB_DYNLIB_FILEENDING)\" \
+				 -DGAB_BUILDTYPE=\"$(GAB_BUILDTYPE)\"\
 				 $(INCLUDE) \
 				 $(GAB_CCFLAGS)
 

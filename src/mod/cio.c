@@ -160,19 +160,20 @@ struct gab_ssl_sock {
   };
 };
 
-// This function runs in the gc thread, and only during a gc. we can block.
+/*
+ * In these destruction callbacks, we only queue the operation.
+ * It is possible we shouldn't try to do this at all.
+ */
+
 void file_cb(struct gab_triple, uint64_t len, char data[static len]) {
   qfd_t qfd = *(qfd_t *)data;
-  // Block for the file to close
-  qd_destroy(qclose(qfd));
+  qclose(qfd);
 }
 
-// This function runs in the gc thread, and only during a gc. we can block.
 void sock_cb(struct gab_triple, uint64_t len, char data[static len]) {
   qfd_t qfd = *(qfd_t *)data;
-  // Shutdown here
-  qd_destroy(qshutdown(qfd));
-  qd_destroy(qclose(qfd));
+  qshutdown(qfd);
+  qclose(qfd);
 }
 
 // Some convenient tables which map the IO kind t osome other data.
@@ -1279,9 +1280,15 @@ GAB_DYNLIB_NATIVE_FN(io, accept) {
   struct gab_sock *sock = gab_boxdata(vsock);
   switch (sock->io.k) {
   case IO_SOCK_SERVER:
-    return complete_sockaccept(gab, sock);
+    if (reentrant)
+      return resume_sockaccept(gab, sock, reentrant);
+    else
+      return complete_sockaccept(gab, sock);
   case IO_SOCK_SSLUNSPECIFIED:
-    return complete_sslsockaccept(gab, (struct gab_ssl_sock *)sock);
+    if (reentrant)
+      return resume_sslsockaccept(gab, (struct gab_ssl_sock *)sock, reentrant);
+    else
+      return complete_sslsockaccept(gab, (struct gab_ssl_sock *)sock);
   default:
     return gab_vmpush(gab_thisvm(gab), gab_err,
                       gab_string(gab, "Socket is in invalid state")),

@@ -1,4 +1,4 @@
-log = 'gablsp/logs'.use
+log = 'gab/lsp/logs'.use
 
 'cgab'.use
 

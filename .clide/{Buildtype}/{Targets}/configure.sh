@@ -54,6 +54,7 @@ echo "#!/usr/bin/env bash" >> configuration
 echo "export GAB_CCFLAGS=\""$cflags"\"" >> configuration
 echo "export GAB_BINARYFLAGS=\""$binflags"\"" >> configuration
 echo "export GAB_TARGETS=\""$targets"\"" >> configuration
+echo "export GAB_BUILDTYPE=\""$buildtype"\"" >> configuration
 echo "export GAB_DYNLIB_FILEENDING=\""$dynlib_fileending"\"" >> configuration
 echo "mkdir -p build-$targets" >> configuration
 echo "mkdir -p build-$targets/mod" >> configuration

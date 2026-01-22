@@ -64,8 +64,13 @@ dosort:.defcase {
   false: (rec, f) => rec.record\sort f
 }
 
+to\sorter: .defcase {
+  nil:      () => (x => x)
+  Blocks.t, () => self
+}
+
 sort:.def(
   Records.t,
-  (f) => self.is\list.dosort(self, f))
+  (f) => self.is\list.dosort(self, f.to\sorter))
 
 Records
