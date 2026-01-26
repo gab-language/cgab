@@ -283,14 +283,15 @@ RE\Rep = re\rep: .defclass(
   {})
 
 stringify_forms = (forms, sep)
-  => "($)".sprintf(forms.map(f => f.re\debug).join (Streams.interpose sep))
+  => "($)".sprintf(forms.map(f => f.re\debug).join ("" Streams.interpose sep))
 
 collapse_path = (path) => do
   path.reduce({} (col elem) => do
     via = elem.at 0 .unwrap
     status = elem.at 1 .unwrap
+    pred = elem.at 2 .unwrap .at 0 .unwrap
     val = elem.at 2 .unwrap .at 1 .unwrap
-    col.when(status c => c.put_via_by(via*, v => v.cons val))
+    col.put_via_by(via*, v => v.cons { status: status element: val by: pred })
   end)
 end
 
@@ -302,31 +303,39 @@ make: .defcase {
     path  .or [])
 
   RE\Seq (forms meta path) => do
-    path = path .or [] + forms.transduce(
-      [] (l r) => l + r ,
+    skippath = path .or [] + forms.join(
+      []
       Streams.filter(f => f.re\blank)
       |> Streams.map(f => f.path))
 
+    path = skippath
+
     forms = forms.skip(f => f.re\blank)
 
-    forms .cond {
+    result = forms .cond {
       f => f.any(f => f.re\null)
-      regex\null
-        .put(
-          path:
-          path + forms.transduce(
-            []
-            (l r) => l + r
-            Streams.filter(f => f.re\null)
-            |> Streams.map(f => f.path)))
+      () => do
+
+        newpath = forms.join(
+          []
+          Streams.filter(f => f.re\null)
+          |> Streams.map(f => f.re\path))
+
+        regex\null.put(path: newpath)
+      end
 
       f => f.every(f => f.re\is\empty)
-      regex\blank
-        .put(path: path .or [])
+      () => do
+        regex\blank.put(path: path .or [])
+      end
 
-      f =>((f.len == 1).and(meta.name == '%'))
-      () => forms.at 0 .unwrap.put(path: path)
-        #.put_by(path: x => x + path .or [])
+      f => (f.len == 1) .and (meta.has name: !)
+      () => do
+        forms
+          .at 0
+          .unwrap
+          .put_by(path: x => path + x)
+      end
 
       else:                     
       RE\Seq.t.make(
@@ -335,61 +344,84 @@ make: .defcase {
         meta
         path  .or [])
     }
+
+    result
   end
 
   RE\Alt (forms meta path) => do
     nonnull = forms.skip(f => f.re\null)
 
-    (_, p) = forms
-      .map(f => f.re\path)
-      .sort(f => f.len)
-      .pop
-
-    p = p .or []
-
-    nonnull .cond {
+    result = nonnull .cond {
       f => f.is\empty
-      regex\null
-        .put(path: p .or path .or [])
+      () => do
+        # If we have no non-null choices,
+        # we are an error.
+        paths = forms
+          .collect(
+            []
+            Streams.filter(f => f.re\null)
+            |> Streams.map(f => f.re\path))
 
-      f => f .every(f => f.re\is\empty)
-      nonnull
-        .map(f => f.re\is\empty) .at 0 .first
+        (_, p) = paths.sort(f => f.len).pop
 
-      f => ((f.len == 1).and(meta.name == '%'))
+        # Do we need path + p here?
+        regex\null.put(path: p .or [])
+      end
+
+      f => f.every(f => f.re\is\empty)
+      () => do
+      # If all option paths are empty, take the longest.
+        (_, v) = nonnull
+          .sort(f => f.re\path.len)
+          .pop
+
+        v.put(path: path + v.path)
+      end
+
+      f => (f.len == 1) .and (meta.has name: !)
       () => nonnull
         .at 0
         .unwrap
-        .put_by(path: x => x + path .or [])
+        .put_by(path: x => path + x)
 
       else:                       
-      RE\Alt.t.make(
-        nil:
-        nonnull
-        meta
-        path  .or [])
-    }
-  end
-
-  RE\Rep (form meta path) => form .cond {
-        f => f.re\null     
-        regex\blank
-          .put(path: path .or [])
-
-        f => f.re\is\empty
-        regex\blank
-          .put(path: path .or [])
-
-        f => f.re\blank
-        form 
-                     
-        else:
-        RE\Rep.t.make(
+      () => do
+        RE\Alt.t.make(
           nil:
-          form
+          nonnull
           meta
           path  .or [])
+      end
     }
+
+    result
+  end
+
+  RE\Rep (form meta path) => do
+    result = form .cond {
+          f => f.re\null     
+          () => do
+            regex\blank
+              .put(path: path .or [])
+          end
+
+          f => f.re\is\empty
+          regex\blank
+            .put(path: path .or [])
+
+          f => f.re\blank
+          form 
+                      
+          else:
+          RE\Rep.t.make(
+            nil:
+            form
+            meta
+            path  .or [])
+      }
+
+    result
+  end
 }
 
 # Useful message for getting string representations of RE
@@ -399,7 +431,7 @@ re\debug: .defcase {
   re\null\t "re.internal.null"
 
   RE\Atom.t
-  () => self.re\name
+  () => self.re\name.unwrap
 
   RE\Seq.t
   () => stringify_forms.(self.forms, " , ")
@@ -408,25 +440,36 @@ re\debug: .defcase {
   () => stringify_forms.(self.forms, " | ")
 
   RE\Rep.t
-  () => '*$'.sprintf(self.forms.re\name)
+  () => do
+    (ok, name) = self.forms.re\name
+
+    ok
+      .and('*$'.sprintf name)
+      .or ""
+  end
 }
 re\debug: .def () => self.to\spec.spec\name
 
 # Get the user-supplied name of a RE
 re\name: .defcase {
   RE\Atom.t
-  () => self.forms.to\spec.spec\name
+  () => do
+    (_, name) = self.meta.at name:
+    (ok: name.or(self.forms.to\spec.spec\name))
+  end
 
   RE\Seq.t
-  () =>  self.meta.name
+  () => do
+    self.meta.at name:
+  end
 
   RE\Alt.t
-  () => self.meta.name
+  () => self.meta.at name:
 
   RE\Rep.t
-  () => self.meta.name
+  () => self.meta.at name:
 }
-re\name: .def () => self.to\spec.spec\name
+re\name: .def () => (ok: self.to\spec.spec\name)
 
 # Construct a path (array of triples) taken to *get to* this RE state
 re\path: .defcase {
@@ -437,13 +480,14 @@ re\path: .defcase {
   () => self.path
   # Combine the paths of all forms
   RE\Seq.t
-  () => self.path + self.forms.transduce(
+  () => self.path + self.forms.join(
     []
-    (l r) => l + r
     Streams.map(f => f.re\path))
   # Should probably select longest/shortest here
   RE\Alt.t
-  () => self.path + self.forms.map(f => f.re\path).sort(f => f.len) .at 0 .unwrap
+  () => do
+    self.path + self.forms.map(f => f.re\path).sort(f => f.len) .at 0 .unwrap
+  end
   # Path is saved in self, maybe add forms path somewhere?
   RE\Rep.t
   () => self.path + self.forms.re\path
@@ -470,14 +514,14 @@ re\remainder: .defcase {
   () => RE\Seq.make(
     self
       .forms
-      .collect(Streams.drop_while(f => f.re\is\empty)),
+      .collect([] Streams.drop_while(f => f.re\is\empty)),
     self.meta
     self.path)
 }
 
 re\seq\deriveforms: .defcase {
-  Shapes.make(0) (re e steps) => do
-    #'Applied seq $ to $\n'.printf(re.to\s, e)
+  Shapes.make(0)
+  (re e steps) => do
     steps = steps.cons re
 
     form_re = self.at 0 .unwrap
@@ -485,28 +529,21 @@ re\seq\deriveforms: .defcase {
     # Pass off to single form child, adding self as a step.
     re\d = form_re.re\d(e steps)
 
-    # For some reason don't include re\d path?
     result = RE\Seq.make([re\d], re.meta, re.path)
 
-    #'Result: $\n'.printf(result.to\s)
     result
   end
 }
 
 # In all other cases, we use the first two and do the work
 re\seq\deriveforms: .def (re e steps) => do
-    #'Applied seq $ to $\n'.printf(re.to\s, e)
     steps = steps.cons re
 
-    (ok, a) = self.at 0
     (a, rest) = (self.at 0 .unwrap, self.slice(1, self.len))
     b = self.at 1 .unwrap
 
     (new_a) = a.re\d(e, steps)
     (new_b) = b.re\d(e, steps)
-
-    (no_a) = a.re\empty
-    (no_b) = b.re\empty
 
     so_far = re.path
 
@@ -514,26 +551,23 @@ re\seq\deriveforms: .def (re e steps) => do
       self.put(0 new_a)
       re.meta)
 
+    empty_a = a.re\empty
+
+# If we take the right branch,
+# Then the left branch was empty.
+# It may have path though, (having consumed some values)
+# So we pass the whole re\path into this branch.
     right = RE\Seq.make(
-      rest.put(0 new_b)
-      re.meta
-      a.re\path) 
-
-    altforms = [
-      left
-      no_a.re\is\empty
-        .and right
-        .or(regex\null.put(path: right.path))
-      ]
-
-    #'Altforms: $\n'.printf(altforms.to\s)
+      self
+        .put(0 empty_a)
+        .put(1 new_b)
+      re.meta) 
 
     result = RE\Alt.make(
-      altforms
-      { name: '%' },
+      [left right]
+      { },
       so_far)
-      
-    #'Result: $\n'.printf(result.to\s)
+
     result
 end
 
@@ -552,14 +586,11 @@ re\d: .defcase {
   (e, steps) => do
     (ok, rest*) = self.forms.to\spec.spec\fits e
 
-    #'Applied atom $ to $ -> $\n\n'.printf(self.to\s, e, ok)
-
     so_far = self.path
 
     steps = steps.cons self
-    name = steps.collect(
-      Streams.map(x => x.re\name)
-      |> Streams.filter(x => x == '%' !))
+
+    name = steps.collect([] Streams.mapfilter(x => x.re\name))
 
     path = so_far.push [name, ok, rest]
 
@@ -568,46 +599,33 @@ re\d: .defcase {
       .or regex\null
       .put(path: path)
 
-    #'Result: $\n'.printf(result.to\s)
     result
   end
 
  RE\Alt.t
  (e steps) => do
-    #'Applied alt $ to $\n'.printf(self.to\s, e)
-
     steps = steps.cons self
-    forms = self.forms.map f => f .re\d(e steps)
+    forms = self.forms.map(f => f.re\d(e steps))
 
     result = RE\Alt.make(
       forms
       self.meta
       self.path)
 
-    #'Result: $\n'.printf(result.to\s)
     result
   end
 
   RE\Seq.t
-  (e steps) => do
-    self.forms.re\seq\deriveforms(self e steps)
-  end
+  (e steps) => self.forms.re\seq\deriveforms(self e steps)
 
  RE\Rep.t
  (e steps) => do
-    #'Applied rep $ to $\n'.printf(self.to\s, e)
     a = self.forms
 
     new_a = a.re\d(e steps.cons self)
 
-    new_a_empty = new_a.re\empty.re\is\empty
+    result = RE\Seq.make([new_a self] {})
 
-    result = RE\Seq.make(
-      [new_a self]
-      { name: '%' }
-      self.path)
-
-    #'Result: $\n'.printf(result.to\s)
     result
   end
 }
@@ -636,7 +654,7 @@ re\empty: .defcase {
   re\blank\t  () => (self)
   regex\empty () => (regex\blank)
   RE\Rep.t
-  () => (regex\empty)
+  () => (regex\blank.put(path: self.re\path))
   RE\Atom.t
   () => (regex\null.put(path: self.path))
   RE\Seq.t
@@ -666,29 +684,12 @@ match: .defcase {
 
     self.re\tail.match dre
   end
-
-  true: (tail ddc re) => do
-    (re, path) = ddc .re\empty
-
-    (re.re\is\empty, path)
-  end
-
-  false: (tail dre re) => do
-    tail.match dre
-  end
-
-  Strings.t, re => do
-    dre = re.re\d(self.re\head, "")
-
-    tail = self.re\tail
-
-    tail.len .== 0 .match (tail dre re)
-  end
 }
 
 to\spec\re: .def () => RE\Atom.make(
   self
-  { name: self.to\spec.spec\name })
+  #{ name: self.to\spec.spec\name })
+  { })
 
 pat: .def(
   spec\t
@@ -702,7 +703,7 @@ pat: .def(
          .put_via(meta: name: k)
       end
 
-    re = RE\Seq.make(forms {name: "pat"})
+    re = RE\Seq.make(forms {})
 
     spec\fits:.def(
       pred
@@ -714,7 +715,7 @@ pat: .def(
 
     spec\gen:.def(
       pred
-      () => specs.collect generator .join)
+      () => specs.collect([] generator).join "")
 
     to\spec\re: .def(pred re)
 
@@ -732,7 +733,7 @@ cat: .def(
         .to\spec\re
         .put_via(meta: name: k)
 
-    re = RE\Seq.make(forms { name: "cat" })
+    re = RE\Seq.make(forms {  })
 
     spec\fits: .def (
       pred
@@ -745,7 +746,7 @@ cat: .def(
 
     spec\gen:.def(
       pred
-      () => specs.collect generator *)
+      () => specs.collect([] generator) *)
 
     spec\name: .def(
       pred
@@ -765,7 +766,7 @@ alt: .def(
     forms = specs.map (v k)
       => (v.to\spec.to\spec\re.put_via(meta: name: k))
 
-    re = RE\Alt.make(forms { name: "alt" })
+    re = RE\Alt.make(forms {})
 
     [pred].defmodule {
       spec\fits: (values*)
@@ -789,7 +790,7 @@ alt: .def(
   (spec) => do
     pred = Strings.make('predicate:*:' {} ':' spec).to\m
 
-    re = RE\Rep.make(spec.to\spec.to\spec\re, { name: "*" })
+    re = RE\Rep.make(spec.to\spec.to\spec\re, {})
 
     generator = Streams.map(_ => spec.to\spec.spec\gen)
 
@@ -800,7 +801,7 @@ alt: .def(
       spec\gen: ()
         => Ranges
               .make(0 Numbers.int\between(0 10))
-              .collect generator
+              .collect([] generator)
               .*
 
       spec\name: ()
@@ -819,7 +820,14 @@ alt: .def(
 
     re = spec.to\spec.to\spec\re
 
-    re = RE\Seq.make([re, RE\Rep.make(re, { name: "rep+" })], { name: "seq+" })
+    re = RE\Seq.make(
+      [
+        re
+        RE\Rep.make(
+          re
+          { })
+      ]
+      { })
 
     [pred] .defmodule {
       spec\fits: (values*)
@@ -828,7 +836,7 @@ alt: .def(
       spec\gen: ()
         => Ranges
             .make(0 Numbers.int\between(1 10))
-            .collect(Streams.map _ => spec.spec\gen)
+            .collect([] Streams.map _ => spec.spec\gen)
             .*
 
       spec\name: ()
@@ -882,7 +890,7 @@ protocol\predicate = (protocol**) => do
         end
 
     spec\gen: ()
-      => keys.collect(genit)
+      => keys.collect([] genit)
 
     spec\explain: () => (protocol.len == 0)
         .and "[]"
@@ -1325,7 +1333,7 @@ end
     Messages
       .specializations
       .spec
-      .join(xf)
+      .join("" xf)
   end
 }
 

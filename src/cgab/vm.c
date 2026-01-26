@@ -1733,7 +1733,10 @@ CASE_CODE(SEND_PRIMITIVE_USE) {
       sargs[i] = gab_strdata(svargs + i);
     }
 
+    bool should_reload = have > 1 ? PEEK_N(have - 1) == gab_true : false;
+
     mod = gab_use(GAB(), (struct gab_use_argt){
+                             .flags = should_reload ? fGAB_USE_RELOAD : 0,
                              .vname = r,
                              .len = BLOCK_PROTO()->narguments,
                              .argv = FB() + 1, // To skip self local

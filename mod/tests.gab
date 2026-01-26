@@ -57,29 +57,6 @@ test\result\t = { test\path: nil: test\receiver: nil: }?
   end,
 }
 
-
-render_results = (suite\result) => do
-  s = suite\result.suite
-  r = suite\result.results
-
-  successes = r.filter behavior\outcome:
-  failures  = r.skip behavior\outcome:
-
-  failures.is\empty.then () => do
-    test_successes = successes
-      .transduce({} put: Streams.map p => p.test\path.join(Streams.interpose ' should '))
-
-    'PASS | $: $ assertions passed in $ unique tests\n'.printf(s.to\s, successes.len.to\s, test_successes.len.to\s)
-    #test_successes.each (_, p) => '  $\n'.printf(p)
-
-    ok:
-  end .else () => do
-    'FAIL | $: $ assertions failed\n'.printf(s.to\s, failures.len.to\s)
-  end
-end
-
-clear_screen = () => '\e[2J\e[H'.printf
-
 Suite = test\suite:.defclass(
   suite\behaviors: suite\name:
   default:
@@ -124,7 +101,7 @@ queue_tests = (filter_by_suite) => do
         end)
         .or xf
     
-    fibers = tests\all.collect xf
+    fibers = tests\all.collect([] xf)
 
     fibers.map f => f.await
 
@@ -194,7 +171,7 @@ handle\type: .defcase {
   end
 }
 
-spinner = "⣾⣾⣽⣽⣻⣻⢿⢿⡿⡿⣟⣟⣯⣯⣷⣷".collect
+spinner = "⣾⣾⣽⣽⣻⣻⢿⢿⡿⡿⣟⣟⣯⣯⣷⣷".collect []
 
 App = test\app:.defclass(
   test\suites: test\tests: time: selected:
@@ -243,11 +220,11 @@ App = test\app:.defclass(
               self.test\suites.map (suite, name) => do
                 pass_behaviors = suite
                   .suite\behaviors
-                  .collect(Streams.filter (b => b.behavior\outcome == true:))
+                  .collect([] Streams.filter (b => b.behavior\outcome == true:))
 
                 fail_behaviors = suite
                   .suite\behaviors
-                  .collect(Streams.filter(b => b.behavior\outcome == false:))
+                  .collect([] Streams.filter(b => b.behavior\outcome == false:))
 
                 waiting = suites\all .at name .unwrap .is\closed.!
 
@@ -274,7 +251,7 @@ App = test\app:.defclass(
                   selected
                     .suite\behaviors
                     .map((bhv) => do
-                      [text: { size: 32 content: bhv.behavior\path.join(Streams.interpose "should" |> Streams.interpose " ") }]
+                      [text: { size: 32 content: bhv.behavior\path.join("" Streams.interpose "should" |> Streams.interpose " ") }]
                     end)
                 end)
                 .or([[text: { size: 32 content: "none" }]])

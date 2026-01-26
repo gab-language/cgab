@@ -1705,15 +1705,17 @@ union gab_value_pair gab_use(struct gab_triple gab, struct gab_use_argt args) {
         match_resource(gab.eg->resroots, res, name, strlen(name));
 
     if (module_path) {
-      a_gab_value *cached = gab_segmodat(gab.eg, (char *)module_path->data);
+      if (!(gab.flags & fGAB_USE_RELOAD)) {
+        a_gab_value *cached = gab_segmodat(gab.eg, (char *)module_path->data);
 
-      if (cached != nullptr) {
-        /* Skip the first argument, which is the module's data */
-        a_char_destroy(module_path);
-        return (union gab_value_pair){
-            .status = gab_cvalid,
-            .aresult = cached,
-        };
+        if (cached != nullptr) {
+          /* Skip the first argument, which is the module's data */
+          a_char_destroy(module_path);
+          return (union gab_value_pair){
+              .status = gab_cvalid,
+              .aresult = cached,
+          };
+        }
       }
 
       assert(res->loader != nullptr);

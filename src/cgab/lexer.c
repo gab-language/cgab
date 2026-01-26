@@ -400,11 +400,17 @@ struct gab_src *gab_src(struct gab_triple gab, gab_value name,
   mtx_lock(&gab.eg->sources_mtx);
 
   if (d_gab_src_exists(&gab.eg->sources, name)) {
-    struct gab_src *src = d_gab_src_read(&gab.eg->sources, name);
+    if (gab.flags & fGAB_USE_RELOAD) {
+      // We should really free some resources here.
+      // Eh, there are a lot of pointers dangling into this.
+      // Probably best to just save it somewhere else.
+    } else {
+      struct gab_src *src = d_gab_src_read(&gab.eg->sources, name);
 
-    mtx_unlock(&gab.eg->sources_mtx);
+      mtx_unlock(&gab.eg->sources_mtx);
 
-    return src;
+      return src;
+    }
   }
 
   uint64_t sz =

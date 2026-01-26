@@ -88,6 +88,14 @@ make:.def(
   unwrap: args* => 'Failed to unwrap $ $'.panicf(self args)
 }
 
+# Implement the reducer protocol for blocks
+[Blocks.t] .defmodule {
+  reduce\step: (acc, xs*) => do
+    (next:, self, self.(acc, xs*))
+  end
+  reduce\done: acc => acc
+}
+
 doreduce: .defcase {
   ## The sequence continues
   ok: (seq\i, seq\v, acc, r, xs) => do
@@ -126,36 +134,39 @@ def\seq: .def do
       self.transduce(nil:, () => nil:, td:.tap f)
     end,
     map: f => do
-      self.collect(td:.map f)
+      self.collect([] td:.map f)
     end,
     filter: f => do
-      self.collect(td:.filter f)
+      self.collect([] td:.filter f)
+    end,
+    mapfilter: f => do
+      self.collect([] td:.mapfilter f)
     end,
     skip: f => do
-      self.collect(td:.skip f)
+      self.collect([] td:.skip f)
     end,
     every: f => do
       xf = td:.drop_while f
         |> td:.take 1
 
-      self.collect xf .is\empty
+      self.collect([] xf).is\empty
     end,
     any: f => do
       xf = td:.filter f
         |> td:.take 1
 
-      self.collect xf .is\empty.!
+      self.collect([] xf).is\empty.!
     end,
-    join: xf => do
-      self.transduce("" (acc x) => acc + x, xf)
+    join: (start xf) => do
+      self.transduce(start (acc x) => acc + x, xf)
     end,
-    collect: xf => do
-      self.transduce({} (acc x) => acc.cons x,  xf)
+    collect: (into xf) => do
+      self.transduce(into (acc x) => acc.cons x,  xf)
     end,
-    zip: xf => do
-      self.transduce({} (acc v k) => acc.put(k v), xf)
+    zip: (into xf) => do
+      self.transduce(into (acc v k) => acc.put(k v), xf)
     end,
-    pipe: (ch, xf) =>do
+    pipe: (ch xf) =>do
       self.transduce(ch (acc x) => acc <! x, xf)
     end
   }
@@ -175,14 +186,6 @@ end
     (ok, nil:, xs*)
   end
   is\open: _ => self.is\closed!
-}
-
-# Implement the reducer protocol for blocks
-[Blocks.t] .defmodule {
-  reduce\step: (acc, xs*) => do
-    (next:, self, self.(acc, xs*))
-  end
-  reduce\done: acc => acc
 }
 
 cons: .def (nil:, o => [o])

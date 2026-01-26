@@ -530,6 +530,11 @@ enum gab_flags {
    * strings as opposed to pretty errors.
    */
   fGAB_ERR_STRUCTURED = 1 << 3,
+
+  /*
+   * @see gab_use will ignore any cached modules, and reload/replace modules when used.
+   */
+  fGAB_USE_RELOAD = 1 << 4,
 };
 
 /**

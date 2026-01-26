@@ -52,10 +52,12 @@ deftransducer: .def (
   end)
 
 td\conditionally: .defcase {
+  ok: (r, acc, xs, s) => (s, r.reduce\step(acc, xs*))
   true: (r, acc, xs, s) => (s, r.reduce\step(acc, xs*))
   next: (r, acc, xs, s) => (s, r.reduce\step(acc, xs*))
 
   false: (r, acc, xs, s) => (s, next:, r, acc)
+  none: (r, acc, xs, s) => (s, next:, r, acc)
   stop: (r, acc, xs, s) => (s, next:, r, acc)
 }
 
@@ -77,6 +79,13 @@ map:.deftransducer(
 
 filter:.deftransducer(
   f => (r, acc, xs) => f.(xs*).td\conditionally(r, acc, xs))
+
+mapfilter:.deftransducer(
+  f => (r acc xs) => do
+    (ok, vs*) = f.(xs*)
+
+    ok.td\conditionally(r, acc, vs)
+  end)
 
 reduce:.deftransducer(
   (inner_acc inner_r)

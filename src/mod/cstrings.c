@@ -566,7 +566,7 @@ GAB_DYNLIB_NATIVE_FN(fmt, sprintf) {
 
   for (size_t n = 2048;; n *= 2) {
     char *buf = malloc(n);
-    int len = gab_nsprintf(buf, n, fmt, argc - 1, argv + 1);
+    int len = gab_npsprintf(buf, n, fmt, argc - 1, argv + 1);
 
     if (len < 0) {
       free(buf);
