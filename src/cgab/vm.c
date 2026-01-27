@@ -744,16 +744,18 @@ union gab_value_pair vm_error(struct gab_triple gab, enum gab_status s,
 }
 
 #define FMT_TYPEMISMATCH                                                       \
-  "Sent message " GAB_CYAN "$" GAB_RESET                                       \
-  " found an invalid type.\n\n    | " GAB_GREEN "$" GAB_RESET                  \
-  "\n\nhas type\n\n    | " GAB_GREEN "$" GAB_RESET                             \
-  "\n\nbut expected type\n\n    | " GAB_GREEN "$" GAB_RESET "\n"
+  "$ $ found an invalid type.\n\n"                                             \
+  "    | $\n\n"                                                                \
+  "which has type\n\n"                                                         \
+  "    | $\n\n"                                                                \
+  "but expected type\n\n"                                                      \
+  "    | $\n"
 
 #define FMT_MISSINGIMPL                                                        \
-  "Sent message " GAB_CYAN "$" GAB_RESET                                       \
-  " does not specialize for this receiver.\n\n    | " GAB_CYAN "$" GAB_RESET   \
-  "\n\nof type\n\n    "                                                        \
-  "| " GAB_CYAN "$" GAB_RESET "\n"
+  "Sent message $ does not specialize for this receiver.\n\n"                  \
+  "    | $\n\n"                                                                \
+  "of type\n\n"                                                                \
+  "    | $ \n"
 
 union gab_value_pair gab_vpanicf(struct gab_triple gab, const char *fmt,
                                  va_list va) {
@@ -796,19 +798,35 @@ union gab_value_pair gab_panicf(struct gab_triple gab, const char *fmt, ...) {
   return res;
 }
 
-union gab_value_pair gab_ptypemismatch(struct gab_triple gab, gab_value found,
-                                       gab_value texpected) {
-
-  // TODO: Properly set message here.
-  return vm_error(gab, GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, gab_nil, found,
-                  gab_valtype(gab, found), texpected);
-}
-
+// This isn't intuitive when compared to the MISS_CACHED_SEND
+// code, but operator precedence is tricky like that.
+// Because the other code is ip -= 3 -1 => ip -= (3 - 1)
+// whereas here ip = other_ip - 3 - 1 => ip = (other_ip - 3) - 1
+//
+// So we add one instead and all lines up.
 gab_value gab_vmmsg(struct gab_vm *vm) {
-  uint8_t *__ip = vm->ip - SEND_CACHE_DIST;
+  uint8_t *__ip = vm->ip - SEND_CACHE_DIST + 1;
   gab_value *__kb = vm->kb;
   gab_value *ks = READ_SENDCONSTANTS;
+  printf("IP: %p\nKB: %p\nKS: %p\n", __ip, __kb, ks);
   return ks[GAB_SEND_KMESSAGE];
+}
+
+gab_value gab_vmspec(struct gab_vm *vm) {
+  uint8_t *__ip = vm->ip - SEND_CACHE_DIST + 1;
+  gab_value *__kb = vm->kb;
+  gab_value *ks = READ_SENDCONSTANTS;
+  printf("IP: %p\nKB: %p\nKS: %p\n", __ip, __kb, ks);
+  return ks[GAB_SEND_KSPEC];
+}
+
+union gab_value_pair gab_ptypemismatch(struct gab_triple gab, gab_value found,
+                                       gab_value texpected) {
+  gab_value msg = gab_vmmsg(gab_thisvm(gab));
+  gab_value spec = gab_vmspec(gab_thisvm(gab));
+  gab_value tfound = gab_valtype(gab, found);
+  return vm_error(gab, GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, msg, spec, found,
+                  tfound, texpected);
 }
 
 gab_value gab_vmframe(struct gab_triple gab, uint64_t depth) {
@@ -1164,28 +1182,32 @@ union gab_value_pair gab_vmexec(struct gab_triple gab, gab_value f) {
   if (__gab_unlikely(gab_valkind(value) != kind)) {                            \
     STORE_PRIMITIVE_VM_PANIC_FRAME(1);                                         \
     VM_PANIC(GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, ks[GAB_SEND_KMESSAGE],       \
-             value, gab_valtype(GAB(), value), gab_type(GAB(), kind));         \
+             ks[GAB_SEND_KSPEC], value, gab_valtype(GAB(), value),             \
+             gab_type(GAB(), kind));                                           \
   }
 
 #define VM_PANIC_GUARD_ISB(value)                                              \
   if (__gab_unlikely(!__gab_valisb(value))) {                                  \
     STORE_PRIMITIVE_VM_PANIC_FRAME(have);                                      \
     VM_PANIC(GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, ks[GAB_SEND_KMESSAGE],       \
-             value, gab_valtype(GAB(), value), gab_type(GAB(), kGAB_MESSAGE)); \
+             ks[GAB_SEND_KSPEC], value, gab_valtype(GAB(), value),             \
+             gab_type(GAB(), kGAB_MESSAGE));                                   \
   }
 
 #define VM_PANIC_GUARD_ISN(value)                                              \
   if (__gab_unlikely(!__gab_valisn(value))) {                                  \
     STORE_PRIMITIVE_VM_PANIC_FRAME(have);                                      \
     VM_PANIC(GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, ks[GAB_SEND_KMESSAGE],       \
-             value, gab_valtype(GAB(), value), gab_type(GAB(), kGAB_NUMBER));  \
+             ks[GAB_SEND_KSPEC], value, gab_valtype(GAB(), value),             \
+             gab_type(GAB(), kGAB_NUMBER));                                    \
   }
 
 #define VM_PANIC_GUARD_ISS(value)                                              \
   if (__gab_unlikely(gab_valkind(value) != kGAB_STRING)) {                     \
     STORE_PRIMITIVE_VM_PANIC_FRAME(have);                                      \
     VM_PANIC(GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, ks[GAB_SEND_KMESSAGE],       \
-             value, gab_valtype(GAB(), value), gab_type(GAB(), kGAB_STRING));  \
+             ks[GAB_SEND_KSPEC], value, gab_valtype(GAB(), value),             \
+             gab_type(GAB(), kGAB_STRING));                                    \
   }
 
 #define SEND_GUARD(clause, reason)                                             \
@@ -1256,7 +1278,7 @@ CASE_CODE(MATCHTAILSEND_BLOCK) {
   if (__gab_unlikely(ks[GAB_SEND_KTYPE + idx] != t))
     MISS_CACHED_SEND("Unexpected type");
 
-  struct gab_oblock *b = (void *)ks[GAB_SEND_KSPEC + idx];
+  struct gab_oblock *b = GAB_VAL_TO_BLOCK(ks[GAB_SEND_KSPEC + idx]);
 
   gab_value *from = SP() - have;
   gab_value *to = FB();
@@ -1290,7 +1312,7 @@ CASE_CODE(MATCHSEND_BLOCK) {
   if (__gab_unlikely(ks[GAB_SEND_KTYPE + idx] != t))
     MISS_CACHED_SEND("Unexpected type");
 
-  struct gab_oblock *blk = (void *)ks[GAB_SEND_KSPEC + idx];
+  struct gab_oblock *blk = GAB_VAL_TO_BLOCK(ks[GAB_SEND_KSPEC + idx]);
 
   PUSH_FRAME(blk, have);
 
@@ -1459,7 +1481,7 @@ CASE_CODE(SEND_NATIVE) {
   SEND_GUARD_CACHED_MESSAGE_SPECS();
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
 
-  struct gab_onative *n = (void *)ks[GAB_SEND_KSPEC];
+  struct gab_onative *n = GAB_VAL_TO_NATIVE(ks[GAB_SEND_KSPEC]);
 
   CALL_NATIVE(n, have, below_have, true, false);
 }
@@ -1475,7 +1497,7 @@ CASE_CODE(SEND_BLOCK) {
   SEND_GUARD_CACHED_MESSAGE_SPECS();
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
 
-  struct gab_oblock *b = (void *)ks[GAB_SEND_KSPEC];
+  struct gab_oblock *b = GAB_VAL_TO_BLOCK(ks[GAB_SEND_KSPEC]);
 
   CALL_BLOCK(b, have);
 }
@@ -1491,7 +1513,7 @@ CASE_CODE(TAILSEND_BLOCK) {
   SEND_GUARD_CACHED_MESSAGE_SPECS();
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
 
-  struct gab_oblock *b = (void *)ks[GAB_SEND_KSPEC];
+  struct gab_oblock *b = GAB_VAL_TO_BLOCK(ks[GAB_SEND_KSPEC]);
 
   TAILCALL_BLOCK(b, have);
 }
@@ -1508,7 +1530,7 @@ CASE_CODE(LOCALSEND_BLOCK) {
   SEND_GUARD_CACHED_MESSAGE_SPECS();
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
 
-  struct gab_oblock *b = (void *)ks[GAB_SEND_KSPEC];
+  struct gab_oblock *b = GAB_VAL_TO_BLOCK(ks[GAB_SEND_KSPEC]);
 
   LOCALCALL_BLOCK(b, have);
 }
@@ -1525,7 +1547,7 @@ CASE_CODE(LOCALTAILSEND_BLOCK) {
   SEND_GUARD_CACHED_MESSAGE_SPECS();
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
 
-  struct gab_oblock *b = (void *)ks[GAB_SEND_KSPEC];
+  struct gab_oblock *b = GAB_VAL_TO_BLOCK(ks[GAB_SEND_KSPEC]);
 
   LOCALTAILCALL_BLOCK(b, have);
 }
@@ -2351,7 +2373,7 @@ CASE_CODE(SEND) {
 
   ks[GAB_SEND_KSPECS] = atomic_load(&EG()->messages_epoch);
   ks[GAB_SEND_KTYPE] = gab_valtype(GAB(), r);
-  ks[GAB_SEND_KSPEC] = res.as.spec;
+  ks[GAB_SEND_KSPEC] = spec;
 
   switch (gab_valkind(spec)) {
   case kGAB_PRIMITIVE: {
@@ -2375,21 +2397,15 @@ CASE_CODE(SEND) {
       ks[GAB_SEND_KOFFSET] = (intptr_t)proto_ip(GAB(), p);
     }
 
-    ks[GAB_SEND_KSPEC] = (intptr_t)b;
     WRITE_BYTE(SEND_CACHE_DIST, OP_SEND_BLOCK + adjust);
 
     break;
   }
   case kGAB_NATIVE: {
-    struct gab_onative *n = GAB_VAL_TO_NATIVE(spec);
-
-    ks[GAB_SEND_KSPEC] = (intptr_t)n;
     WRITE_BYTE(SEND_CACHE_DIST, OP_SEND_NATIVE);
-
     break;
   }
   default:
-    ks[GAB_SEND_KSPEC] = spec;
     WRITE_BYTE(SEND_CACHE_DIST, OP_SEND_CONSTANT);
     break;
   }

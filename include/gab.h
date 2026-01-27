@@ -532,7 +532,8 @@ enum gab_flags {
   fGAB_ERR_STRUCTURED = 1 << 3,
 
   /*
-   * @see gab_use will ignore any cached modules, and reload/replace modules when used.
+   * @see gab_use will ignore any cached modules, and reload/replace modules
+   * when used.
    */
   fGAB_USE_RELOAD = 1 << 4,
 };
@@ -1081,31 +1082,6 @@ struct gab_compile_argt {
 GAB_API union gab_value_pair gab_compile(struct gab_triple gab,
                                          struct gab_compile_argt args);
 
-struct gab_mcompile_argt {
-  gab_value m;
-  /**
-   * Optional flags for compilation.
-   */
-  int flags;
-};
-
-/*
- * @brief Given a message, compile a prototype which sends that message to the given tuple.
- *
- * If compilation is successful, the pair result will be:
- *  - status:  gab_cvalid
- *  - vresult: a gab_prototype
- * Else, the pair result will be:
- *  - status: gab_cinvalid
- *  - vresult: a gab_record representing tbe error.
- *
- * @param gab The engine.
- * @param args The arguments.
- * @returns a pair of values describin the outcome of compilation.
- */
-GAB_API union gab_value_pair gab_mcompile(struct gab_triple gab,
-                                         struct gab_mcompile_argt args);
-
 /**
  * @brief Compile a source string into a block.
  * Flag options are defined in @link enum gab_flags.
@@ -1554,10 +1530,10 @@ GAB_API void gab_niref(struct gab_triple gab, uint64_t stride, uint64_t len,
  *
  * @param gab The triple.
  */
-#define gab_irefall(gab, ...)                                                 \
+#define gab_irefall(gab, ...)                                                  \
   ({                                                                           \
     gab_value values[] = {__VA_ARGS__};                                        \
-    gab_niref(gab, 1, sizeof(values) / sizeof(gab_value), values);                \
+    gab_niref(gab, 1, sizeof(values) / sizeof(gab_value), values);             \
   })
 
 /**
@@ -1569,10 +1545,10 @@ GAB_API void gab_niref(struct gab_triple gab, uint64_t stride, uint64_t len,
 GAB_API void gab_ndref(struct gab_triple gab, uint64_t stride, uint64_t len,
                        gab_value *values);
 
-#define gab_drefall(gab, ...)                                                 \
+#define gab_drefall(gab, ...)                                                  \
   ({                                                                           \
     gab_value values[] = {__VA_ARGS__};                                        \
-    gab_ndref(gab, 1, sizeof(values) / sizeof(gab_value), values);                \
+    gab_ndref(gab, 1, sizeof(values) / sizeof(gab_value), values);             \
   })
 
 #endif

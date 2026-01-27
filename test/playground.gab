@@ -145,8 +145,12 @@ handle\type: .defcase {
     model = model.put_via_by(time: x => x++)
 
     model
-   		.when(should_spawn_food: spawn_food:)
-   		.when(model.time % MOVE_INTERVAL == 0 move_snake:)
+   		.when(
+        model.should_spawn_food
+        m => m.spawn_food)
+   		.when(
+        model.time % MOVE_INTERVAL == 0
+        m => m.move_snake)
   end
   mouse: (ev model) => do
     ev.println

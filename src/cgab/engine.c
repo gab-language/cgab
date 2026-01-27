@@ -1496,7 +1496,6 @@ int sprint_structured_err(struct gab_triple gab, char **buf, size_t *len,
   return snprintf_through(buf, len, "\n");
 }
 
-// This should take an array (a stacktrace) and produce an array (stacktrace)
 gab_value gab_vspanicf(struct gab_triple gab, va_list va,
                        struct gab_err_argt args) {
   struct errdetails err = {
@@ -1529,7 +1528,7 @@ gab_value gab_vspanicf(struct gab_triple gab, va_list va,
 
   char hint[cGAB_ERR_SPRINTF_BUF_MAX] = {0};
   if (args.note_fmt) {
-    gab_vsprintf(hint, sizeof(hint), args.note_fmt, va);
+    gab_vpsprintf(hint, sizeof(hint), args.note_fmt, va);
   }
 
   gab_value rec = gab_recordof(
