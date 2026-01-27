@@ -464,6 +464,9 @@ size_t node_valuelen(struct gab_triple gab, gab_value node) {
 }
 
 size_t node_len(struct gab_triple gab, gab_value node) {
+  if (gab_valkind(node) != kGAB_RECORD)
+    return 0;
+
   assert(gab_valkind(node) == kGAB_RECORD);
   assert(gab_valkind(gab_recshp(node)) == kGAB_SHAPELIST);
 
@@ -945,7 +948,7 @@ static inline void push_op(struct bc *bc, uint8_t op, gab_value node) {
   bc->pprev_op = bc->prev_op;
   bc->prev_op = op;
 
-  assert(d_uint64_t_exists(&bc->src->node_begin_toks, node));
+  // assert(d_uint64_t_exists(&bc->src->node_begin_toks, node));
 
   bc->prev_op_at = v_uint8_t_push(&bc->bc, op);
   size_t offset = d_uint64_t_read(&bc->src->node_begin_toks, node);
@@ -954,7 +957,7 @@ static inline void push_op(struct bc *bc, uint8_t op, gab_value node) {
 }
 
 static inline void push_byte(struct bc *bc, uint8_t data, gab_value node) {
-  assert(d_uint64_t_exists(&bc->src->node_begin_toks, node));
+  // assert(d_uint64_t_exists(&bc->src->node_begin_toks, node));
 
   v_uint8_t_push(&bc->bc, data);
   size_t offset = d_uint64_t_read(&bc->src->node_begin_toks, node);
@@ -1440,10 +1443,8 @@ static inline void push_loadu(struct bc *bc, uint8_t upv, gab_value node) {
             node);
 }
 
-[[nodiscard]]
-static inline gab_value push_send(struct gab_triple gab, struct bc *bc,
-                                  gab_value m, gab_value lhs, gab_value rhs,
-                                  gab_value node, bool explicit) {
+static inline void push_send(struct gab_triple gab, struct bc *bc, gab_value m,
+                             gab_value node) {
   if (gab_valkind(m) == kGAB_STRING)
     m = gab_strtomsg(m);
 
@@ -1457,8 +1458,6 @@ static inline gab_value push_send(struct gab_triple gab, struct bc *bc,
 
   push_op(bc, OP_SEND, node);
   push_short(bc, ks, node);
-
-  return gab_cvalid;
 }
 
 static inline void push_pop(struct bc *bc, uint8_t n, gab_value node) {
@@ -1520,31 +1519,23 @@ static inline bool push_trim_node(struct gab_triple gab, struct bc *bc,
   return true;
 }
 
-[[nodiscard]]
-static inline gab_value
-push_listpack(struct gab_triple gab, struct bc *bc, gab_value rhs,
-              uint8_t below, uint8_t above, bool explicit, gab_value node) {
+static inline void push_listpack(struct gab_triple gab, struct bc *bc,
+                                 uint8_t below, uint8_t above, gab_value node) {
   push_op(bc, OP_PACK_LIST, node);
   push_byte(bc, below, node);
   push_byte(bc, above, node);
-
-  return gab_cvalid;
 }
 
-[[nodiscard]]
-static inline gab_value
-push_recordpack(struct gab_triple gab, struct bc *bc, gab_value rhs,
-                uint8_t below, uint8_t above, bool explicit, gab_value node) {
+static inline void push_recordpack(struct gab_triple gab, struct bc *bc,
+                                   uint8_t below, uint8_t above,
+                                   gab_value node) {
   push_op(bc, OP_PACK_RECORD, node);
   push_byte(bc, below, node);
   push_byte(bc, above, node);
-
-  return gab_cvalid;
 }
 
-[[nodiscard]]
-static inline gab_value push_ret(struct gab_triple gab, struct bc *bc,
-                                 gab_value tup, gab_value node, bool explicit) {
+static inline void push_ret(struct gab_triple gab, struct bc *bc, gab_value tup,
+                            gab_value node) {
   assert(node_len(gab, tup) < 16);
 
   bool is_multi = node_ismulti(gab, tup);
@@ -1562,7 +1553,7 @@ static inline gab_value push_ret(struct gab_triple gab, struct bc *bc,
       v_uint8_t_set(&bc->bc, bc->bc.len - 2, first_short_byte | fHAVE_TAIL);
       push_op(bc, OP_RETURN, node);
 
-      return gab_cvalid;
+      return;
     }
     case OP_TRIM: {
       if (bc->pprev_op != OP_SEND)
@@ -1576,15 +1567,14 @@ static inline gab_value push_ret(struct gab_triple gab, struct bc *bc,
       bc->bc_toks.len -= 2;
       push_op(bc, OP_RETURN, node);
 
-      return gab_cvalid;
+      return;
     }
     }
   }
 #endif
 
   push_op(bc, OP_RETURN, node);
-
-  return gab_cvalid;
+  return;
 }
 
 void patch_init(struct bc *bc, uint8_t nlocals) {
@@ -1777,7 +1767,7 @@ gab_value compile_symbol(struct gab_triple gab, struct bc *bc, gab_value tuple,
 };
 
 gab_value compile_tuple(struct gab_triple gab, struct bc *bc, gab_value node,
-                        gab_value env, bool *explicit_tuple);
+                        gab_value env);
 
 gab_value compile_record(struct gab_triple gab, struct bc *bc, gab_value tuple,
                          gab_value node, gab_value env);
@@ -1927,17 +1917,11 @@ gab_value unpack_bindings_into_env(struct gab_triple gab, struct bc *bc,
   size_t actual_targets = targets.len;
 
   if (listpack_at_n >= 0) {
-    gab_value res =
-        push_listpack(gab, bc, values, listpack_at_n,
-                      actual_targets - listpack_at_n - 1, false, bindings);
-    if (res != gab_cvalid)
-      return v_gab_value_destroy(&targets), res;
+    push_listpack(gab, bc, listpack_at_n, actual_targets - listpack_at_n - 1,
+                  bindings);
   } else if (recpack_at_n >= 0) {
-    gab_value res =
-        push_recordpack(gab, bc, values, recpack_at_n,
-                        actual_targets - recpack_at_n - 1, false, bindings);
-    if (res != gab_cvalid)
-      return v_gab_value_destroy(&targets), res;
+    push_recordpack(gab, bc, recpack_at_n, actual_targets - recpack_at_n - 1,
+                    bindings);
   } else if (!push_trim_node(gab, bc, actual_targets, values, bindings)) {
     return v_gab_value_destroy(&targets), gab_cinvalid;
   }
@@ -2023,8 +2007,7 @@ gab_value compile_assign(struct gab_triple gab, struct bc *bc, gab_value node,
   gab_value lhs_node = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_LHS);
   gab_value rhs_node = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_RHS);
 
-  bool explicit = false;
-  env = compile_tuple(gab, bc, rhs_node, env, &explicit);
+  env = compile_tuple(gab, bc, rhs_node, env);
 
   if (env == gab_cinvalid)
     return gab_cinvalid;
@@ -2074,24 +2057,18 @@ gab_value compile_record(struct gab_triple gab, struct bc *bc, gab_value tuple,
 
     push_inst(bc, (struct inst_arg){OP_TUPLE}, node);
 
-    bool explicit = false;
-    env = compile_tuple(gab, bc, lhs_node, env, &explicit);
+    env = compile_tuple(gab, bc, lhs_node, env);
 
     if (env == gab_cinvalid)
       return gab_cinvalid;
 
     // If the lhs was multi,
-    env = compile_tuple(gab, bc, rhs_node, env, &explicit);
+    env = compile_tuple(gab, bc, rhs_node, env);
 
     if (env == gab_cinvalid)
       return gab_cinvalid;
 
-    gab_value res = push_send(gab, bc, msg, lhs_node, rhs_node, node, explicit);
-
-    if (res != gab_cvalid)
-      return res;
-
-    // push_op(bc, OP_CONS, node);
+    push_send(gab, bc, msg, node);
 
     break;
   }
@@ -2102,8 +2079,7 @@ gab_value compile_record(struct gab_triple gab, struct bc *bc, gab_value tuple,
     for (size_t i = 0; i < len; i++) {
       gab_value child_node = gab_uvrecat(node, i);
 
-      bool explicit = false;
-      env = compile_tuple(gab, bc, child_node, env, &explicit);
+      env = compile_tuple(gab, bc, child_node, env);
 
       if (env == gab_cinvalid)
         return gab_cinvalid;
@@ -2125,7 +2101,7 @@ gab_value compile_record(struct gab_triple gab, struct bc *bc, gab_value tuple,
 // each compiled as tuples, but really they are part of one tuple (which may or
 // may not need to be cons'd)
 gab_value compile_tuple(struct gab_triple gab, struct bc *bc, gab_value node,
-                        gab_value env, bool *explicit_tuple) {
+                        gab_value env) {
   size_t len = gab_reclen(node);
 
   for (size_t i = 0; i < len; i++) {
@@ -2192,6 +2168,100 @@ void build_upvdata(gab_value env, uint8_t len, char *data) {
 }
 
 /*
+ * This does end up feeling kind of hacky.
+ *
+ * An alternative is to return the 'ol calling messages with :
+ *
+ * This has the old bug where in between a dispatch, the global message dict can
+ * change which then breaks the vm (because we've moved down our tuple with
+ * memmove)
+ *
+ * We could fix this if each fiber only saw an isolated messages record (which
+ * would be faster too - we wouldn't have to *atomically* load a 64-bit value
+ * everytime we need to check the cache)
+ *
+ * But it leads to another host of pros and cons, not to mention implementation
+ * confusion. Instead of there being one global view, now your mental model
+ * needs to keep track of *when* fibers are being spawned, how their
+ * 'snapshotting' the global message state.
+ *
+ * But also your fibers are isolated! Messages defined in one won't affect
+ * another. This has its own pros.
+ *
+ */
+union gab_value_pair gab_mcompile(struct gab_triple gab,
+                                  struct gab_mcompile_argt args) {
+  assert(gab_valkind(args.m) == kGAB_MESSAGE);
+  gab.flags |= args.flags;
+
+  struct gab_src *src = d_gab_src_read(&gab.eg->sources, args.m);
+
+  if (src == nullptr) {
+    src = gab_src(gab, args.m, "", 0);
+
+    d_gab_src_insert(&gab.eg->sources, args.m, src);
+
+    struct bc bc = {.ks = &src->constants, .src = src, .err = gab_cinvalid};
+
+    /*
+     * TODO: This is wildly inefficient but works.
+     * More so that we can test out if we like the way this works.
+     */
+
+    /*
+     * Pack all the arguments into a list (other than the calling block)
+     */
+    push_listpack(gab, &bc, 1, 0, gab_cundefined);
+
+    /*
+     * Push tuples, which will be consumed by the sends.
+     */
+    push_inst(&bc, (struct inst_arg){OP_TUPLE}, gab_cundefined);
+    push_inst(&bc, (struct inst_arg){OP_TUPLE}, gab_cundefined);
+    push_inst(&bc, (struct inst_arg){OP_TUPLE}, gab_cundefined);
+
+    /*
+     * Load the argument list, and spread it.
+     */
+    push_loadl(&bc, 1, gab_cundefined);
+    push_send(gab, &bc, gab_message(gab, "*"), gab_cundefined);
+
+    /*
+     * Send our message to the spread argument tuple.
+     */
+    push_send(gab, &bc, args.m, gab_cundefined);
+
+    /*
+     * Return the result of the send.
+     */
+    push_ret(gab, &bc, gab_cundefined, gab_cundefined);
+
+    gab_srcappend(src, bc.bc.len, bc.bc.data, bc.bc_toks.data);
+
+    gab_srccomplete(gab, src);
+
+    bc_destroy(&bc);
+    assert(bc.err == gab_cinvalid);
+  }
+
+  gab_value proto = gab_prototype(gab, src, 0, src->bytecode.len,
+                                  (struct gab_prototype_argt){
+                                      .nslots = 3,
+                                      .env = gab_listof(gab, gab_recordof(gab)),
+                                  });
+
+
+  if (gab.flags & fGAB_BUILD_DUMP)
+    gab_fmodinspect(stdout, proto);
+
+
+  return (union gab_value_pair){
+      .status = gab_cvalid,
+      .vresult = proto,
+  };
+}
+
+/*
  *    *******
  *    * ENV *
  *    *******
@@ -2248,8 +2318,7 @@ union gab_value_pair gab_compile(struct gab_triple gab,
    **/
   push_inst(&bc, (struct inst_arg){OP_TUPLE}, args.ast);
 
-  bool explicit = false;
-  args.env = compile_tuple(gab, &bc, args.ast, args.env, &explicit);
+  args.env = compile_tuple(gab, &bc, args.ast, args.env);
 
   assert(bc.bc.len == bc.bc_toks.len);
 
@@ -2262,10 +2331,7 @@ union gab_value_pair gab_compile(struct gab_triple gab,
   gab_value local_env = gab_uvrecat(args.env, nenvs - 1);
   assert(bc.bc.len == bc.bc_toks.len);
 
-  gab_value res = push_ret(gab, &bc, args.ast, args.ast, explicit);
-  if (res != gab_cvalid)
-    return assert(bc.err != gab_cinvalid), bc_destroy(&bc),
-           (union gab_value_pair){{gab_cinvalid, bc.err}};
+  push_ret(gab, &bc, args.ast, args.ast);
 
   size_t nlocals = locals_in_env(local_env);
   assert(nlocals < GAB_LOCAL_MAX);

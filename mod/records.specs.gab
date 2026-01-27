@@ -1,4 +1,4 @@
-s = 'Specs'.use
+s = 'Specs'.use true:
 
 record\spec = record:.defspec {
   help:  'A set of key-value pairs.',
@@ -16,9 +16,10 @@ record\len: .defspec {
     message:    len:,
     input:      s.cat,
     output:     s.int,
-    semantics:  nil:,
   },
 }
+
+record\len:.spec.spec\fits([] [] [1])
 
 record\at: .defspec {
   help:  'Return the value at the given key, if it exists.',

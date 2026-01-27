@@ -1081,6 +1081,31 @@ struct gab_compile_argt {
 GAB_API union gab_value_pair gab_compile(struct gab_triple gab,
                                          struct gab_compile_argt args);
 
+struct gab_mcompile_argt {
+  gab_value m;
+  /**
+   * Optional flags for compilation.
+   */
+  int flags;
+};
+
+/*
+ * @brief Given a message, compile a prototype which sends that message to the given tuple.
+ *
+ * If compilation is successful, the pair result will be:
+ *  - status:  gab_cvalid
+ *  - vresult: a gab_prototype
+ * Else, the pair result will be:
+ *  - status: gab_cinvalid
+ *  - vresult: a gab_record representing tbe error.
+ *
+ * @param gab The engine.
+ * @param args The arguments.
+ * @returns a pair of values describin the outcome of compilation.
+ */
+GAB_API union gab_value_pair gab_mcompile(struct gab_triple gab,
+                                         struct gab_mcompile_argt args);
+
 /**
  * @brief Compile a source string into a block.
  * Flag options are defined in @link enum gab_flags.

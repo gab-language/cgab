@@ -18,7 +18,7 @@ truthy_values .defmodule {
   or: _ => self
   else: _ => self
   assert: _ => self
-  dowhen: (f, args*) => f.(args*)
+  dowhen: (f r args) => f.to\block.(r args*)
 }
 
 falsey_values .defmodule {
@@ -29,13 +29,36 @@ falsey_values .defmodule {
   assert: msg => 'Assertion ($) failed: $'.panicf(self, msg .or "")
   to\option: none:,
   to\result: err:,
-  dowhen: (_, r) => r
+  dowhen: (_ r) => r
 }
+
+to\condition: .defcase {
+  Blocks.t
+  (args*)
+    => self.(args*)
+
+  Messages.t
+  (args*)
+    => self.to\block.(args*)
+
+  true: true:
+
+  nil: false:
+  false: false:
+  none: false:
+  err: false:
+}
+
+to\condition: .def true:
 
 [] .defmodule {
   to\option: (args*) => (ok:, self, args*)
   to\result: (args*) => (ok:, self, args*)
-  when: (cond, f, args*) => cond.dowhen(f, self, args*)
+
+  when: (cond, f, args*)
+    => cond
+      .to\condition(self)
+      .dowhen(f self args)
 }
 
 cond\check: .defcase {
@@ -81,11 +104,13 @@ make:.def(
 [ok:] .defmodule {
   ok: true:
   unwrap: (args*) => args*
+  unwrap_or: (args*, default) => args*
 }
 
 [] .defmodule {
   ok: false:
   unwrap: args* => 'Failed to unwrap $ $'.panicf(self args)
+  unwrap_or: (args*, default) => default
 }
 
 # Implement the reducer protocol for blocks

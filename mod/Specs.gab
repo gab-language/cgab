@@ -1084,8 +1084,7 @@ spec\message\semantics_fits:.def(
   'gab\\record'
   () => self
     .semantics
-    .unwrap
-    .spec.semantics_fits(self.in, self.out))
+    .spec\semantics_fits(self.in, self.out))
 
 dospec\apply: .defcase {
   true: (v acc f) => [f . v]
@@ -1102,21 +1101,25 @@ end
 
 spec\message\define:.defcase {
   nil: general_message\predicate
-  'gab\\record' () => do
+  "gab\record" () => do
     args = self
     pred = Strings.make('predicate:message:' args).to\m
 
     spec\fits:.def(
       pred
       (rec in out)
-        => args
-          .put(rec: rec)
-          .put(in: in)
-          .put(out: out)
-           -!>(spec\message\receiver_fits:
-               spec\message\input_fits:
-               spec\message\output_fits:
-               spec\message\semantics_fits:))
+        => do
+          args
+            .put(rec: rec)
+            .put(in: in)
+            .put(out: out)
+            -!> (
+              (s => s.spec\message\receiver_fits)
+              (s => s.spec\message\input_fits)
+              (s => s.spec\message\output_fits)
+              # TODO: Maybe have semantic fitting here?
+            )
+        end)
 
     spec\gen:.def(
       pred
@@ -1192,7 +1195,7 @@ spec\message\define:.defcase {
               end
             end
           end)
-          |> Streams.filter((valid spec value path) => valid!)
+          |> Streams.filter(valid => valid!)
           |> Streams.map((valid spec value path) => option:.make(valid!, spec value path))
           |> Streams.take 1
 

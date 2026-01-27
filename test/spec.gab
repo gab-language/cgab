@@ -1,8 +1,8 @@
-Specs = 'Specs'.use true:
+s = 'Specs'.use true:
 
-test = Specs.cat(
-  'status' Specs.int
-  'name'   Specs+(Specs.string))
+test = s.cat(
+  'status' s.int
+  'name'   s+(s.string))
 
 test.spec\fits(12)
 
@@ -14,9 +14,9 @@ test.spec\fits(42 'hello' 'world' 'world' 'world')
 
 test.spec\fits(42 'hello' 12)
 
-ints = Specs+(Specs.int)
-atleastoneString = Specs+(Specs.string)
-nextest = Specs.cat(
+ints = s+(s.int)
+atleastoneString = s+(s.string)
+nextest = s.cat(
   'ints' ints
   'strings' atleastoneString)
 
@@ -38,7 +38,7 @@ nextest.spec\fits('hello')
 
 nextest.spec\fits(1)
 
-nested = Specs.cat(
+nested = s.cat(
   'nextest' nextest
   'ints2' ints)
 

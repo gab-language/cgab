@@ -78,6 +78,10 @@ Foods = snake\food: .defclass (
   head: () => self.snake.at 0 .unwrap
   body: () => self.snake.slice(1, self.snake.len)
 
+  should_spawn_food: () => do
+    self.time % FOOD_INTERVAL == 0
+  end
+
   spawn_food: () => do
     size = CELL_SIZE / 20
     randomx = Numbers.int\between(0, WIDTH / size)
@@ -141,8 +145,8 @@ handle\type: .defcase {
     model = model.put_via_by(time: x => x++)
 
     model
-   		.when(model.time % FOOD_INTERVAL == 0, model => model.spawn_food)
-   		.when(model.time % MOVE_INTERVAL == 0, model => model.move_snake)
+   		.when(should_spawn_food: spawn_food:)
+   		.when(model.time % MOVE_INTERVAL == 0 move_snake:)
   end
   mouse: (ev model) => do
     ev.println

@@ -464,11 +464,17 @@ uint64_t gab_srcappend(struct gab_src *self, uint64_t len,
 gab_value gab_srcname(struct gab_src *src) { return src->name; }
 
 uint64_t gab_srcline(struct gab_src *src, uint64_t bytecode_offset) {
+  if (!src->source->len)
+    return 0;
+
   uint64_t tok = v_uint64_t_val_at(&src->bytecode_toks, bytecode_offset);
   return v_uint64_t_val_at(&src->token_lines, tok);
 }
 
 uint64_t gab_tsrcline(struct gab_src *src, uint64_t tok_offset) {
+  if (!src->source->len)
+    return 0;
+
   return v_uint64_t_val_at(&src->token_lines, tok_offset);
 }
 

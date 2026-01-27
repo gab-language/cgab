@@ -1501,12 +1501,12 @@ gab_value gab_vspanicf(struct gab_triple gab, va_list va,
                        struct gab_err_argt args) {
   struct errdetails err = {
       .tok_name =
-          args.src
+          args.src && args.src->source->len
               ? gab_token_names[v_gab_token_val_at(&args.src->tokens, args.tok)]
               : "C",
   };
 
-  if (args.src) {
+  if (args.src && args.src->source->len) {
     err.row = v_uint64_t_val_at(&args.src->token_lines, args.tok);
 
     s_char line_src = v_s_char_val_at(&args.src->lines, err.row - 1);

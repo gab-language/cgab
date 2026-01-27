@@ -38,6 +38,23 @@ GAB_DYNLIB_NATIVE_FN(message, tos) {
   return gab_union_cvalid(gab_nil);
 }
 
+GAB_DYNLIB_NATIVE_FN(message, toblock) {
+  gab_value msg = gab_arg(0);
+
+  union gab_value_pair res = gab_mcompile(gab, (struct gab_mcompile_argt){
+                        .m = msg,
+                    });
+
+  if (res.status != gab_cvalid)
+    return gab_panicf(gab, "Failed to compile message block for $", msg);
+
+  gab_value block = gab_block(gab, res.vresult);
+
+  gab_vmpush(gab_thisvm(gab), block);
+
+  return gab_union_cvalid(gab_nil);
+}
+
 GAB_DYNLIB_NATIVE_FN(message, gen) {
   static _Atomic int64_t n;
   int64_t this_n = atomic_fetch_add(&n, 1);
@@ -75,9 +92,6 @@ GAB_DYNLIB_NATIVE_FN(message, specs) {
     gab_vmpush(gab_thisvm(gab), rec);
 
   return gab_union_cvalid(gab_nil);
-}
-
-GAB_DYNLIB_NATIVE_FN(message, to_block) {
 }
 
 GAB_DYNLIB_NATIVE_FN(message, has) {
@@ -234,14 +248,14 @@ GAB_DYNLIB_MAIN_FN {
               gab_type(gab, kGAB_BLOCK),
           },
           {
-            gab_message(gab, "env"),
-            gab_type(gab, kGAB_BLOCK),
-            gab_snative(gab, "env", gab_mod_block_env),
+              gab_message(gab, "env"),
+              gab_type(gab, kGAB_BLOCK),
+              gab_snative(gab, "env", gab_mod_block_env),
           },
           {
-            gab_message(gab, "params"),
-            gab_type(gab, kGAB_BLOCK),
-            gab_snative(gab, "params", gab_mod_block_params),
+              gab_message(gab, "params"),
+              gab_type(gab, kGAB_BLOCK),
+              gab_snative(gab, "params", gab_mod_block_params),
           },
           {
               gab_message(gab, "t"),
@@ -277,6 +291,11 @@ GAB_DYNLIB_MAIN_FN {
               gab_message(gab, "to\\s"),
               t,
               gab_snative(gab, "to\\s", gab_mod_message_tos),
+          },
+          {
+              gab_message(gab, "to\\block"),
+              t,
+              gab_snative(gab, "to\\block", gab_mod_message_toblock),
           },
           {
               gab_message(gab, "has?"),

@@ -1719,6 +1719,7 @@ CASE_CODE(SEND_PRIMITIVE_USE) {
     RESET_REENTRANT();
   } else {
     /*
+     * TODO: Really fix this, Its rough in a lot of ways chief.
      * This pulling in of args/values to pass on to use'd module
      * is a little scuffed. I'd rather do it a different way.
      */
@@ -1728,6 +1729,7 @@ CASE_CODE(SEND_PRIMITIVE_USE) {
 
     size_t len = gab_shplen(shp);
     assert(len < 32);
+
     for (int i = 0; i < len; i++) {
       svargs[i] = gab_ushpat(shp, i);
       sargs[i] = gab_strdata(svargs + i);
@@ -2523,10 +2525,6 @@ CASE_CODE(SEND_PRIMITIVE_FIBER) {
   gab_value *ks = READ_SENDCONSTANTS;
   uint64_t have = COMPUTE_TUPLE();
   uint64_t below_have = PEEK_N(have + 1);
-
-  // TODO:
-  //  This function should create the fiber, store it on the stack, and then do
-  //  a unsafe channel put.
 
   SEND_GUARD_CACHED_RECEIVER_TYPE(PEEK_N(have));
 
