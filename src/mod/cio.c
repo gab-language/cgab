@@ -50,6 +50,24 @@
  * io\sock\udp\client
  * io\sock\udp\server
  *
+ * In order for the socket-creating interfaces to remain immutable, we should
+ * forego the 'first create a socket, then bind *or* connect it' setup.
+ *
+ * We should simply say:
+ *  IO.Sockets.bind(tcp: "::1" 8080)
+ *    -> Returns a socket with type io\socket\tcp\server
+ *
+ *  IO.Sockets.connect(tcp\tls: "google.com" 997)
+ *    -> Returns a socket with type io\socket\tcp\client
+ *
+ *  IO.Sockets.make(tcp: client: "::1" 8080)
+ *  IO.Sockets.make(tcp: server: "::1" 8080)
+ *    -> This is the simple, root call which we will write wrappers for.
+ *
+ * These *wrap* the operations of creating a socket, then either connecting or binding.
+ *
+ * This way there is no mutable state visible to the user!
+ *
  */
 
 /*
@@ -58,7 +76,12 @@
  *
  * I ask because all the IO is happening asynchronously,
  * it may be that the engine is freed and exiting while IO operations are still
- * queued.
+ * queued. Supposedly, the gab engine itself will have been killed by this point.
+ * So maybe it is irrelevant? I do see how it could result in a crash sending
+ * random bytes to a socket somewhere, which could be bad.
+ *
+ * It also may be that at some point, gab_strings don't live forever. We would need to hold a reference to
+ * them for the duration of this call.
  *
  * What if the engine closes std/in/out/err before destroying the engine?
  *
@@ -944,6 +967,7 @@ GAB_DYNLIB_NATIVE_FN(io, open) {
 
   return gab_union_cvalid(gab_nil);
 }
+
 GAB_DYNLIB_NATIVE_FN(io, sock) {
   gab_value type = gab_arg(1);
   if (gab_valkind(type) != kGAB_MESSAGE)

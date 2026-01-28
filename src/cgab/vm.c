@@ -744,7 +744,7 @@ union gab_value_pair vm_error(struct gab_triple gab, enum gab_status s,
 }
 
 #define FMT_TYPEMISMATCH                                                       \
-  "$ $ found an invalid type.\n\n"                                             \
+  "$ $ found an unexpected value.\n\n"                                         \
   "    | $\n\n"                                                                \
   "which has type\n\n"                                                         \
   "    | $\n\n"                                                                \

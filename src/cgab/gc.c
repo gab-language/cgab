@@ -353,16 +353,6 @@ static inline void destroy(struct gab_triple gab, struct gab_obj *obj) {
 #endif
 }
 
-/*
- * ISSUE: When we call process epoch, we move
- * a worker from epoch 0 -> 1. This means it is now
- * queueing decrements into buffer 1.
- *
- * When the GC Process moves to process epoch 0,
- * it processes decrements for the previous epoch -
- * which is also epoch/buffer 1.
- */
-
 static inline void dec_obj_ref(struct gab_triple gab, struct gab_obj *obj) {
 #if cGAB_LOG_GC
   printf("DEC\t%i\t%p\t%d\n", epochget(gab), obj, obj->references - 1);

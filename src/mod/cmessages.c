@@ -276,9 +276,9 @@ GAB_DYNLIB_MAIN_FN {
               gab_snative(gab, "to\\s", gab_mod_message_tos),
           },
           {
-              gab_message(gab, "has?"),
+              gab_message(gab, "has"),
               t,
-              gab_snative(gab, "has?", gab_mod_message_has),
+              gab_snative(gab, "has", gab_mod_message_has),
           },
           {
               gab_message(gab, "at"),

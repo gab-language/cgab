@@ -191,21 +191,49 @@ gab_token symbol(gab_lx *self) {
 }
 
 gab_token integer(gab_lx *self) {
-  if (!isdigit(peek(self)))
-    return lexer_error(self, GAB_MALFORMED_TOKEN);
-
   while (isdigit(peek(self)))
     advance(self);
 
   return TOKEN_NUMBER;
 }
 
-gab_token floating(gab_lx *self) {
+bool isexponent(char c) { return isdigit(c) || c == '+' || c == '-'; }
+
+gab_token decimal(gab_lx *self) {
+  if (integer(self) == TOKEN_ERROR)
+    return TOKEN_ERROR;
+
+  // Decimal Exponent
+  if (peek(self) == 'e' && isexponent(peek_next(self)))
+    return advance(self), advance(self), integer(self);
+
+  return TOKEN_NUMBER;
+}
+
+gab_token hex(gab_lx *self) {
+  if (integer(self) == TOKEN_ERROR)
+    return TOKEN_ERROR;
+
+  // Binary Exponent
+  if (peek(self) == 'p' && isexponent(peek_next(self)))
+    return advance(self), advance(self), integer(self);
+
+  return TOKEN_NUMBER;
+}
+
+gab_token number(gab_lx *self) {
+  if (peek(self) == '0' && peek_next(self) == 'x')
+    return advance(self), advance(self), hex(self);
+
   if (integer(self) == TOKEN_ERROR)
     return TOKEN_ERROR;
 
   if (peek(self) == '.' && isdigit(peek_next(self)))
-    return advance(self), integer(self);
+    return advance(self), advance(self), decimal(self);
+
+  // Decimal exponent
+  if (peek(self) == 'e' && isexponent(peek_next(self)))
+    return advance(self), advance(self), integer(self);
 
   return TOKEN_NUMBER;
 }
@@ -265,11 +293,8 @@ gab_token other(gab_lx *self) {
       return lexer_error(self, GAB_MALFORMED_SEND);
     }
 
-    if (isdigit(peek(self))) {
-      advance(self);
-
+    if (isdigit(peek(self)))
       return integer(self);
-    }
 
     return TOKEN_SEND;
 
@@ -340,12 +365,12 @@ gab_token gab_lexnext(gab_lx *self) {
 
   if (peek(self) == '-' && isdigit(peek_next(self))) {
     advance(self);
-    tok = floating(self);
+    tok = number(self);
     goto fin;
   }
 
   if (isdigit(peek(self))) {
-    tok = floating(self);
+    tok = number(self);
     goto fin;
   }
 

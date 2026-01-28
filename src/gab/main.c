@@ -73,7 +73,9 @@ void print_err(struct gab_triple gab, gab_value err) {
 
 void pop_and_printerr(struct gab_triple gab) {
   gab_value *errors = gab_egerrs(gab.eg);
-  assert(errors != nullptr);
+
+  if (!errors)
+    return;
 
   for (gab_value *err = errors; *err != gab_nil; err++) {
     assert(gab_valkind(*err) == kGAB_RECORD);
@@ -96,6 +98,7 @@ bool check_and_printerr(union gab_value_pair *res) {
       const char *errstr = gab_errtocs(gab, res->vresult);
       assert(errstr != nullptr);
       fputs(errstr, stderr);
+      fflush(stderr);
     }
     return false;
   }
@@ -104,6 +107,7 @@ bool check_and_printerr(union gab_value_pair *res) {
     const char *errstr = gab_errtocs(gab, res->aresult->data[1]);
     assert(errstr != nullptr);
     fputs(errstr, stderr);
+    fflush(stderr);
     return a_gab_value_destroy(res->aresult), false;
   }
 
@@ -379,11 +383,10 @@ char *readline(const char *prompt) {
   return crossline_readline(prompt, prompt_buffer, sizeof(prompt_buffer));
 }
 
-const char *welcome_message =
-    "  ________   ___  |\n"
-    " / ___/ _ | / _ ) | v" GAB_VERSION_TAG "\n"
-    "/ (_ / __ |/ _  | |  on: " GAB_TARGET_TRIPLE "\n"
-    "\\___/_/ |_/____/  |  in: " GAB_BUILDTYPE "\n";
+const char *welcome_message = "  ________   ___  |\n"
+                              " / ___/ _ | / _ ) | v" GAB_VERSION_TAG "\n"
+                              "/ (_ / __ |/ _  | |  on: " GAB_TARGET_TRIPLE "\n"
+                              "\\___/_/ |_/____/  |  in: " GAB_BUILDTYPE "\n";
 
 int run_repl(int flags, uint32_t wait, size_t nmodules, const char **modules) {
   gab_ossignal(SIGINT, propagate_term);

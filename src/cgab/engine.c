@@ -15,6 +15,10 @@ uint64_t gab_eglen(struct gab_eg *eg) { return eg->len; }
 gab_value *gab_egerrs(struct gab_eg *eg) {
   v_gab_value_thrd errs;
   v_gab_value_thrd_drain(&eg->err, &errs);
+
+  if (!errs.len)
+    return nullptr;
+
   v_gab_value_thrd_push(&errs, gab_nil);
 
   /* Just free the mutex, leave the pointer to be cleaned up by caller */
@@ -823,9 +827,9 @@ void gab_destroy(struct gab_triple gab) {
 }
 
 bool repl_check_res(struct gab_triple gab, union gab_value_pair res) {
-  if (res.status != gab_cvalid) {
-    gab_value *err = gab_egerrs(gab.eg);
+  gab_value *err = gab_egerrs(gab.eg);
 
+  if (err) {
     for (gab_value *thiserr = err; *thiserr != gab_nil; thiserr++) {
       assert(gab_valkind(*thiserr) == kGAB_RECORD);
 
@@ -839,17 +843,18 @@ bool repl_check_res(struct gab_triple gab, union gab_value_pair res) {
     };
 
     free(err);
+  }
 
+  if (res.status != gab_cvalid) {
     const char *errstr = gab_errtocs(gab, res.vresult);
     assert(errstr != nullptr);
 
     puts(errstr);
-    fflush(stdout);
 
     return true;
   }
 
-  return false;
+  return err != nullptr;
 }
 
 bool repl_check_needmore(struct gab_triple gab, union gab_value_pair res) {
@@ -864,27 +869,6 @@ bool repl_check_needmore(struct gab_triple gab, union gab_value_pair res) {
   const char *status_name = gab_strdata(&status);
   if (!strcmp(status_name, "UNEXPECTED_EOF"))
     return true;
-
-  return false;
-}
-
-bool repl_check_vresult(struct gab_triple gab, union gab_value_pair res) {
-  return repl_check_res(gab, res);
-}
-
-bool repl_check_aresult(struct gab_triple gab, union gab_value_pair res) {
-  if (repl_check_res(gab, res))
-    return true;
-
-  if (res.aresult->data[0] != gab_ok) {
-    const char *errstr = gab_errtocs(gab, res.aresult->data[1]);
-    assert(errstr != nullptr);
-
-    puts(errstr);
-    fflush(stdout);
-
-    return true;
-  }
 
   return false;
 }
@@ -986,7 +970,7 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
     if (repl_check_needmore(gab, block))
       goto readmore;
 
-    if (repl_check_vresult(gab, block))
+    if (repl_check_res(gab, block))
       goto fin;
 
     gab_value before_env = gab_blkshp(block.vresult);
@@ -998,7 +982,7 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
                                                    .main = block.vresult,
                                                });
 
-    if (repl_check_vresult(gab, fiber))
+    if (repl_check_res(gab, fiber))
       goto fin;
 
     repl_wait_for(gab, &args, fiber.vresult);
@@ -1023,7 +1007,7 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
 
     assert(env != gab_cinvalid);
 
-    if (repl_check_aresult(gab, res))
+    if (repl_check_res(gab, res))
       goto fin;
 
     for (int32_t i = 1; i < res.aresult->len; i++) {
