@@ -177,24 +177,45 @@ GAB_API_INLINE const char *gab_osexepath() {
 #define gab_oslibfind(dynlib, name) (void (*)(void)) dlsym(dynlib, name)
 
 GAB_API_INLINE const bool gab_osmkdirp(const char *path) {
-  int res = mkdir(path, 0755);
+  char *dup = strdup(path);
 
-  if (res == 0)
-    return true; // Directory created
+  /*
+   * Starting from our duplicated string:
+   *   strchr from our 'cursor' forwards for a '/'.
+   *   If we find a '/', replace it with a '\0'.
+   *    This creates a new substring, from dup -> slash
+   *   Create a directory with this substring.
+   *   Rewrite the '/' to slash, replacing the null byte.
+   *   Move the cursor beyond the slash.
+   */
+  for (char *cursor = dup; *cursor;) {
+    char *slash = strchr(cursor, '/');
 
-  if (errno == EEXIST)
-    return true; // Directory already existed
+    if (!slash)
+      return free(dup), true;
 
-  printf("ERR: %s\n", strerror(errno));
-  // Some other error occurred
-  return false;
+    *slash = '\0';
+
+    if (!strlen(dup))
+      goto next;
+
+    int res = mkdir(dup, 0755);
+
+    if (res < 0 && errno != EEXIST)
+      return free(dup), false;
+
+  next:
+    *slash = '/';
+    cursor = slash + 1;
+  }
+
+  return free(dup), true;
 }
 
 GAB_API_INLINE char *gab_osprefix_temp(const char *v) {
   v_char str = {0};
   v_char_spush(&str, s_char_cstr("/tmp/"));
   v_char_spush(&str, s_char_cstr(v));
-  v_char_push(&str, '/');
   v_char_push(&str, '\0');
 
   return str.data;
@@ -211,7 +232,6 @@ GAB_API_INLINE char *gab_osprefix_install(const char *v) {
   v_char_spush(&str, s_char_cstr(home));
   v_char_spush(&str, s_char_cstr("/gab/"));
   v_char_spush(&str, s_char_cstr(v));
-  v_char_push(&str, '/');
   v_char_push(&str, '\0');
 
   return str.data;
@@ -318,7 +338,6 @@ GAB_API_INLINE char *gab_osprefix_temp(const char *v) {
   v_char_spush(&str, s_char_cstr(buffer));
   v_char_spush(&str, s_char_cstr("\\Temp\\"));
   v_char_spush(&str, s_char_cstr(v));
-  v_char_push(&str, '\\');
   v_char_push(&str, '\0');
 
   return str.data;
@@ -346,7 +365,6 @@ GAB_API_INLINE char *gab_osprefix_install(const char *v) {
   v_char_spush(&str, s_char_cstr(buffer));
   v_char_spush(&str, s_char_cstr("\\gab\\"));
   v_char_spush(&str, s_char_cstr(v));
-  v_char_push(&str, '\\');
   v_char_push(&str, '\0');
 
   return str.data;

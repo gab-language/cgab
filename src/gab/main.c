@@ -199,7 +199,7 @@ union gab_value_pair gab_use_zip_dynlib(struct gab_triple gab, const char *path,
   };
 
   v_char temppath = {0};
-  v_char_spush(&temppath, s_char_cstr("/gab@" GAB_VERSION_TAG "/mod/"));
+  v_char_spush(&temppath, s_char_cstr("gab@" GAB_VERSION_TAG "/"));
   v_char_spush(&temppath, s_char_cstr(path));
   v_char_push(&temppath, '\0');
 
@@ -211,29 +211,13 @@ union gab_value_pair gab_use_zip_dynlib(struct gab_triple gab, const char *path,
     goto exists;
   }
 
-  /**
-   * Make the <temp>/gab Folder if it does not exist.
-   */
-  dst = gab_osprefix_temp("/gab@" GAB_VERSION_TAG);
-
-  if (!dst)
-    return gab_panicf(gab, "Failed to determine temporary directory prefix");
+  char *slash = strrchr(dst, '/');
+  *slash = '\0';
 
   if (!gab_osmkdirp(dst))
     return gab_panicf(gab, "Failed to create temporary file folder.");
 
-  free(dst);
-
-  /**
-   * Make the <temp>/gab/mod Folder if it does not exist.
-   */
-  dst = gab_osprefix_temp("/gab@" GAB_VERSION_TAG "/mod");
-
-  if (!dst)
-    return gab_panicf(gab, "Failed to determine temporary directory prefix");
-
-  if (!gab_osmkdirp(dst))
-    return gab_panicf(gab, "Failed to create temporary file folder.");
+  *slash = '/';
 
   /**
    * Should also check if the file exists, and then we don't need to do
@@ -253,8 +237,8 @@ union gab_value_pair gab_use_zip_dynlib(struct gab_triple gab, const char *path,
   if (!mz_zip_reader_extract_file_to_file(&zip, stat.m_filename, dst, 0)) {
     mz_zip_error e = mz_zip_get_last_error(&zip);
     const char *estr = mz_zip_get_error_string(e);
-    return gab_panicf(gab, "Failed to load zipped module: $",
-                      gab_string(gab, estr));
+    return gab_panicf(gab, "Failed to load zipped module to $: $",
+                      gab_string(gab, dst), gab_string(gab, estr));
   }
 
 exists:
@@ -368,11 +352,11 @@ static const struct gab_resource file_resources[] = {
 };
 
 static const struct gab_resource zip_resources[] = {
-    {"mod/", GAB_DYNLIB_FILEENDING, gab_use_dynlib, file_exister},
-    {"", GAB_DYNLIB_FILEENDING, gab_use_dynlib, file_exister},
-    {"", "/mod.gab", gab_use_source, file_exister},
-    {"mod/", ".gab", gab_use_source, file_exister},
-    {"", ".gab", gab_use_source, file_exister},
+    {"mod/", GAB_DYNLIB_FILEENDING, gab_use_zip_dynlib, zip_exister},
+    {"", GAB_DYNLIB_FILEENDING, gab_use_zip_dynlib, zip_exister},
+    {"", "/mod.gab", gab_use_zip_source, zip_exister},
+    {"mod/", ".gab", gab_use_zip_source, zip_exister},
+    {"", ".gab", gab_use_zip_source, zip_exister},
     {}, // List terminator.
 };
 
@@ -920,11 +904,12 @@ int download_gab(const char *pkg, const char *tag, const char *triple) {
   int taglen = strlen(tag);
 
   size_t triple_len = strlen(triple);
-  char locbuf[taglen + triple_len + 2];
+  char locbuf[taglen + triple_len + 3];
   strncpy(locbuf, tag, taglen);
   locbuf[taglen] = '.';
   strncpy(locbuf + taglen + 1, triple, triple_len);
-  locbuf[taglen + triple_len + 1] = '\0';
+  locbuf[taglen + triple_len + 1] = '/';
+  locbuf[taglen + triple_len + 2] = '\0';
 
   const char *location_prefix = gab_osprefix_install(locbuf);
 
@@ -1011,19 +996,12 @@ int download_gab(const char *pkg, const char *tag, const char *triple) {
   }
 
   /// Ensure that the ~/gab folder exists.
-  const char *gab_prefix = gab_osprefix_install("");
+  const char *gab_prefix = gab_osprefix_install("/");
 
   if (gab_prefix == nullptr) {
     clierror("(1) Could not determine installation prefix.\n");
     return 1;
   }
-
-  if (!gab_osmkdirp(gab_prefix)) {
-    clierror("(1) Failed to create directory global prefix at " GAB_MAGENTA
-             "%s" GAB_RESET ".\n",
-             gab_prefix);
-    return 1;
-  };
 
   if (!gab_osmkdirp(location_prefix)) {
     clierror("(1) Failed to create directory prefix at " GAB_MAGENTA
@@ -1058,7 +1036,7 @@ int download_gab(const char *pkg, const char *tag, const char *triple) {
 
   if (res) {
     clierror("(3) Failed to download modules for release " GAB_YELLOW
-             "%s" GAB_RESET ".",
+             "%s" GAB_RESET ".\n",
              tag);
     return 1;
   }
@@ -1070,16 +1048,16 @@ int download_gab(const char *pkg, const char *tag, const char *triple) {
              tag);
 
   if (res) {
-    clierror("(4) Failed to download development files for release %s", tag);
+    clierror("(4) Failed to download development files for release %s\n", tag);
     return 1;
   }
 
-  res = gab_osproc("(5) tar", "xzf", modules_location.data, "-C",
+  res = gab_osproc("tar", "xzf", modules_location.data, "-C",
                    modules_extract_location.data);
 
   if (res) {
     clierror("(5) Failed to extract module files for release " GAB_YELLOW
-             "%s" GAB_RESET ".",
+             "%s" GAB_RESET ".\n",
              tag);
     return 1;
   }
@@ -1118,7 +1096,7 @@ int get(struct command_arguments *args) {
   const char *pkg = args->argc ? args->argv[0] : "@";
 
   /// Ensure that the ~/gab folder exists.
-  const char *gab_prefix = gab_osprefix_install("");
+  const char *gab_prefix = gab_osprefix_install("/");
 
   if (gab_prefix == nullptr) {
     clierror("Could not determine installation prefix.\n");
@@ -1427,6 +1405,7 @@ int build(struct command_arguments *args) {
   v_char_spush(&location, s_char_cstr(GAB_VERSION_TAG));
   v_char_push(&location, '.');
   v_char_spush(&location, s_char_cstr(platform));
+  v_char_push(&location, '/');
   v_char_push(&location, '\0');
 
   const char *roots[] = {
@@ -1454,6 +1433,7 @@ int build(struct command_arguments *args) {
   v_char_spush(&exepath, s_char_cstr(GAB_VERSION_TAG));
   v_char_push(&exepath, '.');
   v_char_spush(&exepath, s_char_cstr(platform));
+  v_char_push(&exepath, '/');
   v_char_push(&exepath, '\0');
   const char *path = gab_osprefix_install(exepath.data);
 
@@ -1465,7 +1445,16 @@ int build(struct command_arguments *args) {
   FILE *exe = fopen(exepath.data, "r");
   if (!exe) {
     clierror("Failed to open gab executable at '%s'.\n", exepath.data);
-    clierror("Falling back to this binary, Gab@" GAB_VERSION_TAG "\n");
+
+    if (strcmp(platform, GAB_TARGET_TRIPLE)) {
+      clierror("Cannot fallback to this binary, requested platform is %s and "
+               "this platform is %s.\n",
+               platform, GAB_TARGET_TRIPLE);
+      return 1;
+    }
+
+    clierror("Falling back to this binary, Gab@" GAB_VERSION_TAG
+             "for " GAB_TARGET_TRIPLE "\n");
     const char *path = gab_osexepath();
     exe = fopen(path, "r");
     if (!exe) {
@@ -1573,7 +1562,7 @@ int main(int argc, const char **argv) {
    * Populate roots list.
    */
   roots[0] = "./";
-  roots[1] = gab_osprefix_install(GAB_VERSION_TAG "." GAB_TARGET_TRIPLE);
+  roots[1] = gab_osprefix_install(GAB_VERSION_TAG "." GAB_TARGET_TRIPLE "/");
   roots[2] = nullptr;
 
   if (check_not_gab(argv[0]) && check_valid_zip())
