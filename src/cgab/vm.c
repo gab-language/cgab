@@ -2373,7 +2373,7 @@ CASE_CODE(SEND) {
 
   ks[GAB_SEND_KSPECS] = atomic_load(&EG()->messages_epoch);
   ks[GAB_SEND_KTYPE] = gab_valtype(GAB(), r);
-  ks[GAB_SEND_KSPEC] = spec;
+  ks[GAB_SEND_KSPEC] = res.as.spec;
 
   switch (gab_valkind(spec)) {
   case kGAB_PRIMITIVE: {
