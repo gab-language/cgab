@@ -543,7 +543,6 @@ GAB_DYNLIB_NATIVE_FN(fmt, panicf) {
   gab_value fmtstr = gab_arg(0);
   const char *fmt = gab_strdata(&fmtstr);
 
-  
   for (size_t n = 2048;; n *= 2) {
     char *buf = malloc(n);
     int len = gab_nsprintf(buf, n, fmt, argc - 1, argv + 1);
@@ -560,6 +559,26 @@ GAB_DYNLIB_NATIVE_FN(fmt, panicf) {
 }
 
 GAB_DYNLIB_NATIVE_FN(fmt, sprintf) {
+  gab_value fmtstr = gab_arg(0);
+
+  const char *fmt = gab_strdata(&fmtstr);
+
+  for (size_t n = 2048;; n *= 2) {
+    char *buf = malloc(n);
+    int len = gab_nsprintf(buf, n, fmt, argc - 1, argv + 1);
+
+    if (len < 0) {
+      free(buf);
+      continue;
+    }
+
+    gab_vmpush(gab_thisvm(gab), gab_string(gab, buf));
+    free(buf);
+    return gab_union_cvalid(gab_nil);
+  }
+}
+
+GAB_DYNLIB_NATIVE_FN(fmt, psprintf) {
   gab_value fmtstr = gab_arg(0);
 
   const char *fmt = gab_strdata(&fmtstr);
@@ -687,6 +706,11 @@ GAB_DYNLIB_MAIN_FN {
               gab_message(gab, "sprintf"),
               t,
               gab_snative(gab, "sprintf", gab_mod_fmt_sprintf),
+          },
+          {
+              gab_message(gab, "psprintf"),
+              t,
+              gab_snative(gab, "psprintf", gab_mod_fmt_psprintf),
           },
           {
               gab_message(gab, "panicf"),
