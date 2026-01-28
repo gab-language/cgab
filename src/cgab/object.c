@@ -1,6 +1,6 @@
-#include <stdatomic.h>
 #include "engine.h"
 #include "gab.h"
+#include <stdatomic.h>
 
 #define GAB_CREATE_OBJ(obj_type, kind)                                         \
   ((struct obj_type *)gab_obj_create(gab, sizeof(struct obj_type), kind))
@@ -2496,13 +2496,32 @@ void pprint_rec(v_gab_pprint *self, gab_value rec) {
   push_pprint_kd(self, kPPRINT_DEDENT, (union gab_pprint_d){'}'});
 };
 
+void pprint_fiber(v_gab_pprint *self, gab_value fib) {
+  assert(gab_valkind(fib) == kGAB_FIBER ||
+         gab_valkind(fib) == kGAB_FIBERRUNNING ||
+         gab_valkind(fib) == kGAB_FIBERDONE);
+
+  struct gab_ofiber *v = GAB_VAL_TO_FIBER(fib);
+
+  gab_value msg = v->data[0];
+  gab_value rec = v->data[1];
+
+  push_pprint_kd(self, kPPRINT_INDENT, (union gab_pprint_d){'<'});
+  push_pprint_s(self, tGAB_FIBER);
+  push_pprint_k(self, kPPRINT_SPACE);
+  pprint_tokify(self, msg);
+  push_pprint_k(self, kPPRINT_SPACE);
+  pprint_tokify(self, rec);
+  push_pprint_kd(self, kPPRINT_DEDENT, (union gab_pprint_d){'>'});
+}
+
 void pprint_box(v_gab_pprint *self, gab_value box) {
   assert(gab_valkind(box) == kGAB_BOX);
   struct gab_obox *v = GAB_VAL_TO_BOX(box);
   push_pprint_kd(self, kPPRINT_INDENT, (union gab_pprint_d){'<'});
   push_pprint_s(self, tGAB_BOX);
   push_pprint_k(self, kPPRINT_SPACE);
-  push_pprint_v(self, v->type);
+  pprint_tokify(self, v->type);
   push_pprint_kd(self, kPPRINT_DEDENT, (union gab_pprint_d){'>'});
 }
 
@@ -2598,7 +2617,9 @@ bool pprint_tokify(v_gab_pprint *self, gab_value val) {
                             : pprint_rec(self, val)),
            true;
   case kGAB_FIBER:
-    // Needs to be updated to match sinspect
+  case kGAB_FIBERRUNNING:
+  case kGAB_FIBERDONE:
+    return pprint_fiber(self, val), false;
   default:
     return push_pprint_v(self, val), false;
   }
@@ -2614,6 +2635,9 @@ const char *colorforkind(gab_value v) {
     return GAB_CYAN;
   case kGAB_PRIMITIVE:
     return GAB_RED;
+  case kGAB_CHANNEL:
+  case kGAB_CHANNELCLOSED:
+    return GAB_MAGENTA;
   default:
     return "";
   }

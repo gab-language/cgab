@@ -1400,8 +1400,10 @@ int sprint_pretty_err(struct gab_triple gab, char **buf, size_t *len,
     return -1;
 
   if (args->status)
-    if (snprintf_through(buf, len, "    " GAB_RED "%s" GAB_RESET "\n",
-                         gab_status_messages[args->status]) < 0)
+    if (snprintf_through(buf, len,
+                         GAB_RED "E%03i" GAB_RESET "|" GAB_RED " %s" GAB_RESET
+                                 "\n",
+                         args->status, gab_status_messages[args->status]) < 0)
       return -1;
 
   if (src) {

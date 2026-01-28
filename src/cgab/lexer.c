@@ -279,7 +279,7 @@ gab_token other(gab_lx *self) {
       if (t == TOKEN_OPERATOR)
         return TOKEN_SEND;
 
-      return lexer_error(self, GAB_MALFORMED_SEND);
+      return lexer_error(self, GAB_MALFORMED_TOKEN);
     }
 
     if (can_start_symbol(peek(self))) {
@@ -290,7 +290,7 @@ gab_token other(gab_lx *self) {
       if (t == TOKEN_SYMBOL)
         return TOKEN_SEND;
 
-      return lexer_error(self, GAB_MALFORMED_SEND);
+      return lexer_error(self, GAB_MALFORMED_TOKEN);
     }
 
     if (isdigit(peek(self)))

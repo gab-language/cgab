@@ -4,20 +4,29 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define FMT_EXPECTED_EXPRESSION                                                \
-  "Expected a value - one of:\n\n"                                             \
+#define FMT_MALFORMED_EXPRESSION                                               \
+  "Expressions start with one of the following values:\n\n"                    \
   "  " GAB_YELLOW "-1.23" GAB_MAGENTA "\t\t\t# A number \n" GAB_RESET          \
   "  " GAB_GREEN "'hello, Joe!'" GAB_MAGENTA "\t\t# A string \n" GAB_RESET     \
   "  " GAB_RED "greet:" GAB_MAGENTA "\t\t# A message\n" GAB_RESET              \
   "  " GAB_BLUE "x => x + 1" GAB_MAGENTA "\t# A block \n" GAB_RESET            \
   "  " GAB_CYAN "{ key: value }" GAB_MAGENTA "\t# A record\n" GAB_RESET "  "   \
-  "(" GAB_YELLOW "-1.23" GAB_RESET ", " GAB_GREEN "true:" GAB_RESET            \
+  "(" GAB_YELLOW "0x22" GAB_RESET ", " GAB_GREEN "true:" GAB_RESET             \
   ")" GAB_MAGENTA "\t# A tuple\n" GAB_RESET "  "                               \
   "a_variable" GAB_MAGENTA "\t\t# Or a variable!" GAB_RESET
 
 #define FMT_REFERENCE_BEFORE_INIT "$ is referenced before it is initialized."
 
-#define FMT_ID_NOT_FOUND "Variable $ is not defined in this scope."
+#define FMT_ID_NOT_FOUND                                                       \
+  "Symbol $ is not yet bound in this scope, or parent scopes.\n\n"             \
+  "Assignment expressions bind values to symbols.\n\n"                         \
+  "  a = " GAB_CYAN "true:" GAB_RESET "\n\n"                                   \
+  "Symbols within local scope may be rebound at any time.\n\n"                 \
+  "  name = " GAB_GREEN "\"Bob\"" GAB_RESET "\n\n"                             \
+  "  name = " GAB_GREEN "\"Uncle Bob\"" GAB_RESET "\n\n"                       \
+  "Symbols captured from parent scopes may not be rebound.\n\n"                \
+  "  name = " GAB_GREEN "\"Uncle Bob\"" GAB_RESET "\n\n"                       \
+  "  () => name = " GAB_GREEN "\"Old Bob\"" GAB_MAGENTA " # Not allowed"
 
 #define FMT_MALFORMED_ASSIGNMENT                                               \
   "This assignment is malformed - a valid assignment looks like:\n\n"          \
@@ -35,6 +44,14 @@
   " " GAB_BLACK "=> a = { num: 2 }\n" GAB_RESET
 
 #define FMT_MALFORMED_ASSIGNMENT_NOTE "\nHint: "
+
+#define FMT_GAB_MALFORMED_STRING                                               \
+  "\nSingle quoted strings can contain escape "                                \
+  "sequences.\n"                                                               \
+  "\n   " GAB_GREEN "'a newline -> " GAB_MAGENTA "\\n" GAB_GREEN               \
+  ", or a forward slash -> " GAB_MAGENTA "\\\\" GAB_GREEN "'" GAB_RESET        \
+  "\n   " GAB_GREEN "'a valid unicode codepoint: " GAB_MAGENTA                 \
+  "\\u[" GAB_YELLOW "2502" GAB_MAGENTA "]" GAB_GREEN "'" GAB_RESET
 
 /*
  *******
@@ -169,13 +186,9 @@ static int encode_codepoint(char *out, int utf) {
     out[2] = (char)(((utf >> 6) & 0x3F) | 0x80);
     out[3] = (char)(((utf >> 0) & 0x3F) | 0x80);
     return 4;
-  } else {
-    // error - use replacement character
-    out[0] = (char)0xEF;
-    out[1] = (char)0xBF;
-    out[2] = (char)0xBD;
-    return 3;
   }
+
+  return 0;
 }
 
 static a_char *parse_raw_str(struct parser *parser, s_char raw_str) {
@@ -238,14 +251,24 @@ static a_char *parse_raw_str(struct parser *parser, s_char raw_str) {
           if (cpl == 7)
             return nullptr;
 
+          if (i >= raw_str.len)
+            return nullptr;
+
           codepoint[cpl++] = raw_str.data[i++];
         }
 
         i++;
 
-        long cp = strtol(codepoint, nullptr, 16);
+        char *endptr = nullptr;
+        long cp = strtol(codepoint, &endptr, 16);
+
+        if (*codepoint == '\0' || *endptr != '\0')
+          return nullptr;
 
         int result = encode_codepoint(buffer + buf_end, cp);
+
+        if (!result)
+          return nullptr;
 
         buf_end += result;
 
@@ -578,7 +601,7 @@ gab_value parse_expression(struct gab_triple gab, struct parser *parser,
 
   if (rule.prefix == nullptr)
     return parser_error(gab, parser, GAB_MALFORMED_EXPRESSION,
-                        FMT_EXPECTED_EXPRESSION),
+                        FMT_MALFORMED_EXPRESSION),
            gab_cinvalid;
 
   size_t begin = parser->offset;
@@ -671,14 +694,7 @@ gab_value parse_exp_sstr(struct gab_triple gab, struct parser *parser,
 
   if (parsed == nullptr)
     return parser_error(gab, parser, GAB_MALFORMED_STRING,
-                        "\nSingle quoted strings can contain escape "
-                        "sequences.\n"
-                        "\n   " GAB_GREEN "'a newline -> " GAB_MAGENTA
-                        "\\n" GAB_GREEN ", or a forward slash -> " GAB_MAGENTA
-                        "\\\\" GAB_GREEN "'" GAB_RESET "\n   " GAB_GREEN
-                        "'a unicode codepoint by number: " GAB_MAGENTA
-                        "\\u[" GAB_YELLOW "2502" GAB_MAGENTA "]" GAB_GREEN
-                        "'" GAB_RESET),
+                        FMT_GAB_MALFORMED_STRING),
            gab_cinvalid;
 
   gab_value str = gab_nstring(gab, parsed->len, parsed->data);
@@ -1760,7 +1776,7 @@ gab_value compile_symbol(struct gab_triple gab, struct bc *bc, gab_value tuple,
     push_loadu(bc, res.idx, tuple);
     return res.env;
   default:
-    bc_error(gab, bc, tuple, GAB_UNBOUND_SYMBOL, "$ is unbound",
+    bc_error(gab, bc, tuple, GAB_UNBOUND_SYMBOL, FMT_ID_NOT_FOUND,
              gab_bintostr(id));
     return gab_cinvalid;
   }
