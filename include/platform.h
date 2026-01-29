@@ -194,10 +194,8 @@ GAB_API_INLINE const int gab_osmkdirp(const char *path) {
   for (char *cursor = dup; *cursor;) {
     char *slash = strchr(cursor, '/');
 
-    if (!slash)
-      return free(dup), 0;
-
-    *slash = '\0';
+    if (slash)
+      *slash = '\0';
 
     if (!strlen(dup))
       goto next;
@@ -206,6 +204,9 @@ GAB_API_INLINE const int gab_osmkdirp(const char *path) {
 
     if (res < 0 && errno != EEXIST)
       return free(dup), errno;
+
+    if (!slash)
+      break;
 
   next:
     *slash = '/';
@@ -333,18 +334,19 @@ GAB_API_INLINE const int gab_osmkdirp(const char *path) {
   for (char *cursor = dup; *cursor;) {
     char *slash = strchr(cursor, '/');
 
-    if (!slash)
-      return free(dup), 0;
-
-    *slash = '\0';
+    if (slash)
+      *slash = '\0';
 
     if (!strlen(dup))
       goto next;
 
-    int res = _mkdir(dup);
+    int res = _mkdir(dup, 0755);
 
     if (res < 0 && errno != EEXIST)
-      return free(dup), 1;
+      return free(dup), errno;
+
+    if (!slash)
+      break;
 
   next:
     *slash = '/';

@@ -1519,7 +1519,7 @@ int build(struct command_arguments *args) {
     }
 
     clierror("Falling back to this binary, gab@" GAB_VERSION_TAG
-             "for " GAB_TARGET_TRIPLE "\n");
+             " for " GAB_TARGET_TRIPLE "\n");
     const char *path = gab_osexepath();
     exe = fopen(path, "r");
     if (!exe) {
