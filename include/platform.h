@@ -205,7 +205,7 @@ GAB_API_INLINE const int gab_osmkdirp(const char *path) {
     int res = mkdir(dup, 0755);
 
     if (res < 0 && errno != EEXIST)
-      return free(dup), 1;
+      return free(dup), errno;
 
   next:
     *slash = '/';

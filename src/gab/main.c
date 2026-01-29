@@ -214,8 +214,11 @@ union gab_value_pair gab_use_zip_dynlib(struct gab_triple gab, const char *path,
   char *slash = strrchr(dst, '/');
   *slash = '\0';
 
-  if (!gab_osmkdirp(dst))
-    return gab_panicf(gab, "Failed to create temporary file folder.");
+  int result = gab_osmkdirp(dst); 
+
+  if (result)
+    return gab_panicf(gab, "Failed to create temporary file folder: $.",
+                      gab_string(gab, dst));
 
   *slash = '/';
 
@@ -1163,7 +1166,6 @@ int download_gab(struct command_arguments *args, const char *tag,
     if (ch != 'y' && ch != 'Y')
       return clierror("Installation cancelled.\n"), 1;
   }
-
 
   if (execute_steps(nsteps, steps))
     return clierror("Installation failed.\n"), 1;
