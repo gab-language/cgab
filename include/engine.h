@@ -5,23 +5,14 @@
 #include "gab.h"
 #include <stdint.h>
 
-#ifdef GAB_STATUS_NAMES_IMPL
-static const char *gab_status_names[] = {
-#define STATUS(name, message) message,
-#include "status_code.h"
-#undef STATUS
+#ifndef GAB_COLORS_IMPL
+static const char *ANSI_COLORS[] = {
+    GAB_GREEN, GAB_MAGENTA, GAB_RED, GAB_YELLOW, GAB_BLUE, GAB_CYAN,
 };
-#undef GAB_STATUS_NAMES_IMPL
+#define GAB_COLORS_IMPL
 #endif
 
-#ifdef GAB_TOKEN_NAMES_IMPL
-static const char *gab_token_names[] = {
-#define TOKEN(message) #message,
-#include "token.h"
-#undef TOKEN
-};
-#undef GAB_TOKEN_NAMES_IMPL
-#endif
+#define GAB_COLORS_LEN (sizeof(ANSI_COLORS) / sizeof(ANSI_COLORS[0]))
 
 typedef enum gab_opcode {
 #define OP_CODE(name) OP_##name,
@@ -29,18 +20,17 @@ typedef enum gab_opcode {
 #undef OP_CODE
 } gab_opcode;
 
-#ifdef GAB_OPCODE_NAMES_IMPL
-static const char *gab_opcode_names[] = {
-#define OP_CODE(name) #name,
-#include "bytecode.h"
-#undef OP_CODE
-  #undef GAB_OPCODE_NAMES_IMPL
-};
-#endif
-
 /**
  * Structure used to actually execute bytecode
- */
+ *
+ * This structure is pretty large (8kb).
+ *
+ * Since a lot of fibers are small and short lived, this is overkill.
+ *
+ * It might be a nice optimization to store a small number of frames
+ * on the fiber itself, and then migrate the stack to a larger
+ * one if this small stack overflows.
+ * */
 struct gab_vm {
   uint8_t *ip;
 
@@ -229,11 +219,26 @@ struct gab_ofiber {
   /* Flags copied from the gab-triple when this fiber was created. */
   uint32_t flags;
 
+  /* This value is managed by native-c functions that yield back to the
+   * scheduler so that they don't block. It is what notifies said function that
+   * it is re-entering.*/
+  uintptr_t reentrant;
+
+  /*
+   * A simple bump-allocator for use by native-cfunctions.
+   *
+   * It resets when the frame is popped (ie: when the native c-func returns)
+   */
+  v_uint8_t allocator;
+
   /* When a user creates a fiber, A frame is setup on the stack using these
-   * arrays as the moduile bytescode and constants.*/
-  uint8_t virtual_frame_bc[6];
+   * arrays as the module bytescode and constants.*/
+  uint8_t virtual_frame_bc[4];
   gab_value virtual_frame_ks[7];
 
+  /*
+   * The vm structure which contains the data for executing bytecode.
+   */
   struct gab_vm vm;
 
   /**
@@ -267,7 +272,7 @@ struct gab_ofiber {
 struct gab_ochannel {
   struct gab_obj header;
   /* Number of values held at member *data* */
-  uint64_t len;
+  _Atomic(uint64_t) len;
   /* Values held */
   _Atomic(gab_value *) data;
 };
@@ -437,6 +442,27 @@ struct gab_src {
   } thread_bytecode[];
 };
 
+struct gab_src *gab_src(struct gab_triple gab, gab_value name, const char *src,
+                        uint64_t len);
+
+uint64_t gab_srcappend(struct gab_src *self, uint64_t len,
+                       uint8_t bc[static len], uint64_t toks[static len]);
+
+static inline void gab_srccomplete(struct gab_triple gab,
+                                   struct gab_src *self) {
+  for (int i = 0; i < self->len; i++) {
+    uint8_t *bc = malloc(self->bytecode.len);
+    memcpy(bc, self->bytecode.data, self->bytecode.len);
+
+    gab_value *ks = malloc(self->constants.len * sizeof(gab_value));
+    memcpy(ks, self->constants.data, self->constants.len * sizeof(gab_value));
+
+    self->thread_bytecode[i] = (struct src_bytecode){bc, ks};
+  }
+}
+
+void gab_srcdestroy(struct gab_src *self);
+
 /**
  * @class The 'engine'. Stores the long-lived data
  * needed for the gab environment.
@@ -445,20 +471,27 @@ struct gab_eg {
   _Atomic int8_t njobs;
 
   uint64_t hash_seed;
-  gab_joberr_f joberr_handler;
 
   v_gab_value scratch;
+
+  v_gab_value_thrd err;
 
   gab_value types[kGAB_NKINDS];
 
   struct gab_sig {
-    int8_t schedule;
-    int8_t signal;
+    _Atomic int8_t schedule;
+    _Atomic int8_t signal;
   } sig;
+
+  const char *resroots[cGAB_RESOURCE_MAX];
+
+  struct gab_resource res[cGAB_RESOURCE_MAX];
 
   struct gab_gc gc;
 
-  gab_value messages, work_channel;
+  _Atomic gab_value messages;
+  _Atomic uint64_t messages_epoch;
+  gab_value work_channel;
 
   mtx_t shapes_mtx;
   gab_value shapes;
@@ -472,7 +505,7 @@ struct gab_eg {
   mtx_t modules_mtx;
   d_gab_modules modules;
 
-  uint64_t len;
+  uint32_t wait, len;
 
   struct gab_job {
     thrd_t td;
@@ -494,7 +527,7 @@ struct gab_eg {
 
 union gab_value_pair gab_vmexec(struct gab_triple gab, gab_value fiber);
 
-bool gab_wkspawn(struct gab_triple gab);
+bool gab_wkspawn(struct gab_triple gab, gab_value fiber);
 
 void gab_gccreate(struct gab_triple gab);
 
@@ -543,6 +576,7 @@ struct gab_err_argt {
   const char *note_fmt;
   struct gab_src *src;
   uint64_t tok;
+  int wkid;
 };
 
 /*
@@ -550,22 +584,6 @@ struct gab_err_argt {
  */
 gab_value gab_vspanicf(struct gab_triple gab, va_list vastruct,
                        struct gab_err_argt args);
-
-/**
- * @brief Format the given string to the given stream.
- *
- * This format function does *not* respect the %-style formatters like printf.
- * The only supported formatter is $, which will use the next gab_value in the
- * var args.
- *
- * eg:
- * `gab_fprintf(stdout, "foo $", gab_string(gab, "bar"));`c
- *
- * @param stream The stream to print to
- * @param fmt The format string
- * @return the number of bytes written to the stream.
- */
-GAB_API int gab_fprintf(FILE *stream, const char *fmt, ...);
 
 /**
  * @brief Print the bytecode to the stream - useful for debugging.
@@ -636,6 +654,8 @@ static inline int gsnprintf_through(char **dst, size_t *n, const char *fmt,
 
   return res;
 }
+
+bool gab_wkspawn(struct gab_triple gab, gab_value fiber);
 
 gab_value __gab_shape(struct gab_triple gab, uint64_t len);
 

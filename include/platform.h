@@ -1,24 +1,8 @@
 #ifndef GAB_PLATFORM_H
 #define GAB_PLATFORM_H
 
-#include "core.h"
-
-/**
- * C11 Threads are not well supported cross-platforms.
- *
- * Even the c-standard-required feature macro __STDC_NOTHREADS__
- * isn't well supported.
- *
- * Instead of mucking about, just check for the standard threads with
- * a good 'ol __has_include.
- *
- * As of 2025, I believe only linux GNU is shipping this (at least in zig's
- * cross compiling toolchain).
- *
- * In the other cases, use our vendored, cthreads submodule as a cross platform
- * replacement until c11 threads is supported.
- */
-#include "threads.h"
+#include "gab.h"
+#include <stdio.h>
 
 /**
  * PLATFORM INTERFACE
@@ -46,6 +30,12 @@
  * gab_osfisready(f)
  * Check if a FILE* has data to be read.
  *
+ * gab_osexepath()
+ * return the path of the exe.
+ *
+ * gab_osrm(path)
+ * Remove the file at a path.
+ *
  * %----------------------%
  * | Directory Operations |
  * %----------------------%
@@ -61,7 +51,11 @@
  * %----------------------------%
  * | Gab/Platform Install Stuff |
  * %----------------------------%
- * gab_osprefix(version)
+ * gab_osprefix_install(version)
+ * Determine the gab_prefix for the given operating system, with the given gab
+ * version.
+ *
+ * gab_osprefix_tmp(version)
  * Determine the gab_prefix for the given operating system, with the given gab
  * version.
  *
@@ -72,23 +66,69 @@
  * Assign a new signal handler *handler* for signal *signal*
  */
 
-#define GAB_DYNLIB_MAIN "gab_lib"
-
-#define GAB_API_INLINE static inline
-
-#ifdef GAB_CORE
-#define GAB_API [[__gnu__::__used__]]
-#else
-#define GAB_API extern
-#endif
-
-#define GAB_DYNLIB_MAIN_FN union gab_value_pair gab_lib(struct gab_triple gab)
-
 #define gab_osproc(cmd, ...)                                                   \
   ({                                                                           \
-    char *_args[] = {__VA_ARGS__};                                             \
+    const char *_args[] = {__VA_ARGS__};                                             \
     gab_nosproc(cmd, sizeof(_args) / sizeof(char *), _args);                   \
   })
+
+GAB_API_INLINE a_char *gab_fosread(FILE *fd) {
+  v_char buffer = {0};
+
+  while (1) {
+    int c = fgetc(fd);
+
+    if (c == EOF)
+      break;
+
+    v_char_push(&buffer, c);
+  }
+
+  v_char_push(&buffer, '\0');
+
+  a_char *data = a_char_create(buffer.data, buffer.len);
+
+  v_char_destroy(&buffer);
+
+  return data;
+}
+
+GAB_API_INLINE a_char *gab_osread(const char *path) {
+  FILE *file = fopen(path, "rb");
+
+  if (file == nullptr)
+    return nullptr;
+
+  a_char *data = gab_fosread(file);
+
+  fclose(file);
+  return data;
+}
+
+GAB_API_INLINE a_char *gab_fosreadl(FILE *fd) {
+  v_char buffer;
+  v_char_create(&buffer, 1024);
+
+  for (;;) {
+    int c = fgetc(fd);
+
+    v_char_push(&buffer, c);
+
+    if (c == '\n' || c == EOF)
+      break;
+  }
+
+  v_char_push(&buffer, '\0');
+
+  a_char *data = a_char_create(buffer.data, buffer.len);
+
+  v_char_destroy(&buffer);
+
+  return data;
+}
+
+#define GAB_MAXEXEPATH 2048
+static char _exepath[GAB_MAXEXEPATH];
 
 #ifdef GAB_PLATFORM_UNIX
 #include <dlfcn.h>
@@ -110,25 +150,91 @@ GAB_API_INLINE bool gab_osfisready(FILE *f) {
   return poll(&fd, 1, 0) > 0;
 }
 
+#ifdef GAB_PLATFORM_MACOS
+#include <mach-o/dyld.h>
+#endif
+
+GAB_API_INLINE const char *gab_osexepath() {
+#ifdef GAB_PLATFORM_MACOS
+  uint32_t size = GAB_MAXEXEPATH;
+  if (_NSGetExecutablePath((char *)&_exepath, &size) != 0)
+    return nullptr;
+
+  return _exepath;
+#elifdef GAB_PLATFORM_LINUX
+  ssize_t len = readlink("/proc/self/exe", _exepath, GAB_MAXEXEPATH);
+
+  if (len <= 0)
+    return nullptr;
+
+  _exepath[len] = '\0';
+
+  return _exepath;
+#else
+#error "INVALID GAB UNIX PLATFORM"
+#endif
+}
+
 #define gab_osdynlib void *
 #define gab_oslibopen(path) dlopen(path, RTLD_NOW)
 #define gab_oslibfind(dynlib, name) (void (*)(void)) dlsym(dynlib, name)
 
-GAB_API_INLINE const bool gab_osmkdirp(const char *path) {
-  int res = mkdir(path, 0755);
+GAB_API_INLINE const int gab_osmkdirp(const char *path) {
+  char *dup = strdup(path);
 
-  if (res == 0)
-    return true; // Directory created
+  /*
+   * Starting from our duplicated string:
+   *   strchr from our 'cursor' forwards for a '/'.
+   *   If we find a '/', replace it with a '\0'.
+   *    This creates a new substring, from dup -> slash
+   *   Create a directory with this substring.
+   *   Rewrite the '/' to slash, replacing the null byte.
+   *   Move the cursor beyond the slash.
+   */
+  for (char *cursor = dup; *cursor;) {
+    char *slash = strchr(cursor, '/');
 
-  if (errno == EEXIST)
-    return true; // Directory already existed
+    if (slash)
+      *slash = '\0';
 
-  printf("ERR: %s\n", strerror(errno));
-  // Some other error occurred
-  return false;
+    if (!strlen(dup))
+      goto next;
+
+    int res = mkdir(dup, 0755);
+
+    if (res < 0 && errno != EEXIST)
+      return free(dup), errno;
+
+    if (!slash)
+      break;
+
+  next:
+    *slash = '/';
+    cursor = slash + 1;
+  }
+
+  return free(dup), 0;
 }
 
-GAB_API_INLINE const char *gab_osprefix(const char *v) {
+GAB_API_INLINE const bool gab_osrm(const char *path) {
+  int res = remove(path);
+
+  if (res < 0)
+    return errno != ENOENT;
+
+  return 0;
+}
+
+GAB_API_INLINE char *gab_osprefix_temp(const char *v) {
+  v_char str = {0};
+  v_char_spush(&str, s_char_cstr("/tmp/"));
+  v_char_spush(&str, s_char_cstr(v));
+  v_char_push(&str, '\0');
+
+  return str.data;
+}
+
+GAB_API_INLINE char *gab_osprefix_install(const char *v) {
   char *home = getenv("HOME");
 
   if (!home)
@@ -144,7 +250,7 @@ GAB_API_INLINE const char *gab_osprefix(const char *v) {
   return str.data;
 }
 
-GAB_API_INLINE int gab_nosproc(char *cmd, size_t nargs, char *args[]) {
+GAB_API_INLINE int gab_nosproc(char *cmd, size_t nargs, const char *args[]) {
   pid_t pid = fork();
 
   if (pid < 0)
@@ -173,7 +279,7 @@ GAB_API_INLINE int gab_nosproc(char *cmd, size_t nargs, char *args[]) {
   }
 
   // This implicitly appends a null-value, as it is initialized to zero.
-  char *cmd_args[nargs + 2] = {};
+  char *cmd_args[nargs + 2];
 
   cmd_args[0] = cmd;
   memcpy(cmd_args + 1, args, sizeof(const char *) * nargs);
@@ -201,18 +307,75 @@ GAB_API_INLINE int gab_nosproc(char *cmd, size_t nargs, char *args[]) {
 #include <tchar.h>
 #include <wchar.h>
 #include <windows.h>
+#include <direct.h>
 
 #define gab_ossignal(sig, handler) signal(sig, handler)
 
+#define gab_osfileno(f) (_fileno(f))
 #define gab_osfisatty(f) _isatty(_fileno(f))
 
 #define gab_osdynlib HMODULE
 #define gab_oslibopen(path) LoadLibraryA(path)
 #define gab_oslibfind(dynlib, name)                                            \
   ((void (*)(void))GetProcAddress(dynlib, name))
-#define gab_osmkdirp(path) mkdir(path)
 
-GAB_API_INLINE const char *gab_osprefix(const char *v) {
+GAB_API_INLINE const int gab_osmkdirp(const char *path) {
+  char *dup = strdup(path);
+
+  /*
+   * Starting from our duplicated string:
+   *   strchr from our 'cursor' forwards for a '/'.
+   *   If we find a '/', replace it with a '\0'.
+   *    This creates a new substring, from dup -> slash
+   *   Create a directory with this substring.
+   *   Rewrite the '/' to slash, replacing the null byte.
+   *   Move the cursor beyond the slash.
+   */
+  for (char *cursor = dup; *cursor;) {
+    char *slash = strchr(cursor, '/');
+
+    if (slash)
+      *slash = '\0';
+
+    if (!strlen(dup))
+      goto next;
+
+    int res = _mkdir(dup, 0755);
+
+    if (res < 0 && errno != EEXIST)
+      return free(dup), errno;
+
+    if (!slash)
+      break;
+
+  next:
+    *slash = '/';
+    cursor = slash + 1;
+  }
+
+  return free(dup), 0;
+}
+
+GAB_API_INLINE const bool gab_osrm(const char *path) {
+  int res = remove(path);
+
+  if (res < 0)
+    return errno != ENOENT;
+
+  return 0;
+}
+
+
+GAB_API_INLINE const char *gab_osexepath() {
+  DWORD len = GetModuleFileNameA(NULL, _exepath, GAB_MAXEXEPATH);
+
+  if (len == 0)
+    return nullptr;
+
+  return _exepath;
+}
+
+GAB_API_INLINE char *gab_osprefix_temp(const char *v) {
   PWSTR path = NULL;
 
   HRESULT status = SHGetKnownFolderPath(&FOLDERID_LocalAppData, 0, NULL, &path);
@@ -228,11 +391,39 @@ GAB_API_INLINE const char *gab_osprefix(const char *v) {
 
   char buffer[length + 1];
   wcsrtombs(buffer, &path, length, &state);
+  buffer[length] = '\0';
 
   v_char str = {0};
 
   v_char_spush(&str, s_char_cstr(buffer));
-  v_char_spush(&str, s_char_cstr("/gab/"));
+  v_char_spush(&str, s_char_cstr("\\Temp\\"));
+  v_char_spush(&str, s_char_cstr(v));
+  v_char_push(&str, '\0');
+
+  return str.data;
+}
+GAB_API_INLINE char *gab_osprefix_install(const char *v) {
+  PWSTR path = NULL;
+
+  HRESULT status = SHGetKnownFolderPath(&FOLDERID_LocalAppData, 0, NULL, &path);
+
+  if (!SUCCEEDED(status))
+    return nullptr;
+
+  mbstate_t state = {0};
+  size_t length = wcsrtombs(NULL, &path, 0, &state);
+
+  if (length == -1)
+    return nullptr;
+
+  char buffer[length + 1];
+  wcsrtombs(buffer, &path, length, &state);
+  buffer[length] = '\0';
+
+  v_char str = {0};
+
+  v_char_spush(&str, s_char_cstr(buffer));
+  v_char_spush(&str, s_char_cstr("\\gab\\"));
   v_char_spush(&str, s_char_cstr(v));
   v_char_push(&str, '\0');
 
@@ -240,7 +431,7 @@ GAB_API_INLINE const char *gab_osprefix(const char *v) {
 }
 
 GAB_API_INLINE bool gab_osfisready(FILE *f) {
-  HANDLE *h = (HANDLE) _get_osfhandle(_fileno(f));
+  HANDLE *h = (HANDLE)_get_osfhandle(_fileno(f));
   DWORD result = WaitForSingleObject(h, 0);
   return result == WAIT_OBJECT_0;
 }
@@ -277,7 +468,7 @@ GAB_API_INLINE int gab_nosproc(char *cmd, size_t nargs, char *args[]) {
                      &si,     // Pointer to STARTUPINFO structure
                      &pi)     // Pointer to PROCESS_INFORMATION structure
   ) {
-    return 1;
+    return GetLastError();
   }
 
   // Wait until child process exits.
@@ -289,6 +480,21 @@ GAB_API_INLINE int gab_nosproc(char *cmd, size_t nargs, char *args[]) {
   return 0;
 }
 
+#elifdef GAB_PLATFORM_WASI
+#include <signal.h>
+
+#define gab_osdynlib void *
+#define gab_oslibopen(path) (nullptr)
+#define gab_oslibfind(dynlib, name) (nullptr)
+GAB_API_INLINE const char *gab_osprefix(const char *v) { return ""; }
+
+#define gab_ossignal(sig, handler) signal(sig, handler)
+
+GAB_API_INLINE int gab_nosproc(char *cmd, size_t nargs, char *args[]) {
+  return 1;
+}
+
+GAB_API_INLINE const int gab_osmkdirp(const char *path) { return false; }
 #endif
 
 #endif

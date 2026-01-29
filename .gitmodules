@@ -1,15 +1,9 @@
 [submodule "vendor/jsmn"]
 	path = vendor/jsmn
 	url = https://github.com/zserge/jsmn
-[submodule "vendor/curl"]
-	path = vendor/curl
-	url = https://github.com/curl/curl.git
 [submodule "vendor/zip"]
 	path = vendor/zip
 	url = https://github.com/nih-at/libzip.git
-[submodule "vendor/termbox"]
-	path = vendor/termbox
-	url = https://github.com/termbox/termbox2.git
 [submodule "vendor/libgrapheme"]
 	path = vendor/libgrapheme
 	url = https://git.suckless.org/libgrapheme
@@ -19,15 +13,6 @@
 [submodule "vendor/bencode-c"]
 	path = vendor/bencode-c
 	url = https://github.com/TeddyRandby/bencode-c-headeronly.git
-[submodule "vendor/sdl"]
-	path = vendor/sdl
-	url = https://github.com/libsdl-org/SDL
-[submodule "vendor/nuklear"]
-	path = vendor/nuklear
-	url = https://github.com/Immediate-Mode-UI/Nuklear.git
-[submodule "vendor/sdl3"]
-	path = vendor/sdl3
-	url = https://github.com/libsdl-org/SDL.git
 [submodule "vendor/RGFW"]
 	path = vendor/RGFW
 	url = https://github.com/ColleagueRiley/RGFW.git
@@ -46,15 +31,6 @@
 [submodule "vendor/x11-headers"]
 	path = vendor/x11-headers
 	url = https://github.com/hexops/x11-headers.git
-[submodule "RSGL"]
-	path = RSGL
-	url = https://github.com/ColleagueRiley/RSGL.git
-[submodule "vend"]
-	path = vend
-	url = https://github.com/ColleagueRiley/RSGL.git
-[submodule "vendor/RSGL"]
-	path = vendor/RSGL
-	url = https://github.com/ColleagueRiley/RSGL.git
 [submodule "vendor/Clay"]
 	path = vendor/Clay
 	url = https://github.com/nicbarker/clay.git
@@ -64,3 +40,36 @@
 [submodule "vendor/fontstash"]
 	path = vendor/fontstash
 	url = https://github.com/memononen/fontstash.git
+[submodule "vendor/BearSSL"]
+	path = vendor/BearSSL
+	url = https://www.bearssl.org/git/BearSSL
+[submodule "vendor/llhttp"]
+	path = vendor/llhttp
+	url = https://github.com/nodejs/llhttp.git
+[submodule "vendor/furi"]
+	path = vendor/furi
+	url = https://github.com/iboB/furi.git
+[submodule "vendor/apache-arrow"]
+	path = vendor/apache-arrow
+	url = https://github.com/apache/arrow.git
+[submodule "vendor/termbox2"]
+	path = vendor/termbox2
+	url = https://github.com/termbox/termbox2.git
+[submodule "vendor/stb"]
+	path = vendor/stb
+	url = https://github.com/nothings/stb.git
+[submodule "vendor/miniz"]
+	path = vendor/miniz
+	url = https://github.com/richgel999/miniz.git
+[submodule "vendor/sqlite"]
+	path = vendor/sqlite
+	url = https://github.com/sqlite/sqlite.git
+[submodule "vendor/duckdb"]
+	path = vendor/duckdb
+	url = https://github.com/duckdb/duckdb.git
+[submodule "vendor/crossline"]
+	path = vendor/crossline
+	url = https://github.com/jcwangxp/Crossline.git
+[submodule "vendor/unthread"]
+	path = vendor/unthread
+	url = https://github.com/mpdn/unthread.git

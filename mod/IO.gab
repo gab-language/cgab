@@ -1,13 +1,39 @@
 io = 'cio'.use
 
-stdout = io.stdout
-
-println:.def () => stdout.write('$\n'.sprintf(self))
+eprintln:.def () => io.stderr.write('$\n'.sprintf(self).to\b)
+println:.def () => io.stdout.write('$\n'.sprintf(self).to\b)
 
 printf:.def(
   Strings.t
   (args*) => do
-    stdout.write(self.sprintf(args*))
+    io.stdout.write(self.psprintf(args*).to\b)
   end)
+
+#Socket = io.Sock
+#File = io.File
+
+_doconnect: .defcase {
+  ok: (sock, hostname, port) => do
+    (sock.connect(hostname, port), sock)
+  end
+  err: (err) => (err: err)
+}
+
+# Is this a good api?
+[io].defmodule {
+  connect: (protocol hostname port) => do
+    io.Sockets
+        .make(protocol)
+        ._doconnect(hostname, port)
+  end
+}
+
+[io.Sockets.t, io.Files.t] .defmodule {
+  <!: (arg) => do 
+    self.write(arg.to\s.to\b)
+
+    self
+  end
+}
 
 io

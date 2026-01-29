@@ -1,3 +1,12 @@
+'cgab'.use
+ui = 'cgui'.use
+
+(events, app) = (Channels.make, Channels.make)
+
+ui
+  .run\tui(events, app)
+  .unwrap
+
 is\unittest:.def(
   Messages.t
   () => self.to\s.has\ending "\test")
@@ -14,7 +23,7 @@ xf = Streams.filter((_ m) => m.is\unittest)
 # Collect all the implementations into a giant, nested map.
 tests\all = implementations.transduce(
   {}
-  (t p i) => t.put_via(i p*)
+  (t p i) => t.put_via(p*, i)
   xf
 )
 
@@ -23,61 +32,249 @@ suites\all = tests\all.reduce(
   (suites _ suite) => suites.put(suite Channels.make)
 )
 
-test\compare: .def (
-  Blocks.t, Messages.t
-  (lhs rhs) => self.(lhs, rhs)
-)
+test\compare: .defcase {
+  Blocks.t, (lhs rhs) => self.(lhs, rhs)
+
+  ==: (lhs rhs) => lhs == rhs
+
+  <: (lhs rhs) => lhs < rhs
+
+  is\nan: (lhs) => lhs.is\nan
+
+  is\inf: (lhs) => lhs.is\inf
+}
 
 test\result\t = { test\path: nil: test\receiver: nil: }?
-test\result\pass\t = { test\path: nil: test\receiver: nil: test\meta: nil:  true: nil: }?
-test\result\fail\t = { test\path: nil: test\receiver: nil: test\meta: nil: false: nil: }?
 
 [test\result\t] .defmodule {
   expect: (lhs cmp rhs) => do
     # Run the comparison of the expect
-    test\outcome = cmp .test\compare (lhs, rhs)
+    behavior\outcome = cmp .test\compare (lhs, rhs)
     # Get the suite we're executing
     suite = self.test\path .at 0 .unwrap
-    chan = suites\all .at suite .unwrap
     # Queue up the outcome of the comparison
-    chan <! self .put (test\meta: { lhs: lhs, cmp: cmp, rhs: rhs }) .put test\outcome
+    events <! (resolve: behavior\outcome, self.test\path, { lhs: lhs, cmp: cmp, rhs: rhs })
   end,
 }
 
-test\result\display: .defcase {
-  test\result\pass\t _ => do
-    #' ✔ $ $ $\n' .printf (self.test\meta*)
-    nil:
-  end
-  test\result\fail\t  _ => do
-    (suite behavior) = self.test\path*
-    msg = ' ❌$ should $\n\t$ $ $'.sprintf(suite, behavior, self.test\meta*)
-    msg.println
-  end,
-}
+Suite = test\suite:.defclass(
+  suite\behaviors: suite\name:
+  default:
+  {
+  })
 
-Fibers.make () => do
-  suites\all .each (c s) => do
-    msg = '✔ $'.sprintf(s)
-    msg.println
-    c .each test\result\display:
-  end
-end
+Behavior = test\behavior:.defclass(
+  behavior\path: behavior\meta: behavior\outcome:
+  default:
+  {
+  })
 
-() => do
-  fibers = tests\all.map (behaviors suite) => do 
-      Fibers.make () => do
-        behaviors.each (runnable behavior) => do 
-          (path body) = runnable*
-          body.each(t r) => do
-            t.{ test\path: path, test\receiver: r }
+queue_tests = (filter_by_suite) => do
+  Fibers.make () => do
+    xf = Streams.map (behaviors suite) => do
+        events <! (suite: Suite.make([] suite))
+
+        Fibers.make () => do
+          behaviors.each (runnable behavior) => do 
+            (path body) = runnable*
+
+            events <! (behavior: Behavior.make(path nil: nil:))
+
+            body.each(t r) => do
+              t.{ test\path: path, test\receiver: r }
+            end
+
+            ok:
           end
-        end
 
-        chan = suites\all.at suite .unwrap
-        chan.close
-      end
+          suites\all
+            .at suite
+            .unwrap
+            .close
+        end
     end
 
-  fibers.each await:
+    xf = filter_by_suite.== nil: .!
+        .then(() => do
+          Streams.filter((_, suite) => filter_by_suite == suite)
+          |> xf
+        end)
+        .or xf
+    
+    fibers = tests\all.collect([] xf)
+
+    fibers.map f => f.await
+
+    #TODO: Make this configurable from the cmdline
+    events.close
+    app.close
+  end
 end
+
+handle\keydown: .defcase {
+  r: (ev model) => do
+    queue_tests.()
+    model.app\reset
+  end
+  k: (ev model) => do
+    model.put_by(selected: (old) => do
+      (old == 0)
+        .and old
+        .or(old--)
+    end)
+  end
+  j: (ev model) => do
+    len = suites\all.len
+    model.put_by(selected: (old) => do
+      (old == (len - 1))
+        .and old
+        .or(old++)
+    end)
+  end
+  Messages.t
+  (ev model) => model
+}
+
+handle\keyup: .defcase {
+  Messages.t
+  (ev model) => model
+}
+
+handle\key: .defcase {
+  true: (msg ev model) => msg.handle\keydown(ev model)
+  false: (msg ev model) => msg.handle\keyup(ev model)
+}
+
+handle\type: .defcase {
+  tick:  (ev model) => do
+    # Tick time
+    model.put_via_by(time: t => t++)
+  end
+  mouse: (ev model) => do
+    model
+  end
+  key:   (ev model) => do
+    keymsg = ev.at 0 .unwrap
+    down = ev.at 2 .unwrap
+    down.handle\key(keymsg ev model)
+  end
+  suite: (ev model) => do
+    suite = ev .at 0 .unwrap
+    model.app\push_suite(suite)
+  end
+  behavior: (ev model) => do
+    behavior = ev .at 0 .unwrap
+    model.app\push_behavior(behavior)
+  end
+  resolve: (ev model) => do
+    model.app\resolve_behavior(ev*)
+  end
+}
+
+spinner = "⣾⣾⣽⣽⣻⣻⢿⢿⡿⡿⣟⣟⣯⣯⣷⣷".collect []
+
+App = test\app:.defclass(
+  test\suites: test\tests: time: selected:
+  default:
+  {
+    app\controller: (type ev*) => do
+      type.handle\type(ev self)
+    end
+    app\reset: () => do
+      self
+        .put(test\suites: {})
+        .put(test\tests: {})
+    end
+    app\push_suite: (suite) => do
+      self
+        .put_via(test\suites:, suite.suite\name, suite)
+    end
+    app\push_behavior: (behavior) => do
+      suite = behavior.behavior\path.at 0 .unwrap
+      bhv = behavior.behavior\path.at 1 .unwrap
+
+      self
+        .put_via(test\suites: suite suite\behaviors: bhv behavior)
+    end
+    app\resolve_behavior: (outcome path meta) => do
+      suite = path.at 0 .unwrap
+      bhv = path.at 1 .unwrap
+      self
+        .put_via(test\suites: suite suite\behaviors: bhv behavior\outcome: outcome)
+        .put_via(test\suites: suite suite\behaviors: bhv behavior\meta: meta)
+        .put_via(test\suites: suite suite\behaviors: bhv behavior\path: path)
+    end
+    app\view: () => do
+      app = self
+
+      (ok, selected_key) = app.test\suites.?.at(app.selected)
+      (has_selected, selected) = ok.then () => app.test\suites.at(selected_key)
+      [
+        [
+          box:
+          { height\grow: 1 width\grow: 1 layout: "horizontal" }
+          [
+            [
+              box:
+              { padding\top: 16 height\grow: 1 width\relative: 50 border: { width: 1 } }
+              self.test\suites.map (suite, name) => do
+                pass_behaviors = suite
+                  .suite\behaviors
+                  .collect([] Streams.filter (b => b.behavior\outcome == true:))
+
+                fail_behaviors = suite
+                  .suite\behaviors
+                  .collect([] Streams.filter(b => b.behavior\outcome == false:))
+
+                waiting = suites\all .at name .unwrap .is\closed.!
+
+                spinner_char = (waiting)
+                  .then(() => spinner.at(app.time % spinner.len).unwrap)
+                  .or " "
+
+                color = (selected == suite).and('0xff0000ff'.as\n).or('0xffffffff'.as\n)
+
+                [
+                  box:
+                  { width\grow: 1 padding\left: 16 }
+                  [
+                    [text: { color: color size: 32 content: "$ $ $ ✔  $ ✘".sprintf(spinner_char, name, pass_behaviors.len, fail_behaviors.len) }]
+                  ]
+                ]
+              end
+            ]
+            [
+              box:
+              { padding: 8 height\grow: 1 width\grow: 1 border: { width: 1 } }
+              has_selected
+                .then(() => do
+                  selected
+                    .suite\behaviors
+                    .map((bhv) => do
+                      [text: { size: 32 content: bhv.behavior\path.join("" Streams.interpose "should" |> Streams.interpose " ") }]
+                    end)
+                end)
+                .or([[text: { size: 32 content: "none" }]])
+            ]
+          ]
+        ]
+      ]
+    end
+  })
+
+model = App.make({} {} 0 0)
+
+queue_tests.()
+
+events
+  .pipe(
+    app,
+    Streams.take_until((e, key) => do
+      (e == key:) & (key == escape:)
+    end)
+    |> Streams.reduce(model (model, args*) => model.app\controller (args*))
+    |> Streams.map(app => app.app\view)
+  )
+
+app.close
+events.close

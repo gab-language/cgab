@@ -1,0 +1,47 @@
+s = 'Specs'.use true:
+
+test = s.cat(
+  'status' s.int
+  'name'   s+(s.string))
+
+test.spec\fits(12)
+
+test.spec\fits(12 12)
+
+test.spec\fits(42 'hello')
+
+test.spec\fits(42 'hello' 'world' 'world' 'world')
+
+test.spec\fits(42 'hello' 12)
+
+ints = s+(s.int)
+atleastoneString = s+(s.string)
+nextest = s.cat(
+  'ints' ints
+  'strings' atleastoneString)
+
+nextest.spec\fits('hi')
+
+nextest.spec\fits(12 32)
+
+nextest.spec\fits(12 'hello' 'world')
+
+nextest.spec\fits(12 31 23 'hello' 'world' 'again')
+
+nextest.spec\fits(12 42 'world')
+
+nextest.spec\fits(12 42 'hello' 'world')
+
+nextest.spec\fits(12 'hello' 42 'world')
+
+nextest.spec\fits('hello')
+
+nextest.spec\fits(1)
+
+nested = s.cat(
+  'nextest' nextest
+  'ints2' ints)
+
+nested.spec\fits(12 'hello')
+
+nested.spec\fits(12 21 32 'hello' 21 22)

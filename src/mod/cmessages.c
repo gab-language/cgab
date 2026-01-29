@@ -1,7 +1,26 @@
 #include "gab.h"
 
-union gab_value_pair gab_msglib_message(struct gab_triple gab, uint64_t argc,
-                                        gab_value argv[static argc]) {
+GAB_DYNLIB_NATIVE_FN(block, env) {
+  gab_value block = gab_arg(0);
+
+  if (gab_valkind(block) != kGAB_BLOCK)
+    return gab_pktypemismatch(gab, block, kGAB_BLOCK);
+
+  gab_vmpush(gab_thisvm(gab), gab_blkenv(block));
+  return gab_union_cvalid(gab_nil);
+}
+
+GAB_DYNLIB_NATIVE_FN(block, params) {
+  gab_value block = gab_arg(0);
+
+  if (gab_valkind(block) != kGAB_BLOCK)
+    return gab_pktypemismatch(gab, block, kGAB_BLOCK);
+
+  gab_vmpush(gab_thisvm(gab), gab_blkparams(gab, block));
+  return gab_union_cvalid(gab_nil);
+}
+
+GAB_DYNLIB_NATIVE_FN(message, create) {
   gab_value name = gab_arg(1);
 
   if (gab_valkind(name) != kGAB_STRING)
@@ -11,8 +30,7 @@ union gab_value_pair gab_msglib_message(struct gab_triple gab, uint64_t argc,
   return gab_union_cvalid(gab_nil);
 }
 
-union gab_value_pair gab_msglib_to_string(struct gab_triple gab, uint64_t argc,
-                                          gab_value argv[static argc]) {
+GAB_DYNLIB_NATIVE_FN(message, tos) {
   gab_value msg = gab_arg(0);
 
   gab_vmpush(gab_thisvm(gab), gab_msgtostr(msg));
@@ -20,8 +38,26 @@ union gab_value_pair gab_msglib_to_string(struct gab_triple gab, uint64_t argc,
   return gab_union_cvalid(gab_nil);
 }
 
-union gab_value_pair gab_msglib_specs(struct gab_triple gab, uint64_t argc,
-                                      gab_value argv[static argc]) {
+GAB_DYNLIB_NATIVE_FN(message, gen) {
+  static _Atomic int64_t n;
+  int64_t this_n = atomic_fetch_add(&n, 1);
+
+  gab_value prefix = gab_arg(1);
+  if (prefix == gab_nil)
+    prefix = gab_string(gab, "G__");
+
+  char buf[4096];
+  int len = gab_sprintf(buf, sizeof buf, "$$", prefix, gab_number(this_n));
+
+  if (len < 0)
+    return gab_panicf(gab, "sprintf buffer too small", gab_number(argc - 1));
+
+  gab_value msg = gab_nmessage(gab, len, buf);
+  gab_vmpush(gab_thisvm(gab), msg);
+  return gab_union_cvalid(gab_nil);
+}
+
+GAB_DYNLIB_NATIVE_FN(message, specs) {
   if (argc == 1) {
     gab_value rec = gab_thisfibmsg(gab);
     gab_vmpush(gab_thisvm(gab), rec);
@@ -41,8 +77,7 @@ union gab_value_pair gab_msglib_specs(struct gab_triple gab, uint64_t argc,
   return gab_union_cvalid(gab_nil);
 }
 
-union gab_value_pair gab_msglib_has(struct gab_triple gab, uint64_t argc,
-                                    gab_value argv[static argc]) {
+GAB_DYNLIB_NATIVE_FN(message, has) {
   switch (argc) {
   case 2: {
 
@@ -56,8 +91,7 @@ union gab_value_pair gab_msglib_has(struct gab_triple gab, uint64_t argc,
   }
 }
 
-union gab_value_pair gab_msglib_at(struct gab_triple gab, uint64_t argc,
-                                   gab_value argv[static argc]) {
+GAB_DYNLIB_NATIVE_FN(message, at) {
   gab_value m = gab_arg(0);
   gab_value k = gab_arg(1);
 
@@ -74,18 +108,7 @@ union gab_value_pair gab_msglib_at(struct gab_triple gab, uint64_t argc,
   return gab_union_cvalid(gab_nil);
 }
 
-union gab_value_pair gab_msglib_string_into(struct gab_triple gab,
-                                            uint64_t argc,
-                                            gab_value argv[static argc]) {
-  gab_value m = gab_arg(0);
-
-  gab_vmpush(gab_thisvm(gab), gab_msgtostr(m));
-
-  return gab_union_cvalid(gab_nil);
-}
-
-union gab_value_pair gab_msglib_put(struct gab_triple gab, uint64_t argc,
-                                    gab_value argv[static argc]) {
+GAB_DYNLIB_NATIVE_FN(message, put) {
   gab_value msg = gab_arg(0);
   gab_value rec = gab_arg(1);
   gab_value spec = gab_arg(2);
@@ -100,8 +123,7 @@ union gab_value_pair gab_msglib_put(struct gab_triple gab, uint64_t argc,
   return gab_union_cvalid(gab_nil);
 }
 
-union gab_value_pair gab_msglib_def(struct gab_triple gab, uint64_t argc,
-                                    gab_value argv[static argc]) {
+GAB_DYNLIB_NATIVE_FN(message, def) {
   gab_value msg = gab_arg(0);
   gab_value spec = gab_arg(argc - 1);
 
@@ -132,8 +154,7 @@ union gab_value_pair gab_msglib_def(struct gab_triple gab, uint64_t argc,
   return gab_union_cvalid(gab_nil);
 }
 
-union gab_value_pair gab_msglib_case(struct gab_triple gab, uint64_t argc,
-                                     gab_value argv[static argc]) {
+GAB_DYNLIB_NATIVE_FN(message, case) {
   gab_value msg = gab_arg(0);
   gab_value cases = gab_arg(1);
 
@@ -154,8 +175,7 @@ union gab_value_pair gab_msglib_case(struct gab_triple gab, uint64_t argc,
   return gab_union_cvalid(gab_nil);
 }
 
-union gab_value_pair gab_msglib_module(struct gab_triple gab, uint64_t argc,
-                                       gab_value argv[static argc]) {
+GAB_DYNLIB_NATIVE_FN(message, module) {
   gab_value cases = gab_arg(0);
   gab_value messages = gab_arg(1);
 
@@ -211,44 +231,59 @@ GAB_DYNLIB_MAIN_FN {
               gab_type(gab, kGAB_BLOCK),
           },
           {
+              gab_message(gab, "env"),
+              gab_type(gab, kGAB_BLOCK),
+              gab_snative(gab, "env", gab_mod_block_env),
+          },
+          {
+              gab_message(gab, "params"),
+              gab_type(gab, kGAB_BLOCK),
+              gab_snative(gab, "params", gab_mod_block_params),
+          },
+          {
               gab_message(gab, "t"),
-              gab_strtomsg(t),
+              mod,
               t,
+          },
+          {
+              gab_message(gab, "gen"),
+              mod,
+              gab_snative(gab, "gen", gab_mod_message_gen),
           },
           {
               gab_message(gab, "specializations"),
               mod,
-              gab_snative(gab, "specializations", gab_msglib_specs),
+              gab_snative(gab, "specializations", gab_mod_message_specs),
           },
           {
               gab_message(gab, "def"),
               t,
-              gab_snative(gab, "def", gab_msglib_def),
+              gab_snative(gab, "def", gab_mod_message_def),
           },
           {
               gab_message(gab, "defcase"),
               t,
-              gab_snative(gab, "defcase", gab_msglib_case),
+              gab_snative(gab, "defcase", gab_mod_message_case),
           },
           {
               gab_message(gab, "defmodule"),
               gab_type(gab, kGAB_RECORD),
-              gab_snative(gab, "defmodule", gab_msglib_module),
+              gab_snative(gab, "defmodule", gab_mod_message_module),
           },
           {
               gab_message(gab, "to\\s"),
               t,
-              gab_snative(gab, "to\\s", gab_msglib_to_string),
+              gab_snative(gab, "to\\s", gab_mod_message_tos),
           },
           {
-              gab_message(gab, "has?"),
+              gab_message(gab, "has"),
               t,
-              gab_snative(gab, "has?", gab_msglib_has),
+              gab_snative(gab, "has", gab_mod_message_has),
           },
           {
               gab_message(gab, "at"),
               t,
-              gab_snative(gab, "at", gab_msglib_at),
+              gab_snative(gab, "at", gab_mod_message_at),
           });
 
   gab_value res[] = {gab_ok, mod};

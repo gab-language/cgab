@@ -1,6 +1,6 @@
 'Json'.use
 
-log\row\t = 'lsp/logs'.use
+log\row\t = 'gab/lsp/logs'.use
 
 diag\job\t = Shapes.make(
   server:
@@ -18,11 +18,11 @@ lsp\server\t = Shapes.make(
 position:.def(
   Strings.t
   (row col) => do
-    xf = Streams.map self:
+    xf = Streams.map(x => x)
       |> Streams.split '\n'
       |> Streams.drop row
       |> Streams.take 1
-      |> Streams.map join:
+      |> Streams.map((l r) => l.join r)
 
     line = self.collect xf .at 0 .unwrap
 
@@ -42,9 +42,7 @@ position:.def(
     lines = changes.reduce(lines (sofar change) => do
       str = change.at 'text' .unwrap
       range = change.at 'range' .unwrap
-      (start, end) = (range.at 'start' .unwrap, range.at 'end' .unwrap)
-
-      
+      (start, fin) = (range.at 'start' .unwrap, range.at 'end' .unwrap)
     end)
 
     self.put_via(lines server\data: uri)
@@ -97,15 +95,13 @@ make:.def(
 
 t:.def(lsp\server: lsp\server\t)
 
-logfile = IO
-  .file("/tmp/lsprpc.log" "w")
-  .unwrap
-
 _read_header:.defcase {
   ok: (lsp m) => do
     next_header = lsp
       .server\in
       .until('\n'.to\b)
+      .unwrap
+      .as\s
       .unwrap
       .trim '\n'
 
@@ -113,11 +109,14 @@ _read_header:.defcase {
     
     m = blank .and m .or(m.put(name, value))
 
-    logfile.write(next_header + '\n')
-
-    option:.(blank!, lsp, m)._read_header
+    option:.make(blank!, lsp, m)._read_header
   end
   none: (lsp m) => m
+}
+
+_read_request:.defcase {
+  true: (lsp) => (ok: nil: lsp._read_request)
+  false: none:
 }
 
 [lsp\server\t].defmodule {
@@ -137,10 +136,10 @@ _read_header:.defcase {
 
     body = self
       .server\in
-      .scan len
+      .read len
       .unwrap
-
-    logfile.write(body)
+      .as\s
+      .unwrap
 
     msg = body
       .as\json
@@ -154,22 +153,16 @@ _read_header:.defcase {
 
     self
       .server\open_ch
-      .cond {
-        is\open: () => (ok: nil: server._read_request)
-        is\closed: () => none:
-      }
-      .
+      .is\open
+      ._read_request self
   end
   seq\next: () => do
     server = self
 
     self
       .server\open_ch
-      .cond {
-        is\open: () => (ok: nil: server._read_request)
-        is\closed: () => none:
-      }
-      .
+      .is\open
+      ._read_request self
   end
   # Helpers for sending data to client
   respond: (id result) => do
@@ -180,6 +173,7 @@ _read_header:.defcase {
     res = Strings.make(
       'Content-Length:'content\length
       '\r\n\r\n'msg)
+      .to\b
 
     self.log("Response" id res)
 
@@ -197,6 +191,7 @@ _read_header:.defcase {
     notif = Strings.make(
       'Content-Length:'content\length
       '\r\n\r\n'msg)
+      .to\b
 
     self.server\out.write notif .unwrap
   end
@@ -214,7 +209,7 @@ _read_header:.defcase {
     Fibers
       .make () => server
         .server\logs
-        .each log\tofile:
+        .each(m => m.log\tofile)
 
     self.log "Server started!"
 

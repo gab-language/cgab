@@ -1,5 +1,5 @@
-#include "gab.h"
 #include "engine.h"
+#include "gab.h"
 #include <ctype.h>
 
 bool can_start_operator(uint8_t c) {
@@ -191,21 +191,49 @@ gab_token symbol(gab_lx *self) {
 }
 
 gab_token integer(gab_lx *self) {
-  if (!isdigit(peek(self)))
-    return lexer_error(self, GAB_MALFORMED_TOKEN);
-
   while (isdigit(peek(self)))
     advance(self);
 
   return TOKEN_NUMBER;
 }
 
-gab_token floating(gab_lx *self) {
+bool isexponent(char c) { return isdigit(c) || c == '+' || c == '-'; }
+
+gab_token decimal(gab_lx *self) {
+  if (integer(self) == TOKEN_ERROR)
+    return TOKEN_ERROR;
+
+  // Decimal Exponent
+  if (peek(self) == 'e' && isexponent(peek_next(self)))
+    return advance(self), advance(self), integer(self);
+
+  return TOKEN_NUMBER;
+}
+
+gab_token hex(gab_lx *self) {
+  if (integer(self) == TOKEN_ERROR)
+    return TOKEN_ERROR;
+
+  // Binary Exponent
+  if (peek(self) == 'p' && isexponent(peek_next(self)))
+    return advance(self), advance(self), integer(self);
+
+  return TOKEN_NUMBER;
+}
+
+gab_token number(gab_lx *self) {
+  if (peek(self) == '0' && peek_next(self) == 'x')
+    return advance(self), advance(self), hex(self);
+
   if (integer(self) == TOKEN_ERROR)
     return TOKEN_ERROR;
 
   if (peek(self) == '.' && isdigit(peek_next(self)))
-    return advance(self), integer(self);
+    return advance(self), advance(self), decimal(self);
+
+  // Decimal exponent
+  if (peek(self) == 'e' && isexponent(peek_next(self)))
+    return advance(self), advance(self), integer(self);
 
   return TOKEN_NUMBER;
 }
@@ -251,7 +279,7 @@ gab_token other(gab_lx *self) {
       if (t == TOKEN_OPERATOR)
         return TOKEN_SEND;
 
-      return lexer_error(self, GAB_MALFORMED_SEND);
+      return lexer_error(self, GAB_MALFORMED_TOKEN);
     }
 
     if (can_start_symbol(peek(self))) {
@@ -262,14 +290,11 @@ gab_token other(gab_lx *self) {
       if (t == TOKEN_SYMBOL)
         return TOKEN_SEND;
 
-      return lexer_error(self, GAB_MALFORMED_SEND);
+      return lexer_error(self, GAB_MALFORMED_TOKEN);
     }
 
-    if (isdigit(peek(self))) {
-      advance(self);
-
+    if (isdigit(peek(self)))
       return integer(self);
-    }
 
     return TOKEN_SEND;
 
@@ -292,6 +317,9 @@ static inline void parse_comment(gab_lx *self) {
 }
 
 gab_token gab_lexnext(gab_lx *self) {
+  if (self->cursor - self->source->source->data >= self->source->source->len)
+    goto eof;
+
   while (isblank(peek(self)) || is_comment(peek(self))) {
     if (is_comment(peek(self)))
       parse_comment(self);
@@ -306,7 +334,7 @@ gab_token gab_lexnext(gab_lx *self) {
   start_token(self);
 
   if (peek(self) == '\0' || peek(self) == EOF) {
-    advance(self);
+  eof:
     tok = TOKEN_EOF;
     v_gab_token_push(&self->source->tokens, tok);
     v_s_char_push(&self->source->token_srcs, self->current_token_src);
@@ -337,12 +365,12 @@ gab_token gab_lexnext(gab_lx *self) {
 
   if (peek(self) == '-' && isdigit(peek_next(self))) {
     advance(self);
-    tok = floating(self);
+    tok = number(self);
     goto fin;
   }
 
   if (isdigit(peek(self))) {
-    tok = floating(self);
+    tok = number(self);
     goto fin;
   }
 
@@ -397,20 +425,26 @@ struct gab_src *gab_src(struct gab_triple gab, gab_value name,
   mtx_lock(&gab.eg->sources_mtx);
 
   if (d_gab_src_exists(&gab.eg->sources, name)) {
-    struct gab_src *src = d_gab_src_read(&gab.eg->sources, name);
+    if (gab.flags & fGAB_USE_RELOAD) {
+      // We should really free some resources here.
+      // Eh, there are a lot of pointers dangling into this.
+      // Probably best to just save it somewhere else.
+    } else {
+      struct gab_src *src = d_gab_src_read(&gab.eg->sources, name);
 
-    mtx_unlock(&gab.eg->sources_mtx);
+      mtx_unlock(&gab.eg->sources_mtx);
 
-    return src;
+      return src;
+    }
   }
 
   uint64_t sz =
-      sizeof(struct gab_src) + (gab.eg->len - 1) * sizeof(struct src_bytecode);
+      sizeof(struct gab_src) + (gab.eg->len) * sizeof(struct src_bytecode);
 
   struct gab_src *src = malloc(sz);
   memset(src, 0, sz);
 
-  src->len = gab.eg->len - 1;
+  src->len = gab.eg->len;
   src->source = a_char_create(source, len);
   src->name = name;
 
@@ -424,6 +458,7 @@ struct gab_src *gab_src(struct gab_triple gab, gab_value name,
 
   for (;;) {
     gab_token t = gab_lexnext(&lex);
+
     if (t == TOKEN_EOF)
       break;
   }
@@ -453,9 +488,19 @@ uint64_t gab_srcappend(struct gab_src *self, uint64_t len,
 
 gab_value gab_srcname(struct gab_src *src) { return src->name; }
 
-uint64_t gab_srcline(struct gab_src *src, uint64_t offset) {
-  uint64_t tok = v_uint64_t_val_at(&src->bytecode_toks, offset);
+uint64_t gab_srcline(struct gab_src *src, uint64_t bytecode_offset) {
+  if (!src->source->len)
+    return 0;
+
+  uint64_t tok = v_uint64_t_val_at(&src->bytecode_toks, bytecode_offset);
   return v_uint64_t_val_at(&src->token_lines, tok);
+}
+
+uint64_t gab_tsrcline(struct gab_src *src, uint64_t tok_offset) {
+  if (!src->source->len)
+    return 0;
+
+  return v_uint64_t_val_at(&src->token_lines, tok_offset);
 }
 
 #undef CURSOR

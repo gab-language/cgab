@@ -1,5 +1,5 @@
-#include "core.h"
 #include "gab.h"
+#include "platform.h"
 #include <math.h>
 
 typedef struct {
@@ -56,8 +56,7 @@ static double random_float() {
   return result;
 }
 
-union gab_value_pair gab_numlib_between(struct gab_triple gab, uint64_t argc,
-                                        gab_value argv[argc]) {
+GAB_DYNLIB_NATIVE_FN(number, between) {
   double min = 0, max = 1;
 
   switch (argc) {
@@ -98,8 +97,7 @@ union gab_value_pair gab_numlib_between(struct gab_triple gab, uint64_t argc,
   return gab_union_cvalid(gab_nil);
 }
 
-union gab_value_pair gab_numlib_floor(struct gab_triple gab, uint64_t argc,
-                                      gab_value argv[argc]) {
+GAB_DYNLIB_NATIVE_FN(number, floor) {
   gab_value num = gab_arg(0);
 
   if (gab_valkind(num) != kGAB_NUMBER)
@@ -111,8 +109,7 @@ union gab_value_pair gab_numlib_floor(struct gab_triple gab, uint64_t argc,
   return gab_union_cvalid(gab_nil);
 }
 
-union gab_value_pair gab_numlib_isnan(struct gab_triple gab, uint64_t argc,
-                                      gab_value argv[argc]) {
+GAB_DYNLIB_NATIVE_FN(number, isnan) {
   gab_value num = gab_arg(0);
 
   if (gab_valkind(num) != kGAB_NUMBER)
@@ -124,8 +121,7 @@ union gab_value_pair gab_numlib_isnan(struct gab_triple gab, uint64_t argc,
   return gab_union_cvalid(gab_nil);
 }
 
-union gab_value_pair gab_numlib_isinf(struct gab_triple gab, uint64_t argc,
-                                      gab_value argv[argc]) {
+GAB_DYNLIB_NATIVE_FN(number, isinf) {
   gab_value num = gab_arg(0);
 
   if (gab_valkind(num) != kGAB_NUMBER)
@@ -150,22 +146,22 @@ GAB_DYNLIB_MAIN_FN {
           {
               gab_message(gab, "floor"),
               t,
-              gab_snative(gab, "floor", gab_numlib_floor),
+              gab_snative(gab, "floor", gab_mod_number_floor),
           },
           {
               gab_message(gab, "is\\nan"),
               t,
-              gab_snative(gab, "is\\nan", gab_numlib_isnan),
+              gab_snative(gab, "is\\nan", gab_mod_number_isnan),
           },
           {
               gab_message(gab, "is\\inf"),
               t,
-              gab_snative(gab, "is\\inf", gab_numlib_isinf),
+              gab_snative(gab, "is\\inf", gab_mod_number_isinf),
           },
           {
               gab_message(gab, "float\\between"),
               mod,
-              gab_snative(gab, "float\\between", gab_numlib_between),
+              gab_snative(gab, "float\\between", gab_mod_number_between),
           });
 
   gab_value res[] = {gab_ok, mod};

@@ -1,0 +1,176 @@
+'Bencode'.use
+'cgab'.use
+
+Session = nrepl\session: .defclass (default: {})
+
+ByteStream = stream\byte: .defclass (
+  stream\source:
+  default:
+  {
+    seq\next: _ => do
+      (ok byte) = self.stream\source.read 1
+      (ok nil: byte)
+    end
+    seq\init: _ => do
+      (ok byte) = self.stream\source.read 1
+      (ok nil: byte)
+    end
+  })
+
+# Transforms a stream of input byte-data
+# Into a single bencode object.
+# Pulls bytes until a valid bencode value can be parsed.
+bencode\stream\xf = Streams.map(b => b.as\s.unwrap)
+  |> Streams.reduce("" (l r) => l + r)
+  |> Streams.drop_while(s => s.as\bencode.ok.!)
+  |> Streams.map(s => s.as\bencode.unwrap)
+  |> Streams.take(1)
+
+BencodeStream = stream\bencode:.defclass(
+  stream\byte:
+  default: {
+    seq\init: _ => do
+      (ok, bencode) = self
+        .stream\byte
+        .collect(bencode\stream\xf)
+        .at 0
+
+      (ok nil: bencode)
+    end
+    seq\next: _ => do
+      (ok, bencode) = self
+        .stream\byte
+        .collect(bencode\stream\xf)
+        .at 0
+
+      (ok nil: bencode)
+    end
+  })
+
+serve\code: .defcase {
+  ok: (fiber, server, req) => do
+    (res*, env) = fiber.await
+
+    (ok, session) = req.at session:
+
+    server.put(response: {
+      'id' req.id
+      'session' session.or 'none'
+      'status' 'ok'
+      'result' res.to\s
+    })
+  end
+  err: (err, server, req) => do
+    (ok, session) = req.at session:
+
+    server.put(response: {
+      'id' req.id
+      'session' session.or 'none'
+      'status' 'err'
+      'msg' err.to\s
+    })
+  end
+}
+
+# Handled requests
+server\serve: .defcase {
+  clone: (server req) => do
+
+    session = Messages.gen "nrepl/session"
+    
+    server
+      .put_via(sessions: session {})
+      .put(response: {
+        'id' req.id
+        'new-session' session
+        'status' 'done'
+      })
+  end
+  eval: (server req) => do
+    req
+      .code
+      .as\gab
+      .serve\code(server req)
+  end
+  describe: (server req) => do
+    server.put(response: {
+      'id' req.id
+      'status' 'done'
+      'aux' {}
+      'middleware' {}
+      'ops' {
+        'clone' {}
+        'describe' {}
+        'eval'  {}
+      }
+      'versions' {
+        'nrepl' {
+          'major' '1'
+          'minor' '5'
+          'incremental' '2'
+        }
+        'gab' {
+          'major' '0'
+          'minor' '0'
+          'incremental' '4'
+        }
+      }
+    })
+  end
+}
+
+# Unhandled requests
+server\serve: .def (server req) => server
+
+Server = nrepl\server: .defclass (
+  # Fields
+  sessions: sock: response:
+  # Constructor
+  (t, port) => do
+      sock = IO.Sockets.make tcp: .unwrap
+
+      sock
+        .bind(nil: port)
+        .unwrap
+
+      sock
+        .listen(5)
+        .unwrap
+
+      t.make({} sock nil:)
+    end
+  # Methods
+  {
+    serve: (req) => do
+      req.op.to\m.server\serve(self req)
+    end
+    listen: () => do
+      server = self
+
+      Fibers.make () => do
+        # Accept out client
+        client = server.sock.accept.unwrap
+
+        # Construct a BencodeStream from the client.
+        stream = BencodeStream.make(ByteStream.make(client))
+
+        # Start the pipeline.
+        # Replace IO.stdout with the client to actually send the responses.
+        # Handle the requests and place the response in server.response.
+        stream.pipe(
+          client
+          Streams.map(request => request.zip(Streams.map (v k) => (v k.to\m)))
+          |> Streams.reduce(server (server, request) => server.serve(request))
+          |> Streams.map(server => server.response.to\bencode)
+        )
+      end
+    end
+  })
+
+# Spawn a server that listens to one client
+fb = Server
+  .make(8888)
+  .listen
+
+# Wait on our server so that we don't terminate as this script ends.
+fb.await

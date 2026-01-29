@@ -16,24 +16,31 @@ on:
     branches: [ "main" ]
 
 env:
-  version: 0.0.3
+  version: 0.0.5
   GH_TOKEN: ${{ github.token }}
 
 jobs:
   build_artifacts:
-    runs-on: ubuntu-latest
-
     strategy:
       matrix:
-        target:
-          - x86_64-linux-gnu
-          - x86_64-macos-none
-          # - x86_64-windows-gnu
-          - aarch64-linux-gnu
-          - aarch64-macos-none
-          # - aarch64-windows-gnu
         build_type:
           - release
+        os: 
+          - ubuntu-latest
+          - macos-latest
+          # - windows-latest
+        include:
+          - os: ubuntu-latest
+            target: x86_64-linux-gnu
+            cmd: ./build-x86_64-linux-gnu/gab
+          - os: macos-latest
+            target: aarch64-macos-none
+            cmd: ./build-aarch64-macos-none/gab
+          # - os: windows-latest
+          #   target: x86_64-windows-gnu
+          #   cmd: .\build-x86_64-windows-gnu\gab
+    
+    runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v4
@@ -42,15 +49,19 @@ jobs:
 
       # Zig is the C compiler used by the build system
     - name: Setup Zig
-      uses: mlugg/setup-zig@v1
+      uses: mlugg/setup-zig@v2
       with:
-        version: 0.14.0
+        version: master
 
       # Build system depends on Go
     - name: Setup Go
       uses: actions/setup-go@v4
       with:
         go-version: '1.23'
+
+    - uses: actions/setup-node@v5
+      with:
+        node-version: 24
 
       # Build system tool
     - name: Install Clide
@@ -91,8 +102,8 @@ jobs:
             target: x86_64-linux-gnu
             cmd: ./build-x86_64-linux-gnu/gab
           - os: macos-latest
-            target: x86_64-macos-none
-            cmd: ./build-x86_64-macos-none/gab
+            target: aarch64-macos-none
+            cmd: ./build-aarch64-macos-none/gab
           # - os: windows-latest
           #   target: x86_64-windows-gnu
           #   cmd: .\build-x86_64-windows-gnu\gab
@@ -114,6 +125,10 @@ jobs:
         with:
           name: gab-${{ matrix.build_type }}-${{ matrix.target }}-modules
 
+      - name: Gab Build Bundle
+        run: |
+          ${{ matrix.cmd }} build -m cgui,cgab,tests test
+
       # - name: Make the binary executable (win)
       #   if: ${{ contains(matrix.target, 'windows') }}
       #   run: |
@@ -132,3 +147,6 @@ jobs:
 
       - name: Run tests
         run: ${{ matrix.cmd }} run test
+
+      - name: Run tests bundle
+        run: ./test.exe

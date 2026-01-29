@@ -353,16 +353,6 @@ static inline void destroy(struct gab_triple gab, struct gab_obj *obj) {
 #endif
 }
 
-/*
- * ISSUE: When we call process epoch, we move
- * a worker from epoch 0 -> 1. This means it is now
- * queueing decrements into buffer 1.
- *
- * When the GC Process moves to process epoch 0,
- * it processes decrements for the previous epoch -
- * which is also epoch/buffer 1.
- */
-
 static inline void dec_obj_ref(struct gab_triple gab, struct gab_obj *obj) {
 #if cGAB_LOG_GC
   printf("DEC\t%i\t%p\t%d\n", epochget(gab), obj, obj->references - 1);
@@ -597,10 +587,8 @@ void processepoch(struct gab_triple gab, int32_t e) {
          wk->queue.size);
 #endif
 
-  const size_t qsize = wk->queue.size;
-  const size_t final = (wk->queue.tail + 1) % qsize;
-  for (size_t idx = wk->queue.head; idx != final; idx = (idx + 1) % qsize) {
-    gab_value fiber = wk->queue.data[idx];
+  for (size_t idx = wk->queue.head; idx != wk->queue.tail; idx++) {
+    gab_value fiber = wk->queue.data[idx & (wk->queue.size - 1)];
 
 #if cGAB_LOG_GC
     printf("PFIBER\t%i\t%i\t%lu\n", e, gab.wkid, idx);
@@ -676,7 +664,7 @@ void gab_gcdocollect(struct gab_triple gab) {
    * as we're collecting. Just save the snapshot
    * of it now.
    */
-  gab.eg->gc.msg[epoch] = gab.eg->messages;
+  gab.eg->gc.msg[epoch] = atomic_load(&gab.eg->messages);
 
   gab_value messages = gab.eg->gc.msg[epoch];
 

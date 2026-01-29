@@ -1,0 +1,48 @@
+'chttp'.use
+Socket = IO.Sockets
+
+req = 'GET / HTTP/1.0\r\nHost:www.google.com\r\n\r\n'
+
+sock = Socket
+  .make tcp\tls:
+  .unwrap
+
+sock
+  .connect("www.google.com" 443)
+  .unwrap
+
+sock
+  .write(req.to\b)
+  .unwrap
+
+data = sock.until('\0'.to\b).unwrap.as\s.unwrap
+
+#sock = Socket
+#  .make tcp:
+#  .unwrap
+#
+#sock
+#  .connect("www.google.com" 80)
+#  .unwrap
+#
+#sock
+#  .write(req.to\b)
+#  .unwrap
+
+# In practice, this reads until the socket is closed.
+#data = sock.until('\0'.to\b).unwrap.as\s.unwrap
+
+http_res = data
+  .as\http
+  .unwrap
+
+'STATUS: $\nHEADERS:\n$\nBODY:\n$'
+  .sprintf(
+    http_res.http\status
+    http_res.http\headers.join(
+      Streams.map((value field) => do
+        '$: $'.sprintf(field value)
+      end)
+      |> Streams.interpose '\n')
+    http_res.http\body)
+  .println

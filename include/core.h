@@ -41,29 +41,20 @@
 #define cGAB_TAILCALL 1
 #endif
 
-// Step size in milliseconds for putting and taking on channels
-// This is how long each *attempt* to put/take will last.
-// put/take are still blocking - this is basically the resolution of the check.
-#ifndef cGAB_CHANNEL_STEP_MS
-#define cGAB_CHANNEL_STEP_MS ((size_t)4)
-#endif
-
-#define GAB_CHANNEL_STEP_NS ((size_t)(cGAB_CHANNEL_STEP_MS * 1000000))
-
 // Workers (os threads that can actually run gab code)
 // will wait this long before exiting, if they haven't received work.
 // New workers are spawned as needed up until a maximum is reached (specified at
-// runtime) Worker threads wait about half a second before spinning down.
-#ifndef cGAB_WORKER_IDLEWAIT_MS
-#define cGAB_WORKER_IDLEWAIT_MS ((size_t)512)
+// runtime)
+#ifndef cGAB_WORKER_IDLE_TRIES
+#define cGAB_WORKER_IDLE_TRIES ((size_t)256)
 #endif
 
-#ifndef cGAB_VM_CHANNEL_PUT_TIMEOUT_MS
-#define cGAB_VM_CHANNEL_PUT_TIMEOUT_MS ((size_t)256)
+#ifndef cGAB_VM_CHANNEL_PUT_TRIES
+#define cGAB_VM_CHANNEL_PUT_TRIES (0)
 #endif
 
-#ifndef cGAB_VM_CHANNEL_TAKE_TIMEOUT_MS
-#define cGAB_VM_CHANNEL_TAKE_TIMEOUT_MS ((size_t)512)
+#ifndef cGAB_VM_CHANNEL_TAKE_TRIES
+#define cGAB_VM_CHANNEL_TAKE_TRIES (0)
 #endif
 
 // A worker (os thread) may need to yield at an arbitrary point.
@@ -73,7 +64,7 @@
 // A sleeptime of 0ms will result in *a lot* of context switching,
 // which is undesirable for the OS Scheduler. To help this, a small
 // amount of sleeping in the yield function is useful
-#define GAB_YIELD_SLEEPTIME_NS ((size_t)1 << 6)
+#define GAB_YIELD_SLEEPTIME_NS (0)
 
 // Collect as frequently as possible (on every RC push)
 #ifndef cGAB_DEBUG_GC
@@ -85,15 +76,6 @@
 #define cGAB_LOG_GC 0
 #endif
 
-// Make sure functions don't break out of their frame
-#ifndef cGAB_DEBUG_VM
-#define cGAB_DEBUG_VM 0
-#endif
-
-#ifndef cGAB_DEBUG_BC
-#define cGAB_DEBUG_BC 0
-#endif
-
 #ifndef cGAB_LOG_EG
 #define cGAB_LOG_EG 0
 #endif
@@ -101,6 +83,15 @@
 // Log what is happening during execution.
 #ifndef cGAB_LOG_VM
 #define cGAB_LOG_VM 0
+#endif
+
+// Make sure functions don't break out of their frame
+#ifndef cGAB_DEBUG_VM
+#define cGAB_DEBUG_VM 0
+#endif
+
+#ifndef cGAB_DEBUG_BC
+#define cGAB_DEBUG_BC 0
 #endif
 
 // Define how many jobs should be used, default to 8.
@@ -138,11 +129,15 @@
 #endif
 
 #ifndef cGAB_ERR_SPRINTF_BUF_MAX
-#define cGAB_ERR_SPRINTF_BUF_MAX 2048
+#define cGAB_ERR_SPRINTF_BUF_MAX 4096
 #endif
 
 #ifndef cGAB_STACK_MAX
 #define cGAB_STACK_MAX (cGAB_FRAMES_MAX * 32)
+#endif
+
+#ifndef cGAB_RESOURCE_MAX
+#define cGAB_RESOURCE_MAX 64
 #endif
 
 // Garbage collection increment/decrement buffer size
@@ -155,6 +150,8 @@
 #if cGAB_GC_MOD_BUFF_MAX <= cGAB_STACK_MAX
 #error "cGAB_GC_MOD_BUFF_MAX must be greater than to cGAB_STACK_MAX"
 #endif
+
+#define cGAB_BINARY_LEN_CUTOFF 16
 
 // Not configurable, just constants
 #define GAB_CONSTANTS_MAX (UINT16_MAX + 1)
@@ -184,19 +181,11 @@
 #define GAB_SEND_KSPEC 3
 #define GAB_SEND_KOFFSET 4
 
-#define GAB_SEND_KGENERIC_CALL_SPECS 5
-#define GAB_SEND_KGENERIC_CALL_MESSAGE 6
+#define GAB_SEND_KGENERIC_CALL_MESSAGE 5
 
-// #define GAB_CALL_CACHE_SIZE 4
-// #define GAB_CALL_CACHE_LEN ((cGAB_SEND_CACHE_LEN * GAB_SEND_CACHE_SIZE) /
-// GAB_CALL_CACHE_SIZE)
-
-// #if GAB_CALL_CACHE_LEN % 2 != 0
-// #error Invalid GAB_CALL_CACHE_SIZE
-// #endif
+#define GAB_SEND_KNATIVE_REENTRANT_USERDATA 7
 
 #define GAB_SEND_HASH(t) (t & (cGAB_SEND_CACHE_LEN - 1))
-// #define GAB_CALL_HASH(t) (t & (cGAB_CALL_CACHE_LEN - 1))
 
 #define GAB_PVEC_BITS (5)
 #define GAB_PVEC_SIZE (1 << GAB_PVEC_BITS)
@@ -208,7 +197,7 @@
 
 #define VAR_EXP 255
 #define fHAVE_VAR (1 << 0)
-#define fHAVE_TAIL (1 << 1)
+#define fHAVE_TAIL (1 << 7)
 
 enum gab_status {
 #define STATUS(name, message) GAB_##name,
@@ -219,8 +208,9 @@ enum gab_status {
 // VERSION
 #define GAB_VERSION_MAJOR "0"
 #define GAB_VERSION_MINOR "0"
-#define GAB_VERSION_PATCH "4"
-#define GAB_VERSION_TAG GAB_VERSION_MAJOR "." GAB_VERSION_MINOR "." GAB_VERSION_PATCH
+#define GAB_VERSION_PATCH "5"
+#define GAB_VERSION_TAG                                                        \
+  GAB_VERSION_MAJOR "." GAB_VERSION_MINOR "." GAB_VERSION_PATCH
 
 // Message constants
 #define mGAB_LT "<"
@@ -353,12 +343,32 @@ static inline s_char s_char_tok(s_char str, uint64_t start, char ch) {
   return (s_char){.data = str.data + start, .len = cursor - start};
 }
 
-static inline void v_char_spush(v_char* self, s_char slice) {
+static inline void v_char_spush(v_char *self, s_char slice) {
   for (size_t i = 0; i < slice.len; i++) {
     v_char_push(self, slice.data[i]);
   }
 }
 
+static inline void v_uint8_t_npush(v_uint8_t *self, size_t n, uint8_t *buff) {
+  for (size_t i = 0; i < n; i++) {
+    v_uint8_t_push(self, buff[i]);
+  }
+}
+
 #define LEN_CARRAY(a) (sizeof(a) / sizeof(a[0]))
+
+#define GAB_INVIS "\x1b[28m"
+#define GAB_BLINK "\x1b[25m"
+#define GAB_SAVE "\x1b[s"
+#define GAB_RESTORE "\x1b[u"
+#define GAB_BLACK "\x1b[30m"
+#define GAB_RED "\x1b[31m"
+#define GAB_GREEN "\x1b[32m"
+#define GAB_YELLOW "\x1b[33m"
+#define GAB_BLUE "\x1b[34m"
+#define GAB_MAGENTA "\x1b[35m"
+#define GAB_CYAN "\x1b[36m"
+#define GAB_RESET "\x1b[0m"
+#define GAB_CLEAR "\x1b[2J"
 
 #endif

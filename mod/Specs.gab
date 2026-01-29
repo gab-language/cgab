@@ -5,20 +5,25 @@ explain_specs = (specs separator)
       .transduce(
         ''
         +:
-        Streams.map spec\name:
+        Streams.map s => s.spec\name
         |> Streams.interpose separator)
 
 explain_values = (strings separator)
   => strings
       .transduce(
         ''
-        +:
-        Streams.map ((v) => Strings.make("\" v))
+        (l r) => l + r
+        Streams.map (v => "\$".sprintf v)
         |> Streams.interpose separator)
 
 defspec: .def (
   Messages.t,
   (opts) => do
+  # Space where defined messages live.
+    spec:.def(
+      self
+      opts.spec)
+
     spec\help:.def(
       opts.spec
       () => opts.at help:)
@@ -27,23 +32,12 @@ defspec: .def (
       opts.spec
       self.to\s)
 
-    spec:.def(
+    to\spec:.def(
       self
       opts.spec)
 
     opts.spec
   end)
-
-[Messages.t] .defmodule {
-  spec\doc:     () => (self.spec.help, self.spec\explain)
-  spec\help:    () => self.spec.spec\help.unwrap
-  spec\gen:     () => self.spec.spec\gen
-  spec\explain: () => self.spec.spec\explain
-  to\spec:     () => do
-    spec = self
-    spec: .has spec .then(() => spec.spec) .or spec
-  end
-}
 
 to\spec: .def () => self
 
@@ -82,7 +76,7 @@ unknown_values = [ nil: 0 1 'test' true: ]
 
   spec\gen: () => do
     idx = Numbers.int\between(0 unknown_values.len - 1)
-    unknown_values.at! idx
+    unknown_values.at idx .unwrap
   end
 
   spec\explain: 'unknown'
@@ -141,7 +135,7 @@ spec\gen:.def(
   string\predicate
   () => do
     idx  = Numbers.int\between(0 ,random\strings.len)
-    random\strings .at! idx
+    random\strings .at idx .unwrap
   end)
 
 spec\explain:.def(string\predicate 'string')
@@ -192,7 +186,7 @@ and\predicate = (specs*) => do
           (acc  spec  key) => [spec.spec\fits(value) .or (false: spec value key)])*
     
     spec\gen: () => do
-        start = specs .at! 0
+        start = specs .at 0 .unwrap
 
         xf = Streams.map(() => do
               value = start.spec\gen
@@ -203,13 +197,13 @@ and\predicate = (specs*) => do
 
               (fits value)
             end)
-            |> Streams.filter self:
-            |> Streams.map first:
+            |> Streams.filter a => a
+            |> Streams.map (a b) => b
             |> Streams.take 1
 
         range:
           .make 100
-          .transduce(0 first: xf)
+          .transduce(0 (a => a) xf)
           .assert!(Strings.make('Failed to generate a value for ' specs))
       end
   }
@@ -221,7 +215,7 @@ and\predicate = (specs*) => do
 end
 
 or\predicate = (specs*) => do
-  (specs.len > 0).assert! "The or predicate expects more than zero specs"
+  (specs.len > 0).assert "The or predicate expects more than zero specs"
   
   pred = Strings.make('predicate:any:' specs).to\m
 
@@ -234,7 +228,7 @@ or\predicate = (specs*) => do
         (valid self value pred)
       end
 
-    spec\gen: () => specs.at!(Numbers.int\between(0 specs.len - 1)).spec\gen
+    spec\gen: () => specs.at(Numbers.int\between(0 specs.len - 1)).unwrap.spec\gen
 
     spec\explain: () => explain_specs.(specs ' | ')
   }
@@ -247,8 +241,8 @@ end
 #
 # COMPOSE WITH REGEX
 #
-regex\null  = { re\null: nil: meta: { name: 're.null' } path: nil:}
-regex\blank  = { re\blank: nil: meta: { name: 're.blank' } path: nil:}
+regex\null  = { re\null: nil: meta: { name: 're.null' } path: [] }
+regex\blank  = { re\blank: nil: meta: { name: 're.blank' } path: [] }
 regex\empty = true:
 
 re\null\t = regex\null?
@@ -260,163 +254,388 @@ re\null: .def false:
 re\blank:.def(re\blank\t, true:)
 re\blank:.def false:
 
-re\empty:.def(regex\empty true:)
-re\empty:.def(re\blank\t, true:)
-re\empty:.def false:
-
-re\either_null: .def (other) => self.re\null | other.re\null
-
-re\first_empty:.def () => self.re\empty
-re\second_empty:.def (other) => other.re\empty
-
-re\first_blank:.def () => self.re\blank
-re\second_blank:.def (other) => other.re\blank
-
-re\both_empty:.def (other) => self.re\empty & other.re\empty
-
-re\first_null:.def () => self.re\null
-re\second_null:.def (other) => other.re\null
+re\is\empty:.def(regex\empty true:)
+re\is\empty:.def(re\blank\t, true:)
+re\is\empty:.def false:
 
 re\fields = [forms: meta: path:]
 
-re\atom\t = Shapes.make(re\atom: re\fields*)
-re\seq\t = Shapes.make(re\seq: re\fields*)
-re\alt\t = Shapes.make(re\alt: re\fields*)
-re\rep\t = Shapes.make(re\rep: re\fields*)
+RE\Atom = re\atom: .defclass (
+  re\atom: re\fields*
+  default:
+  {})
 
-re\empty:.def(re\alt\t () => do
-  res = self.forms.collect(Streams.filter re\empty: |> Streams.take 1)
-  res.empty.!
-end)
+RE\Seq = re\seq: .defclass(
+  re\seq: re\fields*
+  default:
+  {})
+
+RE\Alt = re\alt: .defclass(
+  re\alt: re\fields*
+  default:
+  {
+    re\is\empty: () => self.forms.any f => f.re\is\empty
+  })
+
+RE\Rep = re\rep: .defclass(
+  re\rep: re\fields*
+  default:
+  {})
 
 stringify_forms = (forms, sep)
-  => Strings.make(
-    "("
-    forms.map re\debug: .join (Streams.interpose sep)
-    ")")
+  => "($)".sprintf(forms.map(f => f.re\debug).join ("" Streams.interpose sep))
 
-# regex constructors
+collapse_path = (path) => do
+  path.reduce({} (col elem) => do
+    via = elem.at 0 .unwrap
+    status = elem.at 1 .unwrap
+    pred = elem.at 2 .unwrap .at 0 .unwrap
+    val = elem.at 2 .unwrap .at 1 .unwrap
+    col.put_via_by(via*, v => v.cons { status: status element: val by: pred })
+  end)
+end
 
-[re:] .defmodule {
-  atom: (spec meta) => re\atom\t.make(nil: spec meta [])
+make: .defcase {
+  RE\Atom (spec meta path) => RE\Atom.t.make(
+    nil:
+    spec
+    meta
+    path  .or [])
 
-  seq: (forms meta) => do
-    forms = forms.skip re\blank:
+  RE\Seq (forms meta path) => do
+    skippath = path .or [] + forms.join(
+      []
+      Streams.filter(f => f.re\blank)
+      |> Streams.map(f => f.path))
 
-    forms .cond {
-      f => f.any re\null: regex\null
-      empty:               regex\blank
-      f => f.len == 1       forms .at 0 .unwrap
-      else:                 re\seq\t.make(nil: forms meta [])
+    path = skippath
+
+    forms = forms.skip(f => f.re\blank)
+
+    result = forms .cond {
+      f => f.any(f => f.re\null)
+      () => do
+
+        newpath = forms.join(
+          []
+          Streams.filter(f => f.re\null)
+          |> Streams.map(f => f.re\path))
+
+        regex\null.put(path: newpath)
+      end
+
+      f => f.every(f => f.re\is\empty)
+      () => do
+        regex\blank.put(path: path .or [])
+      end
+
+      f => (f.len == 1) .and (meta.has name: !)
+      () => do
+        forms
+          .at 0
+          .unwrap
+          .put_by(path: x => path + x)
+      end
+
+      else:                     
+      RE\Seq.t.make(
+        nil:
+        forms
+        meta
+        path  .or [])
     }
+
+    result
   end
 
-  alt: (forms meta) => do
-    forms = forms.skip re\null:
+  RE\Alt (forms meta path) => do
+    nonnull = forms.skip(f => f.re\null)
 
-    forms .cond {
-      #f => f :all \re.empty regex\blank
-      f => f .len == 1        forms .at 0 .unwrap
-      else:                   re\alt\t.make(nil: forms meta [])
+    result = nonnull .cond {
+      f => f.is\empty
+      () => do
+        # If we have no non-null choices,
+        # we are an error.
+        paths = forms
+          .collect(
+            []
+            Streams.filter(f => f.re\null)
+            |> Streams.map(f => f.re\path))
+
+        (_, p) = paths.sort(f => f.len).pop
+
+        # Do we need path + p here?
+        regex\null.put(path: p .or [])
+      end
+
+      f => f.every(f => f.re\is\empty)
+      () => do
+      # If all option paths are empty, take the longest.
+        (_, v) = nonnull
+          .sort(f => f.re\path.len)
+          .pop
+
+        v.put(path: path + v.path)
+      end
+
+      f => (f.len == 1) .and (meta.has name: !)
+      () => nonnull
+        .at 0
+        .unwrap
+        .put_by(path: x => path + x)
+
+      else:                       
+      () => do
+        RE\Alt.t.make(
+          nil:
+          nonnull
+          meta
+          path  .or [])
+      end
     }
+
+    result
   end
 
-  rep: (form meta) => form .cond {
-        re\null:  regex\blank
-        re\empty: regex\blank
-        else:      re\rep\t.make(nil: form meta [])
-    }
+  RE\Rep (form meta path) => do
+    result = form .cond {
+          f => f.re\null     
+          () => do
+            regex\blank
+              .put(path: path .or [])
+          end
+
+          f => f.re\is\empty
+          regex\blank
+            .put(path: path .or [])
+
+          f => f.re\blank
+          form 
+                      
+          else:
+          RE\Rep.t.make(
+            nil:
+            form
+            meta
+            path  .or [])
+      }
+
+    result
+  end
 }
 
-# Derivatives
-
+# Useful message for getting string representations of RE
 re\debug: .defcase {
   regex\empty "re.internal.empty"
-  re\blank\t "re.internal.blank"
+  re\blank\t "()"
   re\null\t "re.internal.null"
-  re\atom\t () => self.meta.name
-  re\seq\t () => stringify_forms.(self.forms, " > ")
-  re\alt\t () => stringify_forms.(self.forms, " | ")
-  re\rep\t () => Strings.make('*', self.form.re\name)
+
+  RE\Atom.t
+  () => self.re\name.unwrap
+
+  RE\Seq.t
+  () => stringify_forms.(self.forms, " , ")
+
+  RE\Alt.t
+  () => stringify_forms.(self.forms, " | ")
+
+  RE\Rep.t
+  () => do
+    (ok, name) = self.forms.re\name
+
+    ok
+      .and('*$'.sprintf name)
+      .or ""
+  end
 }
 re\debug: .def () => self.to\spec.spec\name
 
+# Get the user-supplied name of a RE
 re\name: .defcase {
-  re\atom\t () => self.meta.name
-  re\seq\t () =>  self.meta.name
-  re\alt\t () => self.meta.name
-  re\rep\t () => self.meta.name
+  RE\Atom.t
+  () => do
+    (_, name) = self.meta.at name:
+    (ok: name.or(self.forms.to\spec.spec\name))
+  end
+
+  RE\Seq.t
+  () => do
+    self.meta.at name:
+  end
+
+  RE\Alt.t
+  () => self.meta.at name:
+
+  RE\Rep.t
+  () => self.meta.at name:
 }
-re\name: .def () => self.to\spec.spec\name
+re\name: .def () => (ok: self.to\spec.spec\name)
 
+# Construct a path (array of triples) taken to *get to* this RE state
+re\path: .defcase {
+  regex\empty []
+  re\blank\t () => self.path
+  re\null\t () => self.path
+  RE\Atom.t
+  () => self.path
+  # Combine the paths of all forms
+  RE\Seq.t
+  () => self.path + self.forms.join(
+    []
+    Streams.map(f => f.re\path))
+  # Should probably select longest/shortest here
+  RE\Alt.t
+  () => do
+    self.path + self.forms.map(f => f.re\path).sort(f => f.len) .at 0 .unwrap
+  end
+  # Path is saved in self, maybe add forms path somewhere?
+  RE\Rep.t
+  () => self.path + self.forms.re\path
+}
+
+# Construct a RE representing the remaining
+# RE to fulfill
+re\remainder: .defcase {
+  re\blank\t () => []
+  re\null\t () => []
+  RE\Atom.t
+  () => []
+  RE\Rep.t
+  () => []
+  # Probably take the longest/shortest remainder here
+  RE\Alt.t
+  () => self
+    .forms
+    .at 0 
+    .unwrap
+    .re\remainder
+  # Skip any empty beginnings, return rest of regex
+  RE\Seq.t
+  () => RE\Seq.make(
+    self
+      .forms
+      .collect([] Streams.drop_while(f => f.re\is\empty)),
+    self.meta
+    self.path)
+}
+
+re\seq\deriveforms: .defcase {
+  Shapes.make(0)
+  (re e steps) => do
+    steps = steps.cons re
+
+    form_re = self.at 0 .unwrap
+
+    # Pass off to single form child, adding self as a step.
+    re\d = form_re.re\d(e steps)
+
+    result = RE\Seq.make([re\d], re.meta, re.path)
+
+    result
+  end
+}
+
+# In all other cases, we use the first two and do the work
+re\seq\deriveforms: .def (re e steps) => do
+    steps = steps.cons re
+
+    (a, rest) = (self.at 0 .unwrap, self.slice(1, self.len))
+    b = self.at 1 .unwrap
+
+    (new_a) = a.re\d(e, steps)
+    (new_b) = b.re\d(e, steps)
+
+    so_far = re.path
+
+    left = RE\Seq.make(
+      self.put(0 new_a)
+      re.meta)
+
+    empty_a = a.re\empty
+
+# If we take the right branch,
+# Then the left branch was empty.
+# It may have path though, (having consumed some values)
+# So we pass the whole re\path into this branch.
+    right = RE\Seq.make(
+      self
+        .put(0 empty_a)
+        .put(1 new_b)
+      re.meta) 
+
+    result = RE\Alt.make(
+      [left right]
+      { },
+      so_far)
+
+    result
+end
+
+# Derive a RE, given an element e.
+# Basically, this *steps* the regex one element, producing
+# a *new* regex which represents the remainder of the computation.
+# The steps argument keeps track of the callstack of elements *within*
+# the regex to eventually reach a re\atom that either fails/matches.
+# The atom stores the steps in its path, which is passed back up to parents.
 re\d: .defcase {
-  re\blank\t  e => regex\null  
-  re\null\t   e => regex\null
-  regex\empty e => regex\null
+  re\null\t   e => self
+  re\blank\t  e => regex\null.put(path: self.path)
+  regex\empty e => regex\null.put(path: self.path)
 
-  re\atom\t e => do
+  RE\Atom.t
+  (e, steps) => do
     (ok, rest*) = self.forms.to\spec.spec\fits e
 
-    #'Applied atom $ to $ -> $\n'.printf(self.forms.to\spec, e, ok)
-
     so_far = self.path
 
-    path = so_far.push [self.re\name, e]
+    steps = steps.cons self
 
-    (ok .and regex\blank .or regex\null .put(path: path), rest)
+    name = steps.collect([] Streams.mapfilter(x => x.re\name))
+
+    path = so_far.push [name, ok, rest]
+
+    result = ok
+      .and regex\blank
+      .or regex\null
+      .put(path: path)
+
+    result
   end
 
- re\alt\t e => do
-    #'Applied alt $ to $\n'.printf(self.forms, e)
+ RE\Alt.t
+ (e steps) => do
+    steps = steps.cons self
+    forms = self.forms.map(f => f.re\d(e steps))
 
-    forms = self.forms.map f => f .re\d e
+    result = RE\Alt.make(
+      forms
+      self.meta
+      self.path)
 
-    re:
-      .alt(forms, self.meta)
-      .put(path: self.path)
+    result
   end
 
-  re\seq\t e => do
-    #'Applied seq $ to $\n'.printf(self.forms, e)
-    (a, rest) = (self.forms.at! 0, self.forms.slice(1, self.forms.len))
-    b = self.forms.at! 1
+  RE\Seq.t
+  (e steps) => self.forms.re\seq\deriveforms(self e steps)
 
-    new_a = a.re\d e
-    new_b = b.re\d e
-
-    (no_a, no_a_path) = a.re\empty
-
-    so_far = self.path
-
-    left = re:.seq(self.forms.put(0, new_a), self.meta).put(path: so_far.push [a.re\name, e])
-
-    right = re:.seq(rest.put(0, new_b), self.meta).put(path: so_far.push [b.re\name, e])
-
-    re:
-      .alt(
-        [left no_a .re\empty .and right .or regex\null]
-        self.meta)
-  end
-
- re\rep\t e => do
-    #'Applied rep $ to $\n'.printf(self.forms, e)
+ RE\Rep.t
+ (e steps) => do
     a = self.forms
 
-    new_a = a.re\d e
+    new_a = a.re\d(e steps.cons self)
 
-    path = self.path.push [self.re\name, e]
+    result = RE\Seq.make([new_a self] {})
 
-    re:
-      .seq(
-        [new_a self],
-        self.meta)
-      .put(path: self.path)
+    result
   end
 }
 
-# Types that can match up these re need to implement the head/tail interface
+# Types that can match up these RE
+# need to implement the head/tail interface.
+# This is how the algorithm pops off an
+# 'element' to process.
 re\head: .defcase {
-  Records.t, () => self.at! 0
+  Records.t, () => self.at 0 .unwrap
   Strings.t, () => self.at 0
 }
 
@@ -425,39 +644,39 @@ re\tail: .defcase {
   Strings.t, () => self.slice(1 self.len)
 }
 
-# Matching fns
-re\empty: .def () => (regex\null, [])
-
+# Used in conjunction with re\is\empty
+# To determine if a RE is 'empty' (satisfied)
+# Here, it more means the verb 'to empty', because
+# we produce an 'emptied' RE as a result.
+#re\empty: .def () => (regex\null, [])
 re\empty: .defcase {
-  re\null\t   () => (regex\null, self.path)
-  re\blank\t  () => (regex\blank, self.path)
-  regex\empty () => (regex\blank, [])
-  re\rep\t    () => (regex\empty, self.path)
-  re\seq\t    () => do
-    forms = self.forms.map re\empty:
-
-    (re:.seq(forms self.meta), self.path)
+  re\null\t   () => (self)
+  re\blank\t  () => (self)
+  regex\empty () => (regex\blank)
+  RE\Rep.t
+  () => (regex\blank.put(path: self.re\path))
+  RE\Atom.t
+  () => (regex\null.put(path: self.path))
+  RE\Seq.t
+  () => do
+    forms = self.forms.map(f => f.re\empty)
+    (RE\Seq.make(forms, self.meta, self.path))
   end
-  re\alt\t    () => do
-    forms = self.forms.map re\empty:
-
-    p = self.forms.collect(
-      Streams.map re\empty:
-      |> Streams.filter re\empty:
-      |> Streams.map first:
-      |> Streams.take 1)
-
-    (re:.alt(forms, self.meta), p .at 0 .unwrap.or [])
+  RE\Alt.t
+  () => do
+    forms = self.forms.map(f => f.re\empty)
+    (RE\Alt.make(forms, self.meta, self.path))
   end
 }
 
+# The recursive match algo
+# which drives RE matching.
 match: .defcase {
 # Naturally this only succeeds if the match is empty
 # But what if one of the alt paths is empty
   []?, (re) => do
-    (re, path) = re .re\empty
-
-    (re.re\empty, path)
+    path = re.re\path
+    (re.re\empty.re\is\empty, collapse_path.(path), re.re\remainder.re\debug)
   end
 
   Records.t, (re) => do
@@ -465,27 +684,12 @@ match: .defcase {
 
     self.re\tail.match dre
   end
-
-  true: (tail ddc re) => do
-    (re, path) = ddc .re\empty
-
-    (re.re\empty, path)
-  end
-
-  false: (tail dre re) => do
-    tail.match dre
-  end
-
-  Strings.t, re => do
-    dre = re.re\d(self.re\head)
-
-    tail = self.re\tail
-
-    tail.len .== 0 .match (tail dre re)
-  end
 }
 
-to\spec\re: .def () => re:.atom(self { name: self.to\spec.spec\name })
+to\spec\re: .def () => RE\Atom.make(
+  self
+  #{ name: self.to\spec.spec\name })
+  { })
 
 pat: .def(
   spec\t
@@ -496,23 +700,22 @@ pat: .def(
       .map (v k) => do
         v.to\spec
          .to\spec\re
-         .put_via(k meta: name:)
+         .put_via(meta: name: k)
       end
 
-
-    re = re:.seq(forms {name: ""})
+    re = RE\Seq.make(forms {})
 
     spec\fits:.def(
       pred
       (value) => value .match re)
 
-    generator = Streams.map to\spec:
-             |> Streams.map spec\gen:
+    generator = Streams.map(p => p.to\spec)
+             |> Streams.map(p => p.spec\gen)
              |> Streams.map((args*) => Strings.make(args*))
 
     spec\gen:.def(
       pred
-      () => specs.collect generator .join)
+      () => specs.collect([] generator).join "")
 
     to\spec\re: .def(pred re)
 
@@ -525,9 +728,12 @@ cat: .def(
     pred = Strings.make('predicate:cat:' specs).to\m
 
     forms = specs.map (v k)
-      => (v.to\spec.to\spec\re.put_via(k meta: name:))
+      => v
+        .to\spec
+        .to\spec\re
+        .put_via(meta: name: k)
 
-    re = re:.seq(forms { name: "" })
+    re = RE\Seq.make(forms {  })
 
     spec\fits: .def (
       pred
@@ -535,12 +741,16 @@ cat: .def(
         values .match re
       end)
 
-    generator = Streams.map to\spec:
-             |> Streams.map spec\gen:
+    generator = Streams.map(f => f.to\spec)
+             |> Streams.map(f => f.spec\gen)
 
     spec\gen:.def(
       pred
-      () => specs.transduce([] push: generator).*)
+      () => specs.collect([] generator) *)
+
+    spec\name: .def(
+      pred
+      () => re.re\debug)
 
     to\spec\re: .def(pred re)
 
@@ -554,23 +764,23 @@ alt: .def(
     pred = Strings.make('predicate:alt:' specs).to\m
 
     forms = specs.map (v k)
-      => (v.to\spec.to\spec\re.put_via(k meta: name:))
+      => (v.to\spec.to\spec\re.put_via(meta: name: k))
 
-    re = re:.alt(forms { name: "" })
+    re = RE\Alt.make(forms {})
 
-    spec\fits:.def(
-      pred
-      (values*) => do
-        values .match re
-      end)
+    [pred].defmodule {
+      spec\fits: (values*)
+        => values .match re
 
-    spec\gen:.def(
-      pred
-      () => do
-        specs.at!(Numbers.int\between(0 specs.len)).spec\gen
-      end)
+      spec\gen: ()
+        => specs.at(Numbers.int\between(0 specs.len)).unwrap.spec\gen
 
-    to\spec\re: .def(pred re)
+      spec\name: ()
+        => re.re\debug
+
+      to\spec\re: re
+    }
+
 
     pred
   end)
@@ -580,22 +790,25 @@ alt: .def(
   (spec) => do
     pred = Strings.make('predicate:*:' {} ':' spec).to\m
 
-    re = re:.rep(spec.to\spec.to\spec\re, { name: "" })
-
-    spec\fits: .def(
-      pred
-      (values*) => values .match re)
+    re = RE\Rep.make(spec.to\spec.to\spec\re, {})
 
     generator = Streams.map(_ => spec.to\spec.spec\gen)
 
-    spec\gen:.def(
-      pred
-      () => Ranges
-              .make(0 Numbers.int\between(0 10))
-              .collect generator
-              .*)
+    [pred] .defmodule {
+      spec\fits: (values*)
+        => values .match re
 
-    to\spec\re: .def(pred re)
+      spec\gen: ()
+        => Ranges
+              .make(0 Numbers.int\between(0 10))
+              .collect([] generator)
+              .*
+
+      spec\name: ()
+        => re.re\debug
+
+      to\spec\re: re
+    }
 
     pred
   end)
@@ -607,22 +820,31 @@ alt: .def(
 
     re = spec.to\spec.to\spec\re
 
-    re = re:.seq([re, re:.rep(re, { name: "" })], { name: "" })
+    re = RE\Seq.make(
+      [
+        re
+        RE\Rep.make(
+          re
+          { })
+      ]
+      { })
 
-    spec\fits:.def(
-      pred
-      (values*) => values .match re)
+    [pred] .defmodule {
+      spec\fits: (values*)
+        => values .match re
 
-    spec\gen:.def(
-      pred
-      () => do
-        Ranges
-          .make(0 Numbers.int\between(1 10))
-          .collect(Streams.map _ => spec.spec\gen
-          .*)
-      end)
+      spec\gen: ()
+        => Ranges
+            .make(0 Numbers.int\between(1 10))
+            .collect([] Streams.map _ => spec.spec\gen)
+            .*
 
-    to\spec\re: .def(pred re)
+      spec\name: ()
+        => re.re\debug
+
+      to\spec\re: re
+    }
+
 
     pred
   end)
@@ -633,42 +855,43 @@ slice\predicate = (slice) => do
 
   pred = Strings.make('predicate:protocol:slice:' keys ':' slice).to\m
 
-  spec\fits:.def(
-    pred
-    value => do
-      keys.reduce([true: self value] (acc m) => do
-# Check for a spec which corresponds to this message in the protocol
-        acc.at! 0 .and acc .else () => do
-          m .has value .then () => do
-            m.to\m.spec.ok.then s => do
-              s.spec\fits(value .at! m)
-            end
-          end .or [false:, self, value, m]
-        end
-      end).*
-    end)
-
-  genit = Streams.map (v) => do
-    found = v.to\m.spec
-    (v found.spec\gen)
-  end
-
-  spec\gen:.def(
-    pred
-    () => keys.transduce(protocol put: genit))
-
-  spec\explain:.def(
-    pred
-    () => protocol.spec\exlain)
+  [pred].defmodule {
+      spec\explain: ()
+        => protocol.to\spec\exlain
+  }
 
   pred
 end
 
 
-protocol\predicate = (protocol) => do
+protocol\predicate = (protocol**) => do
   pred = Strings.make('predicate:protocol:' protocol).to\m
 
+  keys = protocol.keys
+
+  genit = Streams.map (k) => do
+    found = k.to\m.to\spec
+    (k found.spec\gen)
+  end
+
   [pred] .defmodule {
+      spec\fits: value
+        => do
+          keys.reduce([true: self value] (acc m) => do
+# Check for a spec which corresponds to this message in the protocol
+            acc.at 0 .unwrap.and acc .else () => do
+              m.at value .then () => do
+                m.to\m.to\spec.ok.then s => do
+                  s.spec\fits(value .at m .unwrap)
+                end
+              end .or [false:, self, value, m]
+            end
+          end).*
+        end
+
+    spec\gen: ()
+      => keys.collect([] genit)
+
     spec\explain: () => (protocol.len == 0)
         .and "[]"
         .or ("[ " + explain_values.(protocol, ', ') + " ]")
@@ -686,8 +909,10 @@ list\predicate = spec => do
 
   [pred] .defmodule {
     spec\fits: value => value.spec\fits_each values:
-    spec\gen: () => Lists.make.push(spec.spec\gen)
-    spec\explain: () => Strings.make('list[' spec.spec\explain() ']')
+
+    spec\gen: () => [spec.spec\gen]
+
+    spec\explain: () => 'List[$]'.sprintf(spec.spec\explain)
   }
 
   pred
@@ -696,29 +921,27 @@ end
 record\predicate = (k_spec v_spec) => do
   pred = Strings.make('predicate:map:' k_spec ':' v_spec).to\m
 
-  spec\fits:.def(
-    pred
-    value => do
-      (value? == Records.t)
-        .then(() => (false: self value))
-        .else(() => do
-          value .reduce(
-            (v k) => do
-              [ [k_spec, k], [v_spec, v] ] .spec\recursively
-            end,
-            )
+  [pred].defmodule {
+    spec\fits: value => do
+        (value? == Records.t)
+          .then(() => (false: self value))
+          .else(() => do
+            value .reduce(
+              (v k) => do
+                [ [k_spec, k], [v_spec, v] ] .spec\recursively
+              end,
+              )
 
-          (true:, self, value)
-        end)
-    end)
+            (true:, self, value)
+          end)
+      end
 
-  spec\gen:.def(
-    pred
-    () => { k_spec.spec\gen,  v_spec.spec\gen })
+    spec\gen: ()
+      => { k_spec.spec\gen,  v_spec.spec\gen }
 
-  spec\explain:.def(
-    pred
-    () => Strings.make('Map[' k_spec.spec\explain ', ' v_spec.spec\explain ']'))
+    spec\explain: ()
+      => 'Map[$, $]'.sprintf( k_spec.spec\explain, v_spec.spec\explain)
+  }
 
   pred
 end
@@ -860,9 +1083,8 @@ spec\message\receiver_fits:.def(
 spec\message\semantics_fits:.def(
   'gab\\record'
   () => self
-    .at semantics:
-    .unwrap ()
-    .spec.semantics_fits(self.in, self.out))
+    .semantics
+    .spec\semantics_fits(self.in, self.out))
 
 dospec\apply: .defcase {
   true: (v acc f) => [f . v]
@@ -873,27 +1095,31 @@ dospec\apply: .defcase {
   me = self # I'd like doing this to be a little neater
   fs.reduce([true:]
     (so_far f) => so_far
-      .at! 0
+      .at 0 .unwrap
       .dospec\apply(me so_far f))*
 end
 
 spec\message\define:.defcase {
   nil: general_message\predicate
-  'gab\\record' () => do
+  "gab\record" () => do
     args = self
     pred = Strings.make('predicate:message:' args).to\m
 
     spec\fits:.def(
       pred
       (rec in out)
-        => args
-          .put(rec: rec)
-          .put(in: in)
-          .put(out: out)
-           -!>(spec\message\receiver_fits:
-               spec\message\input_fits:
-               spec\message\output_fits:
-               spec\message\semantics_fits:))
+        => do
+          args
+            .put(rec: rec)
+            .put(in: in)
+            .put(out: out)
+            -!> (
+              (s => s.spec\message\receiver_fits)
+              (s => s.spec\message\input_fits)
+              (s => s.spec\message\output_fits)
+              # TODO: Maybe have semantic fitting here?
+            )
+        end)
 
     spec\gen:.def(
       pred
@@ -917,7 +1143,7 @@ spec\message\define:.defcase {
 
                     args.output.spec\fits(output*) .then () => do
                       # If there are no semantics to satisfy, just return this output
-                      (args.has semantics: .else () => output*) .then () => do
+                      (args.at semantics: .else () => output*) .then () => do
                         rec = args.receiver.spec\gen
 
                         args.receiver.spec\fits(rec) .then () => do
@@ -958,7 +1184,7 @@ spec\message\define:.defcase {
                 (ok res*) = args.output.spec\fits(output*)
                 
                  ok.then () => do
-                  args.has semantics:
+                  args.at semantics:
                     .or (ok, res*)
                     .then () => do
                       args.semantics.(input output)
@@ -969,7 +1195,7 @@ spec\message\define:.defcase {
               end
             end
           end)
-          |> Streams.filter((valid spec value path) => valid!)
+          |> Streams.filter(valid => valid!)
           |> Streams.map((valid spec value path) => option:.make(valid!, spec value path))
           |> Streams.take 1
 
@@ -978,13 +1204,10 @@ spec\message\define:.defcase {
 
     spec\explain:.def(
       pred
-      () => Strings.make(
+      () => '$.$ $ => $'.sprintf(
         args.receiver.spec\name
-        '.'
         args.message
-        ' '
         args.input.spec\name
-        ' => '
         args.output.spec\name))
 
     pred
@@ -1001,15 +1224,13 @@ spec\labeled: .def label => {
 }
 
 [LabeledSpec] .defmodule {
-  spec\explain: () => Strings.make(
+  spec\explain: () => '$: $'.sprintf(
       self.spec\label
-      ': '
       self.spec\spec.spec\explain)
 
   spec\name: () => do
-    Strings.make(
+    '$: $'.sprintf(
       self.spec\label
-      ': '
       self.spec\spec.spec\name)
   end
 
@@ -1020,7 +1241,7 @@ spec\labeled: .def label => {
   spec\check: () => self.spec\spec.spec\check
 }
 
-spec\name: .def () => self.spec\explain
+spec\name: .def () => self.spec\explain.to\s
 spec\explain: .def () => self
 spec\gen: .def () => self
 spec\fits: .def value => (self == value self value)
@@ -1034,19 +1255,19 @@ spec\fits: .def(
   'gab\\message'
   (value) => do
     msg = self
-    msg .has value .then () => msg.(value)
+    msg .at value .then () => msg.(value)
   end)
 
 to\spec\option:.defcase {
   nil: err => do
-    spec\t.any(ok:, err.or err:)    
+    spec\t.alt(ok: err.or err:)    
   end
 }
 
 to\spec\option: .def err => do
   value = self
-  spec\t.any(
-    spec\t.values(ok:, value),
+  spec\t.alt(
+    spec\t.cat(ok:, value),
     err.or err:,
   )
 end
@@ -1066,9 +1287,10 @@ end
   protocol: protocol\predicate,
   all:      and\predicate,
   any:      or\predicate,
-  option:   value => spec\t.any(
-                      spec\t.values(ok:, value),
-                      none:)
+  option:   value => spec\t.alt(
+                      'some' spec\t.cat('ok' ok: 'value' value)
+                      'none' none:
+                    )
   result:  (value err) => value.to\spec\option err
   gt: (min) => do
     gt\predicate = Strings.make('predicate:gt:' min).to\m
@@ -1100,17 +1322,21 @@ end
             .split '\\'
             .to\m,
           k))
-      |> Streams.filter ((_ k) => k == mod)
+      |> Streams.filter ((_ m) => m == mod)
       |> Streams.map ((v m k) => do
-        (h e) = k.spec\doc!
-        Strings.make(k '\n' h '\n\t' e)
+        e = k.to\spec.spec\explain
+
+        (ok, h) = k.to\spec.spec\help
+        h = ok.and(h).or ''
+
+        '$\n$\n\t$'.sprintf(k h e)
       end)
       |> Streams.interpose '\n\n'
 
     Messages
       .specializations
       .spec
-      .transduce("" +: xf)
+      .join("" xf)
   end
 }
 

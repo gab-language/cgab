@@ -16,7 +16,7 @@ on:
     branches: [ "main" ]
 
 env:
-  version: 0.0.4
+  version: 0.0.5
   GH_TOKEN: ${{ github.token }}
 
 jobs:
@@ -45,13 +45,17 @@ jobs:
     - name: Setup Zig
       uses: mlugg/setup-zig@v1
       with:
-        version: 0.14.0
+        version: 0.15.2
 
       # Build system depends on Go
     - name: Setup Go
       uses: actions/setup-go@v4
       with:
         go-version: '1.23'
+
+    - uses: actions/setup-node@v5
+      with:
+        node-version: 24
 
       # Build system tool
     - name: Install Clide
@@ -104,8 +108,8 @@ jobs:
             target: x86_64-linux-gnu
             cmd: ./build-x86_64-linux-gnu/gab
           - os: macos-latest
-            target: x86_64-macos-none
-            cmd: ./build-x86_64-macos-none/gab
+            target: aarch64-macos-none
+            cmd: ./build-aarch64-macos-none/gab
           # - os: windows-latest
           #   target: x86_64-windows-gnu
           #   cmd: .\build-x86_64-windows-gnu\gab

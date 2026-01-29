@@ -1,8 +1,51 @@
-xf = Streams.map ++:
-  |> Streams.tap println:
+dofor: .defcase {
+  ok: (seq\i, seq\v, xs) => do
+    (ok, seq\v, nxs*) = seq\i.seq\next seq\v
 
-ch = Channels.make
+    (xs*, ok.dofor(seq\i, seq\v, nxs))
+  end
+  none: (seq\i, seq\v, xs) => do
+    xs*
+  end
+}
 
-Fibers.make () => ch.each println:
+for: .def xf => do
+  (ok, seq\v, xs*) = self.seq\init
 
-[1 2 3 4 5].pipe(ch xf)
+  ok.dofor(self, seq\v, xs)
+end
+
+nums = [1 2 3 4]
+
+# Small little macro proposal
+# Is all this hullaballo even necessary?
+
+# Could I do everything at runtime reasonably?
+# Could I make a partial-evaluator that is good-enough
+# at inlining to solve creating local blocks and slowing
+# control flow?
+
+def: .defmacro (m, ts, args, blk) => ~~do
+  (!!m).def(!!(ts*), !!args => !!blk) 
+end
+#---
+#def for:[Records.t]() do
+#
+#end
+#---
+
+# Define a unique message at compile time
+# Dispatch on said message in this when
+when: .defmacro (cases) => do
+  m = Messages.gen
+  m.defcase cases
+  quote do unquote(self).(unquote(m.to\s)) end
+end
+#---
+# when x {
+#  ok: result.do\something
+#  err: do
+#    'something went wrong'.println
+#  end
+# }
+#---

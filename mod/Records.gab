@@ -1,1 +1,76 @@
-'crecords'.use
+Records = 'crecords'.use
+
+make\from: .def (
+  Records,
+  (shape, f) => do
+    shape.reduce({}, (r, k) => r.put(k, f.(k)))
+  end)
+
+[Records.t] .defmodule {
+  has: key => do
+    self.at key .ok
+  end
+
+  : key => self.at key .unwrap
+
+  put_by: (k f) => do
+    v = self.at k .unwrap
+    self.put(k, f.(v))
+  end
+
+  put_via_by: (path*, f) => do
+    (ok, v) = self.at_via(path*)
+    self.put_via(path*, f.(ok .and v .or nil:))
+  end
+
+  is\record: true:
+}
+
+is\record: .def false:
+
+() => do
+  keys = self.keys.sort
+end
+
+list\sort: .defcase {
+  []?
+  []
+
+  Records.t
+  (f) => do
+    (tail head) = self.pop
+
+    smaller = tail.filter(a => f.(a) <= f.(head)).sort
+    bigger = tail.filter(a => f.(a) > f.(head)).sort
+
+    smaller
+      .push head
+      .+ bigger
+  end
+}
+
+record\sort: .def(
+  Records.t,
+  (f) => do
+    keys = self.keys.sort f
+
+    shp = Shapes.make(keys*)
+
+    Records.make\from(shp, self)
+  end)
+
+dosort:.defcase {
+  true: (rec, f) => rec.list\sort f
+  false: (rec, f) => rec.record\sort f
+}
+
+to\sorter: .defcase {
+  nil:      () => (x => x)
+  Blocks.t, () => self
+}
+
+sort:.def(
+  Records.t,
+  (f) => self.is\list.dosort(self, f.to\sorter))
+
+Records

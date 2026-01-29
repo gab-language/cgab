@@ -1,36 +1,25 @@
 #include "gab.h"
 
-union gab_value_pair gab_fiblib_sleep(struct gab_triple gab, uint64_t argc,
-                              gab_value argv[argc]) {
-
-  gab_value n = gab_arg(1);
-
-  if (gab_valkind(n) != kGAB_NUMBER)
-    return gab_pktypemismatch(gab, n, kGAB_NUMBER);
-
-  if (thrd_sleep(&(struct timespec){.tv_nsec = gab_valtou(n)}, NULL) < 0)
-    return gab_panicf(gab, "Error occurred during sleep");
-
-  return gab_union_cvalid(gab_nil);
-}
-
-union gab_value_pair gab_fiblib_await(struct gab_triple gab, uint64_t argc,
-                              gab_value argv[argc]) {
+GAB_DYNLIB_NATIVE_FN(fib, await) {
   gab_value fib = gab_arg(0);
 
-  union gab_value_pair res = gab_fibawait(gab, fib);
-  gab_value env = gab_fibawaite(gab, fib);
+  union gab_value_pair res = gab_tfibawait(gab, fib, 0);
 
-  if (res.status == gab_cvalid) {
-    gab_nvmpush(gab_thisvm(gab), res.aresult->len, res.aresult->data);
-    gab_vmpush(gab_thisvm(gab), env);
+  if (res.status == gab_ctimeout) {
+    return (union gab_value_pair){{gab_ctimeout, fib}};
   }
 
-  return gab_union_cvalid(gab_nil);
+  if (res.status == gab_cvalid) {
+    gab_value env = gab_fibawaite(gab, fib);
+    gab_nvmpush(gab_thisvm(gab), res.aresult->len, res.aresult->data);
+    gab_vmpush(gab_thisvm(gab), env);
+    return gab_union_cvalid(gab_nil);
+  }
+
+  return res;
 }
 
-union gab_value_pair gab_fiblib_is_done(struct gab_triple gab, uint64_t argc,
-                                gab_value argv[argc]) {
+GAB_DYNLIB_NATIVE_FN(fib, is_done) {
   gab_value fib = gab_arg(0);
 
   bool is_done = gab_fibisdone(fib);
@@ -52,17 +41,12 @@ GAB_DYNLIB_MAIN_FN {
           {
               gab_message(gab, "await"),
               t,
-              gab_snative(gab, "await", gab_fiblib_await),
-          },
-          {
-              gab_message(gab, "sleep"),
-              gab_strtomsg(t),
-              gab_snative(gab, "sleep", gab_fiblib_sleep),
+              gab_snative(gab, "await", gab_mod_fib_await),
           },
           {
               gab_message(gab, "is\\done"),
               t,
-              gab_snative(gab, "is\\done", gab_fiblib_is_done),
+              gab_snative(gab, "is\\done", gab_mod_fib_is_done),
           });
 
   gab_value res[] = {gab_ok, gab_strtomsg(t)};

@@ -1,52 +1,57 @@
-#include "colors.h"
 #include "core.h"
-#include <stddef.h>
-#include <stdint.h>
-#define GAB_TOKEN_NAMES_IMPL
 #include "engine.h"
 #include "gab.h"
-#include "lexer.h"
+#include <stddef.h>
+#include <stdint.h>
 
-#define FMT_EXPECTED_EXPRESSION                                                \
-  "Expected a value - one of:\n\n"                                             \
+#define FMT_MALFORMED_EXPRESSION                                               \
+  "Expressions start with one of the following values:\n\n"                    \
   "  " GAB_YELLOW "-1.23" GAB_MAGENTA "\t\t\t# A number \n" GAB_RESET          \
   "  " GAB_GREEN "'hello, Joe!'" GAB_MAGENTA "\t\t# A string \n" GAB_RESET     \
   "  " GAB_RED "greet:" GAB_MAGENTA "\t\t# A message\n" GAB_RESET              \
   "  " GAB_BLUE "x => x + 1" GAB_MAGENTA "\t# A block \n" GAB_RESET            \
   "  " GAB_CYAN "{ key: value }" GAB_MAGENTA "\t# A record\n" GAB_RESET "  "   \
-  "(" GAB_YELLOW "-1.23" GAB_RESET ", " GAB_GREEN "true:" GAB_RESET            \
+  "(" GAB_YELLOW "0x22" GAB_RESET ", " GAB_GREEN "true:" GAB_RESET             \
   ")" GAB_MAGENTA "\t# A tuple\n" GAB_RESET "  "                               \
   "a_variable" GAB_MAGENTA "\t\t# Or a variable!" GAB_RESET
 
-#define FMT_CLOSING_RBRACE                                                     \
-  "Expected a closing $ to define a rest assignment target."
-
-#define FMT_EXTRA_REST_TARGET                                                  \
-  "$ is already a rest-target.\n"                                              \
-  "\nBlocks and assignments can only declare one target as a rest-target."
-
-#define FMT_UNEXPECTEDTOKEN "Expected $ instead."
-
-#define FMT_MISSINGSEPARATOR                                                   \
-  "Expected one of " GAB_GREEN "';'" GAB_RESET ", " GAB_GREEN "','" GAB_RESET  \
-  ", or a newline instead."
-
 #define FMT_REFERENCE_BEFORE_INIT "$ is referenced before it is initialized."
 
-#define FMT_ID_NOT_FOUND "Variable $ is not defined in this scope."
+#define FMT_ID_NOT_FOUND                                                       \
+  "Symbol $ is not yet bound in this scope, or parent scopes.\n\n"             \
+  "Assignment expressions bind values to symbols.\n\n"                         \
+  "  a = " GAB_CYAN "true:" GAB_RESET "\n\n"                                   \
+  "Symbols within local scope may be rebound at any time.\n\n"                 \
+  "  name = " GAB_GREEN "\"Bob\"" GAB_RESET "\n\n"                             \
+  "  name = " GAB_GREEN "\"Uncle Bob\"" GAB_RESET "\n\n"                       \
+  "Symbols captured from parent scopes may not be rebound.\n\n"                \
+  "  name = " GAB_GREEN "\"Uncle Bob\"" GAB_RESET "\n\n"                       \
+  "  () => name = " GAB_GREEN "\"Old Bob\"" GAB_MAGENTA " # Not allowed"
 
-#define FMT_ASSIGNMENT_ABANDONED                                               \
-  "This assignment expression is incomplete.\n\n"                              \
-  "Assignments consist of a list of targets and a list of values, separated "  \
-  "by an $.\n\n"                                                               \
-  "  a, b = " GAB_YELLOW "1" GAB_RESET ", " GAB_YELLOW "2\n" GAB_RESET         \
-  "  a:put!(" GAB_GREEN ".key" GAB_RESET "), b = " GAB_YELLOW "1" GAB_RESET    \
-  ", " GAB_YELLOW "2\n" GAB_RESET
+#define FMT_MALFORMED_ASSIGNMENT                                               \
+  "This assignment is malformed - a valid assignment looks like:\n\n"          \
+  "  a = " GAB_YELLOW "1" GAB_MAGENTA                                          \
+  "\t\t\t# A single variable and expression\n" GAB_RESET " " GAB_BLACK         \
+  "=> a = 1\n" GAB_RESET "  (a, b) = (" GAB_YELLOW "1" GAB_RESET ", " GAB_RED  \
+  "bark:" GAB_RESET ")" GAB_MAGENTA                                            \
+  "\t# A tuple of variables and expressions\n" GAB_RESET " " GAB_BLACK         \
+  "=> a = 1, b = bark:\n" GAB_RESET "  (a*, b) = (" GAB_YELLOW "1" GAB_RESET   \
+  ", " GAB_YELLOW "2" GAB_RESET ", " GAB_YELLOW "3" GAB_RESET ")" GAB_MAGENTA  \
+  "\t# Specify one variable to collect extra values with '*'\n" GAB_RESET      \
+  " " GAB_BLACK "=> a = [1, 2], b = 3\n" GAB_RESET "  (a**) = (" GAB_RED       \
+  "num:" GAB_RESET ", " GAB_YELLOW "2" GAB_RESET ")" GAB_MAGENTA               \
+  "\t# Specify one variable to zip extra values with '**'\n" GAB_RESET         \
+  " " GAB_BLACK "=> a = { num: 2 }\n" GAB_RESET
 
-#define FMT_TOO_MANY_EXPRESSIONS_IN_TUPLE                                      \
-  "Tuples cannot have more than 64 compile-time "                              \
-  "values.\n\nThis is an artificial limitiation,\n but is enforced by "        \
-  "the compiler for performance reasons."
+#define FMT_MALFORMED_ASSIGNMENT_NOTE "\nHint: "
+
+#define FMT_GAB_MALFORMED_STRING                                               \
+  "\nSingle quoted strings can contain escape "                                \
+  "sequences.\n"                                                               \
+  "\n   " GAB_GREEN "'a newline -> " GAB_MAGENTA "\\n" GAB_GREEN               \
+  ", or a forward slash -> " GAB_MAGENTA "\\\\" GAB_GREEN "'" GAB_RESET        \
+  "\n   " GAB_GREEN "'a valid unicode codepoint: " GAB_MAGENTA                 \
+  "\\u[" GAB_YELLOW "2502" GAB_MAGENTA "]" GAB_GREEN "'" GAB_RESET
 
 /*
  *******
@@ -148,11 +153,6 @@ static gab_value prev_id(struct gab_triple gab, struct parser *parser) {
   return gab_nstring(gab, s.len, s.data);
 }
 
-static gab_value tok_id(struct gab_triple gab, gab_token tok) {
-  // These can cause collections during compilation.
-  return gab_string(gab, gab_token_names[tok]);
-}
-
 bool msg_is_specialform(struct gab_triple gab, gab_value msg) {
   if (msg == gab_message(gab, mGAB_ASSIGN))
     return true;
@@ -186,13 +186,9 @@ static int encode_codepoint(char *out, int utf) {
     out[2] = (char)(((utf >> 6) & 0x3F) | 0x80);
     out[3] = (char)(((utf >> 0) & 0x3F) | 0x80);
     return 4;
-  } else {
-    // error - use replacement character
-    out[0] = (char)0xEF;
-    out[1] = (char)0xBF;
-    out[2] = (char)0xBD;
-    return 3;
   }
+
+  return 0;
 }
 
 static a_char *parse_raw_str(struct parser *parser, s_char raw_str) {
@@ -226,9 +222,17 @@ static a_char *parse_raw_str(struct parser *parser, s_char raw_str) {
       case '"':
         buffer[buf_end++] = '"';
         break;
+      case '0':
+        buffer[buf_end++] = '\0';
+        break;
       case '\'':
         buffer[buf_end++] = '\'';
         break;
+      case '\\':
+        buffer[buf_end++] = '\\';
+        break;
+      case 'e':
+        buffer[buf_end++] = '\033';
         break;
       case 'u':
         i += 2;
@@ -247,20 +251,27 @@ static a_char *parse_raw_str(struct parser *parser, s_char raw_str) {
           if (cpl == 7)
             return nullptr;
 
+          if (i >= raw_str.len)
+            return nullptr;
+
           codepoint[cpl++] = raw_str.data[i++];
         }
 
         i++;
 
-        long cp = strtol(codepoint, nullptr, 16);
+        char *endptr = nullptr;
+        long cp = strtol(codepoint, &endptr, 16);
+
+        if (*codepoint == '\0' || *endptr != '\0')
+          return nullptr;
 
         int result = encode_codepoint(buffer + buf_end, cp);
 
+        if (!result)
+          return nullptr;
+
         buf_end += result;
 
-        break;
-      case '\\':
-        buffer[buf_end++] = '\\';
         break;
       default:
         return nullptr;
@@ -311,10 +322,6 @@ static inline bool match_token(struct parser *parser, gab_token tok) {
   return v_gab_token_val_at(&parser->src->tokens, parser->offset) == tok;
 }
 
-static inline bool match_terminator(struct parser *parser) {
-  return match_token(parser, TOKEN_END) || match_token(parser, TOKEN_EOF);
-}
-
 static int vparser_error(struct gab_triple gab, struct parser *parser,
                          enum gab_status e, const char *fmt, va_list args) {
   parser->err = gab_vspanicf(gab, args,
@@ -340,8 +347,7 @@ static int parser_error(struct gab_triple gab, struct parser *parser,
 
 static int eat_token(struct gab_triple gab, struct parser *parser) {
   if (match_token(parser, TOKEN_EOF))
-    return parser->offset++,
-           parser_error(gab, parser, GAB_UNEXPECTED_EOF,
+    return parser_error(gab, parser, GAB_UNEXPECTED_EOF,
                         "Unexpectedly reached the end of input.");
 
   parser->offset++;
@@ -360,7 +366,7 @@ static inline int match_and_eat_token_of(struct gab_triple gab,
                                          gab_token tok[len]) {
   for (size_t i = 0; i < len; i++)
     if (match_token(parser, tok[i]))
-      return eat_token(gab, parser);
+      return (tok[i] == TOKEN_EOF) ? 1 : eat_token(gab, parser);
 
   return 0;
 }
@@ -372,16 +378,6 @@ static inline int match_and_eat_token_of(struct gab_triple gab,
                            toks);                                              \
   })
 
-static inline int expect_token(struct gab_triple gab, struct parser *parser,
-                               gab_token tok) {
-  if (!match_token(parser, tok))
-    return eat_token(gab, parser),
-           parser_error(gab, parser, GAB_UNEXPECTED_TOKEN, FMT_UNEXPECTEDTOKEN,
-                        tok_id(gab, tok));
-
-  return eat_token(gab, parser);
-}
-
 gab_value parse_expression(struct gab_triple gab, struct parser *parser,
                            enum prec_k prec);
 
@@ -390,16 +386,27 @@ static inline void skip_newlines(struct gab_triple gab, struct parser *parser) {
     ;
 }
 
-void node_storeinfo(struct gab_src *src, gab_value node, size_t begin,
-                    size_t end) {
-  d_uint64_t_insert(&src->node_begin_toks, node, begin);
-  d_uint64_t_insert(&src->node_end_toks, node, end);
+size_t node_getinfo_begin(struct gab_src *src, gab_value node) {
+  assert(d_uint64_t_exists(&src->node_begin_toks, node));
+  return d_uint64_t_read(&src->node_begin_toks, node);
 }
 
-void node_stealinfo(struct gab_src *src, gab_value from, gab_value to) {
+size_t node_getinfo_end(struct gab_src *src, gab_value node) {
+  assert(d_uint64_t_exists(&src->node_end_toks, node));
+  return d_uint64_t_read(&src->node_end_toks, node);
+}
+
+gab_value node_storeinfo(struct gab_src *src, gab_value node, size_t begin,
+                         size_t end) {
+  d_uint64_t_insert(&src->node_begin_toks, node, begin);
+  d_uint64_t_insert(&src->node_end_toks, node, end);
+  return node;
+}
+
+gab_value node_stealinfo(struct gab_src *src, gab_value from, gab_value to) {
   size_t begin = d_uint64_t_read(&src->node_begin_toks, from);
   size_t end = d_uint64_t_read(&src->node_end_toks, from);
-  node_storeinfo(src, to, begin, end);
+  return node_storeinfo(src, to, begin, end);
 }
 
 gab_value node_value(struct gab_triple gab, gab_value node) {
@@ -480,6 +487,9 @@ size_t node_valuelen(struct gab_triple gab, gab_value node) {
 }
 
 size_t node_len(struct gab_triple gab, gab_value node) {
+  if (gab_valkind(node) != kGAB_RECORD)
+    return 0;
+
   assert(gab_valkind(node) == kGAB_RECORD);
   assert(gab_valkind(gab_recshp(node)) == kGAB_SHAPELIST);
 
@@ -513,27 +523,40 @@ gab_value node_send(struct gab_triple gab, gab_value lhs, gab_value msg,
 }
 
 static gab_value parse_expressions_body(struct gab_triple gab,
-                                        struct parser *parser) {
-
-  skip_newlines(gab, parser);
+                                        struct parser *parser,
+                                        enum gab_token t) {
+  size_t begin = parser->offset;
 
   gab_value result = node_empty(gab, parser);
 
-  while (!match_terminator(parser) && !match_token(parser, TOKEN_EOF)) {
-    gab_value rhs = parse_expression(gab, parser, kEXP);
+  skip_newlines(gab, parser);
 
-    if (rhs == gab_cinvalid)
+  while (!match_and_eat_token(gab, parser, t)) {
+    skip_newlines(gab, parser);
+
+    gab_value exp = parse_expression(gab, parser, kEXP);
+
+    if (exp == gab_cinvalid)
       return gab_cinvalid;
 
-    gab_value tup = node_value(gab, rhs);
-    node_stealinfo(parser->src, rhs, tup);
+    gab_value tup = node_value(gab, exp);
+    node_stealinfo(parser->src, exp, tup);
 
     result = gab_lstcat(gab, result, tup);
+
+    if (result == gab_cinvalid)
+      return gab_cinvalid;
 
     skip_newlines(gab, parser);
   }
 
-  return node_value(gab, result);
+  size_t end = parser->offset;
+
+  gab_value res = node_value(gab, result);
+
+  node_storeinfo(parser->src, res, begin, end);
+
+  return res;
 }
 
 gab_value parse_expressions_until(struct gab_triple gab, struct parser *parser,
@@ -557,9 +580,6 @@ gab_value parse_expressions_until(struct gab_triple gab, struct parser *parser,
     if (result == gab_cinvalid)
       return gab_cinvalid;
 
-    if (match_and_eat_token(gab, parser, t))
-      break;
-
     skip_newlines(gab, parser);
   }
 
@@ -580,8 +600,8 @@ gab_value parse_expression(struct gab_triple gab, struct parser *parser,
   struct parse_rule rule = get_parse_rule(tok);
 
   if (rule.prefix == nullptr)
-    return parser_error(gab, parser, GAB_UNEXPECTED_TOKEN,
-                        FMT_EXPECTED_EXPRESSION),
+    return parser_error(gab, parser, GAB_MALFORMED_EXPRESSION,
+                        FMT_MALFORMED_EXPRESSION),
            gab_cinvalid;
 
   size_t begin = parser->offset;
@@ -593,6 +613,8 @@ gab_value parse_expression(struct gab_triple gab, struct parser *parser,
 
   node_storeinfo(parser->src, node, begin, end);
 
+  skip_newlines(gab, parser);
+
   /*
    * The next section will skip newlines to peek and see
    * if we have an infix expression to continue.
@@ -603,8 +625,6 @@ gab_value parse_expression(struct gab_triple gab, struct parser *parser,
    * This is because newlines are *expected* in some places as
    * separators. (tuples, lists, and dicts)
    */
-  skip_newlines(gab, parser);
-
   while (prec <= get_parse_rule(curr_tok(parser)).prec) {
 
     if (node == gab_cinvalid)
@@ -674,14 +694,7 @@ gab_value parse_exp_sstr(struct gab_triple gab, struct parser *parser,
 
   if (parsed == nullptr)
     return parser_error(gab, parser, GAB_MALFORMED_STRING,
-                        "\nSingle quoted strings can contain escape "
-                        "sequences.\n"
-                        "\n   " GAB_GREEN "'a newline -> " GAB_MAGENTA
-                        "\\n" GAB_GREEN ", or a forward slash -> " GAB_MAGENTA
-                        "\\\\" GAB_GREEN "'" GAB_RESET "\n   " GAB_GREEN
-                        "'a unicode codepoint by number: " GAB_MAGENTA
-                        "\\u[" GAB_YELLOW "2502" GAB_MAGENTA "]" GAB_GREEN
-                        "'" GAB_RESET),
+                        FMT_GAB_MALFORMED_STRING),
            gab_cinvalid;
 
   gab_value str = gab_nstring(gab, parsed->len, parsed->data);
@@ -746,12 +759,9 @@ gab_value parse_exp_tup(struct gab_triple gab, struct parser *parser,
 
 gab_value parse_exp_blk(struct gab_triple gab, struct parser *parser,
                         gab_value lhs) {
-  gab_value res = parse_expressions_body(gab, parser);
+  gab_value res = parse_expressions_body(gab, parser, TOKEN_END);
 
   if (res == gab_cinvalid)
-    return gab_cinvalid;
-
-  if (!expect_token(gab, parser, TOKEN_END))
     return gab_cinvalid;
 
   return res;
@@ -848,22 +858,22 @@ gab_value parse(struct gab_triple gab, struct parser *parser) {
   size_t begin = parser->offset;
 
   if (curr_tok(parser) == TOKEN_EOF)
-    return gab_cinvalid;
+    return eat_token(gab, parser),
+           parser_error(gab, parser, GAB_UNEXPECTED_EOF, ""), gab_cinvalid;
 
-  if (curr_tok(parser) == TOKEN_ERROR) {
-    eat_token(gab, parser);
-    parser_error(gab, parser, GAB_MALFORMED_TOKEN,
-                 "This token is malformed or unrecognized.");
-    return gab_cinvalid;
-  }
+  if (curr_tok(parser) == TOKEN_ERROR)
+    return eat_token(gab, parser),
+           parser_error(gab, parser, GAB_MALFORMED_TOKEN,
+                        "This token is malformed or unrecognized."),
+           gab_cinvalid;
 
-  gab_value ast = parse_expressions_body(gab, parser);
+  gab_value ast = parse_expressions_body(gab, parser, TOKEN_EOF);
 
   if (ast == gab_cinvalid)
     return gab_cinvalid;
 
   if (gab.flags & fGAB_AST_DUMP)
-    gab_fprintf(stdout, "$\n", ast);
+    gab_fprintf(stdout, "$\n", gab_pvalintos(gab, ast));
 
   gab_iref(gab, ast);
   gab_egkeep(gab.eg, ast);
@@ -886,13 +896,16 @@ union gab_value_pair gab_parse(struct gab_triple gab,
   gab_value name = gab_string(gab, args.name);
 
   struct gab_src *src =
-      gab_src(gab, name, (char *)args.source, strlen(args.source) + 1);
+      gab_src(gab, name, (char *)args.source,
+              args.source_len ? args.source_len : strlen(args.source) + 1);
 
   struct parser parser = {.src = src, .err = gab_cundefined};
 
   gab_value ast = parse(gab, &parser);
 
   gab_gcunlock(gab);
+
+  assert(ast != gab_cinvalid || parser.err != gab_cundefined);
 
   if (ast == gab_cinvalid)
     return (union gab_value_pair){.status = gab_cinvalid,
@@ -951,7 +964,7 @@ static inline void push_op(struct bc *bc, uint8_t op, gab_value node) {
   bc->pprev_op = bc->prev_op;
   bc->prev_op = op;
 
-  assert(d_uint64_t_exists(&bc->src->node_begin_toks, node));
+  // assert(d_uint64_t_exists(&bc->src->node_begin_toks, node));
 
   bc->prev_op_at = v_uint8_t_push(&bc->bc, op);
   size_t offset = d_uint64_t_read(&bc->src->node_begin_toks, node);
@@ -960,7 +973,7 @@ static inline void push_op(struct bc *bc, uint8_t op, gab_value node) {
 }
 
 static inline void push_byte(struct bc *bc, uint8_t data, gab_value node) {
-  assert(d_uint64_t_exists(&bc->src->node_begin_toks, node));
+  // assert(d_uint64_t_exists(&bc->src->node_begin_toks, node));
 
   v_uint8_t_push(&bc->bc, data);
   size_t offset = d_uint64_t_read(&bc->src->node_begin_toks, node);
@@ -982,43 +995,399 @@ static inline uint16_t addk(struct gab_triple gab, struct bc *bc,
   return v_gab_value_push(bc->ks, value);
 }
 
-static inline void push_k(struct bc *bc, uint16_t k, gab_value node) {
+/*
+ * SUPER INSTRUCTION OPTIMIZATION
+ */
+
+enum super_instruction_transition_k : uint8_t {
+  kSI_REPLACE,
+
+  kSI_MAKE_MULTI,
+  kSI_MULTI_APPEND,
+
+  kSI_BYTE_ARG_MAKE_MULTI,
+  kSI_MULTI_BYTE_ARG_APPEND,
+
+  // Sometimes the second argument-byte contains
+  // the multi-byte that needs to be incremented.
+  kSI_BYTE_ARG_MAKE_MULTI2,
+  kSI_MULTI2_BYTE_ARG_APPEND,
+
+  kSI_SHORT_ARG_MAKE_MULTI,
+  kSI_MULTI_SHORT_ARG_APPEND,
+
+  // Sometimes the second argument-byte contains
+  // the multi-byte that needs to be incremented.
+  kSI_SHORT_ARG_MAKE_MULTI2,
+  kSI_MULTI2_SHORT_ARG_APPEND,
+};
+
+struct super_instruction {
+  uint8_t from, via, to, k;
+};
+
+struct super_instruction super_instructions[] = {
+    {
+        OP_LOAD_LOCAL,
+        OP_LOAD_LOCAL,
+        OP_NLOAD_LOCAL,
+        kSI_BYTE_ARG_MAKE_MULTI,
+    },
+    {
+        OP_NLOAD_LOCAL,
+        OP_LOAD_LOCAL,
+        OP_NLOAD_LOCAL,
+        kSI_MULTI_BYTE_ARG_APPEND,
+    },
+    {
+        OP_STORE_LOCAL,
+        OP_POP,
+        OP_POPSTORE_LOCAL,
+        kSI_REPLACE,
+    },
+    {
+        OP_POPSTORE_LOCAL,
+        OP_STORE_LOCAL,
+        OP_NPOPSTORE_STORE_LOCAL,
+        kSI_BYTE_ARG_MAKE_MULTI,
+    },
+    {
+        OP_NPOPSTORE_LOCAL,
+        OP_STORE_LOCAL,
+        OP_NPOPSTORE_STORE_LOCAL,
+        kSI_MULTI_BYTE_ARG_APPEND,
+    },
+    {
+        OP_NPOPSTORE_STORE_LOCAL,
+        OP_POP,
+        OP_NPOPSTORE_LOCAL,
+        kSI_REPLACE,
+    },
+    {
+        OP_LOAD_UPVALUE,
+        OP_LOAD_UPVALUE,
+        OP_NLOAD_UPVALUE,
+        kSI_BYTE_ARG_MAKE_MULTI,
+    },
+    {
+        OP_NLOAD_UPVALUE,
+        OP_LOAD_UPVALUE,
+        OP_NLOAD_UPVALUE,
+        kSI_MULTI_BYTE_ARG_APPEND,
+    },
+    {
+        OP_CONSTANT,
+        OP_CONSTANT,
+        OP_NCONSTANT,
+        kSI_SHORT_ARG_MAKE_MULTI,
+    },
+    {
+        OP_NCONSTANT,
+        OP_CONSTANT,
+        OP_NCONSTANT,
+        kSI_MULTI_SHORT_ARG_APPEND,
+    },
+    {
+        OP_TUPLE,
+        OP_TUPLE,
+        OP_NTUPLE,
+        kSI_MAKE_MULTI,
+    },
+    {
+        OP_NTUPLE,
+        OP_TUPLE,
+        OP_NTUPLE,
+        kSI_MULTI_APPEND,
+    },
+    {
+        OP_NTUPLE,
+        OP_CONSTANT,
+        OP_NTUPLE_CONSTANT,
+        kSI_REPLACE,
+    },
+    {
+        OP_NTUPLE_CONSTANT,
+        OP_CONSTANT,
+        OP_NTUPLE_NCONSTANT,
+        kSI_SHORT_ARG_MAKE_MULTI2,
+    },
+    {
+        OP_NTUPLE_NCONSTANT,
+        OP_CONSTANT,
+        OP_NTUPLE_NCONSTANT,
+        kSI_MULTI2_SHORT_ARG_APPEND,
+    },
+    {
+        OP_TUPLE,
+        OP_CONSTANT,
+        OP_TUPLE_CONSTANT,
+        kSI_REPLACE,
+    },
+    {
+        OP_TUPLE_CONSTANT,
+        OP_CONSTANT,
+        OP_TUPLE_NCONSTANT,
+        kSI_SHORT_ARG_MAKE_MULTI,
+    },
+    {
+        OP_TUPLE_NCONSTANT,
+        OP_CONSTANT,
+        OP_TUPLE_NCONSTANT,
+        kSI_MULTI_SHORT_ARG_APPEND,
+    },
+    {
+        OP_TUPLE,
+        OP_LOAD_LOCAL,
+        OP_TUPLE_LOAD_LOCAL,
+        kSI_REPLACE,
+    },
+    {
+        OP_TUPLE_LOAD_LOCAL,
+        OP_LOAD_LOCAL,
+        OP_TUPLE_NLOAD_LOCAL,
+        kSI_BYTE_ARG_MAKE_MULTI,
+    },
+    {
+        OP_TUPLE_NLOAD_LOCAL,
+        OP_LOAD_LOCAL,
+        OP_TUPLE_NLOAD_LOCAL,
+        kSI_MULTI_BYTE_ARG_APPEND,
+    },
+    {
+        OP_NTUPLE,
+        OP_LOAD_LOCAL,
+        OP_NTUPLE_LOAD_LOCAL,
+        kSI_REPLACE,
+    },
+    {
+        OP_NTUPLE_LOAD_LOCAL,
+        OP_LOAD_LOCAL,
+        OP_NTUPLE_NLOAD_LOCAL,
+        kSI_BYTE_ARG_MAKE_MULTI2,
+    },
+    {
+        OP_NTUPLE_NLOAD_LOCAL,
+        OP_LOAD_LOCAL,
+        OP_NTUPLE_NLOAD_LOCAL,
+        kSI_MULTI2_BYTE_ARG_APPEND,
+    },
+};
+
+const int nsuper_instructions = LEN_CARRAY(super_instructions);
+
+struct inst_arg {
+  uint8_t op;
+
+  enum : uint8_t {
+    kINST_ARG_NONE,
+    kINST_ARG_BYTE,
+    kINST_ARG_SHORT,
+  } k;
+
+  union {
+    uint8_t byte_arg;
+    uint16_t short_arg;
+  } as;
+};
+
+static inline void byte_arg_make_multi(struct bc *bc, struct inst_arg arg,
+                                       struct super_instruction si,
+                                       gab_value node, int multiarg_offset) {
+  // Transition a single-byte-arg instruction to a multi-byte-arg
+  // instruction.
+  size_t multi_arg = bc->prev_op_at + multiarg_offset;
+  uint8_t prev_multi = v_uint8_t_val_at(&bc->bc, multi_arg);
+
+  // Change the previous byte arg to now correspond to the number of bytes
+  // to follow (2).
+  v_uint8_t_set(&bc->bc, multi_arg, 2);
+
+  // Push the previous byte value, and the new one.
+  push_byte(bc, prev_multi, node);
+  push_byte(bc, arg.as.byte_arg, node);
+
+  // Update the old instruction to the new, and the previous op.
+  v_uint8_t_set(&bc->bc, bc->prev_op_at, si.to);
+  bc->prev_op = si.to;
+}
+
+static inline void multi_byte_arg_append(struct bc *bc, struct inst_arg arg,
+                                         struct super_instruction si,
+                                         gab_value node, int multiarg_offset) {
+  // Append a new byte arg to a multi-byte instruction.
+  size_t multi_arg = bc->prev_op_at + multiarg_offset;
+  uint8_t multi = v_uint8_t_val_at(&bc->bc, multi_arg);
+
+  // Increment the multi-arg count.
+  v_uint8_t_set(&bc->bc, multi_arg, multi + 1);
+
+  // Push the additional byte argument.
+  push_byte(bc, arg.as.byte_arg, node);
+
+  if (si.from == si.to)
+    return;
+
+  // Update the old instruction to the new, and the previous op.
+  // We can skip this if the super instruction's from and to ops are the
+  // same.
+  v_uint8_t_set(&bc->bc, bc->prev_op_at, si.to);
+  bc->prev_op = si.to;
+}
+
+static inline void short_arg_make_multi(struct bc *bc, struct inst_arg arg,
+                                        struct super_instruction si,
+                                        gab_value node, int multiarg_offset) {
+  size_t multi_arg = bc->prev_op_at + multiarg_offset;
+
+  // Reconstruct the short argument from the bytecode.
+  uint8_t prev_arg_a = v_uint8_t_val_at(&bc->bc, multi_arg);
+  uint8_t prev_arg_b = v_uint8_t_val_at(&bc->bc, multi_arg + 1);
+
+  uint16_t prev_arg = prev_arg_a << 8 | prev_arg_b;
+
+  // Pop off the old short argument, it isn't salvageable.
+  v_uint8_t_pop(&bc->bc);
+  v_uint8_t_pop(&bc->bc);
+  v_uint64_t_pop(&bc->bc_toks);
+  v_uint64_t_pop(&bc->bc_toks);
+
+  // Push on a new count argument.
+  push_byte(bc, 2, node);
+
+  // Push the original short argument, and the new second one.
+  push_short(bc, prev_arg, node);
+  push_short(bc, arg.as.short_arg, node);
+
+  // Update the old instruction to the new, and the previous op.
+  v_uint8_t_set(&bc->bc, bc->prev_op_at, si.to);
+  bc->prev_op = si.to;
+}
+
+static inline void multi_short_arg_append(struct bc *bc, struct inst_arg arg,
+                                          struct super_instruction si,
+                                          gab_value node, int multiarg_offset) {
+  // Append a new short arg to a multi-byte instruction.
+  size_t multi_arg = bc->prev_op_at + multiarg_offset;
+  uint8_t multi = v_uint8_t_val_at(&bc->bc, multi_arg);
+
+  // Increment the multi-arg count.
+  v_uint8_t_set(&bc->bc, multi_arg, multi + 1);
+
+  // Push the additional short.
+  push_short(bc, arg.as.short_arg, node);
+
+  if (si.from == si.to)
+    return;
+
+  // Update the old instruction to the new, and the previous op.
+  // We can skip this if the super instruction's from and to ops are the
+  // same.
+  v_uint8_t_set(&bc->bc, bc->prev_op_at, si.to);
+  bc->prev_op = si.to;
+}
+
+static inline void push_inst(struct bc *bc, struct inst_arg arg,
+                             gab_value node) {
 #if cGAB_SUPERINSTRUCTIONS
-  switch (bc->prev_op) {
-  case OP_CONSTANT: {
-    size_t prev_local_arg = bc->prev_op_at + 1;
+  for (int i = 0; i < nsuper_instructions; i++) {
+    struct super_instruction si = super_instructions[i];
 
-    uint8_t prev_ka = v_uint8_t_val_at(&bc->bc, prev_local_arg);
-    uint8_t prev_kb = v_uint8_t_val_at(&bc->bc, prev_local_arg + 1);
+    if (si.from == bc->prev_op && si.via == arg.op) {
 
-    uint16_t prev_k = prev_ka << 8 | prev_kb;
+      switch (si.k) {
+      default:
+        assert(false);
+        break;
+      case kSI_REPLACE: {
+        // Push the arg for this new instruction
+        switch (arg.k) {
+        case kINST_ARG_NONE:
+          break;
+        case kINST_ARG_BYTE:
+          push_byte(bc, arg.as.byte_arg, node);
+          break;
+        case kINST_ARG_SHORT:
+          push_short(bc, arg.as.short_arg, node);
+          break;
+        }
 
-    v_uint8_t_pop(&bc->bc);
-    v_uint8_t_pop(&bc->bc);
-    v_uint64_t_pop(&bc->bc_toks);
-    v_uint64_t_pop(&bc->bc_toks);
+        // Update the old instruction to the new, and the previous op.
+        v_uint8_t_set(&bc->bc, bc->prev_op_at, si.to);
+        bc->prev_op = si.to;
+        break;
+      }
+      case kSI_MAKE_MULTI: {
+        // Push a 2, to include previous op and this repetition.
+        push_byte(bc, 2, node);
 
-    bc->prev_op = OP_NCONSTANT;
-    v_uint8_t_set(&bc->bc, bc->prev_op_at, OP_NCONSTANT);
+        // Update the instruction to the repeatable target.
+        v_uint8_t_set(&bc->bc, bc->prev_op_at, si.to);
+        bc->prev_op = si.to;
 
-    push_byte(bc, 2, node);
-    push_short(bc, prev_k, node);
-    push_short(bc, k, node);
+        break;
+      }
+      case kSI_MULTI_APPEND: {
+        size_t multi_arg = bc->prev_op_at + 1;
+        uint8_t multi = v_uint8_t_val_at(&bc->bc, multi_arg);
 
-    return;
-  }
-  case OP_NCONSTANT: {
-    size_t prev_local_arg = bc->prev_op_at + 1;
-    uint8_t prev_n = v_uint8_t_val_at(&bc->bc, prev_local_arg);
-    v_uint8_t_set(&bc->bc, prev_local_arg, prev_n + 1);
-    push_short(bc, k, node);
-    return;
-  }
+        // Increment the multi-arg count.
+        v_uint8_t_set(&bc->bc, multi_arg, multi + 1);
+
+        // Leave the instruction, as we are just adding a repetition
+        break;
+      }
+      case kSI_BYTE_ARG_MAKE_MULTI:
+        byte_arg_make_multi(bc, arg, si, node, 1);
+        break;
+      case kSI_BYTE_ARG_MAKE_MULTI2:
+        byte_arg_make_multi(bc, arg, si, node, 2);
+        break;
+      case kSI_MULTI_BYTE_ARG_APPEND:
+        multi_byte_arg_append(bc, arg, si, node, 1);
+        break;
+      case kSI_MULTI2_BYTE_ARG_APPEND:
+        multi_byte_arg_append(bc, arg, si, node, 2);
+        break;
+      case kSI_SHORT_ARG_MAKE_MULTI:
+        short_arg_make_multi(bc, arg, si, node, 1);
+        break;
+      case kSI_SHORT_ARG_MAKE_MULTI2:
+        short_arg_make_multi(bc, arg, si, node, 2);
+        break;
+      case kSI_MULTI_SHORT_ARG_APPEND:
+        multi_short_arg_append(bc, arg, si, node, 1);
+        break;
+      case kSI_MULTI2_SHORT_ARG_APPEND:
+        multi_short_arg_append(bc, arg, si, node, 2);
+        break;
+      };
+      return;
+    }
   }
 #endif
 
-  push_op(bc, OP_CONSTANT, node);
-  push_short(bc, k, node);
+  push_op(bc, arg.op, node);
+
+  switch (arg.k) {
+  case kINST_ARG_NONE:
+    break;
+  case kINST_ARG_BYTE:
+    push_byte(bc, arg.as.byte_arg, node);
+    break;
+  case kINST_ARG_SHORT:
+    push_short(bc, arg.as.short_arg, node);
+    break;
+  }
+};
+
+static inline void push_k(struct bc *bc, uint16_t k, gab_value node) {
+  push_inst(bc,
+            (struct inst_arg){
+                .op = OP_CONSTANT,
+                .k = kINST_ARG_SHORT,
+                .as.short_arg = k,
+            },
+            node);
 }
 
 static inline void push_loadi(struct bc *bc, gab_value i, gab_value node) {
@@ -1060,105 +1429,38 @@ static inline void push_loadk(struct gab_triple gab, struct bc *bc, gab_value k,
 }
 
 static inline void push_loadl(struct bc *bc, uint8_t local, gab_value node) {
-#if cGAB_SUPERINSTRUCTIONS
-  switch (bc->prev_op) {
-  case OP_LOAD_LOCAL: {
-    size_t prev_local_arg = bc->prev_op_at + 1;
-    uint8_t prev_local = v_uint8_t_val_at(&bc->bc, prev_local_arg);
-    push_byte(bc, prev_local, node);
-    push_byte(bc, local, node);
-    v_uint8_t_set(&bc->bc, prev_local_arg, 2);
-    v_uint8_t_set(&bc->bc, bc->prev_op_at, OP_NLOAD_LOCAL);
-    bc->prev_op = OP_NLOAD_LOCAL;
-    return;
-  }
-  case OP_NLOAD_LOCAL: {
-    size_t prev_local_arg = bc->prev_op_at + 1;
-    uint8_t old_arg = v_uint8_t_val_at(&bc->bc, prev_local_arg);
-    v_uint8_t_set(&bc->bc, prev_local_arg, old_arg + 1);
-    push_byte(bc, local, node);
-    return;
-  }
-  }
-#endif
-
-  push_op(bc, OP_LOAD_LOCAL, node);
-  push_byte(bc, local, node);
-  return;
-}
-
-static inline void push_loadu(struct bc *bc, uint8_t upv, gab_value node) {
-#if cGAB_SUPERINSTRUCTIONS
-  switch (bc->prev_op) {
-  case OP_LOAD_UPVALUE: {
-    size_t prev_upv_arg = bc->prev_op_at + 1;
-    uint8_t prev_upv = v_uint8_t_val_at(&bc->bc, prev_upv_arg);
-    push_byte(bc, prev_upv, node);
-    push_byte(bc, upv, node);
-    v_uint8_t_set(&bc->bc, prev_upv_arg, 2);
-    v_uint8_t_set(&bc->bc, bc->prev_op_at, OP_NLOAD_UPVALUE);
-    bc->prev_op = OP_NLOAD_UPVALUE;
-    return;
-  }
-  case OP_NLOAD_UPVALUE: {
-    size_t prev_upv_arg = bc->prev_op_at + 1;
-    uint8_t old_arg = v_uint8_t_val_at(&bc->bc, prev_upv_arg);
-    v_uint8_t_set(&bc->bc, prev_upv_arg, old_arg + 1);
-    push_byte(bc, upv, node);
-    return;
-  }
-  }
-#endif
-
-  push_op(bc, OP_LOAD_UPVALUE, node);
-  push_byte(bc, upv, node);
+  push_inst(bc,
+            (struct inst_arg){
+                .k = kINST_ARG_BYTE,
+                .op = OP_LOAD_LOCAL,
+                .as.byte_arg = local,
+            },
+            node);
   return;
 }
 
 static inline void push_storel(struct bc *bc, uint8_t local, gab_value node) {
-#if cGAB_SUPERINSTRUCTIONS
-  switch (bc->prev_op) {
-  case OP_POPSTORE_LOCAL: {
-    size_t prev_local_arg = bc->prev_op_at + 1;
-    uint8_t prev_local = v_uint8_t_val_at(&bc->bc, prev_local_arg);
-    push_byte(bc, prev_local, node);
-    push_byte(bc, local, node);
-    v_uint8_t_set(&bc->bc, prev_local_arg, 2);
-    v_uint8_t_set(&bc->bc, bc->prev_op_at, OP_NPOPSTORE_STORE_LOCAL);
-    bc->prev_op = OP_NPOPSTORE_STORE_LOCAL;
-    return;
-  }
-  case OP_NPOPSTORE_LOCAL: {
-    size_t prev_loc_arg = bc->prev_op_at + 1;
-    uint8_t old_arg = v_uint8_t_val_at(&bc->bc, prev_loc_arg);
-    v_uint8_t_set(&bc->bc, prev_loc_arg, old_arg + 1);
-
-    push_byte(bc, local, node);
-
-    v_uint8_t_set(&bc->bc, bc->prev_op_at, OP_NPOPSTORE_STORE_LOCAL);
-    bc->prev_op = OP_NPOPSTORE_STORE_LOCAL;
-    return;
-  }
-  }
-#endif
-
-  push_op(bc, OP_STORE_LOCAL, node);
-  push_byte(bc, local, node);
-  return;
+  push_inst(bc,
+            (struct inst_arg){
+                .k = kINST_ARG_BYTE,
+                .op = OP_STORE_LOCAL,
+                .as.byte_arg = local,
+            },
+            node);
 }
 
-static inline uint8_t encode_arity(struct gab_triple gab, struct bc *bc,
-                                   gab_value lhs, gab_value rhs,
-                                   gab_value *vout, bool explicit) {
-  *vout = gab_cvalid;
-
-  return explicit;
+static inline void push_loadu(struct bc *bc, uint8_t upv, gab_value node) {
+  push_inst(bc,
+            (struct inst_arg){
+                .k = kINST_ARG_BYTE,
+                .op = OP_LOAD_UPVALUE,
+                .as.byte_arg = upv,
+            },
+            node);
 }
 
-[[nodiscard]]
-static inline gab_value push_send(struct gab_triple gab, struct bc *bc,
-                                  gab_value m, gab_value lhs, gab_value rhs,
-                                  gab_value node, bool explicit) {
+static inline void push_send(struct gab_triple gab, struct bc *bc, gab_value m,
+                             gab_value node) {
   if (gab_valkind(m) == kGAB_STRING)
     m = gab_strtomsg(m);
 
@@ -1167,22 +1469,11 @@ static inline gab_value push_send(struct gab_triple gab, struct bc *bc,
   uint16_t ks = addk(gab, bc, m);
   addk(gab, bc, gab_cinvalid);
 
-  for (int i = 0; i < cGAB_SEND_CACHE_LEN; i++) {
-    for (int j = 0; j < GAB_SEND_CACHE_SIZE; j++) {
-      addk(gab, bc, gab_cinvalid);
-    }
-  }
+  for (int i = 0; i < cGAB_SEND_CACHE_LEN * GAB_SEND_CACHE_SIZE; i++)
+    addk(gab, bc, gab_cinvalid);
 
   push_op(bc, OP_SEND, node);
   push_short(bc, ks, node);
-
-  gab_value res;
-  push_byte(bc, encode_arity(gab, bc, lhs, rhs, &res, explicit), node);
-
-  if (res != gab_cvalid)
-    return res;
-
-  return gab_cvalid;
 }
 
 static inline void push_pop(struct bc *bc, uint8_t n, gab_value node) {
@@ -1192,25 +1483,12 @@ static inline void push_pop(struct bc *bc, uint8_t n, gab_value node) {
     return;
   }
 
-#if cGAB_SUPERINSTRUCTIONS
-  switch (bc->prev_op) {
-  case OP_STORE_LOCAL:
-    bc->prev_op_at = bc->bc.len - 2;
-    bc->bc.data[bc->prev_op_at] = OP_POPSTORE_LOCAL;
-    bc->prev_op = OP_POPSTORE_LOCAL;
-    return;
-
-  case OP_NPOPSTORE_STORE_LOCAL:
-    bc->bc.data[bc->prev_op_at] = OP_NPOPSTORE_LOCAL;
-    bc->prev_op = OP_NPOPSTORE_LOCAL;
-    return;
-
-  default:
-    break;
-  }
-#endif
-
-  push_op(bc, OP_POP, node);
+  push_inst(bc,
+            (struct inst_arg){
+                .k = kINST_ARG_NONE,
+                .op = OP_POP,
+            },
+            node);
 }
 
 // fix this to work with sends in the middle of tuples, doesn't trim properly
@@ -1257,37 +1535,23 @@ static inline bool push_trim_node(struct gab_triple gab, struct bc *bc,
   return true;
 }
 
-[[nodiscard]]
-static inline gab_value
-push_listpack(struct gab_triple gab, struct bc *bc, gab_value rhs,
-              uint8_t below, uint8_t above, bool explicit, gab_value node) {
-  gab_value res;
-
+static inline void push_listpack(struct gab_triple gab, struct bc *bc,
+                                 uint8_t below, uint8_t above, gab_value node) {
   push_op(bc, OP_PACK_LIST, node);
-  push_byte(bc, encode_arity(gab, bc, rhs, gab_cinvalid, &res, explicit), node);
   push_byte(bc, below, node);
   push_byte(bc, above, node);
-
-  return res;
 }
 
-[[nodiscard]]
-static inline gab_value
-push_recordpack(struct gab_triple gab, struct bc *bc, gab_value rhs,
-                uint8_t below, uint8_t above, bool explicit, gab_value node) {
-  gab_value res;
-
+static inline void push_recordpack(struct gab_triple gab, struct bc *bc,
+                                   uint8_t below, uint8_t above,
+                                   gab_value node) {
   push_op(bc, OP_PACK_RECORD, node);
-  push_byte(bc, encode_arity(gab, bc, rhs, gab_cinvalid, &res, explicit), node);
   push_byte(bc, below, node);
   push_byte(bc, above, node);
-
-  return res;
 }
 
-[[nodiscard]]
-static inline gab_value push_ret(struct gab_triple gab, struct bc *bc,
-                                 gab_value tup, gab_value node, bool explicit) {
+static inline void push_ret(struct gab_triple gab, struct bc *bc, gab_value tup,
+                            gab_value node) {
   assert(node_len(gab, tup) < 16);
 
   bool is_multi = node_ismulti(gab, tup);
@@ -1300,48 +1564,42 @@ static inline gab_value push_ret(struct gab_triple gab, struct bc *bc,
   if (len == 0) {
     switch (bc->prev_op) {
     case OP_SEND: {
-      gab_value res;
-
-      uint8_t have_byte = v_uint8_t_val_at(&bc->bc, bc->bc.len - 1);
-      v_uint8_t_set(&bc->bc, bc->bc.len - 1, have_byte | fHAVE_TAIL);
+      uint8_t first_short_byte = v_uint8_t_val_at(&bc->bc, bc->bc.len - 2);
+      assert(!(first_short_byte & fHAVE_TAIL));
+      v_uint8_t_set(&bc->bc, bc->bc.len - 2, first_short_byte | fHAVE_TAIL);
       push_op(bc, OP_RETURN, node);
-      push_byte(bc, encode_arity(gab, bc, tup, gab_cinvalid, &res, explicit),
-                node);
 
-      return res;
+      return;
     }
     case OP_TRIM: {
       if (bc->pprev_op != OP_SEND)
         break;
 
-      gab_value res;
-      uint8_t have_byte = v_uint8_t_val_at(&bc->bc, bc->bc.len - 3);
-      v_uint8_t_set(&bc->bc, bc->bc.len - 3, have_byte | fHAVE_TAIL);
+      uint8_t first_short_byte = v_uint8_t_val_at(&bc->bc, bc->bc.len - 4);
+      assert(!(first_short_byte & fHAVE_TAIL));
+      v_uint8_t_set(&bc->bc, bc->bc.len - 4, first_short_byte | fHAVE_TAIL);
       bc->prev_op = bc->pprev_op;
       bc->bc.len -= 2;
       bc->bc_toks.len -= 2;
       push_op(bc, OP_RETURN, node);
-      push_byte(bc, encode_arity(gab, bc, tup, gab_cinvalid, &res, explicit),
-                node);
 
-      return res;
+      return;
     }
     }
   }
 #endif
-  gab_value res;
 
   push_op(bc, OP_RETURN, node);
-  push_byte(bc, encode_arity(gab, bc, tup, gab_cinvalid, &res, explicit), node);
-
-  return res;
+  return;
 }
 
 void patch_init(struct bc *bc, uint8_t nlocals) {
   if (v_uint8_t_val_at(&bc->bc, 0) == OP_TRIM)
     v_uint8_t_set(&bc->bc, 1, nlocals);
-  else if (v_uint8_t_val_at(&bc->bc, 4) == OP_TRIM)
-    v_uint8_t_set(&bc->bc, 5, nlocals);
+  else if (v_uint8_t_val_at(&bc->bc, 3) == OP_TRIM)
+    v_uint8_t_set(&bc->bc, 4, nlocals);
+  else
+    assert(false && "UNREACHABLE");
 }
 
 size_t locals_in_env(gab_value env) {
@@ -1518,14 +1776,14 @@ gab_value compile_symbol(struct gab_triple gab, struct bc *bc, gab_value tuple,
     push_loadu(bc, res.idx, tuple);
     return res.env;
   default:
-    bc_error(gab, bc, tuple, GAB_UNBOUND_SYMBOL, "$ is unbound",
+    bc_error(gab, bc, tuple, GAB_UNBOUND_SYMBOL, FMT_ID_NOT_FOUND,
              gab_bintostr(id));
     return gab_cinvalid;
   }
 };
 
 gab_value compile_tuple(struct gab_triple gab, struct bc *bc, gab_value node,
-                        gab_value env, bool *explicit_tuple);
+                        gab_value env);
 
 gab_value compile_record(struct gab_triple gab, struct bc *bc, gab_value tuple,
                          gab_value node, gab_value env);
@@ -1562,7 +1820,14 @@ gab_value unpack_binding(struct gab_triple gab, struct bc *bc,
   switch (gab_valkind(binding)) {
 
   case kGAB_BINARY:
-    assert(gab_valkind(gab_recat(ctx, binding)) != kGAB_NUMBER);
+    if (gab_valkind(gab_recat(ctx, binding)) == kGAB_NUMBER) {
+      return bc_error(gab, bc, bindings, GAB_MALFORMED_ASSIGNMENT,
+                      FMT_MALFORMED_ASSIGNMENT FMT_MALFORMED_ASSIGNMENT_NOTE
+                      "Cannot assign to a captured variable: $.",
+                      gab_bintostr(binding)),
+             gab_cinvalid;
+    }
+
     ctx = gab_recput(gab, ctx, binding, gab_nil);
     v_gab_value_push(targets, binding);
     return ctx;
@@ -1587,7 +1852,11 @@ gab_value unpack_binding(struct gab_triple gab, struct bc *bc,
           goto err;
 
         if (*listpack_at_n >= 0 || *recpack_at_n >= 0)
-          goto err;
+          return bc_error(gab, bc, binding, GAB_MALFORMED_ASSIGNMENT,
+                          FMT_MALFORMED_ASSIGNMENT FMT_MALFORMED_ASSIGNMENT_NOTE
+                          "There may only be one assignment target with '*' or "
+                          "'**'"),
+                 gab_cinvalid;
 
         assert(gab_valkind(gab_recat(ctx, rec)) != kGAB_NUMBER);
         ctx = gab_recput(gab, ctx, rec, gab_nil);
@@ -1598,6 +1867,9 @@ gab_value unpack_binding(struct gab_triple gab, struct bc *bc,
         return ctx;
       }
 
+      /*
+       * Compiling a DICT member
+       */
       if (m == gab_message(gab, mGAB_SPLATDICT)) {
         if (gab_valkind(rec) != kGAB_BINARY)
           goto err;
@@ -1606,7 +1878,11 @@ gab_value unpack_binding(struct gab_triple gab, struct bc *bc,
           goto err;
 
         if (*listpack_at_n >= 0 || *recpack_at_n >= 0)
-          goto err;
+          return bc_error(gab, bc, binding, GAB_MALFORMED_ASSIGNMENT,
+                          FMT_MALFORMED_ASSIGNMENT FMT_MALFORMED_ASSIGNMENT_NOTE
+                          "There may only be one assignment target with '*' or "
+                          "'**'"),
+                 gab_cinvalid;
 
         assert(gab_valkind(gab_recat(ctx, rec)) != kGAB_NUMBER);
         ctx = gab_recput(gab, ctx, rec, gab_nil);
@@ -1618,15 +1894,15 @@ gab_value unpack_binding(struct gab_triple gab, struct bc *bc,
       }
 
     err:
-      return bc_error(gab, bc, binding, GAB_INVALID_REST_VARIABLE,
-                      "$ is invalid assignment", lhs),
+      return bc_error(gab, bc, binding, GAB_MALFORMED_ASSIGNMENT,
+                      FMT_MALFORMED_ASSIGNMENT),
              gab_cinvalid;
     }
   }
 
   default:
-    return bc_error(gab, bc, binding, GAB_INVALID_REST_VARIABLE,
-                    "$ is invalid assignment", binding),
+    return bc_error(gab, bc, binding, GAB_MALFORMED_ASSIGNMENT,
+                    FMT_MALFORMED_ASSIGNMENT),
            gab_cinvalid;
   }
 }
@@ -1657,17 +1933,11 @@ gab_value unpack_bindings_into_env(struct gab_triple gab, struct bc *bc,
   size_t actual_targets = targets.len;
 
   if (listpack_at_n >= 0) {
-    gab_value res =
-        push_listpack(gab, bc, values, listpack_at_n,
-                      actual_targets - listpack_at_n - 1, false, bindings);
-    if (res != gab_cvalid)
-      return v_gab_value_destroy(&targets), res;
+    push_listpack(gab, bc, listpack_at_n, actual_targets - listpack_at_n - 1,
+                  bindings);
   } else if (recpack_at_n >= 0) {
-    gab_value res =
-        push_recordpack(gab, bc, values, recpack_at_n,
-                        actual_targets - recpack_at_n - 1, false, bindings);
-    if (res != gab_cvalid)
-      return v_gab_value_destroy(&targets), res;
+    push_recordpack(gab, bc, recpack_at_n, actual_targets - recpack_at_n - 1,
+                    bindings);
   } else if (!push_trim_node(gab, bc, actual_targets, values, bindings)) {
     return v_gab_value_destroy(&targets), gab_cinvalid;
   }
@@ -1692,6 +1962,8 @@ gab_value unpack_bindings_into_env(struct gab_triple gab, struct bc *bc,
       switch (res.k) {
       case kLOOKUP_LOC:
         push_storel(bc, res.idx, bindings);
+        if (i + 1 != actual_targets)
+          push_pop(bc, 1, bindings);
         break;
       case kLOOKUP_UPV:
         assert(false && "INVALID UPV TARGET");
@@ -1704,13 +1976,10 @@ gab_value unpack_bindings_into_env(struct gab_triple gab, struct bc *bc,
     }
     default:
       return v_gab_value_destroy(&targets),
-             bc_error(gab, bc, bindings, GAB_INVALID_REST_VARIABLE,
-                      "$ is invalid assignment", target),
+             bc_error(gab, bc, bindings, GAB_MALFORMED_ASSIGNMENT,
+                      FMT_MALFORMED_ASSIGNMENT),
              gab_cinvalid;
     }
-
-    if (i + 1 < actual_targets)
-      push_pop(bc, 1, bindings);
   }
 
   return v_gab_value_destroy(&targets), env;
@@ -1741,7 +2010,7 @@ gab_value compile_block(struct gab_triple gab, struct bc *bc, gab_value node,
   gab_value prt = pair.vresult;
   assert(gab_valkind(prt) == kGAB_PROTOTYPE);
 
-  env = gab_lstpop(gab, gab_prtenv(prt), nullptr);
+  env = gab_recpop(gab, gab_prtenv(prt), nullptr, nullptr);
 
   push_op(bc, OP_BLOCK, RHS);
   push_short(bc, addk(gab, bc, prt), RHS);
@@ -1754,12 +2023,16 @@ gab_value compile_assign(struct gab_triple gab, struct bc *bc, gab_value node,
   gab_value lhs_node = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_LHS);
   gab_value rhs_node = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_RHS);
 
-  bool explicit = false;
-  env = compile_tuple(gab, bc, rhs_node, env, &explicit);
+  env = compile_tuple(gab, bc, rhs_node, env);
 
   if (env == gab_cinvalid)
     return gab_cinvalid;
 
+  // TODO: This emits a *trim node* in certain situations.
+  // The trim node sets the tuple to 0 currently, which creates inconsistent
+  // behavior with assignment expressions. EG: a = 1 => 1 EG: a = 1 + 1 => ()
+  // The trim node *should* instead leave the tuple on the stack with want
+  // length. This causes another bug somewhere else
   env = unpack_bindings_into_env(gab, bc, lhs_node, env, rhs_node);
 
   if (env == gab_cinvalid)
@@ -1798,26 +2071,20 @@ gab_value compile_record(struct gab_triple gab, struct bc *bc, gab_value tuple,
     if (msg_is_specialform(gab, msg))
       return compile_specialform(gab, bc, tuple, node, env);
 
-    push_op(bc, OP_TUPLE, node);
+    push_inst(bc, (struct inst_arg){OP_TUPLE}, node);
 
-    bool explicit = false;
-    env = compile_tuple(gab, bc, lhs_node, env, &explicit);
+    env = compile_tuple(gab, bc, lhs_node, env);
 
     if (env == gab_cinvalid)
       return gab_cinvalid;
 
     // If the lhs was multi,
-    env = compile_tuple(gab, bc, rhs_node, env, &explicit);
+    env = compile_tuple(gab, bc, rhs_node, env);
 
     if (env == gab_cinvalid)
       return gab_cinvalid;
 
-    gab_value res = push_send(gab, bc, msg, lhs_node, rhs_node, node, explicit);
-
-    if (res != gab_cvalid)
-      return res;
-
-    // push_op(bc, OP_CONS, node);
+    push_send(gab, bc, msg, node);
 
     break;
   }
@@ -1828,8 +2095,7 @@ gab_value compile_record(struct gab_triple gab, struct bc *bc, gab_value tuple,
     for (size_t i = 0; i < len; i++) {
       gab_value child_node = gab_uvrecat(node, i);
 
-      bool explicit = false;
-      env = compile_tuple(gab, bc, child_node, env, &explicit);
+      env = compile_tuple(gab, bc, child_node, env);
 
       if (env == gab_cinvalid)
         return gab_cinvalid;
@@ -1851,7 +2117,7 @@ gab_value compile_record(struct gab_triple gab, struct bc *bc, gab_value tuple,
 // each compiled as tuples, but really they are part of one tuple (which may or
 // may not need to be cons'd)
 gab_value compile_tuple(struct gab_triple gab, struct bc *bc, gab_value node,
-                        gab_value env, bool *explicit_tuple) {
+                        gab_value env) {
   size_t len = gab_reclen(node);
 
   for (size_t i = 0; i < len; i++) {
@@ -1967,8 +2233,14 @@ union gab_value_pair gab_compile(struct gab_triple gab,
 
   assert(bc.bc.len == bc.bc_toks.len);
 
-  bool explicit = false;
-  args.env = compile_tuple(gab, &bc, args.ast, args.env, &explicit);
+  /*
+   * The first tuple in a block is its *arguments*. We don't want to return
+   * this tuple from the block when the block returns.
+   * We push another, empty tuple here. This will be returned by the block.
+   **/
+  push_inst(&bc, (struct inst_arg){OP_TUPLE}, args.ast);
+
+  args.env = compile_tuple(gab, &bc, args.ast, args.env);
 
   assert(bc.bc.len == bc.bc_toks.len);
 
@@ -1981,10 +2253,7 @@ union gab_value_pair gab_compile(struct gab_triple gab,
   gab_value local_env = gab_uvrecat(args.env, nenvs - 1);
   assert(bc.bc.len == bc.bc_toks.len);
 
-  gab_value res = push_ret(gab, &bc, args.ast, args.ast, explicit);
-  if (res != gab_cvalid)
-    return assert(bc.err != gab_cinvalid), bc_destroy(&bc),
-           (union gab_value_pair){{gab_cinvalid, bc.err}};
+  push_ret(gab, &bc, args.ast, args.ast);
 
   size_t nlocals = locals_in_env(local_env);
   assert(nlocals < GAB_LOCAL_MAX);
@@ -2047,13 +2316,15 @@ union gab_value_pair gab_build(struct gab_triple gab,
 
   union gab_value_pair ast = gab_parse(gab, args);
 
+  assert(ast.vresult != gab_cundefined);
   if (ast.status != gab_cvalid)
     return gab_gcunlock(gab), ast;
 
   struct gab_src *src = d_gab_src_read(&gab.eg->sources, mod);
 
   if (src == nullptr)
-    return gab_gcunlock(gab), (union gab_value_pair){.status = gab_cinvalid};
+    return gab_gcunlock(gab), (union gab_value_pair){.status = gab_cinvalid,
+                                                     .vresult = gab_cundefined};
 
   // Default to empty list here
   gab_value bindings = gab_listof(gab);
@@ -2078,6 +2349,7 @@ union gab_value_pair gab_build(struct gab_triple gab,
                                                   .mod = mod,
                                                   .bindings = bindings,
                                               });
+  assert(res.vresult != gab_cundefined);
 
   if (res.status == gab_cinvalid)
     return gab_gcunlock(gab), res;
@@ -2085,6 +2357,7 @@ union gab_value_pair gab_build(struct gab_triple gab,
   gab_srccomplete(gab, src);
 
   gab_value main = gab_block(gab, res.vresult);
+  assert(main != gab_cundefined);
 
   gab_iref(gab, main);
   gab_iref(gab, res.vresult);

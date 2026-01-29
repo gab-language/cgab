@@ -18,6 +18,7 @@ truthy_values .defmodule {
   or: _ => self
   else: _ => self
   assert: _ => self
+  dowhen: (f r args) => f.to\block.(r args*)
 }
 
 falsey_values .defmodule {
@@ -28,16 +29,40 @@ falsey_values .defmodule {
   assert: msg => 'Assertion ($) failed: $'.panicf(self, msg .or "")
   to\option: none:,
   to\result: err:,
+  dowhen: (_ r) => r
 }
+
+to\condition: .defcase {
+  Blocks.t
+  (args*)
+    => self.(args*)
+
+  Messages.t
+  (args*)
+    => self.to\block.(args*)
+
+  true: true:
+
+  nil: false:
+  false: false:
+  none: false:
+  err: false:
+}
+
+to\condition: .def true:
 
 [] .defmodule {
   to\option: (args*) => (ok:, self, args*)
   to\result: (args*) => (ok:, self, args*)
+
+  when: (cond, f, args*)
+    => cond
+      .to\condition(self)
+      .dowhen(f self args)
 }
 
 cond\check: .defcase {
   Blocks.t,   (args*) => self.(args*)
-  Messages.t, (args*) => self.(args*)
   else: ok:
 }
 
@@ -48,40 +73,52 @@ docond: .def (fs*) => do
     (acc, f) => acc.else () => f.cond\check(args*).and f)
 end
 
+cond\eval: .defcase {
+  Blocks.t
+  (v) => self.(v)
+}
+cond\eval: .def () => self
+
 cond: .def (vs*, branches) => do
   args = [self, vs*]
 
   k = args.docond(branches ? *)
 
-  branches .at k .unwrap
+  v = branches .at k .unwrap
+
+  v.cond\eval(self)
 end
 
-put_by: .def (
-  Records.t
-  (k, f) => do
-    v = self.at k .unwrap
-
-    self.put(k, f.(v))
-  end)
-
-:.def(
+make:.def(
   option:
   (cond, data*) => do
-    (cond.to\option, data*)
+    status = cond.to\option
+
+    (status, data*)
   end)
 
-:.def(
+make:.def(
   result:
   (cond, data*) => (cond.to\result, data*))
 
 [ok:] .defmodule {
-  ok: (args*) => (true:, args*)
+  ok: true:
   unwrap: (args*) => args*
+  unwrap_or: (args*, default) => args*
 }
 
 [] .defmodule {
   ok: false:
   unwrap: args* => 'Failed to unwrap $ $'.panicf(self args)
+  unwrap_or: (args*, default) => default
+}
+
+# Implement the reducer protocol for blocks
+[Blocks.t] .defmodule {
+  reduce\step: (acc, xs*) => do
+    (next:, self, self.(acc, xs*))
+  end
+  reduce\done: acc => acc
 }
 
 doreduce: .defcase {
@@ -119,37 +156,43 @@ def\seq: .def do
       self.reduce(acc, td .td\apply r)
     end,
     each: f => do
-      self.transduce(nil:, all:, td:.tap f)
+      self.transduce(nil:, () => nil:, td:.tap f)
     end,
     map: f => do
-      self.collect(td:.map f)
+      self.collect([] td:.map f)
     end,
     filter: f => do
-      self.collect(td:.filter f)
+      self.collect([] td:.filter f)
+    end,
+    mapfilter: f => do
+      self.collect([] td:.mapfilter f)
     end,
     skip: f => do
-      self.collect(td:.skip f)
+      self.collect([] td:.skip f)
     end,
     every: f => do
       xf = td:.drop_while f
         |> td:.take 1
 
-      self.collect xf .is\empty
+      self.collect([] xf).is\empty
     end,
     any: f => do
       xf = td:.filter f
         |> td:.take 1
 
-      self.collect xf .is\empty.!
+      self.collect([] xf).is\empty.!
     end,
-    join: xf => do
-      self.transduce("", +:, xf)
+    join: (start xf) => do
+      self.transduce(start (acc x) => acc + x, xf)
     end,
-    collect: xf => do
-      self.transduce({}, cons:, xf)
+    collect: (into xf) => do
+      self.transduce(into (acc x) => acc.cons x,  xf)
     end,
-    pipe: (ch, xf) =>do
-      self.transduce(ch, <!:, xf)
+    zip: (into xf) => do
+      self.transduce(into (acc v k) => acc.put(k v), xf)
+    end,
+    pipe: (ch xf) =>do
+      self.transduce(ch (acc x) => acc <! x, xf)
     end
   }
 end
@@ -170,33 +213,41 @@ end
   is\open: _ => self.is\closed!
 }
 
-Channels.t.def\seq
-
-# Implement the reducer protocol for blocks and messages
-[Blocks.t, Messages.t] .defmodule {
-  reduce\step: (acc, xs*) => do
-    (next:, self, self.(acc, xs*))
-  end
-  reduce\done: acc => acc
-}
-
 cons: .def (nil:, o => [o])
 
-[Records.t] .defmodule {
-  has: key => do
-    self.at key .ok
-  end
-}
+Channels.t.def\seq
 
 Records.t.def\seq
 
 Strings.t.def\seq
+
+Shapes.t.def\seq
+
+#|>: .def (
+#  Messages.t,
+#  (second) => do
+#    first = self
+#    m = Messages.gen
+#    m.def((args*) => second.(first.(self args*)))
+#    m
+#  end)
+
+|>: .def (
+  Blocks.t,
+  (second) => do
+    first = self
+    (args*) => second.(first.(args*))
+  end)
 
 is_n: .def false:
 is_n: .def (Numbers.t, true:)
 
 to\n: .def (falsey_values, 0)
 to\n: .def (truthy_values, 1)
+
+[Strings.t].defmodule {
+  is\empty: () => self.len == 0
+}
 
 [Numbers.t] .defmodule {
   ->: to => (to, self) .to\range

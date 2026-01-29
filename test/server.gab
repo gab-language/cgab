@@ -1,0 +1,32 @@
+'chttp'.use
+
+Socket = IO.Sock
+
+server = Socket.make tcp: .unwrap
+
+server.bind('localhost' 8080).unwrap
+
+server.listen(128).unwrap
+
+"Listening on 8080!".println
+
+res = 'HTTP/1.0 200 OK\r\nContent-Length: 25\r\n\r\n<body>Hello world!</body>'.to\b
+
+run: .def (
+  Socket.t
+  () => do
+    (ok, client) = self.accept
+    'Accepted client. $ $\n'.printf(ok, client)
+
+    Fibers.make () => do
+      data = client.read.unwrap
+      data = data.as\s.unwrap.as\http.unwrap
+      'Read request from client:\n$\n'.printf(data)
+      client.write res .unwrap
+      'Wrote response for client.'.println
+    end
+
+    self.run
+  end)
+
+server.run

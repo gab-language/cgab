@@ -1,0 +1,22 @@
+sqlite = 'csqlite'.use
+
+db = sqlite.make.unwrap
+
+"Opened $.".sprintf(db).println
+
+db.exec "CREATE DATABASE SampleDB;USE SampleDB;"
+
+db.exec "CREATE TABLE Employees (
+    EmployeeID INT PRIMARY KEY,
+    FirstName VARCHAR(50),
+    LastName VARCHAR(50),
+    HireDate DATE
+);"
+
+db.exec "INSERT INTO Employees (EmployeeID, FirstName, LastName, HireDate) VALUES
+(1, 'John', 'Doe', '2023-01-15'),
+(2, 'Jane', 'Smith', '2023-02-20');"
+
+res = [db.exec "SELECT * FROM Employees;"]
+
+res.println

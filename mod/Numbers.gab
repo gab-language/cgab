@@ -1,1 +1,6 @@
-'cnumbers'.use
+Numbers = 'cnumbers'.use
+
+is\n:.def(Numbers.t, true:)
+is\n: .def false:
+
+Numbers

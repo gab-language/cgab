@@ -5,6 +5,11 @@ td\apply: .defcase {
   nil:  x => x
 }
 
+transduce\step:.def(
+  Blocks.t
+  (a b c d) => self.(a b c d)
+)
+
 deftransducer: .def (
   Messages.t
   (cx, init) => do
@@ -26,8 +31,12 @@ deftransducer: .def (
 
       td\apply: c => self.put(continuation: self.continuation.td\apply c)
 
+      transduce\step: (a b c d) => do
+        self.reducer.transduce\step(a b c d)
+      end
+
       reduce\step: (acc, xs*) => do
-        (s, cmd, c, acc) = self.reducer.(self.continuation, acc, xs, self.state)
+        (s, cmd, c, acc) = self.transduce\step(self.continuation, acc, xs, self.state)
 
         (
           cmd, 
@@ -43,10 +52,12 @@ deftransducer: .def (
   end)
 
 td\conditionally: .defcase {
+  ok: (r, acc, xs, s) => (s, r.reduce\step(acc, xs*))
   true: (r, acc, xs, s) => (s, r.reduce\step(acc, xs*))
   next: (r, acc, xs, s) => (s, r.reduce\step(acc, xs*))
 
   false: (r, acc, xs, s) => (s, next:, r, acc)
+  none: (r, acc, xs, s) => (s, next:, r, acc)
   stop: (r, acc, xs, s) => (s, next:, r, acc)
 }
 
@@ -63,12 +74,18 @@ td\stop_conditionally: .defcase {
   false: (r, acc, xs, s) => (s, stop:, r, acc)
 }
 
-
 map:.deftransducer(
   f => (r, acc, xs) => (nil:, r.reduce\step(acc, f.(xs*))))
 
 filter:.deftransducer(
   f => (r, acc, xs) => f.(xs*).td\conditionally(r, acc, xs))
+
+mapfilter:.deftransducer(
+  f => (r acc xs) => do
+    (ok, vs*) = f.(xs*)
+
+    ok.td\conditionally(r, acc, vs)
+  end)
 
 reduce:.deftransducer(
   (inner_acc inner_r)
@@ -85,6 +102,10 @@ reduce:.deftransducer(
         # If our command tells us to
         cmd.td\conditionally(outer_r, outer_acc, [acc], { r: r acc: acc })
       end
+  { r: nil: acc: nil: })
+
+transduce:.deftransducer(
+  (inner_acc inner_r td) => td:.reduce(inner_acc, td.td\apply inner_r)
   { r: nil: acc: nil: })
 
 tap:.deftransducer(
@@ -166,6 +187,5 @@ split:.deftransducer(
         (sep == x).td\do_split(r acc xs split)
       end
   [])
-
 
 module

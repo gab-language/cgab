@@ -1,1 +1,46 @@
-'cmessages'.use
+Messages = 'cmessages'.use
+
+defm:.def(
+  Messages.t
+  (meta**, type, impl)
+    => do
+      self.def(type impl)
+      _meta:.def(self, meta)
+    end)
+
+add: .defm (
+  help: "This is an example message which adds two values"
+  version: "0.1"
+  Strings.t
+  (other) => self + other)
+
+to\class_cxtor: .defcase {
+  default:
+  () => (t) => (args*) => t.make(args*)
+
+  "gab\block"
+  () => do
+    block = self
+    (t) => (args*) => block.(t args*)
+  end
+}
+
+# Helper message for defining 'class'-esque types.
+defclass: .def (fields*, cxtor, module) => do
+# Combine the fields into a shape to get our class type.
+  t = Shapes.make(fields*)
+
+# Define t: for this message, returning our class type.
+  t: .def(self t)
+# Define the make: constructor message
+  make: .def(self cxtor.to\class_cxtor.(t))
+
+# Define the module (the 'instance methods') on our class type.
+  [t] .defmodule module
+
+# Return our 'class'
+  self
+end
+
+
+Messages

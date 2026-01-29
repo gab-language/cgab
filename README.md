@@ -33,65 +33,15 @@ There are several sub-projects within this repository.
     - Moving objects is not safe (we can't traverse all pointers in c-code). The allocate-as-dead strategy is still useful,
         but will need to adjust how locking works (which right now, delays drefing objects until "unlock" is called)
     - Interestingly, it is known at object-creation time whether it is movable or not. Maybe this can be used to choose a specific allocation strategy.
-- [ ] Implement buffered channels. (come up with workaround)
-    - Channels actually *can't* be buffered because then they'd be mutable. There must always be a putter blocking on the channel until there is a taker. (In order for gc to be sound)
-- [X] Fix memory leak of fibers
-    - Currently we intenionally leak fiber objects, this was just a temporary hack
-- [X] Refine module system and some ergonomic things for defining messages
-    - Fibers store messages independantly of each other. \use runs source files in a separate fiber, so then has to replace
-    the calling fibers messages at the end of the call
-- [X] Implement *yielding/descheduling*. When a fiber blocks (like on a channel put/take), that fiber should *yield* to the back of some queue, so that the OS thread can continue work on another fiber.
-    - Because Gab doesn't do this currenty, gab code actually can't run on just one thread. Try `gab run -j 1 test`. It will just hang.
-    - This can't be implemented without changing the main work-channel to be buffered. 
-    - This requires finding a sound strategy for handling thread-migration in the gc. (Solution was to simply not migrate threads between workers)
-- [X] Lazily create up to `njobs` threads, instead of immediately creating all `njobs`.
-    - Scale idle threads back down after some timeout
-    - Be smarter about creating these - check
-- [ ] Because of self-modifying bytecode and inline caches. gab copies each compiled module for each OS thread.
-    - For blocks of some small-enough heuristic, it might be beneficial to give them a copy of their prototypes bytecode.
-    - This would allow each instance of the block to specialize according to the data types it sees as an individual
-- [X] Change records to use a datastructure similar to clojure's persistent vectors. 
-    - Shapes mean we can still cache lookup indices.
-- [X] Allocate records in their final state ahead of time, instead of creating n - 1 intermediate records.
 - [ ] Optimize shape datastructure.
     - Shapes are mutable because of their ugly transition vector
     - Building big shapes (like for tuples) is basically traversing a linked list in O(n) time (ugly)
+    - Include some optimizations for records, like popping values, swapping shapes with the same value, etc.
+        - A *pop_front* operation can point to the same underlying record, just with a different shape! (And some sort of tombstone thing) 
 - [ ] Optimize string interning datastructure.
     - Hashmap works well enough, but copies a lot of data and makes concat/slice slow.
-- [X] Refactor *OP_TUPLE* and *OP_RECORD* to be message sends. Include as builtins:
-    - `.gab.record(<args>)`
-    - `.gab.list(<args>)`
-    - `.gab.fiber(block)`
-    - `.gab.channel()`
-    - `\records.pack` -> Pack a tuple of values into a record
-    - `\lists.pack`   -> Pack a tuple of values into a list
-- [ ] QoL improvements to repl
-    - Multiline Editing
-    - History
 - [ ] JIT Compilation (need I say more)
     - Copy-and-patch JIT compiler? Refactoring VM.c via macros to write into stencils
-- [ ] Compose channels with `|`, as opposed to `alt`.
-- [X] Capture sig interrupt to gracefully print stacktraces of running fibers
-- [ ] Of course, lots of library work can be done.
-    - More iterators
-    - Improve spec
-    - Wrappers for c-libraries for data parsing, http, sockets, number stuff
-# What about imports?
-Gab defines several native messages. `print:` is one you should be familiar with by now - `use:` is another!
-It is used like this:
-```
-'io' .use
-```
-The implementation searches for the following, in order:
- - `./(name).gab`
- - `./(name)/mod.gab`
- - `./lib(name).so`
- - `~/gab/(name)/.gab`
- - `~/gab/(name)/.gab`
- - `~/gab/(name)/mod.gab`
- - `~/gab/std/(name)/.gab`
- - `~/gab/lib/libcgab(name).so`
- Files ending in the `.gab` extension are evaluated, and the result of the last top-level expression is returned to the caller of `:use`. Files ending in the `.so` extension are opened dynamically, and searched for the symbol `gab_lib`. The result of this function is returned to the caller.
 # Dependencies
 libc is the only dependency.
 # Installation

@@ -1,89 +1,25 @@
-s = 'specs'.use
+ch = Channels.make
 
-digit_spec = digit: .defspec! {
-  help: "A digit"
-  spec: s.any(Ranges.make(0 9).map to\s: .collect .*)
-}
+fib = Fibers.make () => do
+  Ranges.make(1 5).each (i) => do
+    ch <! (num: i)
+  end
 
-a + 1
+  ch.close
+end
 
-#digit_spec.spec\fits?("1").println
+Fibers.make () => do
+  loop = () => do
+    (status, kind, value) = ch >!
 
-status_spec = http\status: .defspec! {
-  help: "The http status code"
-  spec: s.pat(
-    hundreds: digit:
-    tens: digit:
-    ones: digit:
-  )
-}
+    status.ok.then () => do
+      "Received: $ $".sprintf(kind, value).println
+    end
 
-#status_spec.spec\fits?("200").println
+    (status.ok & ch.is\open).then self
+  end
 
-method_spec = http\method: .defspec! {
-  help: "The http method of a request"
-  spec: s.any('GET' 'PUT' 'PATCH' 'DEL')
-}
+  loop.()
+end
 
-#method_spec.spec\fits?("GET").println
-
-newline: .defspec! {
-  help: "A newline"
-  spec: '\n'
-}
-
-header_spec = http\header: .defspec! {
-  help: "A single header"
-  spec: s.pat(
-    name: s *s.string
-    colon: ':'
-    value: s *s.string
-    newline: newline:)
-}
-
-#header_spec.spec\fits?('Content-length:10\n').println
-
-body_spec = http\body: .defspec! {
-  help: "The body of an HTTP req/res"
-  spec: s *s.string
-}
-
-#body_spec.spec\fits?('Hello\nworld!\n').println
-
-http_spec = s.pat(
-  status:  http\status:
-  status\end: newline:
-  method:  http\method:
-  method\end: newline:
-  headers: s *http\header:
-  empty_line: newline:
-  body:    http\body:)
-
-test_spec = s.pat(
-  status: http\status:
-  status\end: newline:
-)
-
-test_spec.spec\fits?('200\n').println
-
-req = '200\nGET\nContentLength:10\nContentType:text\n\nHello'
-
-http_spec.spec\fits?(req).println # => true
-http_spec.spec\fits?(req).println # => true
-http_spec.spec\fits?(req).println # => true
-http_spec.spec\fits?(req).println # => true
-http_spec.spec\fits?(req).println # => true
-http_spec.spec\fits?(req).println # => true
-http_spec.spec\fits?(req).println # => true
-http_spec.spec\fits?(req).println # => true
-http_spec.spec\fits?(req).println # => true
-http_spec.spec\fits?(req).println # => true
-http_spec.spec\fits?(req).println # => true
-
-#generated_http = http_spec.spec\gen
-
-#generated_http.println
-
-#http_spec.spec\fits?(generated_http).println
-
-#.http.header:spec.into:spec.fits?("ContentLength:10"):println
+fib.await
