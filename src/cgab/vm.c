@@ -604,7 +604,8 @@ gab_value gab_fibstacktrace(struct gab_triple gab, gab_value fiber) {
   gab_value *f = vm->fp;
   uint8_t *ip = vm->ip;
 
-  return sprint_stacktrace(gab, vm, f, ip, GAB_TERM, nullptr, nullptr);
+  va_list empty;
+  return sprint_stacktrace(gab, vm, f, ip, GAB_TERM, nullptr, empty);
 }
 
 union gab_value_pair vvm_terminate(struct gab_triple gab, const char *fmt,
