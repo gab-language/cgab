@@ -13,7 +13,6 @@ CFLAGS = -std=c23 \
 				 -fPIC \
 				 -Wall \
 				 -MMD  \
-				 -fno-lto \
 				 -DGAB_TARGET_TRIPLE=\"$(GAB_TARGETS)\"\
 				 -DGAB_DYNLIB_FILEENDING=\"$(GAB_DYNLIB_FILEENDING)\" \
 				 -DGAB_BUILDTYPE=\"$(GAB_BUILDTYPE)\"\
@@ -34,7 +33,7 @@ CXXFLAGS = -std=c++23 \
 # This is why -rdynamic is used.
 #
 GAB_LINK_DEPS = -lcgab
-BINARY_FLAGS 	= -rdynamic -DGAB_CORE $(GAB_LINK_DEPS) $(GAB_BINARYFLAGS)
+BINARY_FLAGS 	= -rdynamic -Wl,--no-gc-sections -DGAB_CORE $(GAB_LINK_DEPS) $(GAB_BINARYFLAGS)
 
 # A shared module needs undefined dynamic lookup
 # As it is not linked with cgab. The symbols from cgab

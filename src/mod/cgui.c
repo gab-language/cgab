@@ -765,9 +765,11 @@ bool dotuirender(struct gab_triple gab, struct gui *gui) {
   if (!render(gab, gui, &renderCommands))
     return false;
 
+#if GAB_PLATFORM_UNIX
   tb_clear();
   Clay_Termbox_Render(renderCommands);
   tb_present();
+#endif
   return true;
 }
 

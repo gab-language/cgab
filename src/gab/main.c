@@ -1,3 +1,4 @@
+#include "core.h"
 #include "miniz/amalgamation/miniz.c"
 #include "miniz/amalgamation/miniz.h"
 
@@ -114,8 +115,6 @@ bool check_and_printerr(union gab_value_pair *res) {
   return true;
 }
 
-typedef union gab_value_pair (*module_f)(struct gab_triple);
-
 union gab_value_pair gab_use_dynlib(struct gab_triple gab, const char *path,
                                     size_t len, const char **sargs,
                                     gab_value *vargs) {
@@ -143,7 +142,8 @@ union gab_value_pair gab_use_dynlib(struct gab_triple gab, const char *path,
 #endif
   }
 
-  module_f mod = (module_f)gab_oslibfind(lib, GAB_DYNLIB_MAIN);
+  auto mod = (union gab_value_pair (*)(struct gab_triple))gab_oslibfind(
+      lib, GAB_DYNLIB_MAIN);
 
   if (mod == nullptr)
 #ifdef GAB_PLATFORM_UNIX
@@ -532,6 +532,140 @@ int run_file(const char *path, int flags, uint32_t wait, size_t jobs,
   return a_gab_value_destroy(run_res.aresult), gab_destroy(gab), 0;
 }
 
+struct step {
+  enum {
+    kSTEP_MKDIRP,
+    kSTEP_FETCH,
+    kSTEP_UNZIP,
+    kSTEP_RM,
+  } k;
+
+  union {
+    struct {
+      const char *path;
+    } mkdirp;
+
+    struct {
+      const char *path;
+    } rm;
+
+    struct {
+      const char *url;
+      const char *dst;
+    } fetch;
+
+    struct {
+      const char *src;
+      const char *dst;
+    } unzip;
+  } as;
+};
+
+int step(struct step *step) {
+  switch (step->k) {
+  case kSTEP_MKDIRP:
+    return gab_osmkdirp(step->as.mkdirp.path);
+  case kSTEP_RM:
+    return gab_osrm(step->as.rm.path);
+  case kSTEP_FETCH:
+    return gab_osproc("curl", "-f", "-s", "-L", "-o", step->as.fetch.dst,
+                      step->as.fetch.url);
+  case kSTEP_UNZIP:
+    return gab_osproc("tar", "xzf", step->as.unzip.src, "-C",
+                      step->as.unzip.dst);
+  }
+}
+
+int unstep(struct step *step) {
+  switch (step->k) {
+  case kSTEP_MKDIRP:
+    return gab_osrm(step->as.mkdirp.path);
+  case kSTEP_FETCH:
+    return gab_osrm(step->as.fetch.dst);
+  case kSTEP_UNZIP:
+    return gab_osrm(step->as.unzip.dst);
+  case kSTEP_RM:
+    return 1;
+  }
+}
+
+void elogstep(struct step *step, int i, int res) {
+  switch (step->k) {
+  case kSTEP_MKDIRP:
+    return clierror("Step %i failed: %i.\n", i, res);
+  case kSTEP_FETCH:
+    if (res == 22)
+      return clierror("Step %i failed: Resource %s not found.\n", i,
+                      step->as.fetch.url);
+
+    return clierror("Step %i failed: %i.\n", i, res);
+  case kSTEP_UNZIP:
+    return clierror("Step %i failed: %i.\n", i, res);
+  case kSTEP_RM:
+    return clierror("Step %i failed: %i.\n", i, res);
+  }
+}
+
+void slogstep(struct step *step, int i) {
+  switch (step->k) {
+  case kSTEP_MKDIRP:
+    return clisuccess(" %i Created  %s.\n", i, step->as.mkdirp.path);
+  case kSTEP_FETCH:
+    return clisuccess(" %i Fetched  %s.\n", i, step->as.fetch.url);
+  case kSTEP_UNZIP:
+    return clisuccess(" %i Unzipped %s.\n", i, step->as.unzip.src);
+  case kSTEP_RM:
+    return clisuccess(" %i Removed  %s.\n", i, step->as.rm.path);
+  }
+}
+
+void logstep(struct step *step, int i) {
+  switch (step->k) {
+  case kSTEP_MKDIRP:
+    return cliinfo(" %i Ensure a directory exists at " GAB_MAGENTA
+                   "%s" GAB_RESET ".\n",
+                   i, step->as.mkdirp.path);
+  case kSTEP_FETCH:
+    return cliinfo(" %i Via curl, download " GAB_MAGENTA "%s" GAB_RESET
+                   " to " GAB_MAGENTA "%s" GAB_RESET ".\n",
+                   i, step->as.fetch.url, step->as.fetch.dst);
+  case kSTEP_UNZIP:
+    return cliinfo(" %i Via tar, extract " GAB_MAGENTA "%s" GAB_RESET
+                   " to " GAB_MAGENTA "%s" GAB_RESET ".\n",
+                   i, step->as.unzip.src, step->as.unzip.dst);
+  case kSTEP_RM:
+    return cliinfo(" %i Remove " GAB_MAGENTA "%s" GAB_RESET " if it exists.\n",
+                   i, step->as.rm.path);
+  }
+}
+
+void logsteps(int len, struct step steps[len]) {
+  cliinfo("The following steps will be taken:\n");
+
+  for (int i = 0; i < len; i++)
+    logstep(steps + i, i);
+}
+
+int execute_steps(int len, struct step steps[len]) {
+  for (int i = 0; i < len; i++) {
+    int result = step(steps + i);
+
+    if (result) {
+      elogstep(steps + i, i, result);
+
+      // Unwind the steps we have taken, as this one failed.
+      for (int j = i - 1; j >= 0; j--)
+        unstep(steps + j);
+
+      return 1;
+    }
+
+    slogstep(steps + i, i);
+  }
+
+  return 0;
+}
+
 struct command_arguments {
   uint32_t argc, flags, wait;
   const char **argv;
@@ -574,6 +708,7 @@ enum cliflag {
   FLAG_DUMP_BC = fGAB_BUILD_DUMP,
   FLAG_STRUCT_ERR = fGAB_ERR_STRUCTURED,
   FLAG_BUILD_TARGET = 1 << 4,
+  FLAG_AUTOCONFIRM = 1 << 5,
 };
 
 const struct option dumpast_option = {
@@ -702,7 +837,7 @@ static struct command commands[] = {
     {
         "welcome",
         "Print the welcome message.",
-        "Print hte welcome message.",
+        "Print the welcome message.",
         .example = "gab",
         .handler = welcome,
     },
@@ -718,17 +853,25 @@ static struct command commands[] = {
     },
     {
         "get",
-        "Install Gab and/or packages given by <args>",
-        "With no arguments, installs Gab's builtin modules for the release "
-        "corresponding to this binary's version.\n"
-        "Accepts arguments in the shape <package>@<tag>, where:"
-        "\n\t- <package> corresponds to a valid gab package"
-        "\n\t- <tag> corresponds to a valid, local gab version"
-        "\n\nNote that the tag does not correspond to a version *of the "
-        "package*, "
-        "it refers to the local destination gab version.",
+        "Install the package given by <arg>",
+        "<arg> should have the shape <package>@<tag>."
+        "\n\n<package> should correspond to a valid package, or the reserved "
+        "'gab' package."
+        "\n\n<tag> should be a valid tag of the aforementioned package."
+        "\n\nWhen the <package> argument is the 'gab' package, gab "
+        "*itself* is installed for the version <tag>."
+        "\nOtherwise, <package> is downloaded at <tag>, and installed "
+        "among the modules for gab@" GAB_VERSION_TAG ".",
         .example = "gab get @0.0.5",
         .handler = get,
+        {
+            {
+                "yes",
+                "Automatically confirm 'yes' when prompted",
+                'y',
+                .flag = FLAG_AUTOCONFIRM,
+            },
+        },
     },
     {
         "build",
@@ -899,7 +1042,8 @@ const char *split_pkg(char *pkg) {
   return ++cursor;
 }
 
-int download_gab(const char *pkg, const char *tag, const char *triple) {
+int download_gab(struct command_arguments *args, const char *tag,
+                 const char *triple) {
 
   int taglen = strlen(tag);
 
@@ -923,7 +1067,7 @@ int download_gab(const char *pkg, const char *tag, const char *triple) {
 
   v_char binary_location = {};
   v_char_spush(&binary_location, s_char_cstr(location_prefix));
-  v_char_spush(&binary_location, s_char_cstr("/gab"));
+  v_char_spush(&binary_location, s_char_cstr("gab"));
   v_char_push(&binary_location, '\0');
 
   v_char binary_url = {};
@@ -968,124 +1112,74 @@ int download_gab(const char *pkg, const char *tag, const char *triple) {
   v_char_spush(&dev_extract_location, s_char_cstr(location_prefix));
   v_char_push(&dev_extract_location, '\0');
 
-  cliinfo("The following steps will be taken:\n");
-  cliinfo("(1) Create the " GAB_MAGENTA "%s" GAB_RESET
-          " directory, if it does not exist.\n",
-          location_prefix);
-  cliinfo("(2) Download (via curl) the gab binary: " GAB_MAGENTA "%s" GAB_RESET
-          "\n",
-          binary_url.data);
-  cliinfo("(3) Download (via curl) gab's builtin modules: " GAB_MAGENTA
-          "%s" GAB_RESET "\n",
-          modules_url.data);
-  cliinfo("(4) Download (via curl) gab's development files: " GAB_MAGENTA
-          "%s" GAB_RESET "\n",
-          dev_url.data);
-  cliinfo("(5) Extract (via tar) the downloaded modules: " GAB_MAGENTA
-          "%s" GAB_RESET " => " GAB_MAGENTA "%s" GAB_RESET "\n",
-          modules_location.data, modules_extract_location.data);
-  cliinfo("(6) Extract (via tar) the downloaded development files: " GAB_MAGENTA
-          "%s" GAB_RESET " => " GAB_MAGENTA "%s" GAB_RESET "\n",
-          dev_location.data, dev_extract_location.data);
-
-  cliinfo("Begin installation process? (y,n) ");
-  int ch = getc(stdin);
-  if (ch != 'y' && ch != 'Y') {
-    clierror("Installation cancelled.\n");
-    return 1;
-  }
-
-  /// Ensure that the ~/gab folder exists.
-  const char *gab_prefix = gab_osprefix_install("/");
-
-  if (gab_prefix == nullptr) {
-    clierror("(1) Could not determine installation prefix.\n");
-    return 1;
-  }
-
-  if (!gab_osmkdirp(location_prefix)) {
-    clierror("(1) Failed to create directory prefix at " GAB_MAGENTA
-             "%s" GAB_RESET ".\n",
-             location_prefix);
-    return 1;
+  struct step steps[] = {
+      {
+          kSTEP_MKDIRP,
+          .as.mkdirp.path = location_prefix,
+      },
+      {
+          kSTEP_FETCH,
+          .as.fetch.url = binary_url.data,
+          .as.fetch.dst = binary_location.data,
+      },
+      {
+          kSTEP_FETCH,
+          .as.fetch.url = modules_url.data,
+          .as.fetch.dst = modules_location.data,
+      },
+      {
+          kSTEP_FETCH,
+          .as.fetch.url = dev_url.data,
+          .as.fetch.dst = dev_location.data,
+      },
+      {
+          kSTEP_UNZIP,
+          .as.unzip.src = modules_location.data,
+          .as.unzip.dst = modules_extract_location.data,
+      },
+      {
+          kSTEP_UNZIP,
+          .as.unzip.src = dev_location.data,
+          .as.unzip.dst = dev_extract_location.data,
+      },
+      {
+          kSTEP_RM,
+          .as.rm.path = modules_location.data,
+      },
+      {
+          kSTEP_RM,
+          .as.rm.path = dev_location.data,
+      },
   };
+  const int nsteps = LEN_CARRAY(steps);
 
-  clisuccess("(1) Validated installation location.\n");
+  logsteps(nsteps, steps);
 
-  // Fetch release binary
-  int res = gab_osproc("curl", "-f", "-s", "-L", "-o", binary_location.data,
-                       binary_url.data);
+  if (!(args->flags & FLAG_AUTOCONFIRM)) {
+    cliinfo("Execute this plan? (y,n) ");
 
-  if (res) {
-    clierror("(2) Failed to download release " GAB_YELLOW "%s" GAB_RESET
-             " for target " GAB_YELLOW "%s" GAB_RESET ".\n\tError: %s.\n",
-             tag, triple, strerror(res));
-    return 1;
+    int ch = getc(stdin);
+
+    if (ch != 'y' && ch != 'Y')
+      return clierror("Installation cancelled.\n"), 1;
   }
 
-  clisuccess("(2) Downloaded binary for release: " GAB_YELLOW "%s" GAB_RESET
-             ".\n",
-             tag);
 
-  // Fetch release modules
-  res = gab_osproc("curl", "-f", "-s", "-L", "-o", modules_location.data,
-                   modules_url.data);
-  clisuccess("(3) Downloaded modules for release: " GAB_YELLOW "%s" GAB_RESET
-             ".\n",
-             tag);
+  if (execute_steps(nsteps, steps))
+    return clierror("Installation failed.\n"), 1;
 
-  if (res) {
-    clierror("(3) Failed to download modules for release " GAB_YELLOW
-             "%s" GAB_RESET ".\n",
-             tag);
-    return 1;
-  }
-
-  res = gab_osproc("curl", "-f", "-s", "-L", "-o", dev_location.data,
-                   dev_url.data);
-  clisuccess("(4) Downloaded development files for release: " GAB_YELLOW
-             "%s" GAB_RESET ".\n",
-             tag);
-
-  if (res) {
-    clierror("(4) Failed to download development files for release %s\n", tag);
-    return 1;
-  }
-
-  res = gab_osproc("tar", "xzf", modules_location.data, "-C",
-                   modules_extract_location.data);
-
-  if (res) {
-    clierror("(5) Failed to extract module files for release " GAB_YELLOW
-             "%s" GAB_RESET ".\n",
-             tag);
-    return 1;
-  }
-
-  clisuccess("(5) Extracted modules.\n");
-
-  res = gab_osproc("tar", "xzf", dev_location.data, "-C",
-                   dev_extract_location.data);
-
-  if (res) {
-    clierror("(6) Failed to extract development files for release " GAB_YELLOW
-             "%s" GAB_RESET "",
-             tag);
-    return 1;
-  }
-
-  clisuccess("(6) Extracted development files.\n");
+  clisuccess("Installation complete.\n");
 
   if (!strcmp(triple, GAB_TARGET_TRIPLE)) {
     clisuccess(
-        "Congratulations! " GAB_GREEN "%s" GAB_RESET "@" GAB_YELLOW
-        "%s" GAB_RESET " successfully installed.\n\n"
+        "Congratulations! gab@%s"
+        " successfully installed.\n\n"
         "However, the binary is likely not available in your PATH yet.\n"
         "It is not recommended to add " GAB_MAGENTA "%s" GAB_RESET
-        " to PATH directly.\n\nInstead:\n "
-        "\tOn systems that support symlinks, link the binary at %sgab to "
+        " to PATH directly.\n\n"
+        "On systems that support symlinks, link the binary at %sgab to "
         "some location in PATH already.\n\t\teg: " GAB_SYMLINK_RECOMMENDATION,
-        pkg, tag, location_prefix, location_prefix, location_prefix);
+        tag, location_prefix, location_prefix, location_prefix);
   }
 
   return 0;
@@ -1094,20 +1188,6 @@ int download_gab(const char *pkg, const char *tag, const char *triple) {
 int get(struct command_arguments *args) {
 
   const char *pkg = args->argc ? args->argv[0] : "@";
-
-  /// Ensure that the ~/gab folder exists.
-  const char *gab_prefix = gab_osprefix_install("/");
-
-  if (gab_prefix == nullptr) {
-    clierror("Could not determine installation prefix.\n");
-    return false;
-  }
-
-  if (!gab_osmkdirp(gab_prefix)) {
-    clierror("Failed to create directory at " GAB_MAGENTA "%s" GAB_RESET ".\n",
-             gab_prefix);
-    return false;
-  };
 
   // Split the requested package into its package and tag.
   const size_t pkglen = strlen(pkg);
@@ -1132,13 +1212,8 @@ int get(struct command_arguments *args) {
   tagbuf[taglen] = '\0';
 
   /* Now we can check that the pkg exists, and default to Gab if it doesnt. */
-  if (!strlen(pkgbuf)) {
-    cliinfo("No package specified. Defaulting to " GAB_GREEN "'Gab'" GAB_RESET
-            ".\n");
-    strncpy(pkgbuf, "Gab", 4);
-  }
-
-  cliinfo("Resolved package " GAB_GREEN "%s" GAB_RESET ".\n", pkgbuf);
+  if (!strlen(pkgbuf))
+    strncpy(pkgbuf, "gab", 4);
 
   /*
    * If we didn't find a tag in the package, then that *might* be an
@@ -1146,29 +1221,26 @@ int get(struct command_arguments *args) {
    * then we have a sane default. Otherwise, we error.
    */
   if (!taglen) {
-    if (!strcmp(pkgbuf, "Gab")) {
-      cliinfo("No tag specified. Defaulting to " GAB_YELLOW
-                  GAB_VERSION_TAG GAB_RESET ".\n");
+    if (!strcmp(pkgbuf, "gab")) {
       strncpy(tagbuf, GAB_VERSION_TAG, 10 + taglen);
     } else {
-      clierror("A tag must be specfied. Try " GAB_GREEN "%s" GAB_RESET
-               "@" GAB_YELLOW "<some tag>" GAB_RESET ".\n",
+      clierror("To download a package, a tag must be specfied. Try " GAB_GREEN
+               "%s" GAB_RESET "@" GAB_YELLOW "<some tag>" GAB_RESET ".\n",
                pkgbuf);
       return 1;
     }
   }
 
-  cliinfo("Resolved tag " GAB_YELLOW "%s" GAB_RESET ".\n", tagbuf);
-
   /*
    * Now we have resolved a valid tag and package.
    */
+  cliinfo("Creating plan to download %s@%s.\n", pkgbuf, tagbuf);
 
   // If we match the special Gab package, then defer to that helper.
-  if (!strcmp(pkgbuf, "Gab"))
-    return download_gab(pkgbuf, tagbuf, GAB_TARGET_TRIPLE);
+  if (!strcmp(pkgbuf, "gab"))
+    return download_gab(args, tagbuf, GAB_TARGET_TRIPLE);
 
-  clierror("The 'get' subcommand does not support downloading other "
+  clierror("The 'get' subcommand does not support downloading "
            "packages yet.\n");
   return 1;
 }
@@ -1253,25 +1325,18 @@ void cmd_details(int i) {
   }
 }
 
-const char *help_welcome_message =
-    ""
-    "  ________   ___  | Welcome to Gab " GAB_VERSION_TAG "!\n"
-    " / ___/ _ | / _ ) |\n"
-    "/ (_ / __ |/ _  | | Gab is a small, dynamic language designed for "
-    "building systems.\n"
-    "\\___/_/ |_/____/  | To get started, run `gab help` to see a list of "
-    "commands.\n";
-
 int welcome(struct command_arguments *args) {
-  puts(help_welcome_message);
+  puts(welcome_message);
+  puts("\nTo get started, run `gab help` for a list of commands."
+       "\n\nIf you've just downloaded gab, welcome! Run `gab get` to complete "
+       "your installation.\n");
   return 0;
 }
 
 int help(struct command_arguments *args) {
   if (args->argc < 1) {
-    printf("Gab version %s.\n\nTo see more details about each command, "
-           "run:\n\n\tgab help <cmd>\n\nCOMMANDS:",
-           GAB_VERSION_TAG);
+    printf("To see more details about each command, "
+           "run:\n\n\tgab help <cmd>\n\nCOMMANDS:");
 
     // Print command summaries
     for (int i = 0; i < N_COMMANDS; i++)
@@ -1390,10 +1455,8 @@ int build(struct command_arguments *args) {
       return 1;
     }
 
-    cliinfo("Build platform is %s.\n", platform, dynlib_fileending);
-    if (!download_gab("Gab", GAB_VERSION_TAG, platform)) {
+    if (!download_gab(args, GAB_VERSION_TAG, platform))
       clierror("Continuing. Core modules may be missing.\n");
-    }
   }
 
   /* We need our own custom roots here when building a bundled app.
@@ -1453,7 +1516,7 @@ int build(struct command_arguments *args) {
       return 1;
     }
 
-    clierror("Falling back to this binary, Gab@" GAB_VERSION_TAG
+    clierror("Falling back to this binary, gab@" GAB_VERSION_TAG
              "for " GAB_TARGET_TRIPLE "\n");
     const char *path = gab_osexepath();
     exe = fopen(path, "r");

@@ -33,6 +33,9 @@
  * gab_osexepath()
  * return the path of the exe.
  *
+ * gab_osrm(path)
+ * Remove the file at a path.
+ *
  * %----------------------%
  * | Directory Operations |
  * %----------------------%
@@ -65,7 +68,7 @@
 
 #define gab_osproc(cmd, ...)                                                   \
   ({                                                                           \
-    char *_args[] = {__VA_ARGS__};                                             \
+    const char *_args[] = {__VA_ARGS__};                                             \
     gab_nosproc(cmd, sizeof(_args) / sizeof(char *), _args);                   \
   })
 
@@ -176,7 +179,7 @@ GAB_API_INLINE const char *gab_osexepath() {
 #define gab_oslibopen(path) dlopen(path, RTLD_NOW)
 #define gab_oslibfind(dynlib, name) (void (*)(void)) dlsym(dynlib, name)
 
-GAB_API_INLINE const bool gab_osmkdirp(const char *path) {
+GAB_API_INLINE const int gab_osmkdirp(const char *path) {
   char *dup = strdup(path);
 
   /*
@@ -192,7 +195,7 @@ GAB_API_INLINE const bool gab_osmkdirp(const char *path) {
     char *slash = strchr(cursor, '/');
 
     if (!slash)
-      return free(dup), true;
+      return free(dup), 0;
 
     *slash = '\0';
 
@@ -202,14 +205,23 @@ GAB_API_INLINE const bool gab_osmkdirp(const char *path) {
     int res = mkdir(dup, 0755);
 
     if (res < 0 && errno != EEXIST)
-      return free(dup), false;
+      return free(dup), 1;
 
   next:
     *slash = '/';
     cursor = slash + 1;
   }
 
-  return free(dup), true;
+  return free(dup), 0;
+}
+
+GAB_API_INLINE const bool gab_osrm(const char *path) {
+  int res = remove(path);
+
+  if (res < 0)
+    return errno != ENOENT;
+
+  return 0;
 }
 
 GAB_API_INLINE char *gab_osprefix_temp(const char *v) {
@@ -237,7 +249,7 @@ GAB_API_INLINE char *gab_osprefix_install(const char *v) {
   return str.data;
 }
 
-GAB_API_INLINE int gab_nosproc(char *cmd, size_t nargs, char *args[]) {
+GAB_API_INLINE int gab_nosproc(char *cmd, size_t nargs, const char *args[]) {
   pid_t pid = fork();
 
   if (pid < 0)
@@ -294,6 +306,7 @@ GAB_API_INLINE int gab_nosproc(char *cmd, size_t nargs, char *args[]) {
 #include <tchar.h>
 #include <wchar.h>
 #include <windows.h>
+#include <direct.h>
 
 #define gab_ossignal(sig, handler) signal(sig, handler)
 
@@ -304,7 +317,52 @@ GAB_API_INLINE int gab_nosproc(char *cmd, size_t nargs, char *args[]) {
 #define gab_oslibopen(path) LoadLibraryA(path)
 #define gab_oslibfind(dynlib, name)                                            \
   ((void (*)(void))GetProcAddress(dynlib, name))
-#define gab_osmkdirp(path) mkdir(path)
+
+GAB_API_INLINE const int gab_osmkdirp(const char *path) {
+  char *dup = strdup(path);
+
+  /*
+   * Starting from our duplicated string:
+   *   strchr from our 'cursor' forwards for a '/'.
+   *   If we find a '/', replace it with a '\0'.
+   *    This creates a new substring, from dup -> slash
+   *   Create a directory with this substring.
+   *   Rewrite the '/' to slash, replacing the null byte.
+   *   Move the cursor beyond the slash.
+   */
+  for (char *cursor = dup; *cursor;) {
+    char *slash = strchr(cursor, '/');
+
+    if (!slash)
+      return free(dup), 0;
+
+    *slash = '\0';
+
+    if (!strlen(dup))
+      goto next;
+
+    int res = _mkdir(dup);
+
+    if (res < 0 && errno != EEXIST)
+      return free(dup), 1;
+
+  next:
+    *slash = '/';
+    cursor = slash + 1;
+  }
+
+  return free(dup), 0;
+}
+
+GAB_API_INLINE const bool gab_osrm(const char *path) {
+  int res = remove(path);
+
+  if (res < 0)
+    return errno != ENOENT;
+
+  return 0;
+}
+
 
 GAB_API_INLINE const char *gab_osexepath() {
   DWORD len = GetModuleFileNameA(NULL, _exepath, GAB_MAXEXEPATH);
@@ -434,7 +492,7 @@ GAB_API_INLINE int gab_nosproc(char *cmd, size_t nargs, char *args[]) {
   return 1;
 }
 
-GAB_API_INLINE const bool gab_osmkdirp(const char *path) { return false; }
+GAB_API_INLINE const int gab_osmkdirp(const char *path) { return false; }
 #endif
 
 #endif
