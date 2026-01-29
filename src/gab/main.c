@@ -61,7 +61,7 @@ void cliinfo(const char *fmt, ...) {
   va_list args;
   va_start(args, fmt);
 
-  fprintf(stderr, "[" GAB_CYAN "gab" GAB_RESET "] ");
+  fprintf(stderr, "[gab] ");
   vfprintf(stderr, fmt, args);
 
   va_end(args);
@@ -214,7 +214,7 @@ union gab_value_pair gab_use_zip_dynlib(struct gab_triple gab, const char *path,
   char *slash = strrchr(dst, '/');
   *slash = '\0';
 
-  int result = gab_osmkdirp(dst); 
+  int result = gab_osmkdirp(dst);
 
   if (result)
     return gab_panicf(gab, "Failed to create temporary file folder: $.",
@@ -345,7 +345,7 @@ static const char *default_modules[] = {
 };
 static const size_t ndefault_modules = LEN_CARRAY(default_modules) - 1;
 
-static const struct gab_resource file_resources[] = {
+static const struct gab_resource native_file_resources[] = {
     {"mod/", GAB_DYNLIB_FILEENDING, gab_use_dynlib, file_exister},
     {"", GAB_DYNLIB_FILEENDING, gab_use_dynlib, file_exister},
     {"", "/mod.gab", gab_use_source, file_exister},
@@ -354,7 +354,10 @@ static const struct gab_resource file_resources[] = {
     {}, // List terminator.
 };
 
-static const struct gab_resource zip_resources[] = {
+static const size_t nnative_file_resources =
+    LEN_CARRAY(native_file_resources) - 1;
+
+static const struct gab_resource native_zip_resources[] = {
     {"mod/", GAB_DYNLIB_FILEENDING, gab_use_zip_dynlib, zip_exister},
     {"", GAB_DYNLIB_FILEENDING, gab_use_zip_dynlib, zip_exister},
     {"", "/mod.gab", gab_use_zip_source, zip_exister},
@@ -383,7 +386,7 @@ int run_repl(int flags, uint32_t wait, size_t nmodules, const char **modules) {
           .wait = wait ? wait : 50000,
           .modules = modules,
           .roots = roots,
-          .resources = file_resources,
+          .resources = native_file_resources,
       },
       &gab);
 
@@ -424,7 +427,7 @@ int run_string(const char *string, int flags, uint32_t wait, size_t jobs,
           .jobs = jobs,
           .modules = modules,
           .roots = roots,
-          .resources = file_resources,
+          .resources = native_file_resources,
       },
       &gab);
 
@@ -479,7 +482,7 @@ int run_bundle(const char *mod) {
                   "",
                   nullptr,
               },
-          .resources = zip_resources,
+          .resources = native_zip_resources,
       },
       &gab);
 
@@ -512,7 +515,7 @@ int run_file(const char *path, int flags, uint32_t wait, size_t jobs,
           .jobs = jobs,
           .modules = modules,
           .roots = roots,
-          .resources = file_resources,
+          .resources = native_file_resources,
       },
       &gab);
 
@@ -685,13 +688,14 @@ struct option {
   bool (*handler_f)(struct command_arguments *args);
 };
 
-#define MAX_OPTIONS 7
+#define MAX_OPTIONS 8
+#define MAX_EXAMPLES 8
 
 struct command {
   const char *name;
   const char *desc;
   const char *long_desc;
-  const char *example;
+  const char *example[MAX_EXAMPLES];
   int (*handler)(struct command_arguments *);
   struct option options[MAX_OPTIONS];
 };
@@ -841,7 +845,10 @@ static struct command commands[] = {
         "welcome",
         "Print the welcome message.",
         "Print the welcome message.",
-        .example = "gab",
+        .example =
+            {
+                "gab",
+            },
         .handler = welcome,
     },
     {
@@ -851,7 +858,10 @@ static struct command commands[] = {
         "available subcommands and their flags.\n"
         "With a subcommand given by <arg>, print more specific information "
         "related to that subcommand.",
-        .example = "gab help get",
+        .example =
+            {
+                "gab help get",
+            },
         .handler = help,
     },
     {
@@ -865,7 +875,13 @@ static struct command commands[] = {
         "*itself* is installed for the version <tag>."
         "\nOtherwise, <package> is downloaded at <tag>, and installed "
         "among the modules for gab@" GAB_VERSION_TAG ".",
-        .example = "gab get @0.0.5",
+        .example =
+            {
+                "gab get gab@0.0.5",
+                "gab get @0.0.5",
+                "gab get @",
+                "gab get",
+            },
         .handler = get,
         {
             {
@@ -880,14 +896,20 @@ static struct command commands[] = {
         "build",
         "Build a standalone executable for the module <arg>.",
         "Bundle the module <arg> and any given with -m into a "
-        "single executable.\n\nMultiple platforms are supported:\n"
+        "single executable.\nWhen stdin is a file or a pipe, gab"
+        "will read modules line-by-line from stdin.\n\n"
+        "Multiple platforms are supported:\n"
         "\tx86_64-linux-gnu    (Linux Intel)\n"
         "\taarch64-linux-gnu   (Linux ARM)\n"
         "\tx86_64-windows-gnu  (Windows Intel)\n"
         "\taarch64-windows-gnu (Windows ARM)\n"
         "\tx86_64-macos-none   (MacOS Intel)\n"
         "\taarch64-macos-none  (MacOS ARM)",
-        .example = "gab build -m IO,Strings my_app",
+        .example =
+            {
+                "gab build -m IO,Strings my_app",
+                "gab build my_app < list_of_modules.txt",
+            },
         .handler = build,
         {
             modules_option,
@@ -907,7 +929,7 @@ static struct command commands[] = {
         "The module is invoked as if by '<arg>'.use.\n\n"
         "The search path begins at the first root. Roots and resources are "
         "checked in descending order.\n"
-        "Each resource is checked at that root before moving on to the next.\n"
+        "Each resource is checked at each root before moving on to the next.\n"
         "\nROOTS:"
         "\n\t./"
         "\n\t<install_dir>\n"
@@ -917,7 +939,10 @@ static struct command commands[] = {
         "\n\t<arg>/mod.gab"
         "\n\t<arg>.[so | dylib | dll]"
         "\n\tmod/<arg>.[so | dylib | dll]",
-        .example = "gab run -m Json,http -j 16 my_project",
+        .example =
+            {
+                "gab run -m Json,http -j 16 my_project",
+            },
         .handler = run,
         {
             dumpast_option,
@@ -937,7 +962,10 @@ static struct command commands[] = {
         "exec",
         "Compile and run the string <args>",
         "Compile the string <arg> as Gab code and execute it immediately.",
-        .example = "gab exec -a -d \"'hello'.println\"",
+        .example =
+            {
+                "gab exec -a -d \"'hello'.println\"",
+            },
         .handler = exec,
         {
             dumpast_option,
@@ -951,7 +979,10 @@ static struct command commands[] = {
         "repl",
         "Enter the REPL",
         "A REPL is a convenient tool for experimentation.",
-        .example = "gab repl -m Json",
+        .example =
+            {
+                "gab repl -m Json",
+            },
         .handler = repl,
         {
             dumpast_option,
@@ -1158,8 +1189,8 @@ int download_gab(struct command_arguments *args, const char *tag,
 
   logsteps(nsteps, steps);
 
-  if (!(args->flags & FLAG_AUTOCONFIRM)) {
-    cliinfo("Execute this plan? (y,n) ");
+  if (gab_osfisatty(stdin) && !(args->flags & FLAG_AUTOCONFIRM)) {
+    cliinfo("Execute this plan? (y,n)\n");
 
     int ch = getc(stdin);
 
@@ -1188,7 +1219,6 @@ int download_gab(struct command_arguments *args, const char *tag,
 }
 
 int get(struct command_arguments *args) {
-
   const char *pkg = args->argc ? args->argv[0] : "@";
 
   // Split the requested package into its package and tag.
@@ -1310,8 +1340,12 @@ void cmd_summary(int i) {
 
 void cmd_details(int i) {
   struct command cmd = commands[i];
-  printf("USAGE:\n\tgab %4s [opts] <args>\n\n%s\n\nEXAMPLE:\n\t%s", cmd.name,
-         cmd.long_desc, cmd.example);
+  printf("USAGE:\n\tgab %4s [opts] <args>\n\n%s\n\nEXAMPLES:", cmd.name,
+         cmd.long_desc);
+
+  for (const char **example = cmd.example; *example; example++) {
+    printf("\n\t%s", *example);
+  }
 
   if (cmd.options[0].name == nullptr)
     return;
@@ -1436,7 +1470,37 @@ bool add_module(mz_zip_archive *zip_o, const char **roots,
 const char *platform = GAB_TARGET_TRIPLE;
 const char *dynlib_fileending = GAB_DYNLIB_FILEENDING;
 
+#define MODULE_NAME_MAX 2048
+
+/*
+ * Maybe we should allow building a python-wheel-like zip?
+ *
+ * If you don't include a module entrypoint, create a bundle with name:
+ *  cgab_GAB_VERSION_TAG_GAB_TARGET
+ *
+ */
 int build(struct command_arguments *args) {
+  // If we detect that our stdin isn't a terminal (ie its a pipe or a file)
+  // we read modules line-by-line from stdin.
+  if (!gab_osfisatty(stdin)) {
+    char line[MODULE_NAME_MAX];
+
+    while (fgets(line, MODULE_NAME_MAX, stdin)) {
+      int len = strlen(line);
+
+      // Trim out that newline, if we have it.
+      // In some cases, we might get an EOF before a newline.
+      if (line[len - 1] == '\n')
+        len--;
+
+      // These are allocated, just leak em who cares.
+      a_char *module = a_char_create(line, len);
+
+      // Add the module to our module list.
+      v_s_char_push(&args->modules, s_char_cstr(module->data));
+    }
+  }
+
   if (args->flags & FLAG_BUILD_TARGET) {
     platform = args->platform;
 
@@ -1457,7 +1521,7 @@ int build(struct command_arguments *args) {
       return 1;
     }
 
-    if (!download_gab(args, GAB_VERSION_TAG, platform))
+    if (download_gab(args, GAB_VERSION_TAG, platform))
       clierror("Continuing. Core modules may be missing.\n");
   }
 
@@ -1552,8 +1616,18 @@ int build(struct command_arguments *args) {
 
   v_s_char_push(&args->modules, s_char_cstr(module));
 
+  struct gab_resource platform_file_resources[nnative_file_resources + 1];
+
+  memcpy(platform_file_resources, native_file_resources,
+         sizeof(native_file_resources));
+
+  // Replace the native DYNLIBFILEENDING witht the platform-specific one.
+  // This is kinda manual and bug prone if we change resources.
+  platform_file_resources[0].suffix = dynlib_fileending;
+  platform_file_resources[1].suffix = dynlib_fileending;
+
   for (int i = 0; i < args->modules.len; i++)
-    if (!add_module(&zip_o, roots, file_resources,
+    if (!add_module(&zip_o, roots, platform_file_resources,
                     v_s_char_val_at(&args->modules, i)))
       return 1;
 
