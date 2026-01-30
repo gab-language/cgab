@@ -7,6 +7,8 @@ BUILD_PREFIX 	 	= build-$(GAB_TARGETS)
 INCLUDE_PREFIX 	= include
 VENDOR_PREFIX   = vendor
 
+GAB_VERSION_TAG = 0.0.5
+
 INCLUDE		= -I$(INCLUDE_PREFIX) -isystem$(VENDOR_PREFIX) -L$(BUILD_PREFIX)
 
 CFLAGS = -std=c23 \
@@ -63,7 +65,7 @@ GAB_OBJ = $(GAB_SRC:src/gab/%.c=$(BUILD_PREFIX)/%.o)
 # Source files in src/mod/ are individual c-modules, importable from gab code.
 # They are compiled individually into dynamic libraries, loaded at runtime.
 CMOD_SRC 	 = $(wildcard src/mod/*.c)
-CMOD_SHARED = $(CMOD_SRC:src/mod/%.c=$(BUILD_PREFIX)/mod/%$(GAB_DYNLIB_FILEENDING))
+CMOD_SHARED = $(CMOD_SRC:src/mod/%.c=$(BUILD_PREFIX)/mod/%.cgab-$(GAB_VERSION_TAG)-$(GAB_TARGETS)$(GAB_DYNLIB_FILEENDING))
 
 CXXMOD_SRC 	 = $(wildcard src/mod/*.cc)
 CXXMOD_SHARED = $(CXXMOD_SRC:src/mod/%.cc=$(BUILD_PREFIX)/mod/%$(GAB_DYNLIB_FILEENDING))
@@ -101,7 +103,7 @@ $(BUILD_PREFIX)/mod/%$(GAB_DYNLIB_FILEENDING): $(SRC_PREFIX)/%.cc
 	$(TARGETCXX) $(CXXFLAGS) $(CXXSHARED_FLAGS) $< -o $@
 
 # This rule builds each c module shared library.
-$(BUILD_PREFIX)/mod/%$(GAB_DYNLIB_FILEENDING): $(SRC_PREFIX)/%.c \
+$(BUILD_PREFIX)/mod/%.cgab-$(GAB_VERSION_TAG)-$(GAB_TARGETS)$(GAB_DYNLIB_FILEENDING): $(SRC_PREFIX)/%.c \
 							$(BUILD_PREFIX)/libbearssl.a 	\
 							$(BUILD_PREFIX)/libllhttp.a  	\
 							$(BUILD_PREFIX)/libgrapheme.a \

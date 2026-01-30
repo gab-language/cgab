@@ -4,11 +4,12 @@ docs/
 .cache/
 .vscode/
 mod/*.so
-mod/*.dynlib
+mod/*.dylib
 mod/*.dll
 mod/*.lib
 mod/*.pdb
 *.exe
+cgab-*
 compile_commands.json
 configuration
 .zig-cache
