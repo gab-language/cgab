@@ -1,4 +1,4 @@
-#!/usr/bin/bash
+#!/usr/bin/env bash
 
 echo "x86_64-linux-gnu"
 echo "x86_64-macos-none"
