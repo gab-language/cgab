@@ -860,7 +860,7 @@ void slogstep(struct step *step, int i) {
   case kSTEP_ARCHIVE_OPEN:
     return clisuccess(" %i Opened bundle %s.\n", i, step->as.archive_open.path);
   case kSTEP_ARCHIVE_ADD_MODULE:
-    return clisuccess(" %i Appended module %.*s.\n\t%s%.*s%s\n", i,
+    return clisuccess(" %i Added module %.*s.\n\t%s%.*s%s\n", i,
                       step->as.archive_add_module.module.len,
                       step->as.archive_add_module.module.data,
                       *step->as.archive_add_module.prefix_out,
@@ -1144,14 +1144,31 @@ static struct command commands[] = {
         "\n\n<tag> should be a valid tag of the aforementioned package."
         "\n\nWhen the <package> argument is the 'gab' package, gab "
         "*itself* is installed for the version <tag>."
+        "\nThis installation includes the `github.com/gab-language/cgab` "
+        "package, among other binary and development files.\n"
         "\nOtherwise, <package> is downloaded at <tag>, and installed "
-        "among the modules for gab@" GAB_VERSION_TAG ".",
+        "among the modules for gab@" GAB_VERSION_TAG ".\n\n"
+        "To download a package, gab needs:\n\n"
+        "\t1. A host for the repository. This is found in the package name "
+        "itself.\n"
+        "\t2. A tag, corresponding to a release.\n"
+        "\t3. A supported gab platform.\n"
+        "\t4. A supported gab version.\n\n"
+        "Using the last two items, gab constructs a bundle name like so:\n\n"
+        "\tcgab-<gab version>-<gab platform>\n\tcgab-" GAB_VERSION_TAG
+        "-" GAB_TARGET_TRIPLE "\n\n"
+        "Using the first two items and the bundle name, gab constructs a url "
+        "like so:\n\n"
+        "\thttp://<pkg>/releases/download/<tag>/<bundle name>\n\t"
+        "http://github.com/gab-language/cgab/releases/download/0.0.5/"
+        "cgab-0.0.5-x86_64-linux-gnu\n\n"
+        "Gab downloads this artifact, and unzips it into the packages <install "
+        "location>.\n"
+        "At this point, the package is installed.",
         .example =
             {
                 "gab get gab@0.0.5",
-                "gab get @0.0.5",
-                "gab get @",
-                "gab get",
+                "gab get github.com/<user>/<repository>@1.2",
             },
         .handler = get,
         {
@@ -1167,16 +1184,28 @@ static struct command commands[] = {
     {
         "build",
         "Build a standalone executable for the module <arg>.",
-        "Bundle the module <arg> and any given with -m into a "
-        "single executable.\nWhen stdin is a file or a pipe, gab "
-        "will read modules line-by-line from stdin.\n\n"
+        "Bundle the module <arg> and any modules given with -m into a "
+        "single executable.\nWhen stdin is a file or a pipe, modules "
+        "will be read line-by-line from stdin.\n\n"
         "Multiple platforms are supported:\n"
         "\tx86_64-linux-gnu    (Linux Intel)\n"
         "\taarch64-linux-gnu   (Linux ARM)\n"
-        "\tx86_64-windows-gnu  (Windows Intel)\n"
-        "\taarch64-windows-gnu (Windows ARM)\n"
+        // "\tx86_64-windows-gnu  (Windows Intel)\n"
+        // "\taarch64-windows-gnu (Windows ARM)\n"
         "\tx86_64-macos-none   (MacOS Intel)\n"
-        "\taarch64-macos-none  (MacOS ARM)",
+        "\taarch64-macos-none  (MacOS ARM)\n\n"
+        "The executable produced will be named <arg>.exe. When invoked, will "
+        "behave as if the user typed `gab use <arg>`.\n"
+        "You may remove the .exe extension, but the filename is used to determine the entrypoint.\n"
+        "The executable itself is distributable as a stand-alone binary. "
+        "Users need not install anything, or even know anything about gab.\n\n"
+        "If no entrypoint <arg> is supplied, then gab will build the modules "
+        "into a library-bundle instead.\n"
+        "These bundles are named for the gab version and platform they are "
+        "built for.\n"
+        "They look like this:\n\n"
+        "\tcgab-0.0.5-x86_64-linux-gnu\n\n"
+        "See `gab help get` for more information on these library bundles.",
         .example =
             {
                 "gab build -m IO,Strings my_app",
@@ -1807,6 +1836,9 @@ int build_exe(struct command_arguments *args, const char *module) {
 
   v_step steps = {0};
 
+  /*
+   * Perhaps this should only check for the existence of the folder first?
+   * */
   if (args->flags & FLAG_BUILD_TARGET && strcmp(platform, GAB_TARGET_TRIPLE))
     if (download_gab(&steps, args, platform, GAB_VERSION_TAG))
       clierror("Could not download gab for %s. Proceed with caution.\n",
@@ -2077,9 +2109,8 @@ int main(int argc, const char **argv) {
    */
   roots[0] = "./";
   roots[1] = install_location(GAB_TARGET_TRIPLE, GAB_VERSION_TAG, nullptr);
-  roots[2] =
-      install_location(GAB_TARGET_TRIPLE, GAB_VERSION_TAG,
-                       "github.com/gab-language/cgab@" GAB_VERSION_TAG);
+  roots[2] = install_location(GAB_TARGET_TRIPLE, GAB_VERSION_TAG,
+                              "github.com/gab-language/cgab@" GAB_VERSION_TAG);
   roots[3] = nullptr;
 
   if (check_not_gab(argv[0]) && check_valid_zip())
