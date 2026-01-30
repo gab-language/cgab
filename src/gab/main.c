@@ -366,7 +366,7 @@ static const struct gab_resource native_zip_resources[] = {
     {}, // List terminator.
 };
 
-static const char *roots[3] = {};
+static const char *roots[4] = {};
 
 static char prompt_buffer[4096];
 char *readline(const char *prompt) {
@@ -566,6 +566,10 @@ struct step {
     } unzip;
   } as;
 };
+
+#define T struct step
+#define NAME step
+#include "vector.h"
 
 int step(struct step *step) {
   switch (step->k) {
@@ -932,7 +936,8 @@ static struct command commands[] = {
         "Each resource is checked at each root before moving on to the next.\n"
         "\nROOTS:"
         "\n\t./"
-        "\n\t<install_dir>\n"
+        "\n\t<install_dir>"
+        "\n\t<install_dir>/github.com/gab-language/cgab@" GAB_VERSION_TAG "\n"
         "\nRESOURCES:"
         "\n\t<arg>.gab"
         "\n\tmod/<arg>.gab"
@@ -1007,8 +1012,6 @@ struct command_arguments parse_options(int argc, const char **argv,
   for (int i = 0; i < ndefault_modules; i++)
     v_s_char_push(&args.modules, s_char_cstr(default_modules[i]));
 
-  // v_s_char_push(&args.modules, s_char_cstr("cmessages"));
-
   while (args.argc) {
     const char *arg = *args.argv;
     if (arg[0] != '-')
@@ -1062,34 +1065,124 @@ struct command_arguments parse_options(int argc, const char **argv,
   "http://github.com/gab-language/cgab/releases/download/"
 
 const char *split_pkg(char *pkg) {
-  char *cursor = pkg;
+  char *cursor = strchr(pkg, '@');
 
-  while (*cursor != '@') {
-    if (*cursor == '\0')
-      return cursor;
-
-    cursor++;
-  }
+  if (!cursor)
+    return cursor;
 
   *cursor = '\0';
 
   return ++cursor;
 }
 
-int download_gab(struct command_arguments *args, const char *tag,
-                 const char *triple) {
-
+/*
+ * Get the install location for a given gab target and gab version.
+ */
+const char *install_location(const char *target, const char *tag,
+                             const char *package) {
   int taglen = strlen(tag);
+  int pkglen = package ? strlen(package) : 0;
 
-  size_t triple_len = strlen(triple);
-  char locbuf[taglen + triple_len + 3];
+  size_t targetlen = strlen(target);
+  char locbuf[taglen + targetlen + pkglen + 4];
   strncpy(locbuf, tag, taglen);
-  locbuf[taglen] = '.';
-  strncpy(locbuf + taglen + 1, triple, triple_len);
-  locbuf[taglen + triple_len + 1] = '/';
-  locbuf[taglen + triple_len + 2] = '\0';
+  locbuf[taglen] = '-';
+  strncpy(locbuf + taglen + 1, target, targetlen);
+  locbuf[taglen + targetlen + 1] = '/';
 
-  const char *location_prefix = gab_osprefix_install(locbuf);
+  if (package) {
+    strncpy(locbuf + taglen + 2, package, pkglen);
+    locbuf[taglen + targetlen + targetlen + 2] = '/';
+  } else {
+    locbuf[taglen + targetlen + 2] = '\0';
+  }
+
+  return gab_osprefix_install(locbuf);
+}
+
+int get_package(v_step *steps, struct command_arguments *args,
+                const char *package, const char *gab_target,
+                const char *gab_tag) {
+
+  // Split the requested package into its package and tag.
+  const size_t pkglen = strlen(package);
+
+  char pkgbuf[pkglen];
+
+  strncpy(pkgbuf, package, pkglen);
+  pkgbuf[pkglen] = '\0';
+
+  // Now pkg and tag point to our package and tag.
+  const char *pkg = strlen(pkgbuf) ? pkgbuf : nullptr;
+  const char *tag = split_pkg(pkgbuf);
+
+  if (!tag)
+    return clierror("Could not resolve tag for '%s'.\n\tTry `gab "
+                    "help get`.",
+                    package),
+           1;
+
+  if (!pkg)
+    return clierror(
+               "Could not resolve package for '%s'.\n\tTry `gab help get`.",
+               package),
+           1;
+
+  const char *bundle = "cgab-" GAB_VERSION_TAG "-" GAB_TARGET_TRIPLE;
+
+  v_char url = {};
+  v_char_spush(&url, s_char_cstr("http://"));
+  v_char_spush(&url, s_char_cstr(pkg));
+  v_char_spush(&url, s_char_cstr("/releases/download/"));
+  v_char_spush(&url, s_char_cstr(tag));
+  v_char_push(&url, '/');
+  v_char_spush(&url, s_char_cstr(bundle));
+  v_char_push(&url, '\0');
+
+  const char *install_dir = install_location(gab_target, gab_tag, nullptr);
+
+  v_char bundle_dst = {};
+  v_char_spush(&bundle_dst, s_char_cstr(install_dir));
+  v_char_spush(&bundle_dst, s_char_cstr(package));
+  v_char_push(&bundle_dst, '/');
+  v_char_spush(&bundle_dst, s_char_cstr(bundle));
+  v_char_push(&bundle_dst, '\0');
+
+  v_char pkg_dst = {};
+  v_char_spush(&pkg_dst, s_char_cstr(install_dir));
+  v_char_spush(&pkg_dst, s_char_cstr(package));
+  v_char_push(&pkg_dst, '\0');
+
+  v_step_push(steps, (struct step){
+                         kSTEP_MKDIRP,
+                         .as.mkdirp.path = pkg_dst.data,
+                     });
+
+  v_step_push(steps, (struct step){
+                         kSTEP_FETCH,
+                         .as.fetch.url = url.data,
+                         .as.fetch.dst = bundle_dst.data,
+                     });
+
+  v_step_push(steps, (struct step){
+                         kSTEP_UNZIP,
+                         .as.unzip.src = bundle_dst.data,
+                         .as.unzip.dst = pkg_dst.data,
+                     });
+
+  v_step_push(steps, (struct step){
+                         kSTEP_RM,
+                         .as.rm.path = bundle_dst.data,
+                     });
+
+  return 0;
+}
+
+int download_gab(struct command_arguments *args, const char *gab_target,
+                 const char *gab_tag) {
+  v_step steps = {0};
+
+  const char *location_prefix = install_location(gab_target, gab_tag, nullptr);
 
   if (location_prefix == nullptr) {
     clierror("Could not determine installation prefix.\n");
@@ -1106,34 +1199,17 @@ int download_gab(struct command_arguments *args, const char *tag,
 
   v_char binary_url = {};
   v_char_spush(&binary_url, s_char_cstr(GAB_RELEASE_DOWNLOAD_URL));
-  v_char_spush(&binary_url, s_char_cstr(tag));
+  v_char_spush(&binary_url, s_char_cstr(gab_tag));
   v_char_spush(&binary_url, s_char_cstr("/gab-release-"));
-  v_char_spush(&binary_url, s_char_cstr(triple));
+  v_char_spush(&binary_url, s_char_cstr(gab_target));
   v_char_push(&binary_url, '\0');
-
-  v_char modules_location = {};
-  v_char_spush(&modules_location, s_char_cstr(location_prefix));
-  v_char_spush(&modules_location, s_char_cstr("modules"));
-  v_char_push(&modules_location, '\0');
-
-  v_char modules_url = {};
-  v_char_spush(&modules_url, s_char_cstr(GAB_RELEASE_DOWNLOAD_URL));
-  v_char_spush(&modules_url, s_char_cstr(tag));
-  v_char_spush(&modules_url, s_char_cstr("/gab-release-"));
-  v_char_spush(&modules_url, s_char_cstr(triple));
-  v_char_spush(&modules_url, s_char_cstr("-modules"));
-  v_char_push(&modules_url, '\0');
-
-  v_char modules_extract_location = {};
-  v_char_spush(&modules_extract_location, s_char_cstr(location_prefix));
-  v_char_push(&modules_extract_location, '\0');
 
   // Fetch dev files (libcgab.a, headers)
   v_char dev_url = {};
   v_char_spush(&dev_url, s_char_cstr(GAB_RELEASE_DOWNLOAD_URL));
-  v_char_spush(&dev_url, s_char_cstr(tag));
+  v_char_spush(&dev_url, s_char_cstr(gab_tag));
   v_char_spush(&dev_url, s_char_cstr("/gab-release-"));
-  v_char_spush(&dev_url, s_char_cstr(triple));
+  v_char_spush(&dev_url, s_char_cstr(gab_target));
   v_char_spush(&dev_url, s_char_cstr("-dev"));
   v_char_push(&dev_url, '\0');
 
@@ -1146,48 +1222,40 @@ int download_gab(struct command_arguments *args, const char *tag,
   v_char_spush(&dev_extract_location, s_char_cstr(location_prefix));
   v_char_push(&dev_extract_location, '\0');
 
-  struct step steps[] = {
-      {
-          kSTEP_MKDIRP,
-          .as.mkdirp.path = location_prefix,
-      },
-      {
-          kSTEP_FETCH,
-          .as.fetch.url = binary_url.data,
-          .as.fetch.dst = binary_location.data,
-      },
-      {
-          kSTEP_FETCH,
-          .as.fetch.url = modules_url.data,
-          .as.fetch.dst = modules_location.data,
-      },
-      {
-          kSTEP_FETCH,
-          .as.fetch.url = dev_url.data,
-          .as.fetch.dst = dev_location.data,
-      },
-      {
-          kSTEP_UNZIP,
-          .as.unzip.src = modules_location.data,
-          .as.unzip.dst = modules_extract_location.data,
-      },
-      {
-          kSTEP_UNZIP,
-          .as.unzip.src = dev_location.data,
-          .as.unzip.dst = dev_extract_location.data,
-      },
-      {
-          kSTEP_RM,
-          .as.rm.path = modules_location.data,
-      },
-      {
-          kSTEP_RM,
-          .as.rm.path = dev_location.data,
-      },
-  };
-  const int nsteps = LEN_CARRAY(steps);
+  /*
+   * Fetch the standard libraries package.
+   */
+  v_char package = {};
+  v_char_spush(&package, s_char_cstr("github.com/gab-language/cgab@"));
+  v_char_spush(&package, s_char_cstr(gab_tag));
+  v_char_push(&package, '\0');
 
-  logsteps(nsteps, steps);
+  get_package(&steps, args, package.data, gab_target, gab_tag);
+
+  v_step_push(&steps, (struct step){
+                          kSTEP_FETCH,
+                          .as.fetch.url = binary_url.data,
+                          .as.fetch.dst = binary_location.data,
+                      });
+
+  v_step_push(&steps, (struct step){
+                          kSTEP_FETCH,
+                          .as.fetch.url = dev_url.data,
+                          .as.fetch.dst = dev_location.data,
+                      });
+
+  v_step_push(&steps, (struct step){
+                          kSTEP_UNZIP,
+                          .as.unzip.src = dev_location.data,
+                          .as.unzip.dst = dev_extract_location.data,
+                      });
+
+  v_step_push(&steps, (struct step){
+                          kSTEP_RM,
+                          .as.rm.path = dev_location.data,
+                      });
+
+  logsteps(steps.len, steps.data);
 
   if (gab_osfisatty(stdin) && !(args->flags & FLAG_AUTOCONFIRM)) {
     cliinfo("Execute this plan? (y,n)\n");
@@ -1198,12 +1266,12 @@ int download_gab(struct command_arguments *args, const char *tag,
       return clierror("Installation cancelled.\n"), 1;
   }
 
-  if (execute_steps(nsteps, steps))
+  if (execute_steps(steps.len, steps.data))
     return clierror("Installation failed.\n"), 1;
 
   clisuccess("Installation complete.\n");
 
-  if (!strcmp(triple, GAB_TARGET_TRIPLE)) {
+  if (!strcmp(gab_target, GAB_TARGET_TRIPLE)) {
     clisuccess(
         "Congratulations! gab@%s"
         " successfully installed.\n\n"
@@ -1212,7 +1280,7 @@ int download_gab(struct command_arguments *args, const char *tag,
         " to PATH directly.\n\n"
         "On systems that support symlinks, link the binary at %sgab to "
         "some location in PATH already.\n\t\teg: " GAB_SYMLINK_RECOMMENDATION,
-        tag, location_prefix, location_prefix, location_prefix);
+        gab_tag, location_prefix, location_prefix, location_prefix);
   }
 
   return 0;
@@ -1270,7 +1338,13 @@ int get(struct command_arguments *args) {
 
   // If we match the special Gab package, then defer to that helper.
   if (!strcmp(pkgbuf, "gab"))
-    return download_gab(args, tagbuf, GAB_TARGET_TRIPLE);
+    return download_gab(args, GAB_TARGET_TRIPLE, tagbuf);
+
+  v_step steps = {0};
+
+  get_package(&steps, args, pkg, GAB_TARGET_TRIPLE, GAB_VERSION_TAG);
+
+  logsteps(steps.len, steps.data);
 
   clierror("The 'get' subcommand does not support downloading "
            "packages yet.\n");
@@ -1442,7 +1516,7 @@ bool add_module(mz_zip_archive *zip_o, const char **roots,
   memcpy(modulename + lenprefix + lenpath, suffix, lensuffix);
   modulename[lenprefix + lenpath + lensuffix] = '\0';
 
-  cliinfo("Resolved module " GAB_GREEN "%s" GAB_GREEN "\n\t" GAB_MAGENTA
+  cliinfo("Resolved module " GAB_GREEN "%s " GAB_MAGENTA
           "%s" GAB_RESET " " GAB_GREEN "=>" GAB_RESET " " GAB_YELLOW
           "<archive>/%s" GAB_RESET "\n",
           cstr_module, path, modulename);
@@ -1472,11 +1546,232 @@ const char *dynlib_fileending = GAB_DYNLIB_FILEENDING;
 
 #define MODULE_NAME_MAX 2048
 
+int build_exe(struct command_arguments *args, const char *module) {
+  size_t modulelen = strlen(module);
+  char bundle_buf[modulelen + 5];
+  memcpy(bundle_buf, module, modulelen);
+  memcpy(bundle_buf + modulelen, ".exe", 5);
+  const char *bundle = bundle_buf;
+
+  v_char exepath = {};
+  v_char_spush(&exepath, s_char_cstr(GAB_VERSION_TAG));
+  v_char_push(&exepath, '.');
+  v_char_spush(&exepath, s_char_cstr(platform));
+  v_char_push(&exepath, '/');
+  v_char_push(&exepath, '\0');
+  const char *path = gab_osprefix_install(exepath.data);
+
+  v_char_destroy(&exepath);
+  v_char_spush(&exepath, s_char_cstr(path));
+  v_char_spush(&exepath, s_char_cstr("gab"));
+  v_char_push(&exepath, '\0');
+
+  FILE *exe = fopen(exepath.data, "r");
+  if (!exe) {
+    clierror("Failed to open gab executable at '%s'.\n", exepath.data);
+
+    if (strcmp(platform, GAB_TARGET_TRIPLE)) {
+      clierror("Cannot fallback to this binary, requested platform is %s and "
+               "this platform is %s.\n",
+               platform, GAB_TARGET_TRIPLE);
+      return 1;
+    }
+
+    clierror("Falling back to this binary, gab@" GAB_VERSION_TAG
+             " for " GAB_TARGET_TRIPLE "\n");
+    const char *path = gab_osexepath();
+    exe = fopen(path, "r");
+    if (!exe) {
+      clierror("Failed to open gab executable at '%s'.\n", path);
+      return 1;
+    }
+  }
+  v_char_destroy(&exepath);
+
+  FILE *bundle_f = fopen(bundle, "w");
+  if (!bundle_f)
+    return clierror("Failed to open bundle file '%s' to write.\n", bundle), 1;
+
+  copy_file(exe, bundle_f);
+
+  mz_zip_archive zip_o = {0};
+
+  if (!mz_zip_writer_init_cfile(&zip_o, bundle_f, 0)) {
+    mz_zip_error e = mz_zip_get_last_error(&zip_o);
+    const char *estr = mz_zip_get_error_string(e);
+    clierror("Failed to initialize zip archive: %s.\n", estr);
+    return 1;
+  }
+
+  /* The default imported modules require some native modules. Add these. */
+  for (int i = 0; i < ndefault_modules_deps; i++)
+    v_s_char_push(&args->modules, s_char_cstr(default_modules_deps[i]));
+
+  v_s_char_push(&args->modules, s_char_cstr(module));
+
+  struct gab_resource platform_file_resources[nnative_file_resources + 1];
+
+  memcpy(platform_file_resources, native_file_resources,
+         sizeof(native_file_resources));
+
+  // Replace the native DYNLIBFILEENDING witht the platform-specific one.
+  // This is kinda manual and bug prone if we change resources.
+  platform_file_resources[0].suffix = dynlib_fileending;
+  platform_file_resources[1].suffix = dynlib_fileending;
+
+  /*
+   * We need our own custom roots here when building a bundled app.
+   * This is because we can cross-compile our builds for os/architectures other
+   * than our own.
+   **/
+  const char *platform_roots[] = {
+      "./",
+      install_location(platform, GAB_VERSION_TAG, nullptr),
+      install_location(platform, GAB_VERSION_TAG,
+                       "github.com/gab-language/cgab@" GAB_VERSION_TAG),
+      nullptr,
+  };
+
+  for (int i = 0; i < args->modules.len; i++)
+    if (!add_module(&zip_o, platform_roots, platform_file_resources,
+                    v_s_char_val_at(&args->modules, i)))
+      return 1;
+
+  if (!mz_zip_writer_finalize_archive(&zip_o)) {
+    mz_zip_error e = mz_zip_get_last_error(&zip_o);
+    const char *estr = mz_zip_get_error_string(e);
+    clierror("Failed to finalize zip archive: %s.\n", estr);
+    mz_zip_writer_end(&zip_o);
+    return 1;
+  }
+
+  if (!mz_zip_writer_end(&zip_o)) {
+    mz_zip_error e = mz_zip_get_last_error(&zip_o);
+    const char *estr = mz_zip_get_error_string(e);
+    clierror("Failed to cleanup zip archive: %s.\n", estr);
+    return 1;
+  }
+
+  long size = ftell(bundle_f);
+
+  fclose(bundle_f);
+  fclose(exe);
+
+#if GAB_PLATFORM_UNIX
+  if (chmod(bundle, 0755) != 0) {
+    perror("chmod");
+    return -1;
+  }
+#endif
+
+  clisuccess("Created bundled executable " GAB_CYAN "%s" GAB_RESET
+             " (%2.2lf mb)\n",
+             bundle, (double)size / 1024 / 1024);
+  return 0;
+};
+
+int build_lib(struct command_arguments *args) {
+  v_char bundle = {0};
+  v_char_spush(&bundle, s_char_cstr("cgab-"));
+  v_char_spush(&bundle, s_char_cstr(GAB_VERSION_TAG));
+  v_char_push(&bundle, '-');
+  v_char_spush(&bundle, s_char_cstr(platform));
+  v_char_push(&bundle, '\0');
+
+  FILE *bundle_f = fopen(bundle.data, "w");
+  if (!bundle_f)
+    return clierror("Failed to open bundle file '%s' to write.\n", bundle), 1;
+
+  mz_zip_archive zip_o = {0};
+
+  if (!mz_zip_writer_init_cfile(&zip_o, bundle_f, 0)) {
+    mz_zip_error e = mz_zip_get_last_error(&zip_o);
+    const char *estr = mz_zip_get_error_string(e);
+    clierror("Failed to initialize zip archive: %s.\n", estr);
+    return 1;
+  }
+
+  struct gab_resource platform_file_resources[nnative_file_resources + 1];
+
+  memcpy(platform_file_resources, native_file_resources,
+         sizeof(native_file_resources));
+
+  // Replace the native DYNLIBFILEENDING witht the platform-specific one.
+  // This is kinda manual and bug prone if we change resources.
+  platform_file_resources[0].suffix = dynlib_fileending;
+  platform_file_resources[1].suffix = dynlib_fileending;
+
+  /*
+   * We need our own custom roots here when building a bundled app.
+   * This is because we can cross-compile our builds for os/architectures other
+   * than our own.
+   **/
+  const char *platform_roots[] = {
+      "./",
+      install_location(platform, GAB_VERSION_TAG, nullptr),
+      install_location(platform, GAB_VERSION_TAG,
+                       "github.com/gab-language/cgab@" GAB_VERSION_TAG),
+      nullptr,
+  };
+
+  // We skip over the default modules in this case.
+  for (int i = ndefault_modules; i < args->modules.len; i++)
+    if (!add_module(&zip_o, platform_roots, platform_file_resources,
+                    v_s_char_val_at(&args->modules, i)))
+      return 1;
+
+  if (!mz_zip_writer_finalize_archive(&zip_o)) {
+    mz_zip_error e = mz_zip_get_last_error(&zip_o);
+    const char *estr = mz_zip_get_error_string(e);
+    clierror("Failed to finalize zip archive: %s.\n", estr);
+    mz_zip_writer_end(&zip_o);
+    return 1;
+  }
+
+  if (!mz_zip_writer_end(&zip_o)) {
+    mz_zip_error e = mz_zip_get_last_error(&zip_o);
+    const char *estr = mz_zip_get_error_string(e);
+    clierror("Failed to cleanup zip archive: %s.\n", estr);
+    return 1;
+  }
+
+  long size = ftell(bundle_f);
+
+  fclose(bundle_f);
+
+  clisuccess("Created bundled library " GAB_CYAN "%s" GAB_RESET
+             " (%2.2lf mb)\n",
+             bundle.data, (double)size / 1024 / 1024);
+  return 0;
+};
+
 /*
  * Maybe we should allow building a python-wheel-like zip?
  *
  * If you don't include a module entrypoint, create a bundle with name:
  *  cgab_GAB_VERSION_TAG_GAB_TARGET
+ *
+ *  ex: cgab_0.0.5_x86_64-linux-gnu
+ *
+ *  This should include every module requested in -m or stdin.
+ *
+ *  gab get <package>@<tag>
+ *
+ *  The STD lib can be treated as a bundle this way.
+ *
+ *  bundle name:
+ *  cgab-<cgab version>-<triple>
+ *
+ *  as package name:
+ *  github.com/gab-language/cgab
+ *
+ *  as tag:
+ *  0.0.5
+ *
+ *  construct url:
+ *  http://<package>/releases/download/<tag>/<bundle>
+ *
+ *  http://github.com/gab-language/cgab/releases/download/0.0.5/cgab-0.0.5-x86_64-linux-gnu
  *
  */
 int build(struct command_arguments *args) {
@@ -1521,146 +1816,18 @@ int build(struct command_arguments *args) {
       return 1;
     }
 
-    if (download_gab(args, GAB_VERSION_TAG, platform))
+    if (download_gab(args, platform, GAB_VERSION_TAG))
       clierror("Continuing. Core modules may be missing.\n");
   }
 
-  /* We need our own custom roots here when building a bundled app.
-   * This is because we can cross-compile our builds for os/architectures other
-   * than our own.
-   **/
-
-  v_char location = {};
-  v_char_spush(&location, s_char_cstr(GAB_VERSION_TAG));
-  v_char_push(&location, '.');
-  v_char_spush(&location, s_char_cstr(platform));
-  v_char_push(&location, '/');
-  v_char_push(&location, '\0');
-
-  const char *roots[] = {
-      "./",
-      gab_osprefix_install(location.data),
-      nullptr,
-  };
-
-  if (args->argc < 1) {
-    clierror("Missing bundle argument to build subcommand.\n");
-    return 1;
-  }
+  if (args->argc < 1)
+    return build_lib(args);
 
   const char *module = args->argv[0];
-  size_t module_len = strlen(module);
-  char bundle_buf[module_len + 5];
-  memcpy(bundle_buf, module, module_len);
-  memcpy(bundle_buf + module_len, ".exe", 5);
-  const char *bundle = bundle_buf;
-
   args->argv++;
   args->argc--;
 
-  v_char exepath = {};
-  v_char_spush(&exepath, s_char_cstr(GAB_VERSION_TAG));
-  v_char_push(&exepath, '.');
-  v_char_spush(&exepath, s_char_cstr(platform));
-  v_char_push(&exepath, '/');
-  v_char_push(&exepath, '\0');
-  const char *path = gab_osprefix_install(exepath.data);
-
-  v_char_destroy(&exepath);
-  v_char_spush(&exepath, s_char_cstr(path));
-  v_char_spush(&exepath, s_char_cstr("gab"));
-  v_char_push(&exepath, '\0');
-
-  FILE *exe = fopen(exepath.data, "r");
-  if (!exe) {
-    clierror("Failed to open gab executable at '%s'.\n", exepath.data);
-
-    if (strcmp(platform, GAB_TARGET_TRIPLE)) {
-      clierror("Cannot fallback to this binary, requested platform is %s and "
-               "this platform is %s.\n",
-               platform, GAB_TARGET_TRIPLE);
-      return 1;
-    }
-
-    clierror("Falling back to this binary, gab@" GAB_VERSION_TAG
-             " for " GAB_TARGET_TRIPLE "\n");
-    const char *path = gab_osexepath();
-    exe = fopen(path, "r");
-    if (!exe) {
-      clierror("Failed to open gab executable at '%s'.\n", path);
-      return 1;
-    }
-  }
-  v_char_destroy(&exepath);
-
-  FILE *bundle_f = fopen(bundle, "w");
-  if (!bundle_f) {
-    clierror("Failed to open bundle file '%s' to write.\n", bundle);
-    return 1;
-  }
-
-  copy_file(exe, bundle_f);
-
-  mz_zip_archive zip_o = {0};
-
-  if (!mz_zip_writer_init_cfile(&zip_o, bundle_f, 0)) {
-    mz_zip_error e = mz_zip_get_last_error(&zip_o);
-    const char *estr = mz_zip_get_error_string(e);
-    clierror("Failed to initialize zip archive: %s.\n", estr);
-    return 1;
-  }
-
-  /* The default imported modules require some native modules. Add these. */
-  for (int i = 0; i < ndefault_modules_deps; i++)
-    v_s_char_push(&args->modules, s_char_cstr(default_modules_deps[i]));
-
-  v_s_char_push(&args->modules, s_char_cstr(module));
-
-  struct gab_resource platform_file_resources[nnative_file_resources + 1];
-
-  memcpy(platform_file_resources, native_file_resources,
-         sizeof(native_file_resources));
-
-  // Replace the native DYNLIBFILEENDING witht the platform-specific one.
-  // This is kinda manual and bug prone if we change resources.
-  platform_file_resources[0].suffix = dynlib_fileending;
-  platform_file_resources[1].suffix = dynlib_fileending;
-
-  for (int i = 0; i < args->modules.len; i++)
-    if (!add_module(&zip_o, roots, platform_file_resources,
-                    v_s_char_val_at(&args->modules, i)))
-      return 1;
-
-  if (!mz_zip_writer_finalize_archive(&zip_o)) {
-    mz_zip_error e = mz_zip_get_last_error(&zip_o);
-    const char *estr = mz_zip_get_error_string(e);
-    clierror("Failed to finalize zip archive: %s.\n", estr);
-    mz_zip_writer_end(&zip_o);
-    return 1;
-  }
-
-  if (!mz_zip_writer_end(&zip_o)) {
-    mz_zip_error e = mz_zip_get_last_error(&zip_o);
-    const char *estr = mz_zip_get_error_string(e);
-    clierror("Failed to cleanup zip archive: %s.\n", estr);
-    return 1;
-  }
-
-  long size = ftell(bundle_f);
-
-  fclose(bundle_f);
-  fclose(exe);
-
-#if GAB_PLATFORM_UNIX
-  if (chmod(bundle, 0755) != 0) {
-    perror("chmod");
-    return -1;
-  }
-#endif
-
-  clisuccess("Created bundled module " GAB_CYAN "%s" GAB_RESET " (%2.2lf mb)\n",
-             bundle, (double)size / 1024 / 1024);
-  return 0;
+  return build_exe(args, module);
 }
 
 bool check_not_gab(const char *name) {
@@ -1701,8 +1868,10 @@ int main(int argc, const char **argv) {
    * Populate roots list.
    */
   roots[0] = "./";
-  roots[1] = gab_osprefix_install(GAB_VERSION_TAG "." GAB_TARGET_TRIPLE "/");
-  roots[2] = nullptr;
+  roots[1] = install_location(GAB_TARGET_TRIPLE, GAB_VERSION_TAG, nullptr);
+  roots[2] = install_location(GAB_TARGET_TRIPLE, GAB_VERSION_TAG,
+                              "github.com/gab-language/cgab@" GAB_VERSION_TAG);
+  roots[3] = nullptr;
 
   if (check_not_gab(argv[0]) && check_valid_zip())
     return run_bundle(argv[0]);
