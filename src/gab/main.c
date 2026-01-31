@@ -2054,7 +2054,7 @@ int build(struct command_arguments *args) {
         len--;
 
       // These are allocated, just leak em who cares.
-      a_char *module = a_char_create(line, len);
+      a_char *module = a_char_create(line, len + 1);
 
       // Add the module to our module list.
       v_s_char_push(&args->modules, s_char_cstr(module->data));
