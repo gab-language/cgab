@@ -180,20 +180,20 @@ jobs:
       - name: Download Binary
         uses: pyTooling/download-artifact@v4
         with:
-          name: 'gab-${{ matrix.build_type }}-${{ matrix.target }}'
+          name: 'gab-${{ matrix.target }}-${{ matrix.build_type }}'
 
       - name: Download Modules
         uses: pyTooling/download-artifact@v4
         with:
-          name: cgab-${{ env.version }}-${{ matrix.build_type }}
+          name: cgab-${{ env.version }}-${{ matrix.target }}
 
       - name: Download Modules
         uses: pyTooling/download-artifact@v4
         with:
-          name: test.cgab-${{ env.version }}-${{ matrix.build_type }}.exe
+          name: test.cgab-${{ env.version }}-${{ matrix.target }}.exe
 
       - name: Unzip Modules
-        run: unzip -o cgab-${{ env.version }}-${{ matrix.build_type }}
+        run: unzip -o cgab-${{ env.version }}-${{ matrix.target }}
 
       - name: Gab Build Bundle
         run: |
@@ -222,7 +222,7 @@ jobs:
         run: ./test.exe
 
       - name: Move cross-compiled to test
-        run: mv test.cgab-${{ env.version }}-${{ matrix.build_type }}.exe test.exe
+        run: mv test.cgab-${{ env.version }}-${{ matrix.target }} test.exe
 
       - name: Run cross-compiled tests bundle
         run: ./test.exe
