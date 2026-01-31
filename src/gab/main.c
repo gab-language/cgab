@@ -1312,7 +1312,7 @@ int checksteps(struct command_arguments *args, int len,
       !(args->flags & FLAG_STEP_AUTOCONFIRM)) {
     cliinfo("This plan will download resources from the internet. Use the -n "
             "or --noisy flag to view the plan. Be sure these are sources you "
-            "trust!\nExecute this plan? (y,n)\n");
+            "trust!\nExecute this plan? (y,n) ");
 
     int ch = getc(stdin);
 

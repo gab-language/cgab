@@ -59,23 +59,23 @@ jobs:
 
     - name: Create bundles
       run: |
-         ./build-x86_64-linux-gnu/gab build -t x86_64-linux-gnu   < bundle
-         ./build-x86_64-linux-gnu/gab build -t x86_64-macos-none  < bundle
-         ./build-x86_64-linux-gnu/gab build -t aarch64-linux-gnu  < bundle
-         ./build-x86_64-linux-gnu/gab build -t aarch64-macos-none < bundle
+         ./build-x86_64-linux-gnu/gab build -n -t x86_64-linux-gnu   < bundle
+         ./build-x86_64-linux-gnu/gab build -n -t x86_64-macos-none  < bundle
+         ./build-x86_64-linux-gnu/gab build -n -t aarch64-linux-gnu  < bundle
+         ./build-x86_64-linux-gnu/gab build -n -t aarch64-macos-none < bundle
 
     - name: Create Cross-Compiled Test binary
       run: |
-         ./build-x86_64-linux-gnu/gab build -t x86_64-linux-gnu -m cgab,cgui,tests test 
+         ./build-x86_64-linux-gnu/gab build -n -t x86_64-linux-gnu -m cgab,cgui,tests test 
          mv test.exe test.cgab-${{ env.version }}-x86_64-linux-gnu.exe
 
-         ./build-x86_64-linux-gnu/gab build -t x86_64-macos-none -m cgab,cgui,tests test  
+         ./build-x86_64-linux-gnu/gab build -n -t x86_64-macos-none -m cgab,cgui,tests test  
          mv test.exe test.cgab-${{ env.version }}-x86_64-macos-none.exe
 
-         ./build-x86_64-linux-gnu/gab build -t aarch64-linux-gnu -m cgab,cgui,tests test 
+         ./build-x86_64-linux-gnu/gab build -n -t aarch64-linux-gnu -m cgab,cgui,tests test 
          mv test.exe test.cgab-${{ env.version }}-aarch64-linux-gnu.exe
 
-         ./build-x86_64-linux-gnu/gab build -t aarch64-macos-none -m cgab,cgui,tests test 
+         ./build-x86_64-linux-gnu/gab build -n -t aarch64-macos-none -m cgab,cgui,tests test 
          mv test.exe test.cgab-${{ env.version }}-aarch64-macos-none.exe
 
     - name: Upload x86_64-linux-gnu Binary Artifact
