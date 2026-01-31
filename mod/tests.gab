@@ -4,7 +4,7 @@ ui = 'cgui'.use
 (events, app) = (Channels.make, Channels.make)
 
 ui
-  .run\gui(events, app)
+  .run\tui(events, app)
   .unwrap
 
 is\unittest:.def(
