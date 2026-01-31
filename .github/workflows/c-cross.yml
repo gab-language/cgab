@@ -88,6 +88,9 @@ jobs:
     - name: Collect modules
       run: cp build-${{ matrix.target }}/mod/* mod
 
+    - name: Create bundle
+      run: ./build-${{matrix.target}}/gab build < bundle
+
     - name: Upload Module Artifacts
       uses: pyTooling/upload-artifact@v4
       with:
@@ -130,13 +133,6 @@ jobs:
         uses: pyTooling/download-artifact@v4
         with:
           name: gab-${{ matrix.build_type }}-${{ matrix.target }}-modules
-
-      # - name: Make the binary executable (win)
-      #   if: ${{ contains(matrix.target, 'windows') }}
-      #   run: |
-      #     move gab gab.exe
-      #     where.exe "gab"
-      #     Get-Command ".\gab"
 
       - name: Run help
         run: ${{ matrix.cmd }} help
