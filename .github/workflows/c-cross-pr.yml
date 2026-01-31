@@ -222,7 +222,7 @@ jobs:
         run: ./test.exe
 
       - name: Move cross-compiled to test
-        run: mv test.cgab-${{ env.version }}-${{ matrix.target }} test.exe
+        run: mv test.cgab-${{ env.version }}-${{ matrix.target }}.exe test.exe
 
       - name: Run cross-compiled tests bundle
         run: ./test.exe
