@@ -87,11 +87,13 @@ jobs:
     - name: Upload x86_64-linux-gnu Bundle Artifact
       uses: pyTooling/upload-artifact@v4
       with:
+        name: 'cgab-${{ env.version }}-x86_64-linux-gnu'
         path: 'cgab-${{ env.version }}-x86_64-linux-gnu'
 
     - name: Upload x86_64-linux-gnu Test Executable Artifact
       uses: pyTooling/upload-artifact@v4
       with:
+        name: 'test.cgab-${{ env.version }}-x86_64-linux-gnu.exe'
         path: 'test.cgab-${{ env.version }}-x86_64-linux-gnu.exe'
 
     - name: Upload aarch64-linux-gnu Binary Artifact
@@ -103,11 +105,13 @@ jobs:
     - name: Upload aarch64-linux-gnu Bundle Artifact
       uses: pyTooling/upload-artifact@v4
       with:
+        name: 'cgab-${{ env.version }}-aarch64-linux-gnu'
         path: 'cgab-${{ env.version }}-aarch64-linux-gnu'
 
     - name: Upload aarch64-linux-gnu Test Executable Artifact
       uses: pyTooling/upload-artifact@v4
       with:
+        name: 'test.cgab-${{ env.version }}-aarch64-linux-gnu.exe'
         path: 'test.cgab-${{ env.version }}-aarch64-linux-gnu.exe'
 
     - name: Upload x86_64-macos-none Binary Artifact
@@ -119,11 +123,13 @@ jobs:
     - name: Upload x86_64-macos-none Bundle Artifact
       uses: pyTooling/upload-artifact@v4
       with:
+        name: 'cgab-${{ env.version }}-x86_64-macos-none'
         path: 'cgab-${{ env.version }}-x86_64-macos-none'
 
     - name: Upload x86_64-macos-none Test Executable Artifact
       uses: pyTooling/upload-artifact@v4
       with:
+        name: 'test.cgab-${{ env.version }}-x86_64-macos-none.exe' 
         path: 'test.cgab-${{ env.version }}-x86_64-macos-none.exe'
 
     - name: Upload aarch64-macos-none Binary Artifact
@@ -135,11 +141,13 @@ jobs:
     - name: Upload aarch64-macos-none Bundle Artifact
       uses: pyTooling/upload-artifact@v4
       with:
+        name: 'cgab-${{ env.version }}-aarch64-macos-none' 
         path: 'cgab-${{ env.version }}-aarch64-macos-none'
 
     - name: Upload aarch64-macos-none Test Executable Artifact
       uses: pyTooling/upload-artifact@v4
       with:
+        name: 'test.cgab-${{ env.version }}-aarch64-macos-none.exe' 
         path: 'test.cgab-${{ env.version }}-aarch64-macos-none.exe'
 
   run_tests:
