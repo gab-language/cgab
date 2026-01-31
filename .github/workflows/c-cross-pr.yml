@@ -66,16 +66,16 @@ jobs:
 
     - name: Create Cross-Compiled Test binary
       run: |
-         ./build-x86_64-linux-gnu/gab build -n -t x86_64-linux-gnu -m cgab,cgui,tests test 
+         ./build-x86_64-linux-gnu/gab build -t x86_64-linux-gnu -m cgab,cgui,tests test 
          mv test.exe test.cgab-${{ env.version }}-x86_64-linux-gnu.exe
 
-         ./build-x86_64-linux-gnu/gab build -n -t x86_64-macos-none -m cgab,cgui,tests test  
+         ./build-x86_64-linux-gnu/gab build -t x86_64-macos-none -m cgab,cgui,tests test  
          mv test.exe test.cgab-${{ env.version }}-x86_64-macos-none.exe
 
-         ./build-x86_64-linux-gnu/gab build -n -t aarch64-linux-gnu -m cgab,cgui,tests test 
+         ./build-x86_64-linux-gnu/gab build -t aarch64-linux-gnu -m cgab,cgui,tests test 
          mv test.exe test.cgab-${{ env.version }}-aarch64-linux-gnu.exe
 
-         ./build-x86_64-linux-gnu/gab build -n -t aarch64-macos-none -m cgab,cgui,tests test 
+         ./build-x86_64-linux-gnu/gab build -t aarch64-macos-none -m cgab,cgui,tests test 
          mv test.exe test.cgab-${{ env.version }}-aarch64-macos-none.exe
 
     - name: Upload x86_64-linux-gnu Binary Artifact
@@ -206,8 +206,8 @@ jobs:
       #     where.exe "gab"
       #     Get-Command ".\gab"
 
-      - name: Run help
-        run: ${{ matrix.cmd }} help
+      - name: Welcome
+        run: ${{ matrix.cmd }}
 
       - name: Run Smallest Hello World
         run: ${{ matrix.cmd }} exec "'hello world!'"
@@ -223,9 +223,6 @@ jobs:
 
       - name: Move cross-compiled to test
         run: mv test.cgab-${{ env.version }}-${{ matrix.target }}.exe test.exe
-
-      - name: Doublecheck executable
-        run: chmod +x test.exe
 
       - name: Run cross-compiled tests bundle
         run: ./test.exe
