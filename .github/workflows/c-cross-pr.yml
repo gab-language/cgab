@@ -55,7 +55,7 @@ jobs:
       run: clide build
 
     - name: Move native modules
-      run: cp build-*/mod* mod
+      run: cp build-*/mod/* mod
 
     - name: Create bundles
       run: |
