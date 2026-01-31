@@ -1866,14 +1866,6 @@ int build_exe(struct command_arguments *args, const char *module) {
 
   v_step steps = {0};
 
-  /*
-   * Perhaps this should only check for the existence of the folder first?
-   * */
-  if (args->flags & FLAG_BUILD_TARGET && strcmp(platform, GAB_TARGET_TRIPLE))
-    if (download_gab(&steps, args, platform, GAB_VERSION_TAG))
-      clierror("Could not download gab for %s. Proceed with caution.\n",
-               platform);
-
   v_step_push(&steps,
               (struct step){
                   kSTEP_ARCHIVE_OPEN,
