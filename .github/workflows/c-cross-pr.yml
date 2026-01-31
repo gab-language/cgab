@@ -49,7 +49,7 @@ jobs:
       run: go install github.com/TeddyRandby/clide@latest
 
     - name: Configure
-      run: clide configure -b='x86_64-linux-gnu x86_64-macos-none aarch64-linux-gnu aarch64-macos-none' -t='release'
+      run: clide configure -t='x86_64-linux-gnu x86_64-macos-none aarch64-linux-gnu aarch64-macos-none' -b='release'
 
     - name: Build
       run: clide build
