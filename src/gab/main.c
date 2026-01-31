@@ -886,7 +886,7 @@ void logstep(struct step *step, int i) {
                    " to " GAB_MAGENTA "%s" GAB_RESET ".\n",
                    i, step->as.fetch.url, step->as.fetch.dst);
   case kSTEP_EXTRACT:
-    return cliinfo(" %2i Extract " GAB_MAGENTA "%s" GAB_RESET " to " GAB_MAGENTA
+    return cliinfo(" %2i Via tar, extract " GAB_MAGENTA "%s" GAB_RESET " to " GAB_MAGENTA
                    "%s" GAB_RESET ".\n",
                    i, step->as.extract.src, step->as.extract.dst);
   case kSTEP_UNZIP:
@@ -1003,7 +1003,7 @@ const struct option structured_err_option = {
     .flag = FLAG_STRUCT_ERR,
 };
 
-bool platform_handler(struct command_arguments *args) {
+bool target_handler(struct command_arguments *args) {
   const char *flag = *args->argv;
   args->argv++;
   args->argc--;
@@ -1111,6 +1111,14 @@ const struct option step_verbose_option = {
     .flag = FLAG_STEP_VERBOSE,
 };
 
+const struct option target_option = {
+    "target",
+    "Set the target platform of the operation",
+    't',
+    .flag = FLAG_BUILD_TARGET,
+    .handler_f = target_handler,
+};
+
 static struct command commands[] = {
     {
         "welcome",
@@ -1173,6 +1181,7 @@ static struct command commands[] = {
         .handler = get,
         {
             step_verbose_option,
+            target_option,
             {
                 "yes",
                 "Automatically confirm 'yes' when prompted",
@@ -1196,7 +1205,8 @@ static struct command commands[] = {
         "\taarch64-macos-none  (MacOS ARM)\n\n"
         "The executable produced will be named <arg>.exe. When invoked, will "
         "behave as if the user typed `gab use <arg>`.\n"
-        "You may remove the .exe extension, but the filename is used to determine the entrypoint.\n"
+        "You may remove the .exe extension, but the filename is used to "
+        "determine the entrypoint.\n"
         "The executable itself is distributable as a stand-alone binary. "
         "Users need not install anything, or even know anything about gab.\n\n"
         "If no entrypoint <arg> is supplied, then gab will build the modules "
@@ -1215,13 +1225,7 @@ static struct command commands[] = {
         {
             modules_option,
             step_verbose_option,
-            {
-                "plat",
-                "Set the platform of the build",
-                'p',
-                .flag = FLAG_BUILD_TARGET,
-                .handler_f = platform_handler,
-            },
+            target_option,
         },
     },
     {
@@ -1581,7 +1585,36 @@ int download_gab(v_step *steps, struct command_arguments *args,
   return 0;
 }
 
+
+const char *platform = GAB_TARGET_TRIPLE;
+const char *dynlib_fileending = GAB_DYNLIB_FILEENDING;
+int update_platform(struct command_arguments *args) {
+  platform = args->platform;
+
+  if (!strcmp(platform, "x86_64-linux-gnu"))
+    dynlib_fileending = ".so";
+  else if (!strcmp(platform, "x86_64-macos-none"))
+    dynlib_fileending = ".dylib";
+  else if (!strcmp(platform, "x86_64-windows-gnu"))
+    dynlib_fileending = ".dll";
+  else if (!strcmp(platform, "aarch64-linux-gnu"))
+    dynlib_fileending = ".so";
+  else if (!strcmp(platform, "aarch64-macos-none"))
+    dynlib_fileending = ".dylib";
+  else if (!strcmp(platform, "aarch64-windows-gnu"))
+    dynlib_fileending = ".dll";
+  else
+    return clierror("Unrecognized platform '%s'.\n", platform), 1;
+
+  return 0;
+};
+
+
 int get(struct command_arguments *args) {
+  if (args->flags & FLAG_BUILD_TARGET)
+    if (update_platform(args))
+      return 1;
+
   const char *pkg = args->argc ? args->argv[0] : "@";
 
   // Split the requested package into its package and tag.
@@ -1631,9 +1664,9 @@ int get(struct command_arguments *args) {
 
   // If we match the special Gab package, then defer to that helper.
   if (!strcmp(pkgbuf, "gab"))
-    res = download_gab(&steps, args, GAB_TARGET_TRIPLE, tagbuf);
+    res = download_gab(&steps, args, platform, tagbuf);
   else
-    res = get_package(&steps, args, pkg, GAB_TARGET_TRIPLE, GAB_VERSION_TAG);
+    res = get_package(&steps, args, pkg, platform, GAB_VERSION_TAG);
 
   if (res)
     return res;
@@ -1731,7 +1764,7 @@ void cmd_details(int i) {
     if (!opt.name)
       break;
 
-    printf("\t--%-5s\t-%c\t%s.\n", opt.name, opt.shorthand, opt.desc);
+    printf("\t--%-8s\t-%c\t%s.\n", opt.name, opt.shorthand, opt.desc);
   }
 }
 
@@ -1768,9 +1801,6 @@ int help(struct command_arguments *args) {
   clierror("Unrecognized subcommand '%s'.\n", subcommand);
   return 1;
 }
-
-const char *platform = GAB_TARGET_TRIPLE;
-const char *dynlib_fileending = GAB_DYNLIB_FILEENDING;
 
 #define MODULE_NAME_MAX 2048
 
@@ -2039,26 +2069,9 @@ int build(struct command_arguments *args) {
     }
   }
 
-  if (args->flags & FLAG_BUILD_TARGET) {
-    platform = args->platform;
-
-    if (!strcmp(platform, "x86_64-linux-gnu")) {
-      dynlib_fileending = ".so";
-    } else if (!strcmp(platform, "x86_64-macos-none")) {
-      dynlib_fileending = ".dylib";
-    } else if (!strcmp(platform, "x86_64-windows-gnu")) {
-      dynlib_fileending = ".dll";
-    } else if (!strcmp(platform, "aarch64-linux-gnu")) {
-      dynlib_fileending = ".so";
-    } else if (!strcmp(platform, "aarch64-macos-none")) {
-      dynlib_fileending = ".dylib";
-    } else if (!strcmp(platform, "aarch64-windows-gnu")) {
-      dynlib_fileending = ".dll";
-    } else {
-      clierror("Unrecognized platform '%s'.\n", platform);
+  if (args->flags & FLAG_BUILD_TARGET)
+    if (update_platform(args))
       return 1;
-    }
-  }
 
   if (args->argc < 1)
     return build_lib(args);

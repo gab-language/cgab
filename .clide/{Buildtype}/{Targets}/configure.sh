@@ -31,34 +31,53 @@ case "$buildtype" in
   release)        binflags=""    ;;
 esac
 
-unixflags="-DGAB_PLATFORM_UNIX -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE"
-winflags="-DGAB_PLATFORM_WIN"
-wasmflags="-DGAB_PLATFORM_WASI -D_WASI_EMULATED_SIGNAL -lwasi-emulated-signal -D_WASI_EMULATED_PROCESS_CLOCKS -lwasi-emulated-process-clocks"
-dynlib_fileending=""
+export unixflags="-DGAB_PLATFORM_UNIX -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE"
+export winflags="-DGAB_PLATFORM_WIN"
+export wasmflags="-DGAB_PLATFORM_WASI -D_WASI_EMULATED_SIGNAL -lwasi-emulated-signal -D_WASI_EMULATED_PROCESS_CLOCKS -lwasi-emulated-process-clocks"
+export dynlib_fileending=""
 
-if [[ "$targets" =~ "linux" ]]; then
-  cflags="$cflags $unixflags -DGAB_PLATFORM_LINUX -DQIO_LINUX -DRGFW_USE_XDL -isystem vendor/x11-headers"
-  dynlib_fileending=".so"
-elif [[ "$targets" =~ "mac" ]]; then
-  cflags="$cflags $unixflags -D_DARWIN_C_SOURCE=1 -DGAB_PLATFORM_MACOS -DQIO_MACOS -DRGFW_NO_IOKIT -isystem vendor/xcode-frameworks/include"
-  dynlib_fileending=".dylib"
-elif [[ "$targets" =~ "windows" ]]; then
-  cflags="$cflags $winflags -DQIO_WINDOWS -DOEMRESOURCE"
-  dynlib_fileending=".dll"
-elif [[ "$targets" =~ "wasm" ]]; then
-  cflags="$cflags $wasmflags -DQIO_LINUX"
-  dynlib_fileending=".so"
-fi
+function configure_target() {
+  if [[ "$1" =~ "linux" ]]; then
+    cflags="$cflags $unixflags -DGAB_PLATFORM_LINUX -isystem vendor/x11-headers"
+    dynlib_fileending=".so"
+  elif [[ "$1" =~ "mac" ]]; then
+    cflags="$cflags $unixflags -D_DARWIN_C_SOURCE=1 -DGAB_PLATFORM_MACOS -isystem vendor/xcode-frameworks/include -L vendor/xcode-frameworks/lib -F vendor/xcode-frameworks/Frameworks"
+    dynlib_fileending=".dylib"
+  elif [[ "$1" =~ "windows" ]]; then
+    cflags="$cflags $winflags -DOEMRESOURCE"
+    dynlib_fileending=".dll"
+  elif [[ "$1" =~ "wasm" ]]; then
+    cflags="$cflags $wasmflags -DQIO_LINUX"
+    dynlib_fileending=".so"
+  fi
 
-echo "#!/usr/bin/env bash" >> configuration
-echo "export GAB_CCFLAGS=\""$cflags"\"" >> configuration
-echo "export GAB_BINARYFLAGS=\""$binflags"\"" >> configuration
-echo "export GAB_TARGETS=\""$targets"\"" >> configuration
-echo "export GAB_BUILDTYPE=\""$buildtype"\"" >> configuration
-echo "export GAB_DYNLIB_FILEENDING=\""$dynlib_fileending"\"" >> configuration
-echo "mkdir -p build-$targets" >> configuration
-echo "mkdir -p build-$targets/mod" >> configuration
+  echo "#!/usr/bin/env bash" >> "$1.configuration"
+  echo "mkdir -p build-$1" >> "$1.configuration"
+  echo "mkdir -p build-$1/mod" >> "$1.configuration"
+  echo "export GAB_CCFLAGS=\""$cflags"\"" >> "$1.configuration"
+  echo "export GAB_BINARYFLAGS=\""$binflags"\"" >> "$1.configuration"
+  echo "export GAB_TARGETS=\""$1"\"" >> "$1.configuration"
+  echo "export GAB_BUILDTYPE=\""$buildtype"\"" >> "$1.configuration"
+  echo "export GAB_DYNLIB_FILEENDING=\""$dynlib_fileending"\"" >> "$1.configuration"
 
-chmod +x configuration
+  echo "export chttp_FLAGS=\"-lllhttp\"" >> "$1.configuration"
+  echo "export cstrings_FLAGS=\"-lgrapheme\"" >> "$1.configuration"
+
+  if [[ "$1" =~ "linux" ]]; then
+    echo "export cgui_FLAGS=\"-DRGFW_USE_XDL\"" >> "$1.configuration"
+    echo "export cio_FLAGS=\"-lbearssl -DQIO_LINUX\"" >> "$1.configuration"
+  elif [[ "$1" =~ "windows" ]]; then
+    echo "export cgui_FLAGS=\"\"" >> "$1.configuration"
+    echo "export cio_FLAGS=\"-lbearssl -DQIO_WINDOWS\"" >> "$1.configuration"
+  elif [[ "$1" =~ "mac" ]]; then
+    echo "export cgui_FLAGS=\"-DRGFW_NO_IOKIT -framework Cocoa\"" >> "$1.configuration"
+    echo "export cio_FLAGS=\"-lbearssl -DQIO_MACOS\"" >> "$1.configuration"
+  fi
+
+  chmod +x "$1.configuration"
+}
+export -f configure_target
+
+echo $targets | tr ' ' '\n' |  parallel configure_target  || exit 1
 
 echo "Success!"

@@ -21,25 +21,6 @@ env:
 
 jobs:
   build_artifacts:
-    strategy:
-      matrix:
-        build_type:
-          - release
-        os: 
-          - ubuntu-latest
-          - macos-latest
-          # - windows-latest
-        include:
-          - os: ubuntu-latest
-            target: x86_64-linux-gnu
-            cmd: ./build-x86_64-linux-gnu/gab
-          - os: macos-latest
-            target: aarch64-macos-none
-            cmd: ./build-aarch64-macos-none/gab
-          # - os: windows-latest
-          #   target: x86_64-windows-gnu
-          #   cmd: .\build-x86_64-windows-gnu\gab
-    
     runs-on: ubuntu-latest
 
     steps:
@@ -68,12 +49,24 @@ jobs:
       run: go install github.com/TeddyRandby/clide@latest
 
     - name: Configure
-      run: clide configure -b='${{ matrix.build_type }}' -t='${{ matrix.target }}'
+      run: clide configure -b='x86_64-linux-gnu' -t='release'
 
     - name: Build
       run: clide build
 
-    - name: Upload Binary Artifact
+    - name: Move native binary
+      run: cp build-x86_64-linux-gnu/gab gab
+
+    - name: Move native modules
+      run: cp build-x86_64-linux-gnu/gab/mod* mod
+
+    - name: Create x86_64 bundle
+      run: ./gab build < bundle
+
+    - name: Clean
+      run: clide clean
+
+    - name: Upload x86-64-linux-gnu binary Artifact
       uses: pyTooling/upload-artifact@v4
       with:
         name: 'gab-${{ matrix.build_type }}-${{ matrix.target }}'

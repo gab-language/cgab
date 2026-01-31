@@ -34,14 +34,17 @@ CXXFLAGS = -std=c++23 \
 # in case they are used by a dynamically loaded c-module.
 # This is why -rdynamic is used.
 #
-GAB_LINK_DEPS =
+GAB_LINK_DEPS = 
 BINARY_FLAGS 	= -rdynamic -Wl,--no-gc-sections -DGAB_CORE $(GAB_LINK_DEPS) $(GAB_BINARYFLAGS)
 
 # A shared module needs undefined dynamic lookup
 # As it is not linked with cgab. The symbols from cgab
 # that these modules require will already exist,
 # as they will be in the gab executable
-CMOD_LINK_DEPS   = -lgrapheme -lllhttp -lbearssl
+# Best way to conditionally link in dynamic stuff like -framework Cocoa?
+#
+# These below are static, and so are optimized out if not used.
+CMOD_LINK_DEPS   =
 
 CXXMOD_LINK_DEPS = 
 CXXMOD_INCLUDE   = 
@@ -70,12 +73,7 @@ CMOD_SHARED = $(CMOD_SRC:src/mod/%.c=$(BUILD_PREFIX)/mod/%.cgab-$(GAB_VERSION_TA
 CXXMOD_SRC 	 = $(wildcard src/mod/*.cc)
 CXXMOD_SHARED = $(CXXMOD_SRC:src/mod/%.cc=$(BUILD_PREFIX)/mod/%$(GAB_DYNLIB_FILEENDING))
 
-# Don't try to build unthread if we aren't on Linux-gnu. Its all we got.
-ifeq ($(GAB_TARGETS), "x86_64-linux-gnu")
-all: amalgamation unthread gab cmodules cxxmodules
-else
 all: amalgamation gab cmodules cxxmodules
-endif
 
 -include $(CGAB_OBJ:.o=.d) $(GAB_OBJ:.o=.d) $(CMOD_SHARED:$(GAB_DYNLIB_FILEENDING)=.d)
 
@@ -91,7 +89,7 @@ $(BUILD_PREFIX)/libcgab.a: $(CGAB_OBJ)
 	zig ar rcs $@ $^
 
 # This rule builds a gab.c *amalgamation* style cfile.
-$(BUILD_PREFIX)/gab.c: $(CGAB_SRC)
+$(BUILD_PREFIX)/gab.c: $(CGAB_SRC) 
 	cat $^ > $@
 
 # This rule builds the gab executable, linking with libcgab.a
@@ -103,13 +101,16 @@ $(BUILD_PREFIX)/mod/%$(GAB_DYNLIB_FILEENDING): $(SRC_PREFIX)/%.cc
 	$(TARGETCXX) $(CXXFLAGS) $(CXXSHARED_FLAGS) $< -o $@
 
 # This rule builds each c module shared library.
+# per-library flags are declared in the configuration.
+# They are passed through the funky basename-notdir call.
+# Essential, the cio module receives flags through the cio_FLAGS environment variable.
 $(BUILD_PREFIX)/mod/%.cgab-$(GAB_VERSION_TAG)-$(GAB_TARGETS)$(GAB_DYNLIB_FILEENDING): $(SRC_PREFIX)/%.c \
 							$(BUILD_PREFIX)/libbearssl.a 	\
 							$(BUILD_PREFIX)/libllhttp.a  	\
 							$(BUILD_PREFIX)/libgrapheme.a \
 							$(VENDOR_PREFIX)/sqlite3.c    \
 							$(VENDOR_PREFIX)/duckdb.cc
-	$(TARGETCC) $(CFLAGS) $(CSHARED_FLAGS) $< -o $@
+	$(TARGETCC) $(CFLAGS) $(CSHARED_FLAGS) $($(basename $(notdir $<))_FLAGS) $< -o $@
 
 # This curls a mozilla cert used for TLS clients.
 cacert.pem:
@@ -141,7 +142,7 @@ $(VENDOR_PREFIX)/libgrapheme/gen/%.h:
 $(VENDOR_PREFIX)/llhttp.h:
 	cd $(VENDOR_PREFIX)/llhttp && npm i
 	make -C $(VENDOR_PREFIX)/llhttp
-	mv $(VENDOR_PREFIX)/llhttp/build/llhttp.h $(VENDOR_PREFIX)/
+	cp $(VENDOR_PREFIX)/llhttp/build/llhttp.h $(VENDOR_PREFIX)/
 	make clean -s -C $(VENDOR_PREFIX)/llhttp
 
 $(VENDOR_PREFIX)/miniz/amalgamation/miniz.c:
@@ -166,10 +167,14 @@ $(BUILD_PREFIX)/libgrapheme.a:  $(VENDOR_PREFIX)/libgrapheme/gen/bidirectional.h
 																$(VENDOR_PREFIX)/libgrapheme/gen/sentence.h \
 																$(VENDOR_PREFIX)/libgrapheme/gen/sentence-test.h \
 																$(VENDOR_PREFIX)/libgrapheme/gen/word.h \
-																$(VENDOR_PREFIX)/libgrapheme/gen/word-test.h
-	# Make for our given target.
-	make CC="$(TARGETCC)" -s -C $(VENDOR_PREFIX)/libgrapheme libgrapheme.a 
-	# Move the library in.
+																$(VENDOR_PREFIX)/libgrapheme/gen/word-test.h \
+																$(VENDOR_PREFIX)/libgrapheme/gen/util.h
+	# Remove intermiate object files.
+	# We do this instead of make clean, bc we want the .h generated files.
+	rm -f $(VENDOR_PREFIX)/libgrapheme/src/*.o
+
+	make CC="$(TARGETCC)" -C $(VENDOR_PREFIX)/libgrapheme libgrapheme.a 
+	# Copy the library in.
 	mv $(VENDOR_PREFIX)/libgrapheme/libgrapheme.a $(BUILD_PREFIX)/
 
 $(BUILD_PREFIX)/libllhttp.a: $(VENDOR_PREFIX)/llhttp.h
@@ -179,8 +184,8 @@ $(BUILD_PREFIX)/libllhttp.a: $(VENDOR_PREFIX)/llhttp.h
 
 $(BUILD_PREFIX)/libbearssl.a:
 	make clean -s -C $(VENDOR_PREFIX)/BearSSL
-	make AR="zig ar" LD="$(TARGETCC)" CC="$(TARGETCC)" -s -C $(VENDOR_PREFIX)/BearSSL lib
-	mv $(VENDOR_PREFIX)/BearSSL/build/libbearssl.a $(BUILD_PREFIX)/
+	make BUILD=$(BUILD_PREFIX) AR="zig ar" LD="$(TARGETCC)" CC="$(TARGETCC)" -s -C $(VENDOR_PREFIX)/BearSSL lib
+	cp $(VENDOR_PREFIX)/BearSSL/$(BUILD_PREFIX)/libbearssl.a $(BUILD_PREFIX)/
 
 # These are some convenience rules for making the cli simpler.
 
@@ -202,7 +207,7 @@ test: gab cmodules cxxmodules
 
 clean:
 	rm -rf $(BUILD_PREFIX)*
-	rm -f configuration
+	rm -f *.configuration
 	rm -f cacert.pem
 	rm -f etag.txt
 
