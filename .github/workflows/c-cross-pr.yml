@@ -49,37 +49,98 @@ jobs:
       run: go install github.com/TeddyRandby/clide@latest
 
     - name: Configure
-      run: clide configure -b='x86_64-linux-gnu' -t='release'
+      run: clide configure -b='x86_64-linux-gnu x86_64-macos-none aarch64-linux-gnu aarch64-macos-none' -t='release'
 
     - name: Build
       run: clide build
 
-    - name: Move native binary
-      run: cp build-x86_64-linux-gnu/gab gab
-
     - name: Move native modules
-      run: cp build-x86_64-linux-gnu/gab/mod* mod
+      run: cp build-*/mod* mod
 
-    - name: Create x86_64 bundle
-      run: ./gab build < bundle
+    - name: Create bundles
+      run: |
+         ./gab build -p x86_64-linux-gnu   < bundle
+         ./gab build -p x86_64-macos-none  < bundle
+         ./gab build -p aarch64-linux-gnu  < bundle
+         ./gab build -p aarch64-macos-none < bundle
 
-    - name: Clean
-      run: clide clean
+    - name: Create Cross-Compiled Test binary
+      run: |
+         ./gab build -p x86_64-linux-gnu -m cgab,cgui,tests test 
+         mv test.exe test.cgab-${{ version }}-x86_64-linux-gnu.exe
 
-    - name: Upload x86-64-linux-gnu binary Artifact
+         ./gab build -p x86_64-macos-none -m cgab,cgui,tests test  
+         mv test.exe test.cgab-${{ version }}-x86_64-macos-none.exe
+
+         ./gab build -p aarch64-linux-gnu -m cgab,cgui,tests test 
+         mv test.exe test.cgab-${{ version }}-aarch64-linux-gnu.exe
+
+         ./gab build -p aarch64-macos-none -m cgab,cgui,tests test 
+         mv test.exe test.cgab-${{ version }}-aarch64-macos-none.exe
+
+    - name: Upload x86_64-linux-gnu Binary Artifact
       uses: pyTooling/upload-artifact@v4
       with:
-        name: 'gab-${{ matrix.build_type }}-${{ matrix.target }}'
-        path: 'build-${{ matrix.target }}/gab'
+        name: 'gab-x86_64-linux-gnu-release'
+        path: 'build-x86_64-linux-gnu/gab'
 
-    - name: Collect modules
-      run: cp build-${{ matrix.target }}/mod/* mod
-
-    - name: Upload Module Artifacts
+    - name: Upload x86_64-linux-gnu Bundle Artifact
       uses: pyTooling/upload-artifact@v4
       with:
-        name: 'gab-${{ matrix.build_type }}-${{ matrix.target }}-modules'
-        path: mod
+        path: 'cgab-${{ version }}-x86_64-linux-gnu'
+
+    - name: Upload x86_64-linux-gnu Test Executable Artifact
+      uses: pyTooling/upload-artifact@v4
+      with:
+        path: 'test.cgab-${{ version }}-x86_64-linux-gnu.exe'
+
+    - name: Upload aarch64-linux-gnu Binary Artifact
+      uses: pyTooling/upload-artifact@v4
+      with:
+        name: 'gab-aarch64-linux-gnu-release'
+        path: 'build-aarch64-linux-gnu/gab'
+
+    - name: Upload aarch64-linux-gnu Bundle Artifact
+      uses: pyTooling/upload-artifact@v4
+      with:
+        path: 'cgab-${{ version }}-aarch64-linux-gnu'
+
+    - name: Upload aarch64-linux-gnu Test Executable Artifact
+      uses: pyTooling/upload-artifact@v4
+      with:
+        path: 'test.cgab-${{ version }}-aarch64-linux-gnu.exe'
+
+    - name: Upload x86_64-macos-none Binary Artifact
+      uses: pyTooling/upload-artifact@v4
+      with:
+        name: 'gab-x86_64-macos-none-release'
+        path: 'build-x86_64-macos-none/gab'
+
+    - name: Upload x86_64-macos-none Bundle Artifact
+      uses: pyTooling/upload-artifact@v4
+      with:
+        path: 'cgab-${{ version }}-x86_64-macos-none'
+
+    - name: Upload x86_64-macos-none Test Executable Artifact
+      uses: pyTooling/upload-artifact@v4
+      with:
+        path: 'test.cgab-${{ version }}-x86_64-macos-none.exe'
+
+    - name: Upload aarch64-macos-none Binary Artifact
+      uses: pyTooling/upload-artifact@v4
+      with:
+        name: 'gab-aarch64-macos-none-release'
+        path: 'build-aarch64-macos-none/gab'
+
+    - name: Upload aarch64-macos-none Bundle Artifact
+      uses: pyTooling/upload-artifact@v4
+      with:
+        path: 'cgab-${{ version }}-aarch64-macos-none'
+
+    - name: Upload aarch64-macos-none Test Executable Artifact
+      uses: pyTooling/upload-artifact@v4
+      with:
+        path: 'test.cgab-${{ version }}-aarch64-macos-none.exe'
 
   run_tests:
     strategy:
@@ -116,7 +177,15 @@ jobs:
       - name: Download Modules
         uses: pyTooling/download-artifact@v4
         with:
-          name: gab-${{ matrix.build_type }}-${{ matrix.target }}-modules
+          name: cgab-${{ version }}-${{ matrix.build_type }}
+
+      - name: Download Modules
+        uses: pyTooling/download-artifact@v4
+        with:
+          name: test.cgab-${{ version }}-${{ matrix.build_type }}.exe
+
+      - name: Unzip Modules
+        run: unzip -o cgab-${{ version }}-${{ matrix.build_type }}
 
       - name: Gab Build Bundle
         run: |
@@ -142,4 +211,10 @@ jobs:
         run: ${{ matrix.cmd }} run test
 
       - name: Run tests bundle
+        run: ./test.exe
+
+      - name: Move cross-compiled to test
+        run: mv test.cgab-${{ version }}-${{ matrix.build_type }}.exe test.exe
+
+      - name: Run cross-compiled tests bundle
         run: ./test.exe

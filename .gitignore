@@ -11,7 +11,7 @@ mod/*.pdb
 *.exe
 cgab-*
 compile_commands.json
-configuration
+*.configuration
 .zig-cache
 vendor/ta.h
 etag.txt
