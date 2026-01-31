@@ -67,16 +67,16 @@ jobs:
     - name: Create Cross-Compiled Test binary
       run: |
          ./gab build -p x86_64-linux-gnu -m cgab,cgui,tests test 
-         mv test.exe test.cgab-${{ version }}-x86_64-linux-gnu.exe
+         mv test.exe test.cgab-${{ env.version }}-x86_64-linux-gnu.exe
 
          ./gab build -p x86_64-macos-none -m cgab,cgui,tests test  
-         mv test.exe test.cgab-${{ version }}-x86_64-macos-none.exe
+         mv test.exe test.cgab-${{ env.version }}-x86_64-macos-none.exe
 
          ./gab build -p aarch64-linux-gnu -m cgab,cgui,tests test 
-         mv test.exe test.cgab-${{ version }}-aarch64-linux-gnu.exe
+         mv test.exe test.cgab-${{ env.version }}-aarch64-linux-gnu.exe
 
          ./gab build -p aarch64-macos-none -m cgab,cgui,tests test 
-         mv test.exe test.cgab-${{ version }}-aarch64-macos-none.exe
+         mv test.exe test.cgab-${{ env.version }}-aarch64-macos-none.exe
 
     - name: Upload x86_64-linux-gnu Binary Artifact
       uses: pyTooling/upload-artifact@v4
@@ -87,12 +87,12 @@ jobs:
     - name: Upload x86_64-linux-gnu Bundle Artifact
       uses: pyTooling/upload-artifact@v4
       with:
-        path: 'cgab-${{ version }}-x86_64-linux-gnu'
+        path: 'cgab-${{ env.version }}-x86_64-linux-gnu'
 
     - name: Upload x86_64-linux-gnu Test Executable Artifact
       uses: pyTooling/upload-artifact@v4
       with:
-        path: 'test.cgab-${{ version }}-x86_64-linux-gnu.exe'
+        path: 'test.cgab-${{ env.version }}-x86_64-linux-gnu.exe'
 
     - name: Upload aarch64-linux-gnu Binary Artifact
       uses: pyTooling/upload-artifact@v4
@@ -103,12 +103,12 @@ jobs:
     - name: Upload aarch64-linux-gnu Bundle Artifact
       uses: pyTooling/upload-artifact@v4
       with:
-        path: 'cgab-${{ version }}-aarch64-linux-gnu'
+        path: 'cgab-${{ env.version }}-aarch64-linux-gnu'
 
     - name: Upload aarch64-linux-gnu Test Executable Artifact
       uses: pyTooling/upload-artifact@v4
       with:
-        path: 'test.cgab-${{ version }}-aarch64-linux-gnu.exe'
+        path: 'test.cgab-${{ env.version }}-aarch64-linux-gnu.exe'
 
     - name: Upload x86_64-macos-none Binary Artifact
       uses: pyTooling/upload-artifact@v4
@@ -119,12 +119,12 @@ jobs:
     - name: Upload x86_64-macos-none Bundle Artifact
       uses: pyTooling/upload-artifact@v4
       with:
-        path: 'cgab-${{ version }}-x86_64-macos-none'
+        path: 'cgab-${{ env.version }}-x86_64-macos-none'
 
     - name: Upload x86_64-macos-none Test Executable Artifact
       uses: pyTooling/upload-artifact@v4
       with:
-        path: 'test.cgab-${{ version }}-x86_64-macos-none.exe'
+        path: 'test.cgab-${{ env.version }}-x86_64-macos-none.exe'
 
     - name: Upload aarch64-macos-none Binary Artifact
       uses: pyTooling/upload-artifact@v4
@@ -135,12 +135,12 @@ jobs:
     - name: Upload aarch64-macos-none Bundle Artifact
       uses: pyTooling/upload-artifact@v4
       with:
-        path: 'cgab-${{ version }}-aarch64-macos-none'
+        path: 'cgab-${{ env.version }}-aarch64-macos-none'
 
     - name: Upload aarch64-macos-none Test Executable Artifact
       uses: pyTooling/upload-artifact@v4
       with:
-        path: 'test.cgab-${{ version }}-aarch64-macos-none.exe'
+        path: 'test.cgab-${{ env.version }}-aarch64-macos-none.exe'
 
   run_tests:
     strategy:
@@ -177,15 +177,15 @@ jobs:
       - name: Download Modules
         uses: pyTooling/download-artifact@v4
         with:
-          name: cgab-${{ version }}-${{ matrix.build_type }}
+          name: cgab-${{ env.version }}-${{ matrix.build_type }}
 
       - name: Download Modules
         uses: pyTooling/download-artifact@v4
         with:
-          name: test.cgab-${{ version }}-${{ matrix.build_type }}.exe
+          name: test.cgab-${{ env.version }}-${{ matrix.build_type }}.exe
 
       - name: Unzip Modules
-        run: unzip -o cgab-${{ version }}-${{ matrix.build_type }}
+        run: unzip -o cgab-${{ env.version }}-${{ matrix.build_type }}
 
       - name: Gab Build Bundle
         run: |
@@ -214,7 +214,7 @@ jobs:
         run: ./test.exe
 
       - name: Move cross-compiled to test
-        run: mv test.cgab-${{ version }}-${{ matrix.build_type }}.exe test.exe
+        run: mv test.cgab-${{ env.version }}-${{ matrix.build_type }}.exe test.exe
 
       - name: Run cross-compiled tests bundle
         run: ./test.exe
