@@ -2,13 +2,20 @@
 
 cd "$CLIDE_PATH/../" || exit 1
 
-if ! test -e "configuration"; then
+if ! find . -name "*.configuration" | grep .; then
   clide configure || exit 1
 fi
 
-export GAB_CCFLAGS=
-export GAB_TARGETS=
-export GAB_DYNLIB_FILEENDING=
-source configuration || exit 1
+function compile() {
+  export GAB_CCFLAGS=
+  export GAB_TARGETS=
+  export GAB_DYNLIB_FILEENDING=
+  source "$1" || exit 1
 
-make 
+  make 
+}
+export -f compile
+
+for configuration in *.configuration; do
+  compile $configuration
+done

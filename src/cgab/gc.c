@@ -33,6 +33,18 @@ static inline uint64_t buflen(struct gab_triple gab, uint8_t b, uint8_t wkid,
   return gab.eg->jobs[wkid].buffers[b][epoch].len;
 }
 
+void gab_gcloglen(struct gab_triple gab) {
+  for (int i = 0; i < gab.eg->len; i++) {
+    for (int j = 0; j < kGAB_NBUF; j++) {
+      for (int k = 0; k < GAB_GCNEPOCHS; k++) {
+        uint64_t len =  buflen(gab, j, i, k);
+        if (len)
+          printf("WKID %i BUF %i(%i) [%lu]\n", i, j, k, len);
+      }
+    }
+  }
+}
+
 void gab_gcassertdone(struct gab_triple gab) {
   for (int i = 0; i < gab.eg->len; i++) {
     for (int j = 0; j < kGAB_NBUF; j++) {
@@ -126,12 +138,6 @@ void queue_decrement(struct gab_triple gab, struct gab_obj *obj) {
 
     e = epochget(gab);
   }
-
-  /*
-   * GC ISSUE HERE: When queueing up massive batches of drefs (multiple
-   * cGAB_GC_MOD_BUFF_MAX worth), the dec buffer fills up before gab_gcdocollect
-   * can inc/dec the gab.eg->messages rec.
-   */
 
   bufpush(gab, kGAB_BUF_DEC, gab.wkid, e, obj);
 
@@ -502,6 +508,7 @@ void gab_gccreate(struct gab_triple gab) {
 void gab_gcdestroy(struct gab_triple gab) {
   d_gab_obj_destroy(&gab.eg->gc.overflow_rc);
   v_gab_obj_destroy(&gab.eg->gc.dead);
+  gab_jbunalive(gab, 0);
 }
 
 static inline void collect_dead(struct gab_triple gab) {

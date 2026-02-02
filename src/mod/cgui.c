@@ -902,6 +902,7 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
 
   struct gui *gui = gab_boxdata(vgui);
   for (;;) {
+
     if (gab_chnisclosed(gui->appch))
       goto fin;
 
@@ -926,9 +927,9 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
     default:
       break;
     }
+
   }
 
-  Clay_Termbox_Close();
   return gab_union_ctimeout(gab_cundefined);
 
 fin:
