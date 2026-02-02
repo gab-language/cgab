@@ -536,6 +536,11 @@ enum gab_flags {
    * when used.
    */
   fGAB_USE_RELOAD = 1 << 4,
+
+  /*
+   * @see gab_use
+   */
+  fGAB_DETATCH = 1 << 5,
 };
 
 /**
@@ -2872,7 +2877,8 @@ GAB_API_INLINE void gab_sigpropagate(struct gab_triple gab) {
     return;
 
   int wkid = gab.wkid + 1;
-  gab_signext(gab, wkid);
+  bool res = gab_signext(gab, wkid);
+  assert(res);
 };
 
 /**

@@ -16,7 +16,7 @@ export binflags
 # Create a small script which will export the variables we need, and then 
 case "$buildtype" in
   debug)          cflags="-g -O0 -fsanitize=address,undefined,leak,memory -DcGAB_THREADS_NATIVE" ;;
-  debugoptimized) cflags="-g -O2 -DcGAB_THREADS_NATIVE" ;;
+  debugoptimized) cflags="-g -O2 -DcGAB_THREADS_NATIVE -DNDEBUG" ;;
   deterministic)  cflags="-g -O0 -fsanitize=address,undefined,leak,memory -Ivendor/unthread/include" ;;
   deterministicoptimized)  cflags="-g -O2 -Ivendor/unthread/include" ;;
   release)        cflags="-Os -DcGAB_THREADS_NATIVE -DNDEBUG"    ;;

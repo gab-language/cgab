@@ -886,8 +886,8 @@ void logstep(struct step *step, int i) {
                    " to " GAB_MAGENTA "%s" GAB_RESET ".\n",
                    i, step->as.fetch.url, step->as.fetch.dst);
   case kSTEP_EXTRACT:
-    return cliinfo(" %2i Via tar, extract " GAB_MAGENTA "%s" GAB_RESET " to " GAB_MAGENTA
-                   "%s" GAB_RESET ".\n",
+    return cliinfo(" %2i Via tar, extract " GAB_MAGENTA "%s" GAB_RESET
+                   " to " GAB_MAGENTA "%s" GAB_RESET ".\n",
                    i, step->as.extract.src, step->as.extract.dst);
   case kSTEP_UNZIP:
     return cliinfo(" %2i Unzip " GAB_MAGENTA "%s" GAB_RESET " to " GAB_MAGENTA
@@ -936,7 +936,7 @@ int execute_steps(int len, struct step steps[len], bool noisy) {
 }
 
 struct command_arguments {
-  uint32_t argc, flags, wait;
+  uint32_t argc, flags, wait, njobs;
   const char **argv;
   v_s_char modules;
   const char *platform;
@@ -1020,6 +1020,32 @@ bool target_handler(struct command_arguments *args) {
 
   args->platform = platform;
 
+  return true;
+}
+
+bool jobs_handler(struct command_arguments *args) {
+  const char *flag = *args->argv;
+  args->argv++;
+  args->argc--;
+
+  if (args->argc <= 0) {
+    clierror("No argument to flag '%s'.\n", flag);
+    return false;
+  }
+
+  const char *jobs = *args->argv;
+  args->argv++;
+  args->argc--;
+
+  uint32_t njobs = 0;
+
+  njobs = atoll(jobs);
+  if (njobs == 0) {
+    clierror("Specify a number of jobs greater than 1.");
+    return false;
+  }
+
+  args->njobs = njobs;
   return true;
 }
 
@@ -1262,6 +1288,7 @@ static struct command commands[] = {
                 "Specify the maximum number of threads which Gab may spawn in "
                 "parallel." STR(cGAB_DEFAULT_NJOBS),
                 'j',
+                .handler_f = jobs_handler,
             },
         },
     },
@@ -1330,6 +1357,7 @@ struct command_arguments parse_options(int argc, const char **argv,
   struct command_arguments args = {
       .argc = argc,
       .argv = argv,
+      .njobs = cGAB_DEFAULT_NJOBS,
   };
 
   v_s_char_create(&args.modules, 32);
@@ -1585,7 +1613,6 @@ int download_gab(v_step *steps, struct command_arguments *args,
   return 0;
 }
 
-
 const char *platform = GAB_TARGET_TRIPLE;
 const char *dynlib_fileending = GAB_DYNLIB_FILEENDING;
 int update_platform(struct command_arguments *args) {
@@ -1608,7 +1635,6 @@ int update_platform(struct command_arguments *args) {
 
   return 0;
 };
-
 
 int get(struct command_arguments *args) {
   if (args->flags & FLAG_BUILD_TARGET)
@@ -1691,7 +1717,6 @@ int run(struct command_arguments *args) {
   }
 
   const char *path = args->argv[0];
-  size_t jobs = 8;
 
   /// Push a terminator module to the list
   v_s_char_push(&args->modules, s_char_create(nullptr, 0));
@@ -1703,7 +1728,8 @@ int run(struct command_arguments *args) {
   for (int i = 0; i < nmodules; i++)
     modules[i] = v_s_char_ref_at(&args->modules, i)->data;
 
-  return run_file(path, args->flags, args->wait, jobs, nmodules - 1, modules);
+  return run_file(path, args->flags, args->wait, args->njobs, nmodules - 1,
+                  modules);
 }
 
 int exec(struct command_arguments *args) {
@@ -1722,8 +1748,8 @@ int exec(struct command_arguments *args) {
   for (int i = 0; i < nmodules; i++)
     modules[i] = v_s_char_ref_at(&args->modules, i)->data;
 
-  return run_string(args->argv[0], args->flags, args->wait, 8, nmodules - 1,
-                    modules);
+  return run_string(args->argv[0], args->flags, args->wait, args->njobs,
+                    nmodules - 1, modules);
 }
 
 int repl(struct command_arguments *args) {

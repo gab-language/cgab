@@ -2589,6 +2589,7 @@ CASE_CODE(SEND_PRIMITIVE_FIBER) {
 
     NEXT();
   default:
+    gab_fprintf(stdout, "UNREACHABLE: $\n", result);
     assert(false && "UNEXPECTED");
   }
 }
