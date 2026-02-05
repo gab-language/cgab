@@ -3,6 +3,7 @@
 
 #include "gab.h"
 #include "platform.h"
+#include <threads.h>
 
 #define QIO_LOOP_INTERVAL_NS 50000
 #define QIO_INTERNAL_QUEUE_INITIAL_LEN 2056
@@ -64,7 +65,8 @@
  *  IO.Sockets.make(tcp: server: "::1" 8080)
  *    -> This is the simple, root call which we will write wrappers for.
  *
- * These *wrap* the operations of creating a socket, then either connecting or binding.
+ * These *wrap* the operations of creating a socket, then either connecting or
+ * binding.
  *
  * This way there is no mutable state visible to the user!
  *
@@ -76,12 +78,12 @@
  *
  * I ask because all the IO is happening asynchronously,
  * it may be that the engine is freed and exiting while IO operations are still
- * queued. Supposedly, the gab engine itself will have been killed by this point.
- * So maybe it is irrelevant? I do see how it could result in a crash sending
- * random bytes to a socket somewhere, which could be bad.
+ * queued. Supposedly, the gab engine itself will have been killed by this
+ * point. So maybe it is irrelevant? I do see how it could result in a crash
+ * sending random bytes to a socket somewhere, which could be bad.
  *
- * It also may be that at some point, gab_strings don't live forever. We would need to hold a reference to
- * them for the duration of this call.
+ * It also may be that at some point, gab_strings don't live forever. We would
+ * need to hold a reference to them for the duration of this call.
  *
  * What if the engine closes std/in/out/err before destroying the engine?
  *
@@ -115,11 +117,26 @@ enum gab_io_k {
 struct gab_io {
   qfd_t fd;
   _Atomic enum gab_io_k k;
+
+  mtx_t mtx;
 };
 
 #define BUFFER_SIZE (1 << 15)
+#define BUFFER_MASK (BUFFER_SIZE - 1)
+#define buffer_back(b) (b->bback & BUFFER_MASK)
+#define buffer_front(b) (b->bfront & BUFFER_MASK)
+
+#define buffer_data(b) (b->buffer + buffer_front(b))
+#define buffer_datasplit(b) (buffer_front(b) > buffer_back(b))
+#define buffer_len(b)                                                          \
+  (buffer_datasplit(b) ? BUFFER_SIZE - buffer_front(b) : b->bback - b->bfront)
+
+#define buffer_space(b) (b->buffer + buffer_back(b))
+#define buffer_spacesplit(b) (buffer_back(b) > buffer_front(b))
+#define buffer_avail(b) (BUFFER_SIZE - buffer_back(b))
 
 /*
+ * TODO: Reimplement with atomic buffer impl.
  * Wrap a file on disk, or std in/out/err.
  * Reads are buffered.
  *
@@ -128,8 +145,6 @@ struct gab_io {
  */
 struct gab_file {
   struct gab_io io;
-
-  // mtx_t mtx;
 
   uint16_t bfront, bback;
   unsigned char buffer[BUFFER_SIZE];
@@ -149,8 +164,6 @@ struct gab_sock {
 
   struct qio_addr addr;
 
-  // mtx_t mtx;
-
   uint16_t bfront, bback;
   unsigned char buffer[BUFFER_SIZE];
 };
@@ -162,8 +175,6 @@ struct gab_ssl_sock {
   struct gab_io io;
 
   struct qio_addr addr;
-
-  // mtx_t mtx;
 
   qd_t io_operations[2];
 
@@ -232,6 +243,7 @@ gab_value wrap_qfdfd(struct gab_triple gab, qfd_t qd, enum gab_io_k t,
   f->io.fd = qd;
   f->bfront = 0;
   f->bback = 0;
+  mtx_init(&f->io.mtx, mtx_plain);
 
   return vbox;
 }
@@ -249,6 +261,7 @@ gab_value wrap_qfdsock(struct gab_triple gab, qfd_t qd, enum gab_io_k t,
   sk->io.fd = qd;
   sk->bfront = 0;
   sk->bback = 0;
+  mtx_init(&sk->io.mtx, mtx_plain);
 
   return vbox;
 }
@@ -267,6 +280,7 @@ gab_value wrap_qfdsockssl(struct gab_triple gab, qfd_t qd, enum gab_io_k t,
   sk->io.fd = qd;
   sk->io_operations[0] = -1;
   sk->io_operations[1] = -1;
+  mtx_init(&sk->io.mtx, mtx_plain);
 
   return vbox;
 }
@@ -620,19 +634,6 @@ union gab_value_pair complete_sockconnect(struct gab_triple gab,
   return gab_union_ctimeout(qd + 1);
 }
 
-#define BUFFER_MASK (BUFFER_SIZE - 1)
-#define buffer_back(b) (b->bback & BUFFER_MASK)
-#define buffer_front(b) (b->bfront & BUFFER_MASK)
-
-#define buffer_data(b) (b->buffer + buffer_front(b))
-#define buffer_datasplit(b) (buffer_front(b) > buffer_back(b))
-#define buffer_len(b)                                                          \
-  (buffer_datasplit(b) ? BUFFER_SIZE - buffer_front(b) : b->bback - b->bfront)
-
-#define buffer_space(b) (b->buffer + buffer_back(b))
-#define buffer_spacesplit(b) (buffer_back(b) > buffer_front(b))
-#define buffer_avail(b) (BUFFER_SIZE - buffer_back(b))
-
 union gab_value_pair complete_filerecv(struct gab_triple gab,
                                        struct gab_file *file, gab_uint len,
                                        s_char *out) {
@@ -669,10 +670,18 @@ union gab_value_pair resume_filerecv(struct gab_triple gab,
                       gab_string(gab, strerror(-res))),
            gab_union_cvalid(gab_nil);
 
+  if (res == 0)
+    return out->len = -1,
+           gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, "EOF")),
+           gab_union_cvalid(gab_nil);
+
   file->bback += res;
   return complete_filerecv(gab, file, len, out);
 }
 
+/*
+ * FIXME: Doesn't let the user read more data than BUFFER_SIZE
+ */
 union gab_value_pair complete_sockrecv(struct gab_triple gab,
                                        struct gab_sock *sock, gab_uint len,
                                        s_char *out) {
@@ -1010,6 +1019,7 @@ union gab_value_pair resume_filesend(struct gab_triple gab, struct gab_io *io,
 
   const char *data = *(void **)gab_fibat(gab_thisfiber(gab), 0);
   size_t len = *(size_t *)gab_fibat(gab_thisfiber(gab), 8);
+
   gab_fibclear(gab_thisfiber(gab));
 
   // We encountered an error.
@@ -1081,28 +1091,35 @@ GAB_DYNLIB_NATIVE_FN(io, send) {
   const char *data = gab_strdata(&str);
   size_t len = gab_strlen(str);
 
+  union gab_value_pair res;
+  mtx_lock(&io->mtx);
+
   switch (io->k) {
   case IO_FILE:
     if (reentrant)
-      return resume_filesend(gab, io, reentrant);
+      res = resume_filesend(gab, io, reentrant);
     else
-      return complete_filesend(gab, io, data, len);
+      res = complete_filesend(gab, io, data, len);
+    break;
   case IO_SOCK_CLIENT:
     if (reentrant)
-      return resume_socksend(gab, reentrant);
+      res = resume_socksend(gab, reentrant);
     else
-      return complete_socksend(gab, io, data, len);
+      res = complete_socksend(gab, io, data, len);
+    break;
   case IO_SOCK_SSLCLIENT:
     if (reentrant)
-      return resume_sslsocksend(gab, (struct gab_ssl_sock *)io, data, len,
-                                reentrant);
+      res = resume_sslsocksend(gab, (struct gab_ssl_sock *)io, data, len,
+                               reentrant);
     else
-      return complete_sslsocksend(gab, (struct gab_ssl_sock *)io, data, len);
+      res = complete_sslsocksend(gab, (struct gab_ssl_sock *)io, data, len);
+    break;
   default:
     return gab_panicf(gab, "$ may not send: $", vsock, gab_number(io->k));
   }
 
-  return gab_panicf(gab, "Reached unreachable codepath");
+  mtx_unlock(&io->mtx);
+  return res;
 }
 
 union gab_value_pair gab_io_read(struct gab_triple gab, struct gab_io *io,
@@ -1145,29 +1162,88 @@ GAB_DYNLIB_NATIVE_FN(io, recv) {
 
   struct gab_io *io = gab_boxdata(vsock);
 
+  mtx_lock(&io->mtx);
+
+begin_read:
+  uint64_t sofar = gab_fibsize(gab_thisfiber(gab));
+
   s_char out = {};
-  union gab_value_pair res = gab_io_read(gab, io, reentrant, len, &out);
+  union gab_value_pair res = gab_io_read(gab, io, reentrant, len - sofar, &out);
 
   // If we error or yield, do that.
   if (res.status != gab_cundefined)
-    return res;
+    return mtx_unlock(&io->mtx), res;
 
   // We saw an error
   if (out.len == (uint64_t)-1)
-    return res;
-
-  if (out.data && out.len)
-    assert(!len || out.len == len);
+    return mtx_unlock(&io->mtx), res;
 
   // We may not have read any data, if (for example), the connection closed.
-  if (out.data && out.len)
-    return gab_vmpush(gab_thisvm(gab), gab_ok,
-                      gab_nbinary(gab, out.len, (const uint8_t *)out.data)),
+  if (!out.data || !out.len)
+    return mtx_unlock(&io->mtx), gab_vmpush(gab_thisvm(gab), gab_none),
+           gab_union_cvalid(gab_nil);
+
+  // We reset the reentrant here, because our qd is guaranteed done
+  // at this point, and we may loop back to request again.
+  reentrant = 0;
+
+  // We read data, but it wasn't as much as we needed.
+  // This could be because the file/socket ran out of data,
+  // or there was some sort of interruption.
+  // If we are already reading data into a temp buffer,
+  // we need to continue to do so.
+  if (sofar || out.len < len) {
+    // Push each byte we read into a temporary buffer.
+    for (uint64_t i = 0; i < out.len; i++)
+      gab_fibpush(gab_thisfiber(gab), out.data[i]);
+
+    goto begin_read;
+  }
+
+  // If we're saving to the temp buffer, return a binary to that buffer.
+  // Otherwise, we can just use the slice.
+  if (sofar)
+    return mtx_unlock(&io->mtx),
+           gab_vmpush(gab_thisvm(gab), gab_ok,
+                      gab_nbinary(gab, gab_fibsize(gab_thisfiber(gab)),
+                                  gab_fibat(gab_thisfiber(gab), 0))),
            gab_union_cvalid(gab_nil);
   else
-    return gab_vmpush(gab_thisvm(gab), gab_none), gab_union_cvalid(gab_nil);
+    return mtx_unlock(&io->mtx),
+           gab_vmpush(gab_thisvm(gab), gab_ok,
+                      gab_nbinary(gab, out.len, (const uint8_t *)out.data)),
+           gab_union_cvalid(gab_nil);
+}
 
-  return gab_panicf(gab, "UNREACHABLE");
+GAB_DYNLIB_NATIVE_FN(io, len) {
+  gab_value vio = gab_arg(0);
+
+  if (gab_valkind(vio) != kGAB_BOX)
+    return gab_ptypemismatch(gab, vio, gab_string(gab, tGAB_IOFILE));
+
+  struct gab_io *io = gab_boxdata(vio);
+
+  if (reentrant) {
+    if (!qd_status(reentrant - 1)) {
+      return gab_union_ctimeout(reentrant);
+    }
+
+    int64_t result = qd_destroy(reentrant - 1);
+
+    if (result < 0)
+      return gab_panicf(gab, "stat failed: @", gab_number(result));
+
+    struct qio_stat *stat = gab_fibat(gab_thisfiber(gab), 0);
+
+    gab_vmpush(gab_thisvm(gab), gab_number(qio_statsize(stat)));
+    return gab_union_cvalid(gab_cundefined);
+  }
+
+  struct qio_stat *stat =
+      gab_fibmalloc(gab_thisfiber(gab), sizeof(struct qio_stat));
+
+  qd_t qd = qstat(io->fd, stat);
+  return gab_union_ctimeout(qd + 1);
 }
 
 GAB_DYNLIB_NATIVE_FN(io, until) {
@@ -1495,6 +1571,11 @@ GAB_DYNLIB_MAIN_FN {
               gab_message(gab, "make"),
               gab_strtomsg(file_t),
               gab_snative(gab, "make", gab_mod_io_open),
+          },
+          {
+              gab_message(gab, "len"),
+              file_t,
+              gab_snative(gab, "len", gab_mod_io_len),
           },
           {
               gab_message(gab, "until"),

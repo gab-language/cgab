@@ -331,6 +331,13 @@ void gab_jbalive(struct gab_triple gab, int32_t wkid) {
 
 void gab_jbunalive(struct gab_triple gab, int32_t wkid) {
   for (;;) {
+    switch (gab_yield(gab)) {
+    case sGAB_TERM:
+      gab_sigpropagate(gab);
+      break;
+    default:
+      break;
+    }
     struct gab_sig sig = atomic_load(&gab.eg->sig);
     struct gab_sig next = {
         .schedule = sig.schedule,
@@ -341,14 +348,6 @@ void gab_jbunalive(struct gab_triple gab, int32_t wkid) {
     assert(!(next.signal == sGAB_IGN && next.schedule == 0));
     if (atomic_compare_exchange_weak(&gab.eg->sig, &sig, next))
       break;
-
-    switch (gab_yield(gab)) {
-    case sGAB_TERM:
-      gab_sigpropagate(gab);
-      break;
-    default:
-      break;
-    }
   }
 }
 
@@ -400,7 +399,6 @@ int32_t gc_job(void *data) {
  */
 
 static inline bool worker_step(struct gab_triple gab, struct gab_job *job) {
-
   // If there is room in our local queue to take jobs off the global channel,
   // we should do that.
   if (!q_gab_value_is_full(&job->queue)) {
@@ -432,7 +430,10 @@ static inline bool worker_step(struct gab_triple gab, struct gab_job *job) {
     if (fiber == gab_cinvalid)
       return false;
 
-    if (fiber == gab_ctimeout || fiber == gab_cundefined) {
+    if (fiber == gab_cundefined)
+      return false;
+
+    if (fiber == gab_ctimeout) {
       // We have no work from our specific channel, or global channel.
       // If our local queue is empty, then we have no work to do.
       if (q_gab_value_is_empty(&job->queue))
@@ -493,6 +494,7 @@ static inline bool worker_step(struct gab_triple gab, struct gab_job *job) {
     if (res.aresult->data[0] != gab_ok)
       gab_sigterm(gab);
     break;
+
   // We were interruppted by sGAB_TERM. Signal will be handled below.
   case gab_cinvalid:
     assert(gab_fibisdone(popped));
@@ -501,16 +503,26 @@ static inline bool worker_step(struct gab_triple gab, struct gab_job *job) {
     assert(false && "UNREACHABLE");
   }
 
+  gab_busywait(gab);
   return true;
 }
 
 static inline void worker_bail(struct gab_triple gab, struct gab_job *job) {
+#if cGAB_LOG_EG
+  fprintf(stderr, "[WORKER %i] BAILING\n", gab.wkid);
+#endif
   while (!q_gab_value_is_empty(&job->queue)) {
     gab_value fiber = q_gab_value_peek(&job->queue);
 
+    assert(gab_sigwaiting(gab));
     // Run each queued fiber. Since there is a TERM signal waiting on this
     // worker, each fiber will terminate itself here, in one instruction.
     union gab_value_pair res = gab_vmexec(gab, fiber);
+#if cGAB_LOG_EG
+    if (res.status == gab_ctimeout)
+      gab_fprintf(stderr, "[WORKER $] Failed to term $\n", gab_number(gab.wkid),
+                  fiber);
+#endif
     // Ensure that the termination occurred.
     assert(res.status != gab_ctimeout);
     assert(gab_fibisdone(fiber));
@@ -556,10 +568,8 @@ int32_t worker_job(void *data) {
   gab_fprintf(stderr, "[WORKER $] SPAWNED\n", gab_number(gab.wkid));
 #endif
 
-  while (!gab_chnisclosed(gab.eg->work_channel) ||
-         !q_gab_value_is_empty(&job->queue))
-    if (!worker_step(gab, job))
-      break;
+  while (worker_step(gab, job))
+    ;
 
   worker_bail(gab, job);
 
@@ -575,12 +585,7 @@ int32_t worker_job(void *data) {
 }
 
 struct gab_job *next_available_job(struct gab_triple gab) {
-  // This should probably just to a ctzl on ~mask
-
-  // Try to reuse an existing job, thats exited after idling
-  // The 0'th job is reserved for the GC thread.
-  // The 1'th job is reserved for the main thread.
-  for (uint64_t i = 2; i < gab.eg->len; i++) {
+  for (uint64_t i = gab.wkid; i < gab.eg->len; i++) {
     struct gab_sig sig = atomic_load(&gab.eg->sig);
     // If we have a dead thread, revive it
     if (!(sig.mask & (1 << i)))
@@ -833,15 +838,11 @@ void gab_destroy(struct gab_triple gab) {
   bool res = gab_sigterm(gab);
   assert(res);
 
+  worker_bail(gab, gab.eg->jobs + 1);
+  gab_jbunalive(gab, 1);
+
   while (gab_njobs(gab) > 1)
-    switch (gab_yield(gab)) {
-    case sGAB_TERM:
-      worker_bail(gab, gab.eg->jobs + 1);
-      gab_jbunalive(gab, 1);
-      break;
-    default:
-      break;
-    }
+    ;
 
   gab_dref(gab, gab.eg->work_channel);
   gab_ndref(gab, 1, gab.eg->scratch.len, gab.eg->scratch.data);
@@ -876,6 +877,8 @@ void gab_destroy(struct gab_triple gab) {
 
   // gab_gcloglen(gab);
   res = gab_sigcoll(gab);
+  while (gab_signaling(gab))
+    ;
 
   struct gab_sig sig = atomic_load(&gab.eg->sig);
   assert(res);
@@ -883,6 +886,8 @@ void gab_destroy(struct gab_triple gab) {
 
   // gab_gcloglen(gab);
   res = gab_sigcoll(gab);
+  while (gab_signaling(gab))
+    ;
 
   sig = atomic_load(&gab.eg->sig);
   assert(res);
@@ -891,12 +896,18 @@ void gab_destroy(struct gab_triple gab) {
   // gab_gcloglen(gab);
   res = gab_sigcoll(gab);
 
+  while (gab_signaling(gab))
+    ;
+
   sig = atomic_load(&gab.eg->sig);
   assert(res);
   assert(sig.signal == sGAB_IGN);
 
   // gab_gcloglen(gab);
   res = gab_sigcoll(gab);
+
+  while (gab_signaling(gab))
+    ;
 
   sig = atomic_load(&gab.eg->sig);
   assert(res);
@@ -912,7 +923,6 @@ void gab_destroy(struct gab_triple gab) {
   assert(gab_njobs(gab) == 0);
 
   thrd_join(gab.eg->jobs[0].td, nullptr);
-
 
   for (uint64_t i = 0; i < gab.eg->sources.cap; i++) {
     if (d_gab_src_iexists(&gab.eg->sources, i)) {
@@ -1124,9 +1134,9 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
       gab_value arg = res.aresult->data[i];
 
       if (i == res.aresult->len - 1) {
-        gab_fvalinspect(stdout, gab_pvalintos(gab, arg), -1);
+        gab_fvalinspect(stdout, gab_pvalintos(gab, arg, ""), -1);
       } else {
-        gab_fvalinspect(stdout, gab_pvalintos(gab, arg), -1);
+        gab_fvalinspect(stdout, gab_pvalintos(gab, arg, ""), -1);
         printf(" ");
       }
     }
@@ -1168,8 +1178,8 @@ union gab_value_pair gab_exec(struct gab_triple gab,
     return fib;
 
   // If we aren't the main-thread, we just return the await.
-  if (gab.wkid != 1)
-    return gab_fibawait(gab, fib.vresult);
+  // if (gab.wkid != 1)
+  return gab_fibawait(gab, fib.vresult);
 
   // If we are on the main thread, we
   // can do some work while we block.
@@ -1299,11 +1309,12 @@ int gab_sprintf(char *dest, size_t n, const char *fmt, ...) {
   return res;
 }
 
-int gab_psprintf(char *dest, size_t n, const char *fmt, ...) {
+int gab_psprintf(char *dest, size_t n, const char *prefix, const char *fmt,
+                 ...) {
   va_list va;
   va_start(va, fmt);
 
-  int res = gab_vpsprintf(dest, n, fmt, va);
+  int res = gab_vpsprintf(dest, n, prefix, fmt, va);
 
   va_end(va);
 
@@ -1326,8 +1337,8 @@ int gab_fprintf(FILE *stream, const char *fmt, ...) {
   return -1;
 }
 
-int gab_npsprintf(char *dest, size_t n, const char *fmt, uint64_t argc,
-                  gab_value *argv) {
+int gab_npsprintf(char *dest, size_t n, const char *prefix, const char *fmt,
+                  uint64_t argc, gab_value *argv) {
   const char *c = fmt;
   char *cursor = dest;
   size_t remaining = n;
@@ -1341,7 +1352,7 @@ int gab_npsprintf(char *dest, size_t n, const char *fmt, uint64_t argc,
 
       gab_value arg = argv[i++];
 
-      int res = gab_psvalinspect(&cursor, &remaining, arg, 1);
+      int res = gab_psvalinspect(&cursor, &remaining, arg, prefix, 1);
 
       if (res < 0)
         return res;
@@ -1416,17 +1427,28 @@ int gab_nsprintf(char *dest, size_t n, const char *fmt, uint64_t argc,
   return n - remaining;
 }
 
-int gab_vpsprintf(char *dest, size_t n, const char *fmt, va_list varargs) {
+int gab_vpsprintf(char *dest, size_t n, const char *prefix, const char *fmt,
+                  va_list varargs) {
   const char *c = fmt;
   char *cursor = dest;
   size_t remaining = n;
 
   while (*c != '\0') {
     switch (*c) {
+    case '@': {
+      gab_value arg = va_arg(varargs, gab_value);
+
+      int res = gab_psvalinspect(&cursor, &remaining, arg, "", 1);
+
+      if (res < 0)
+        return -1;
+
+      break;
+      }
     case '$': {
       gab_value arg = va_arg(varargs, gab_value);
 
-      int res = gab_psvalinspect(&cursor, &remaining, arg, 1);
+      int res = gab_psvalinspect(&cursor, &remaining, arg, prefix, 1);
 
       if (res < 0)
         return -1;
@@ -1641,7 +1663,8 @@ gab_value gab_vspanicf(struct gab_triple gab, va_list va,
 
   char hint[cGAB_ERR_SPRINTF_BUF_MAX] = {0};
   if (args.note_fmt) {
-    gab_vpsprintf(hint, sizeof(hint), args.note_fmt, va);
+    if (gab_vpsprintf(hint, sizeof(hint), "   | ", args.note_fmt, va) < 0)
+      assert(false);
   }
 
   gab_value rec = gab_recordof(
@@ -1810,6 +1833,25 @@ union gab_value_pair gab_use(struct gab_triple gab, struct gab_use_argt args) {
   gab_value path = args.sname ? gab_string(gab, args.sname) : args.vname;
   assert(gab_valkind(path) == kGAB_STRING);
 
+  if (gab_valkind(args.env) == kGAB_RECORD) {
+    args.len = gab_reclen(args.env);
+  }
+
+  const char* env_sargv[args.len];
+  gab_value env_vsargv[args.len];
+  gab_value env_vargv[args.len];
+
+  if (gab_valkind(args.env) == kGAB_RECORD) {
+    for (uint64_t i = 0; i < args.len; i++) {
+      env_vsargv[i] = gab_ukrecat(args.env, i);
+      assert(gab_valkind(env_vsargv[i]) == kGAB_BINARY);
+      env_sargv[i] = gab_strdata(env_vsargv + i);
+      env_vargv[i] = gab_uvrecat(args.env, i);
+    }
+    args.sargv = env_sargv;
+    args.argv = env_vargv;
+  }  
+
   const char *name = gab_strdata(&path);
 
   for (int i = 0; gab.eg->res[i].prefix != nullptr; i++) {
@@ -1971,7 +2013,7 @@ bool gab_sigterm(struct gab_triple gab) {
       gab_sigpropagate(gab);
       break;
     case sGAB_TERM:
-      return false;
+      return true;
     default:
       break;
     };
@@ -1984,19 +2026,14 @@ bool gab_asigcoll(struct gab_triple gab) {
 }
 
 bool gab_sigcoll(struct gab_triple gab) {
-  // Getting stuck here when wignalling is waiting on this thrd.
-  // duh.
   while (!gab_asigcoll(gab))
-    ;
-
-  while (gab_is_signaling(gab))
     switch (gab_yield(gab)) {
     case sGAB_COLL:
       gab_gcepochnext(gab);
       gab_sigpropagate(gab);
-      break;
+      return true;
     case sGAB_TERM:
-      assert(false && "IMPOSSIBLE");
+      return false;
     default:
       break;
     };
@@ -2102,7 +2139,7 @@ GAB_API gab_value gab_thisfibmsg(struct gab_triple gab) {
   /*if (fiber == gab_cinvalid)*/
   /*  return gab_atmat    (gab, gab.eg->messages);*/
   /**/
-  /*struct gab_ofiber *f = 
+  /*struct gab_ofiber *f =
         GAB_VAL_TO_FIBER(fiber);*/
   /*return gab_atmat(gab, f->messages);*/
 }
@@ -2112,7 +2149,7 @@ GAB_API inline bool gab_sigwaiting(struct gab_triple gab) {
   return sig.schedule == gab.wkid;
 }
 
-GAB_API inline bool gab_is_signaling(struct gab_triple gab) {
+GAB_API inline bool gab_signaling(struct gab_triple gab) {
   /*printf("SCHEDULE: %i, SIGNALING: %d\n", gab.eg->sig.schedule,
    * gab.eg->sig.schedule >= 0);*/
   struct gab_sig sig = atomic_load_explicit(&gab.eg->sig, memory_order_acquire);
@@ -2122,87 +2159,86 @@ GAB_API inline bool gab_is_signaling(struct gab_triple gab) {
 /*
  * Race conditions are impossible by construction - only workers whose turn it
  * is call this function.
-        
+
  */
 GAB_API inline bool gab_signext(struct gab_triple gab, int wkid) {
   for (;;) {
     struct gab_sig sig = atomic_load(&gab.eg->sig);
 
 #if cGAB_LOG_EG
-    fprintf(stderr, "[WORKER %i] TRY NEXT %i: against %b\n", gab.wkid, wkid, sig.mask);
+    fprintf(stderr, "[WORKER %i] TRY NEXT %i: against %b\n", gab.wkid, wkid,
+            sig.mask);
 #endif
 
-    assert(sig.signal >0);
+    assert(sig.signal > 0);
 
     // Wrap around the number of jobs. Since
     // The 0th job is the GC job, we will wrap around
     // and begin the gc last.
     if (wkid >= gab.eg->len) {
-      struct gab_sig next = {.mask = sig.mask, .schedule = 0, .signal = sig.signal};
+      struct gab_sig next = {
+          .mask = sig.mask, .schedule = 0, .signal = sig.signal};
       assert(next.signal != sGAB_IGN);
       if (atomic_compare_exchange_weak(&gab.eg->sig, &sig, next)) {
 #if cGAB_LOG_EG
-          fprintf(stderr, "[WORKER %i] WRAP NEXT %i\n", gab.wkid, 0);
+        fprintf(stderr, "[WORKER %i] WRAP NEXT %i\n", gab.wkid, 0);
 #endif
 
-          return true;
+        return true;
       } else
-          continue;
+        continue;
     }
 
     if (!(sig.mask & (1 << wkid))) {
-      // If the worker we're scheduling for isn't alive, skip it
-      // This logic is wonky, and also unnecessary
-      // for now bc workers don't die once they're spawned.
-      // If they do start doing that, things'll have to change a bit.
-
       uint32_t n = __builtin_ctzl(~(sig.mask >> wkid)) + wkid + 1;
       if (n > __builtin_popcountl(n))
-          n = 0;
+        n = 0;
 
       assert(sig.mask & (1 << n));
-      struct gab_sig next = {.mask = sig.mask, .schedule = n, .signal = sig.signal};
+      struct gab_sig next = {
+          .mask = sig.mask, .schedule = n, .signal = sig.signal};
       assert(next.signal != sGAB_IGN);
       if (atomic_compare_exchange_weak(&gab.eg->sig, &sig, next)) {
 #if cGAB_LOG_EG
-          fprintf(stderr, "[WORKER %i] SKIP NEXT %i => %i\n", gab.wkid, wkid, n);
+        fprintf(stderr, "[WORKER %i] SKIP NEXT %i => %i\n", gab.wkid, wkid, n);
 #endif
-          return true;
+        return true;
       } else
-          continue;
+        continue;
     }
-                                        
+
     if (sig.schedule < (int8_t)wkid) {
 
-      struct gab_sig next = {.mask = sig.mask, .schedule = wkid, .signal = sig.signal};
+      struct gab_sig next = {
+          .mask = sig.mask, .schedule = wkid, .signal = sig.signal};
       assert(next.signal != sGAB_IGN);
       if (atomic_compare_exchange_weak(&gab.eg->sig, &sig, next)) {
 #if cGAB_LOG_EG
-          fprintf(stderr, "[WORKER %i] DO NEXT %i\n", gab.wkid, wkid);
+        fprintf(stderr, "[WORKER %i] DO NEXT %i\n", gab.wkid, wkid);
 #endif
-          return true;
+        return true;
       } else
-          continue;
+        continue;
     }
 
-      assert(sig.signal != sGAB_IGN);
-      if(sig.schedule == wkid)
-        return true;
-      else
-          continue;
+    assert(sig.signal != sGAB_IGN);
+    if (sig.schedule == wkid)
+      return true;
+    else
+      continue;
   }
 }
 
 GAB_API inline bool gab_sigclear(struct gab_triple gab) {
   for (;;) {
     struct gab_sig sig = atomic_load(&gab.eg->sig);
-    struct gab_sig exp = (struct gab_sig) {sig.mask, 0, sig.signal};
+    struct gab_sig exp = (struct gab_sig){sig.mask, 0, sig.signal};
     struct gab_sig next = (struct gab_sig){sig.mask, -1, sGAB_IGN};
     if (atomic_compare_exchange_weak(&gab.eg->sig, &exp, next)) {
-      #if cGAB_LOG_EG
-        fprintf(stderr, "[WORKER %i] CLEAR %i\n", gab.wkid, sig.signal);
-      #endif
-        return true;
+#if cGAB_LOG_EG
+      fprintf(stderr, "[WORKER %i] CLEAR %i\n", gab.wkid, sig.signal);
+#endif
+      return true;
     }
   }
 }
@@ -2215,14 +2251,15 @@ GAB_API inline bool gab_signal(struct gab_triple gab, enum gab_signal s,
 
   for (;;) {
     struct gab_sig sig = atomic_load(&gab.eg->sig);
-    struct gab_sig none = { sig.mask, -1, sGAB_IGN };
+    struct gab_sig none = {sig.mask, -1, sGAB_IGN};
     if (sig.signal == s)
       return true;
 
-    if (atomic_compare_exchange_strong(&gab.eg->sig, &none, ((struct gab_sig){ sig.mask, -1, s }))) {
-      #if cGAB_LOG_EG
+    if (atomic_compare_exchange_strong(&gab.eg->sig, &none,
+                                       ((struct gab_sig){sig.mask, -1, s}))) {
+#if cGAB_LOG_EG
       fprintf(stderr, "[WORKER %i] SIGNAL %i TO %b\n", gab.wkid, s, sig.mask);
-      #endif
+#endif
       return gab_signext(gab, wkid);
     }
   }

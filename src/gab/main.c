@@ -1307,6 +1307,13 @@ static struct command commands[] = {
             structured_err_option,
             modules_option,
             busywait_option,
+            {
+                "jobs",
+                "Specify the maximum number of threads which Gab may spawn in "
+                "parallel." STR(cGAB_DEFAULT_NJOBS),
+                'j',
+                .handler_f = jobs_handler,
+            },
         },
     },
     {

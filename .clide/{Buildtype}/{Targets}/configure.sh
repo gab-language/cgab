@@ -38,7 +38,7 @@ export dynlib_fileending=""
 
 function configure_target() {
   if [[ "$1" =~ "linux" ]]; then
-    cflags="$cflags $unixflags -DGAB_PLATFORM_LINUX -isystem vendor/x11-headers"
+    cflags="$cflags $unixflags -D_GNU_SOURCE=1 -DGAB_PLATFORM_LINUX -isystem vendor/x11-headers"
     dynlib_fileending=".so"
   elif [[ "$1" =~ "mac" ]]; then
     cflags="$cflags $unixflags -D_DARWIN_C_SOURCE=1 -DGAB_PLATFORM_MACOS -isystem vendor/xcode-frameworks/include -L vendor/xcode-frameworks/lib -F vendor/xcode-frameworks/Frameworks"

@@ -667,7 +667,7 @@ GAB_API void gab_destroy(struct gab_triple gab);
  */
 GAB_API int gab_svalinspect(char **dest, size_t *n, gab_value value, int depth);
 GAB_API int gab_psvalinspect(char **dest, size_t *n, gab_value value,
-                             int depth);
+                             const char *prefix, int depth);
 
 /**
  * @brief Format the given string into the given buffer.
@@ -687,7 +687,7 @@ GAB_API int gab_psvalinspect(char **dest, size_t *n, gab_value value,
  * @return the number of bytes written to the buffer, or -1.
  */
 GAB_API int gab_sprintf(char *dst, size_t n, const char *fmt, ...);
-GAB_API int gab_psprintf(char *dst, size_t n, const char *fmt, ...);
+GAB_API int gab_psprintf(char *dst, size_t n, const char*prefix, const char *fmt, ...);
 
 /**
  * @brief Format the given string to the given stream.
@@ -716,8 +716,8 @@ GAB_API int gab_fprintf(FILE *stream, const char *fmt, ...);
  * @return the number of bytes written to the buffer, or -1.
  */
 GAB_API int gab_vsprintf(char *dst, size_t n, const char *fmt, va_list varargs);
-GAB_API int gab_vpsprintf(char *dst, size_t n, const char *fmt,
-                          va_list varargs);
+GAB_API int gab_vpsprintf(char *dst, size_t n, const char *prefix,
+                          const char *fmt, va_list varargs);
 
 /**
  * @brief Format the given string into the given buffer, with n arguments.
@@ -732,8 +732,8 @@ GAB_API int gab_vpsprintf(char *dst, size_t n, const char *fmt,
  */
 GAB_API int gab_nsprintf(char *dst, size_t n, const char *fmt, uint64_t argc,
                          gab_value *argv);
-GAB_API int gab_npsprintf(char *dst, size_t n, const char *fmt, uint64_t argc,
-                          gab_value *argv);
+GAB_API int gab_npsprintf(char *dst, size_t n, const char *prefix,
+                          const char *fmt, uint64_t argc, gab_value *argv);
 
 /**
  * @brief Get the "length" of the engine, aka, the max number of jobs (working
@@ -959,6 +959,11 @@ struct gab_use_argt {
    * @brief The values of the arguments to the main block.
    */
   gab_value *argv;
+
+  /**
+   * @brief Instead of providing len, sargv, and argv, you may provide a record.
+   */
+  gab_value env;
 
   /**
    * Optional flags for compilation AND execution.
@@ -2602,11 +2607,15 @@ GAB_API gab_value gab_prototype(struct gab_triple gab, struct gab_src *src,
 
 GAB_API gab_value gab_prtenv(gab_value prt);
 
-GAB_API_INLINE gab_value gab_prtshp(gab_value prt) {
+GAB_API_INLINE gab_value gab_prtrec(gab_value prt) {
   gab_value env = gab_prtenv(prt);
   uint64_t len = gab_reclen(env);
   assert(len > 0);
-  return gab_recshp(gab_uvrecat(env, len - 1));
+  return gab_uvrecat(env, len - 1);
+}
+
+GAB_API_INLINE gab_value gab_prtshp(gab_value prt) {
+  return gab_recshp(gab_prtrec(prt));
 }
 
 GAB_API gab_value gab_prtparams(struct gab_triple gab, gab_value prt);
@@ -2836,7 +2845,8 @@ GAB_API_INLINE gab_value gab_valintos(struct gab_triple gab, gab_value value) {
  * @param value The value to convert
  * @return The string representation of the value.
  */
-GAB_API_INLINE gab_value gab_pvalintos(struct gab_triple gab, gab_value value) {
+GAB_API_INLINE gab_value gab_pvalintos(struct gab_triple gab, gab_value value,
+                                       const char *prefix) {
   for (size_t len = 4096;; len *= 2) {
     char *buffer = malloc(len);
     assert(buffer);
@@ -2844,7 +2854,7 @@ GAB_API_INLINE gab_value gab_pvalintos(struct gab_triple gab, gab_value value) {
     char *cursor = buffer;
     size_t remaining = len;
 
-    if (gab_psvalinspect(&cursor, &remaining, value, -1) < 0)
+    if (gab_psvalinspect(&cursor, &remaining, value, prefix, -1) < 0)
       continue;
 
     return gab_string(gab, buffer);
@@ -2855,7 +2865,7 @@ GAB_API_INLINE gab_value gab_pvalintos(struct gab_triple gab, gab_value value) {
  * @brief Returns true if the engine is currently processing/propagating a
  * signal.
  */
-GAB_API bool gab_is_signaling(struct gab_triple gab);
+GAB_API bool gab_signaling(struct gab_triple gab);
 
 /**
  * @brief Returns true if there is a signal waiting for the worker

@@ -745,18 +745,18 @@ union gab_value_pair vm_error(struct gab_triple gab, enum gab_status s,
 }
 
 #define FMT_TYPEMISMATCH                                                       \
-  "$ $ found an unexpected value.\n\n"                                         \
-  "    | $\n\n"                                                                \
+  "@ @ found a value with an unexpected type.\n\n"                             \
+  "$\n\n"                                                                      \
   "which has type\n\n"                                                         \
-  "    | $\n\n"                                                                \
+  "$\n\n"                                                                      \
   "but expected type\n\n"                                                      \
-  "    | $\n"
+  "$\n"
 
 #define FMT_MISSINGIMPL                                                        \
-  "Sent message $ does not specialize for this receiver.\n\n"                  \
-  "    | $\n\n"                                                                \
+  "Sent message @ does not specialize for this receiver.\n\n"                  \
+  "$\n\n"                                                                      \
   "of type\n\n"                                                                \
-  "    | $ \n"
+  "$\n"
 
 union gab_value_pair gab_vpanicf(struct gab_triple gab, const char *fmt,
                                  va_list va) {
@@ -1747,25 +1747,16 @@ CASE_CODE(SEND_PRIMITIVE_USE) {
      * is a little scuffed. I'd rather do it a different way.
      */
     gab_value shp = gab_prtshp(BLOCK()->p);
-    gab_value svargs[32];
-    const char *sargs[32];
 
-    size_t len = gab_shplen(shp);
-    assert(len < 32);
-
-    for (int i = 0; i < len; i++) {
-      svargs[i] = gab_ushpat(shp, i);
-      sargs[i] = gab_strdata(svargs + i);
-    }
+    gab_value rec =
+        gab_recordfrom(GAB(), shp, 1, gab_shplen(shp), FB() + 1, nullptr);
 
     bool should_reload = have > 1 ? PEEK_N(have - 1) == gab_true : false;
 
     mod = gab_use(GAB(), (struct gab_use_argt){
                              .flags = should_reload ? fGAB_USE_RELOAD : 0,
                              .vname = r,
-                             .len = BLOCK_PROTO()->narguments,
-                             .argv = FB() + 1, // To skip self local
-                             .sargv = sargs,
+                             .env = rec,
                          });
   }
 
@@ -2574,10 +2565,14 @@ CASE_CODE(SEND_PRIMITIVE_FIBER) {
   gab_value result = gab_tchnput(GAB(), EG()->work_channel, fb, 1 << 16);
 
   switch (result) {
+  // Timed out
   case gab_ctimeout:
     VM_YIELD(fb);
+  // Terminated
   case gab_cinvalid:
     VM_TERM();
+  // For the successful put & closed case:
+  case gab_cundefined:
   case gab_cvalid:
   fin:
     RESET_REENTRANT();
