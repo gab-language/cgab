@@ -135,6 +135,103 @@ struct gab_io {
 #define buffer_spacesplit(b) (buffer_back(b) > buffer_front(b))
 #define buffer_avail(b) (BUFFER_SIZE - buffer_back(b))
 
+struct iobuf {
+  uint16_t bfront, bback;
+  unsigned char buffer[BUFFER_SIZE];
+};
+
+#define eGAB_EOF -1000
+
+static inline int64_t iobuf_recv(struct iobuf *io, gab_value fib, qfd_t fd,
+                                 uint64_t len, s_char *out,
+                                 uintptr_t *reentrant) {
+  uint64_t sofar = gab_fibsize(fib);
+
+  if (*reentrant) {
+    if (!qd_status(*reentrant - 1))
+      return 0;
+
+    int64_t result = qd_destroy(*reentrant - 1);
+    *reentrant = 0;
+
+    if (result < 0)
+      return result;
+
+    if (result == 0)
+      return eGAB_EOF;
+
+    io->bback += result;
+    // Recurse with the data we now have in the buffer.
+    return iobuf_recv(io, fib, fd, len, out, reentrant);
+  }
+
+  gab_uint available = buffer_len(io);
+
+  // If no specific amount of data was requested, return what is available.
+  if (!len)
+    len = available;
+
+  // If we need more data, and we have room for it, request it.
+  if ((!available || available < len) && buffer_avail(io)) {
+    // Yield while we queue up a read
+    qd_t qd = qread(fd, buffer_avail(io), buffer_space(io));
+    *reentrant = qd + 1;
+    return 0;
+  }
+
+  /*
+   * The amount of data we consume in this operation.
+   *
+   * If we are requesting more data than available,
+   * we consume all that is available.
+   *
+   * Otherwise, just consume the 'len' requested.
+   */
+  gab_uint consumed = len < available ? len : available;
+
+  /*
+   * Get the pointer to our data,
+   * and then mark it as consumed.
+   */
+  const uint8_t *data = buffer_data(io);
+  io->bfront += consumed;
+
+  /*
+   * We may already be accumulating data into the arena.
+   * Continue if that is the case.
+   *
+   * Otherwise, if the data we consumed isn't enough,
+   * begin accumulating into the arena. This usually
+   * happens when the amount of data requested is bigger than BUFFER_SIZE.
+   */
+  if (sofar || consumed < len)
+    for (uint64_t i = 0; i < available; i++)
+      gab_fibpush(fib, data[i]);
+
+  /*
+   * If we didn't read len bytes yet, recurse.
+   */
+  if (consumed < len)
+    return iobuf_recv(io, fib, fd, len - consumed, out, reentrant);
+
+  /*
+   * At this point, we've consumed len bytes.
+   *
+   * If we were accumulating into arena, use that.
+   *
+   * Otherwise, use the iobuf.
+   */
+  if (sofar) {
+    out->len = gab_fibsize(fib);
+    out->data = gab_fibat(fib, 0);
+    return len;
+  }
+
+  out->len = len;
+  out->data = (const char *)data;
+  return len;
+}
+
 /*
  * TODO: Reimplement with atomic buffer impl.
  * Wrap a file on disk, or std in/out/err.
@@ -146,8 +243,7 @@ struct gab_io {
 struct gab_file {
   struct gab_io io;
 
-  uint16_t bfront, bback;
-  unsigned char buffer[BUFFER_SIZE];
+  struct iobuf recv_buf;
 };
 
 /*
@@ -164,8 +260,7 @@ struct gab_sock {
 
   struct qio_addr addr;
 
-  uint16_t bfront, bback;
-  unsigned char buffer[BUFFER_SIZE];
+  struct iobuf recv_buf;
 };
 
 /*
@@ -200,14 +295,14 @@ struct gab_ssl_sock {
  */
 
 void file_cb(struct gab_triple, uint64_t len, char data[static len]) {
-  qfd_t qfd = *(qfd_t *)data;
-  qclose(qfd);
+  struct gab_io *iod = (struct gab_io *)data;
+  qclose(iod->fd);
 }
 
 void sock_cb(struct gab_triple, uint64_t len, char data[static len]) {
-  qfd_t qfd = *(qfd_t *)data;
-  qshutdown(qfd);
-  qclose(qfd);
+  struct gab_io *iod = (struct gab_io *)data;
+  qshutdown(iod->fd);
+  qclose(iod->fd);
 }
 
 // Some convenient tables which map the IO kind t osome other data.
@@ -241,8 +336,8 @@ gab_value wrap_qfdfd(struct gab_triple gab, qfd_t qd, enum gab_io_k t,
   struct gab_file *f = gab_boxdata(vbox);
   f->io.k = t;
   f->io.fd = qd;
-  f->bfront = 0;
-  f->bback = 0;
+  f->recv_buf.bfront = 0;
+  f->recv_buf.bback = 0;
   mtx_init(&f->io.mtx, mtx_plain);
 
   return vbox;
@@ -259,8 +354,8 @@ gab_value wrap_qfdsock(struct gab_triple gab, qfd_t qd, enum gab_io_k t,
   struct gab_sock *sk = gab_boxdata(vbox);
   sk->io.k = t;
   sk->io.fd = qd;
-  sk->bfront = 0;
-  sk->bback = 0;
+  sk->recv_buf.bfront = 0;
+  sk->recv_buf.bback = 0;
   mtx_init(&sk->io.mtx, mtx_plain);
 
   return vbox;
@@ -634,98 +729,6 @@ union gab_value_pair complete_sockconnect(struct gab_triple gab,
   return gab_union_ctimeout(qd + 1);
 }
 
-union gab_value_pair complete_filerecv(struct gab_triple gab,
-                                       struct gab_file *file, gab_uint len,
-                                       s_char *out) {
-  gab_uint available = buffer_len(file);
-
-  if (!len || len > available)
-    len = available;
-
-  if (!len) {
-    // Yield while we queue up a read
-    qd_t qd = qread(file->io.fd, buffer_avail(file), buffer_space(file));
-    return gab_union_ctimeout(qd + 1);
-  }
-
-  out->len = len;
-  out->data = (char *)buffer_data(file);
-
-  /* mark this data as consumed */
-  file->bfront += len;
-  return gab_union_cvalid(gab_nil);
-}
-
-union gab_value_pair resume_filerecv(struct gab_triple gab,
-                                     struct gab_file *file, gab_uint len,
-                                     s_char *out, uintptr_t reentrant) {
-  if (!qd_status(reentrant - 1))
-    return gab_union_ctimeout(reentrant);
-
-  int64_t res = qd_destroy(reentrant - 1);
-
-  if (res < 0)
-    return out->len = -1,
-           gab_vmpush(gab_thisvm(gab), gab_err,
-                      gab_string(gab, strerror(-res))),
-           gab_union_cvalid(gab_nil);
-
-  if (res == 0)
-    return out->len = -1,
-           gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, "EOF")),
-           gab_union_cvalid(gab_nil);
-
-  file->bback += res;
-  return complete_filerecv(gab, file, len, out);
-}
-
-/*
- * FIXME: Doesn't let the user read more data than BUFFER_SIZE
- */
-union gab_value_pair complete_sockrecv(struct gab_triple gab,
-                                       struct gab_sock *sock, gab_uint len,
-                                       s_char *out) {
-  gab_uint available = buffer_len(sock);
-
-  if (!len || len > available)
-    len = available;
-
-  if (!len) {
-    // Yield while we queue up a read
-    qd_t qd = qrecv(sock->io.fd, buffer_avail(sock), buffer_space(sock));
-    return gab_union_ctimeout(qd + 1);
-  }
-
-  out->len = len;
-  out->data = (char *)buffer_data(sock);
-
-  /* mark this data as consumed */
-  sock->bfront += len;
-  return gab_union_cvalid(gab_nil);
-}
-
-union gab_value_pair resume_sockrecv(struct gab_triple gab,
-                                     struct gab_sock *sock, gab_uint len,
-                                     s_char *out, uintptr_t reentrant) {
-  if (!qd_status(reentrant - 1))
-    return gab_union_ctimeout(reentrant);
-
-  int64_t res = qd_destroy(reentrant - 1);
-
-  if (res < 0)
-    return out->len = -1,
-           gab_vmpush(gab_thisvm(gab), gab_err,
-                      gab_string(gab, strerror(-res))),
-           gab_union_cvalid(gab_nil);
-
-  if (res == 0)
-    return gab_union_cvalid(gab_nil);
-
-  sock->bback += res;
-
-  return complete_sockrecv(gab, sock, len, out);
-}
-
 union gab_value_pair resume_sslsockrecv(struct gab_triple gab,
                                         struct gab_ssl_sock *sock, gab_uint len,
                                         s_char *out) {
@@ -1043,8 +1046,6 @@ union gab_value_pair complete_filesend(struct gab_triple gab, struct gab_io *io,
                                        const char *data, size_t len) {
   qd_t qd = qwrite(io->fd, len, (uint8_t *)data);
 
-  // It is safe to store these data values on the stack, as the vm will treat
-  // them as numbers.
   gab_wfibpush(gab_thisfiber(gab), (uintptr_t)data);
   gab_wfibpush(gab_thisfiber(gab), len);
 
@@ -1088,7 +1089,12 @@ GAB_DYNLIB_NATIVE_FN(io, send) {
 
   struct gab_io *io = gab_boxdata(vsock);
 
-  const char *data = gab_strdata(&str);
+  // Get the data from the str on the fibers stack.
+  // This is because gab_strdata may return a pointer *into*
+  // the string value itself (if the string is short enough).
+  // For this case, we need that pointer to be valid for the
+  // lifetime of this send (ie, the fibers stack)
+  const char *data = gab_strdata(argv + 1);
   size_t len = gab_strlen(str);
 
   union gab_value_pair res;
@@ -1123,21 +1129,55 @@ GAB_DYNLIB_NATIVE_FN(io, send) {
 }
 
 union gab_value_pair gab_io_read(struct gab_triple gab, struct gab_io *io,
-                                 uintptr_t reentrant, gab_uint len,
+                                 uintptr_t *reentrant, gab_uint len,
                                  s_char *out) {
   switch (io->k) {
-  case IO_FILE:
-    if (reentrant)
-      return resume_filerecv(gab, (struct gab_file *)io, len, out, reentrant);
-    else
-      return complete_filerecv(gab, (struct gab_file *)io, len, out);
-  case IO_SOCK_CLIENT:
-    if (reentrant)
-      return resume_sockrecv(gab, (struct gab_sock *)io, len, out, reentrant);
-    else
-      return complete_sockrecv(gab, (struct gab_sock *)io, len, out);
+  case IO_FILE: {
+    struct gab_file *f = (struct gab_file *)io;
+
+    int64_t result = iobuf_recv(&f->recv_buf, gab_thisfiber(gab), f->io.fd, len,
+                            out, reentrant);
+
+    if (result == 0)
+      return gab_union_ctimeout(*reentrant);
+
+    if (result < 0) {
+      if (result == eGAB_EOF)
+        return gab_vmpush(gab_thisvm(gab), gab_err,
+                          gab_string(gab, "Reached End of File")),
+               gab_union_cvalid(gab_nil);
+      else
+        return gab_vmpush(gab_thisvm(gab), gab_err,
+                          gab_string(gab, strerror(-result))),
+               gab_union_cvalid(gab_nil);
+    }
+
+    return gab_union_cvalid(gab_nil);
+  }
+  case IO_SOCK_CLIENT: {
+    struct gab_sock *f = (struct gab_sock *)io;
+
+    int result = iobuf_recv(&f->recv_buf, gab_thisfiber(gab), f->io.fd, len,
+                            out, reentrant);
+
+    if (result == 0)
+      return gab_union_ctimeout(*reentrant);
+
+    if (result < 0) {
+      if (result == eGAB_EOF)
+        return gab_vmpush(gab_thisvm(gab), gab_err,
+                          gab_string(gab, "Connection Closed")),
+               gab_union_cvalid(gab_nil);
+      else
+        return gab_vmpush(gab_thisvm(gab), gab_err,
+                          gab_string(gab, strerror(-result))),
+               gab_union_cvalid(gab_nil);
+    }
+
+    return gab_union_cvalid(gab_nil);
+  }
   case IO_SOCK_SSLCLIENT:
-    if (reentrant)
+    if (*reentrant)
       return resume_sslsockrecv(gab, (struct gab_ssl_sock *)io, len, out);
     else
       return complete_sslsockrecv(gab, (struct gab_ssl_sock *)io, len, out);
@@ -1161,58 +1201,29 @@ GAB_DYNLIB_NATIVE_FN(io, recv) {
     return gab_pktypemismatch(gab, vlen, kGAB_NUMBER);
 
   struct gab_io *io = gab_boxdata(vsock);
+  s_char data = {0};
 
   mtx_lock(&io->mtx);
 
-begin_read:
-  uint64_t sofar = gab_fibsize(gab_thisfiber(gab));
+  union gab_value_pair res = gab_io_read(gab, io, &reentrant, len, &data);
 
-  s_char out = {};
-  union gab_value_pair res = gab_io_read(gab, io, reentrant, len - sofar, &out);
+  mtx_unlock(&io->mtx);
 
-  // If we error or yield, do that.
-  if (res.status != gab_cundefined)
-    return mtx_unlock(&io->mtx), res;
+  /*
+   * We may have panicked or yielded, in which case we should return.
+   *
+   * We may also have encountered an error which we should return -
+   * indicated by the data.len < 0;
+   */
+  if (res.status != gab_cundefined || !data.data)
+    return res;
 
-  // We saw an error
-  if (out.len == (uint64_t)-1)
-    return mtx_unlock(&io->mtx), res;
+  assert(data.data);
 
-  // We may not have read any data, if (for example), the connection closed.
-  if (!out.data || !out.len)
-    return mtx_unlock(&io->mtx), gab_vmpush(gab_thisvm(gab), gab_none),
-           gab_union_cvalid(gab_nil);
+  return gab_vmpush(gab_thisvm(gab), gab_ok,
+                    gab_nbinary(gab, data.len, (uint8_t *)data.data)),
 
-  // We reset the reentrant here, because our qd is guaranteed done
-  // at this point, and we may loop back to request again.
-  reentrant = 0;
-
-  // We read data, but it wasn't as much as we needed.
-  // This could be because the file/socket ran out of data,
-  // or there was some sort of interruption.
-  // If we are already reading data into a temp buffer,
-  // we need to continue to do so.
-  if (sofar || out.len < len) {
-    // Push each byte we read into a temporary buffer.
-    for (uint64_t i = 0; i < out.len; i++)
-      gab_fibpush(gab_thisfiber(gab), out.data[i]);
-
-    goto begin_read;
-  }
-
-  // If we're saving to the temp buffer, return a binary to that buffer.
-  // Otherwise, we can just use the slice.
-  if (sofar)
-    return mtx_unlock(&io->mtx),
-           gab_vmpush(gab_thisvm(gab), gab_ok,
-                      gab_nbinary(gab, gab_fibsize(gab_thisfiber(gab)),
-                                  gab_fibat(gab_thisfiber(gab), 0))),
-           gab_union_cvalid(gab_nil);
-  else
-    return mtx_unlock(&io->mtx),
-           gab_vmpush(gab_thisvm(gab), gab_ok,
-                      gab_nbinary(gab, out.len, (const uint8_t *)out.data)),
-           gab_union_cvalid(gab_nil);
+         res;
 }
 
 GAB_DYNLIB_NATIVE_FN(io, len) {
@@ -1268,7 +1279,7 @@ GAB_DYNLIB_NATIVE_FN(io, until) {
 
   for (;;) {
     s_char out = {0};
-    union gab_value_pair res = gab_io_read(gab, io, reentrant, 1, &out);
+    union gab_value_pair res = gab_io_read(gab, io, &reentrant, 1, &out);
 
     // If we saw an error or yielded, return it.
     if (res.status == gab_ctimeout)

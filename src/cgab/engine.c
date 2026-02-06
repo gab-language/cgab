@@ -427,8 +427,8 @@ static inline bool worker_step(struct gab_triple gab, struct gab_job *job) {
     //   fiber = gab_tchntake(gab, job->work_channel, cGAB_WORKER_IDLE_TRIES);
 
     // Terminate if requested.
-    if (fiber == gab_cinvalid)
-      return false;
+    // if (fiber == gab_cinvalid)
+    //   return false;
 
     if (fiber == gab_cundefined)
       return false;
@@ -437,7 +437,7 @@ static inline bool worker_step(struct gab_triple gab, struct gab_job *job) {
       // We have no work from our specific channel, or global channel.
       // If our local queue is empty, then we have no work to do.
       if (q_gab_value_is_empty(&job->queue))
-        return true;
+        return gab_busywait(gab), true;
 
 #if cGAB_LOG_EG
       gab_fprintf(stderr, "[WORKER $] RESORTING TO LOCALQUEUE $\n",
@@ -503,7 +503,6 @@ static inline bool worker_step(struct gab_triple gab, struct gab_job *job) {
     assert(false && "UNREACHABLE");
   }
 
-  gab_busywait(gab);
   return true;
 }
 
