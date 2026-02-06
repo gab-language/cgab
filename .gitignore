@@ -21,3 +21,5 @@ vendor/llhttp.h
 cacert.pem
 vendor/duckdb.cc
 vendor/sqlite3.c
+MyCertificate.crt
+MyKey.key

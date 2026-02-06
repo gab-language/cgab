@@ -1,9 +1,11 @@
 #include "BearSSL/inc/bearssl.h"
+#include "BearSSL/inc/bearssl_pem.h"
+#include "BearSSL/inc/bearssl_rsa.h"
+#include "BearSSL/inc/bearssl_x509.h"
 #include "core.h"
 
 #include "gab.h"
 #include "platform.h"
-#include <threads.h>
 
 #define QIO_LOOP_INTERVAL_NS 50000
 #define QIO_INTERNAL_QUEUE_INITIAL_LEN 2056
@@ -106,6 +108,7 @@ enum gab_io_k {
   IO_SOCK_SERVER,
   IO_SOCK_SSLCLIENT,
   IO_SOCK_SSLSERVER,
+  IO_SOCK_SSLSERVERCLIENT,
 };
 
 /*
@@ -266,6 +269,8 @@ struct gab_sock {
 /*
  * Wrap an OS socket, with added transport-layer-security.
  */
+#define MAX_CERTS 8
+#define MAX_CERTSIZE 4096
 struct gab_ssl_sock {
   struct gab_io io;
 
@@ -283,9 +288,18 @@ struct gab_ssl_sock {
     } client;
 
     struct {
+      br_x509_certificate certs[MAX_CERTS];
+      int64_t ncerts;
+      int64_t ncert_bytes;
+      br_rsa_private_key rsa;
+
+      unsigned char cert_bytes[MAX_CERTS * MAX_CERTSIZE];
+    } server;
+
+    struct {
       br_ssl_server_context sc;
       unsigned char iobuf[BR_SSL_BUFSIZE_BIDI];
-    } server;
+    } serverclient;
   };
 };
 
@@ -316,12 +330,17 @@ const char *io_tname[] = {
     [IO_SOCK_SSLUNSPECIFIED] = tGAB_IOSOCK,
     [IO_SOCK_SSLCLIENT] = tGAB_IOSOCK,
     [IO_SOCK_SSLSERVER] = tGAB_IOSOCK,
+    [IO_SOCK_SSLSERVERCLIENT] = tGAB_IOSOCK,
 };
 
 const gab_boxdestroy_f io_tdestroy[] = {
-    [IO_FILE] = file_cb,           [IO_SOCK_UNSPECIFIED] = sock_cb,
-    [IO_SOCK_CLIENT] = sock_cb,    [IO_SOCK_SERVER] = sock_cb,
-    [IO_SOCK_SSLCLIENT] = sock_cb, [IO_SOCK_SSLSERVER] = sock_cb,
+    [IO_FILE] = file_cb,
+    [IO_SOCK_UNSPECIFIED] = sock_cb,
+    [IO_SOCK_CLIENT] = sock_cb,
+    [IO_SOCK_SERVER] = sock_cb,
+    [IO_SOCK_SSLCLIENT] = sock_cb,
+    [IO_SOCK_SSLSERVER] = sock_cb,
+    [IO_SOCK_SSLSERVERCLIENT] = sock_cb,
 };
 
 gab_value wrap_qfdfd(struct gab_triple gab, qfd_t qd, enum gab_io_k t,
@@ -405,7 +424,10 @@ static int run_until(struct gab_ssl_sock *sock, unsigned target) {
       if (!qd_status(qd))
         return target;
 
-      int wlen = qd_destroy(qd);
+      int64_t wlen = qd_destroy(qd);
+
+      if (wlen < 0)
+        printf("RUNUNTIL SENDERR: %li\n", wlen);
 
       if (wlen < 0)
         return br_ssl_engine_close(ctx->engine), -1;
@@ -423,7 +445,10 @@ static int run_until(struct gab_ssl_sock *sock, unsigned target) {
       if (!qd_status(qd))
         return target;
 
-      int wlen = qd_destroy(qd);
+      int64_t wlen = qd_destroy(qd);
+
+      if (wlen < 0)
+        printf("RUNUNTIL RECVERR: %li\n", wlen);
 
       if (wlen <= 0)
         return br_ssl_engine_close(ctx->engine), -1;
@@ -610,25 +635,29 @@ union gab_value_pair resume_sslsockaccept(struct gab_triple gab,
     return gab_union_cvalid(gab_nil);
   }
 
-  gab_value vclient = wrap_qfdsockssl(gab, result, IO_SOCK_SSLCLIENT, true);
+  gab_value vclient =
+      wrap_qfdsockssl(gab, result, IO_SOCK_SSLSERVERCLIENT, true);
+
   struct gab_ssl_sock *client = gab_boxdata(vclient);
 
-  // TODO: Somehow initialize RSA and chains here?
-  // br_ssl_server_init_full_rsa(&client->client.sc, CHAIN, CHAIN_LEN, &RSA);
+  br_ssl_server_init_full_rsa(&client->serverclient.sc, sock->server.certs,
+                              sock->server.ncerts, &sock->server.rsa);
 
-  br_ssl_engine_set_buffer(&client->server.sc.eng, client->server.iobuf,
-                           sizeof client->server.iobuf, 1);
+  br_ssl_engine_set_buffer(&client->serverclient.sc.eng,
+                           client->serverclient.iobuf,
+                           sizeof client->serverclient.iobuf, true);
 
   /*
    * Reset the server context, for a new handshake.
    */
-  br_ssl_server_reset(&client->server.sc);
+  int res = br_ssl_server_reset(&client->serverclient.sc);
+  assert(res);
 
   /*
    * Initialize this with nullptrs for all the callbacks, as we write a custom
    * engine.
    */
-  br_sslio_init(&sock->ioc, &sock->client.cc.eng, nullptr, nullptr, nullptr,
+  br_sslio_init(&client->ioc, &client->serverclient.sc.eng, nullptr, nullptr, nullptr,
                 nullptr);
 
   gab_vmpush(gab_thisvm(gab), gab_ok, vclient);
@@ -697,6 +726,155 @@ union gab_value_pair complete_sockbind(struct gab_triple gab,
   return gab_union_ctimeout(qd + 1);
 };
 
+static void slurp(void *cc, const void *data, size_t len) {
+  struct gab_ssl_sock *sock = cc;
+
+  int64_t sofar = sock->server.ncert_bytes;
+
+  // Check if this slurp would overlflow.
+  if (sofar + len > (MAX_CERTS * MAX_CERTSIZE)) {
+    sock->server.ncert_bytes = -1;
+    return;
+  }
+
+  // Check if we already overflowed.
+  if (sofar < 0)
+    return;
+
+  unsigned char *dst = sock->server.cert_bytes + sofar;
+
+  // Write our bytes.
+  memcpy(dst, data, len);
+  sock->server.ncert_bytes += len;
+}
+
+int decode_pem(struct gab_triple gab, struct gab_ssl_sock *sock,
+               gab_value pem) {
+  br_pem_decoder_context pc;
+  br_pem_decoder_init(&pc);
+
+  const char *data = gab_strdata(&pem);
+  uint64_t len = gab_strlen(pem);
+
+  int64_t certstart = 0;
+  bool inobject = false;
+  char name[124] = {0};
+
+  while (len > 0) {
+    int consumed = br_pem_decoder_push(&pc, data, len);
+    data += consumed;
+    len -= consumed;
+
+    switch (br_pem_decoder_event(&pc)) {
+
+    case BR_PEM_ERROR:
+      atomic_store(&sock->io.k, IO_SOCK_UNSPECIFIED);
+      return gab_vmpush(gab_thisvm(gab), gab_err,
+                        gab_string(gab, "Invalid address")),
+             -1;
+
+    case BR_PEM_BEGIN_OBJ:
+      // po.name = xstrdup(br_pem_decoder_name(&pc));
+      strcpy(name, br_pem_decoder_name(&pc));
+      br_pem_decoder_setdest(&pc, slurp, sock);
+      inobject = true;
+      certstart = sock->server.ncert_bytes;
+
+      break;
+
+    case BR_PEM_END_OBJ: {
+      assert(inobject);
+
+      if (!strcmp(name, "X509 CERTIFICATE") || !strcmp(name, "CERTIFICATE")) {
+        uint32_t c = sock->server.ncerts;
+
+        if (sock->server.ncert_bytes < 0) {
+          atomic_store(&sock->io.k, IO_SOCK_UNSPECIFIED);
+          return gab_vmpush(gab_thisvm(gab), gab_err,
+                            gab_string(gab, "Certificate chain too large")),
+                 -1;
+        }
+
+        int64_t certlen = sock->server.ncert_bytes - certstart;
+
+        sock->server.certs[c] = (br_x509_certificate){
+            .data = sock->server.cert_bytes + certstart,
+            .data_len = certlen,
+        };
+        sock->server.ncerts++;
+
+        inobject = false;
+        break;
+      }
+
+      if (!strcmp(name, "RSA PRIVATE KEY") || !strcmp(name, "EC PRIVATE KEY") ||
+          !strcmp(name, "PRIVATE KEY")) {
+        if (sock->server.ncert_bytes < 0) {
+          atomic_store(&sock->io.k, IO_SOCK_UNSPECIFIED);
+          return gab_vmpush(gab_thisvm(gab), gab_err,
+                            gab_string(gab, "RSA Key too large")),
+                 -1;
+        }
+        unsigned char *key = sock->server.cert_bytes + certstart;
+        int64_t keylen = sock->server.ncert_bytes - certstart;
+
+        br_skey_decoder_context dc;
+        br_skey_decoder_init(&dc);
+
+        br_skey_decoder_push(&dc, key, keylen);
+
+        int32_t err = br_skey_decoder_last_error(&dc);
+
+        if (err) {
+          atomic_store(&sock->io.k, IO_SOCK_UNSPECIFIED);
+          return gab_vmpush(gab_thisvm(gab), gab_err,
+                            gab_string(gab, "Could not decode private key"),
+                            gab_number(err)),
+                 -1;
+        }
+
+        const br_rsa_private_key *rk = br_skey_decoder_get_rsa(&dc);
+        if (!rk) {
+          atomic_store(&sock->io.k, IO_SOCK_UNSPECIFIED);
+          return gab_vmpush(gab_thisvm(gab), gab_err,
+                            gab_string(gab, "Expected an RSA private key")),
+                 -1;
+        }
+
+        memcpy(&sock->server.rsa, rk, sizeof(br_rsa_private_key));
+        break;
+      }
+    }
+    };
+  }
+
+  return 0;
+}
+
+union gab_value_pair complete_sslsockbind(struct gab_triple gab,
+                                          struct gab_ssl_sock *sock,
+                                          const char *hostname, gab_int port,
+                                          gab_value cert, gab_value pkey) {
+
+  if (qio_addrfrom(hostname, port, &sock->addr) < 0) {
+    atomic_store(&sock->io.k, IO_SOCK_UNSPECIFIED);
+    return gab_vmpush(gab_thisvm(gab), gab_err,
+                      gab_string(gab, "Invalid address")),
+           gab_union_cvalid(gab_nil);
+  }
+
+  assert(gab_strlen(pkey) > 5);
+
+  if (decode_pem(gab, sock, cert) < 0)
+    return gab_union_cvalid(gab_nil);
+
+  if (decode_pem(gab, sock, pkey) < 0)
+    return gab_union_cvalid(gab_nil);
+
+  qd_t qd = qbind(sock->io.fd, &sock->addr);
+  return gab_union_ctimeout(qd + 1);
+};
+
 union gab_value_pair resume_sockconnect(struct gab_triple gab,
                                         struct gab_sock *sock,
                                         uintptr_t reentrant) {
@@ -742,8 +920,7 @@ union gab_value_pair resume_sslsockrecv(struct gab_triple gab,
     // Else, the connection just closed.
 
     if (err)
-      return out->len = -1,
-             gab_vmpush(gab_thisvm(gab), gab_err,
+      return gab_vmpush(gab_thisvm(gab), gab_err,
                         gab_string(gab, "Internal SSL Error")),
              gab_union_cvalid(gab_nil);
   }
@@ -755,6 +932,36 @@ union gab_value_pair resume_sslsockrecv(struct gab_triple gab,
 }
 
 union gab_value_pair complete_sslsockrecv(struct gab_triple gab,
+                                          struct gab_ssl_sock *sock,
+                                          gab_uint len, s_char *out) {
+  return resume_sslsockrecv(gab, sock, len, out);
+}
+
+union gab_value_pair resume_sslserversockrecv(struct gab_triple gab,
+                                        struct gab_ssl_sock *sock, gab_uint len,
+                                        s_char *out) {
+  io_op_res result = sslio_read_available(gab, sock, out, len);
+
+  if (result.status < 0) {
+    // TODO: Handle an SSL error gracefully
+    int err = br_ssl_engine_last_error(&sock->serverclient.sc.eng);
+
+    // If we had an ssl engine error, then this was a real error.
+    // Else, the connection just closed.
+
+    if (err)
+      return gab_vmpush(gab_thisvm(gab), gab_err,
+                        gab_string(gab, "Internal SSL Error")),
+             gab_union_cvalid(gab_nil);
+  }
+
+  if (result.status > 0)
+    return gab_union_ctimeout(result.status);
+
+  return gab_union_cvalid(gab_nil);
+}
+
+union gab_value_pair complete_sslserversockrecv(struct gab_triple gab,
                                           struct gab_ssl_sock *sock,
                                           gab_uint len, s_char *out) {
   return resume_sslsockrecv(gab, sock, len, out);
@@ -781,7 +988,7 @@ union gab_value_pair resume_sslsocksend(struct gab_triple gab,
     if (result.status < 0) {
       int err = br_ssl_engine_last_error(&sock->client.cc.eng);
       gab_vmpush(gab_thisvm(gab), gab_err,
-                 gab_string(gab, "Error during write"), gab_number(err));
+                 gab_string(gab, "Error during ssl write"), gab_number(err));
       return gab_union_cvalid(gab_nil);
     }
 
@@ -833,7 +1040,7 @@ union gab_value_pair complete_sslsocksend(struct gab_triple gab,
 
   if (result.status < 0) {
     int err = br_ssl_engine_last_error(&sock->client.cc.eng);
-    gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, "Error during write"),
+    gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, "Error during sslwrite"),
                gab_number(err));
     return gab_union_cvalid(gab_nil);
   }
@@ -853,6 +1060,101 @@ union gab_value_pair complete_sslsocksend(struct gab_triple gab,
   gab_vmpush(gab_thisvm(gab), gab_ok);
   return gab_union_cvalid(gab_nil);
 }
+
+union gab_value_pair resume_sslserversocksend(struct gab_triple gab,
+                                        struct gab_ssl_sock *sock,
+                                        const char *data, gab_uint len,
+                                        uintptr_t reentrant) {
+  if (reentrant & BR_SSL_WRITE_INCOMPLETE) {
+    // we didn't finish writing this amount.
+    int64_t written = reentrant >> 32;
+
+    assert(written < len);
+
+    io_op_res result = sslio_write_all(sock, data + written, len - written);
+
+    if (result.status > 0) {
+      int64_t amount = (written + result.amount) << 32;
+      int64_t tag = (int64_t)result.status | BR_SSL_WRITE_INCOMPLETE;
+      return gab_union_ctimeout(amount | tag);
+    }
+
+    if (result.status < 0) {
+      int err = br_ssl_engine_last_error(&sock->serverclient.sc.eng);
+      gab_vmpush(gab_thisvm(gab), gab_err,
+                 gab_string(gab, "Error during sslserver write"), gab_number(err));
+      return gab_union_cvalid(gab_nil);
+    }
+
+    // This may yield as the engine runs until it is send/recv able.
+    int res = sslio_flush(sock);
+
+    if (res < 0) {
+      gab_vmpush(gab_thisvm(gab), gab_err,
+                 gab_string(gab, "Error during flush"));
+      return gab_union_cvalid(gab_nil);
+    }
+
+    if (res > 0) {
+      return gab_union_ctimeout(res);
+    }
+
+    gab_vmpush(gab_thisvm(gab), gab_ok);
+    return gab_union_cvalid(gab_nil);
+  }
+
+  int res = run_until(sock, reentrant);
+
+  if (res < 0) {
+    gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, "Error during flush"));
+    return gab_union_cvalid(gab_nil);
+  }
+
+  if (res > 0) {
+    assert(res == reentrant);
+    return gab_union_ctimeout(res);
+  }
+
+  gab_vmpush(gab_thisvm(gab), gab_ok);
+  return gab_union_cvalid(gab_nil);
+}
+
+union gab_value_pair complete_sslserversocksend(struct gab_triple gab,
+                                          struct gab_ssl_sock *sock,
+                                          const char *data, gab_uint len) {
+  // This may yield as the ssl_engine may need to flush out (send) records
+  // in order to make room in the buffer for this write.
+  io_op_res result = sslio_write_all(sock, data, len);
+
+  if (result.status > 0) {
+    int64_t amount = (int64_t)result.amount << 32;
+    int64_t tag = (int64_t)result.status | BR_SSL_WRITE_INCOMPLETE;
+    return gab_union_ctimeout(amount | tag);
+  }
+
+  if (result.status < 0) {
+    int err = br_ssl_engine_last_error(&sock->serverclient.sc.eng);
+    gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, "Error during sslserver write"),
+               gab_number(err));
+    return gab_union_cvalid(gab_nil);
+  }
+
+  // This may yield as the engine runs until it is send/recv able.
+  int res = sslio_flush(sock);
+
+  if (res < 0) {
+    gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, "Error during flush"));
+    return gab_union_cvalid(gab_nil);
+  }
+
+  if (res > 0) {
+    return gab_union_ctimeout(res);
+  }
+
+  gab_vmpush(gab_thisvm(gab), gab_ok);
+  return gab_union_cvalid(gab_nil);
+}
+
 
 union gab_value_pair resume_sslsockconnect(struct gab_triple gab,
                                            struct gab_ssl_sock *sock,
@@ -1136,7 +1438,7 @@ union gab_value_pair gab_io_read(struct gab_triple gab, struct gab_io *io,
     struct gab_file *f = (struct gab_file *)io;
 
     int64_t result = iobuf_recv(&f->recv_buf, gab_thisfiber(gab), f->io.fd, len,
-                            out, reentrant);
+                                out, reentrant);
 
     if (result == 0)
       return gab_union_ctimeout(*reentrant);
@@ -1181,6 +1483,11 @@ union gab_value_pair gab_io_read(struct gab_triple gab, struct gab_io *io,
       return resume_sslsockrecv(gab, (struct gab_ssl_sock *)io, len, out);
     else
       return complete_sslsockrecv(gab, (struct gab_ssl_sock *)io, len, out);
+  case IO_SOCK_SSLSERVERCLIENT:
+    if (*reentrant)
+      return resume_sslserversockrecv(gab, (struct gab_ssl_sock *)io, len, out);
+    else
+      return complete_sslserversockrecv(gab, (struct gab_ssl_sock *)io, len, out);
   default:
     return gab_panicf(gab, "IO object may not recv");
   }
@@ -1395,14 +1702,14 @@ GAB_DYNLIB_NATIVE_FN(io, accept) {
       return resume_sockaccept(gab, sock, reentrant);
     else
       return complete_sockaccept(gab, sock);
-  case IO_SOCK_SSLUNSPECIFIED:
+  case IO_SOCK_SSLSERVER:
     if (reentrant)
       return resume_sslsockaccept(gab, (struct gab_ssl_sock *)sock, reentrant);
     else
       return complete_sslsockaccept(gab, (struct gab_ssl_sock *)sock);
   default:
     return gab_vmpush(gab_thisvm(gab), gab_err,
-                      gab_string(gab, "Socket is in invalid state")),
+                      gab_string(gab, "Can only accept from server sockets")),
            gab_union_cvalid(gab_nil);
   };
 }
@@ -1476,14 +1783,24 @@ GAB_DYNLIB_NATIVE_FN(io, bind) {
   }
   case IO_SOCK_SSLUNSPECIFIED: {
     enum gab_io_k unspec = IO_SOCK_SSLUNSPECIFIED;
+
+    gab_value cert = gab_arg(3);
+    if (gab_valkind(cert) != kGAB_BINARY)
+      return gab_pktypemismatch(gab, cert, kGAB_BINARY);
+
+    gab_value pkey = gab_arg(4);
+
+    if (gab_valkind(pkey) != kGAB_BINARY)
+      return gab_pktypemismatch(gab, pkey, kGAB_BINARY);
+
     if (!atomic_compare_exchange_strong(&io->k, &unspec, IO_SOCK_SSLSERVER))
       return gab_vmpush(
                  gab_thisvm(gab), gab_err,
                  gab_string(gab, "Socket is already connected or bound")),
              gab_union_cvalid(gab_nil);
 
-    return complete_sockbind(gab, (struct gab_sock *)io, gab_strdata(&ip),
-                             gab_valtoi(port));
+    return complete_sslsockbind(gab, (struct gab_ssl_sock *)io,
+                                gab_strdata(&ip), gab_valtoi(port), cert, pkey);
   }
   case IO_SOCK_SSLSERVER:
   case IO_SOCK_SERVER:

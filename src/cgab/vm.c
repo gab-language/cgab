@@ -809,7 +809,6 @@ gab_value gab_vmmsg(struct gab_vm *vm) {
   uint8_t *__ip = vm->ip - SEND_CACHE_DIST + 1;
   gab_value *__kb = vm->kb;
   gab_value *ks = READ_SENDCONSTANTS;
-  printf("IP: %p\nKB: %p\nKS: %p\n", __ip, __kb, ks);
   return ks[GAB_SEND_KMESSAGE];
 }
 
@@ -817,7 +816,6 @@ gab_value gab_vmspec(struct gab_vm *vm) {
   uint8_t *__ip = vm->ip - SEND_CACHE_DIST + 1;
   gab_value *__kb = vm->kb;
   gab_value *ks = READ_SENDCONSTANTS;
-  printf("IP: %p\nKB: %p\nKS: %p\n", __ip, __kb, ks);
   return ks[GAB_SEND_KSPEC];
 }
 
