@@ -1,15 +1,15 @@
 'chttp'.use
 Socket = IO.Sockets
 
+cert = IO.Files.make("MyCertificate.crt" "r").unwrap
+pkey = IO.Files.make("MyKey.key" "r").unwrap
+
+cert = cert.read(cert.len).unwrap
+pkey = pkey.read(pkey.len).unwrap
+
 server_fiber = Fibers.make () => do
 
   server = Socket.make tcp\tls: .unwrap
-
-  cert = IO.Files.make("MyCertificate.crt" "r").unwrap
-  pkey = IO.Files.make("MyKey.key" "r").unwrap
-
-  cert = cert.read(cert.len).unwrap
-  pkey = pkey.read(pkey.len).unwrap
 
   server
     .bind("::1" 443 cert pkey)
@@ -26,11 +26,14 @@ server_fiber = Fibers.make () => do
       .accept
       .unwrap
 
-    req = client.read
+    'Accepted client: $\n'.sprintf(client).println
 
-    'CLIENT SENT: $\n'.sprintf(req.as\s.unwrap).println
+    req = client.until('\n'.to\b).unwrap
 
-    client.send(req)
+    'CLIENT SENT: "$"\n'.sprintf(req.as\s.unwrap).println
+
+    client.write(req)
+    client.write('\0'.to\b)
   end
 end
 
@@ -43,7 +46,7 @@ sock = Socket
   .unwrap
 
 sock
-  .connect("::1" 443)
+  .connect("::1" 443 cert)
   .unwrap
 
 sock

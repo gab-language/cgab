@@ -742,6 +742,11 @@ GAB_API int gab_npsprintf(char *dst, size_t n, const char *prefix,
 GAB_API uint64_t gab_eglen(struct gab_eg *eg);
 
 /**
+ * @brief return the number of jobs currently alive.
+ */
+GAB_API uint64_t gab_egalive(struct gab_eg *eg);
+
+/**
  * @brief Give the engine ownership of the values.
  *
  * When in c-code, it can be useful to create gab_objects which should be

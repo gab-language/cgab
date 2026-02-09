@@ -19,6 +19,7 @@ truthy_values .defmodule {
   else: _ => self
   assert: _ => self
   dowhen: (f r args) => f.to\block.(r args*)
+  !: false:
 }
 
 falsey_values .defmodule {
@@ -30,6 +31,7 @@ falsey_values .defmodule {
   to\option: none:,
   to\result: err:,
   dowhen: (_ r) => r
+  !: true:
 }
 
 to\condition: .defcase {

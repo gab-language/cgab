@@ -23,3 +23,5 @@ vendor/duckdb.cc
 vendor/sqlite3.c
 MyCertificate.crt
 MyKey.key
+cert_pubkey.pem
+key_pubkey.pem

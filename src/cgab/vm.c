@@ -525,7 +525,7 @@ static inline uint64_t compute_token_from_ip(struct gab_triple gab,
                                              uint8_t *ip) {
   struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(b->p);
 
-  assert(ip > proto_srcbegin(gab, p));
+  assert(ip >= proto_srcbegin(gab, p));
   uint64_t offset = ip - proto_srcbegin(gab, p);
 
   if (offset)
@@ -637,8 +637,6 @@ union gab_value_pair vvm_terminate(struct gab_triple gab, const char *fmt,
 
   gab_egkeep(gab.eg, gab_iref(gab, env));
 
-  v_gab_value_thrd_push(&gab.eg->err, err);
-
   assert(GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERRUNNING);
   GAB_VAL_TO_FIBER(fiber)->res_values = res;
   GAB_VAL_TO_FIBER(fiber)->res_env = env;
@@ -658,11 +656,6 @@ union gab_value_pair vm_givenerr(struct gab_triple gab,
       gab_recordfrom(gab, shape, 1, gab_shplen(shape), vm->fp, nullptr);
 
   gab_egkeep(gab.eg, gab_iref(gab, env));
-
-  // If our given is valid and we're in this codepath, then
-  // a given_err returned a panic and we shoud push that.
-  if (given.status == gab_cvalid)
-    v_gab_value_thrd_push(&gab.eg->err, given.aresult->data[1]);
 
   assert(GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERRUNNING);
   GAB_VAL_TO_FIBER(fiber)->res_values = given;
@@ -702,8 +695,6 @@ union gab_value_pair vvm_error(struct gab_triple gab, enum gab_status s,
   gab_negkeep(gab.eg, results->len, results->data);
 
   union gab_value_pair res = {.status = gab_cvalid, .aresult = results};
-
-  v_gab_value_thrd_push(&gab.eg->err, err);
 
   assert(GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERRUNNING);
   GAB_VAL_TO_FIBER(fiber)->res_values = res;
@@ -774,8 +765,6 @@ union gab_value_pair gab_vpanicf(struct gab_triple gab, const char *fmt,
     gab_value res[] = {gab_err, err};
     a_gab_value *results =
         a_gab_value_create(res, sizeof(res) / sizeof(gab_value));
-
-    v_gab_value_thrd_push(&gab.eg->err, err);
 
     return (union gab_value_pair){
         .status = gab_cvalid,

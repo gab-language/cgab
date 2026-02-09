@@ -29,6 +29,11 @@
 #define TB_IMPL
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_RESIZE_IMPLEMENTATION
+
+#ifndef NDEBUG
+#define STBIR__SEPARATE_ALLOCATIONS
+#endif
+
 #include "Clay/renderers/termbox2/clay_renderer_termbox2.c"
 #endif
 
@@ -174,6 +179,7 @@ bool clay_RGFW_update(struct gab_triple gab, struct gui *gui, double deltaTime,
       RGFW_KEY_CASE(home, home);
       RGFW_KEY_CASE(pageUp, pageup);
       RGFW_KEY_CASE(pageDown, pagedown);
+      RGFW_KEY_CASE(space, space);
       RGFW_KEY_CASE(F1, f1);
       RGFW_KEY_CASE(F2, f2);
       RGFW_KEY_CASE(F3, f3);
@@ -223,6 +229,7 @@ bool clay_termbox_update(struct gab_triple gab, struct gui *gui,
       TERMBOX_KEY_CASE(HOME, home);
       TERMBOX_KEY_CASE(PGUP, pageup);
       TERMBOX_KEY_CASE(PGDN, pagedown);
+      TERMBOX_KEY_CASE(SPACE, space);
       TERMBOX_KEY_CASE(F1, f1);
       TERMBOX_KEY_CASE(F2, f2);
       TERMBOX_KEY_CASE(F3, f3);
@@ -561,8 +568,19 @@ union gab_value_pair render_rect(struct gab_triple gab, struct gui *gui,
   return gab_union_cvalid(gab_nil);
 }
 
-clay_tb_image img;
-
+/*
+ * TODO: Provide an API for loading images into some gab_box,
+ * and then expect that as an argument here.
+ *
+ * More needs for this API:
+ *  - Allow user to pin fibers to a certain thread. This is required
+ *  for some OS apis which have to run on the main thread
+ *  - Allow arguments to be passed to use:, and therefore to GAB_DYNLIB_MAIN_FN
+ *  This would allow 'ui'.use gui: or 'ui'.use tui:, which would let us know at
+ *  load time which implementation to instantiate
+ *  - Also - I want all the numbers that are "pixels" to translate to "cells" in the TUI api.
+ *  - This means we need to wrap them up with some conversions.
+ */
 [[nodiscard]]
 union gab_value_pair render_image(struct gab_triple gab, struct gui *gui,
                                   gab_value props) {
@@ -595,7 +613,9 @@ union gab_value_pair render_image(struct gab_triple gab, struct gui *gui,
   if (vid != gab_cundefined && gab_valkind(vid) != kGAB_MESSAGE)
     return gab_pktypemismatch(gab, vid, kGAB_MESSAGE);
 
-  img =
+  // Leak this
+  clay_tb_image *img = malloc(sizeof(clay_tb_image));
+  *img =
       Clay_Termbox_Image_Load_Memory(gab_strdata(&vimage), gab_strlen(vimage));
 
   CLAY(vid == gab_cundefined ? CLAY_IDI("", gui->n++)
@@ -614,7 +634,7 @@ union gab_value_pair render_image(struct gab_triple gab, struct gui *gui,
                },
            .image =
                {
-                   .imageData = &img,
+                   .imageData = img,
                },
        }, );
 
@@ -977,11 +997,11 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
     });
 
     if (!dotuirender(gab, gui))
-      goto fin;
+      goto err;
 
     switch (gab_yield(gab)) {
     case sGAB_TERM:
-      goto fin;
+      goto err;
     case sGAB_COLL:
       gab_gcepochnext(gab);
       gab_sigpropagate(gab);
@@ -992,6 +1012,12 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
   }
 
   return gab_union_ctimeout(gab_cundefined);
+
+err:
+  gab_chnclose(gui->appch);
+  gab_chnclose(gui->evch);
+  Clay_Termbox_Close();
+  return gab_panicf(gab, "Crashed UI Thread due to some error");
 
 fin:
   gab_chnclose(gui->appch);

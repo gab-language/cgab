@@ -314,6 +314,7 @@ int32_t gab_njobs(struct gab_triple gab) {
   return __builtin_popcountl(sig.mask);
 }
 
+// TODO: DROP THIS
 void gab_jbalive(struct gab_triple gab, int32_t wkid) {
   for (;;) {
     struct gab_sig sig = atomic_load(&gab.eg->sig);
@@ -329,10 +330,21 @@ void gab_jbalive(struct gab_triple gab, int32_t wkid) {
   }
 }
 
+bool gab_jbisalive(struct gab_triple gab, int32_t wkid) {
+  struct gab_sig sig = atomic_load(&gab.eg->sig);
+  return sig.mask & (1 << wkid);
+}
+
 void gab_jbunalive(struct gab_triple gab, int32_t wkid) {
   for (;;) {
     switch (gab_yield(gab)) {
     case sGAB_TERM:
+      // This should remain the *only* place in the system
+      // where we propagate the TERM signal.
+      gab_sigpropagate(gab);
+      break;
+    case sGAB_COLL:
+      gab_gcepochnext(gab);
       gab_sigpropagate(gab);
       break;
     default:
@@ -491,8 +503,14 @@ static inline bool worker_step(struct gab_triple gab, struct gab_job *job) {
   case gab_cvalid:
     assert(gab_fibisdone(popped));
     // We panicked. Crash the system.
-    if (res.aresult->data[0] != gab_ok)
+    if (res.aresult->data[0] != gab_ok) {
+      gab_value err = res.aresult->data[1];
+      gab_iref(gab, err);
+      gab_egkeep(gab.eg, err);
+
+      v_gab_value_thrd_push(&gab.eg->err, err);
       gab_sigterm(gab);
+    }
     break;
 
   // We were interruppted by sGAB_TERM. Signal will be handled below.
@@ -510,6 +528,21 @@ static inline void worker_bail(struct gab_triple gab, struct gab_job *job) {
 #if cGAB_LOG_EG
   fprintf(stderr, "[WORKER %i] BAILING\n", gab.wkid);
 #endif
+
+  // Wait for the terminate signal to arrive for this thread
+  while (!gab_sigwaiting(gab))
+    switch (gab_yield(gab)) {
+    case sGAB_COLL:
+      gab_gcepochnext(gab);
+      gab_sigpropagate(gab);
+      continue;
+    case sGAB_TERM:
+      goto bail;
+    case sGAB_IGN:
+      break;
+    }
+
+bail:
   while (!q_gab_value_is_empty(&job->queue)) {
     gab_value fiber = q_gab_value_peek(&job->queue);
 
@@ -537,19 +570,17 @@ static inline void worker_bail(struct gab_triple gab, struct gab_job *job) {
     q_gab_value_pop(&job->queue);
   }
 
-fin:
   assert(q_gab_value_is_empty(&job->queue));
 
-  switch (gab_yield(gab)) {
-  case sGAB_TERM:
-    gab_sigpropagate(gab);
-    goto fin;
-  default:
-    break;
-  }
+  gab_jbunalive(gab, gab.wkid);
 
   assert(job->locked == 0);
   v_gab_value_destroy(&job->lock_keep);
+}
+
+uint64_t gab_egalive(struct gab_eg *eg) {
+  struct gab_sig sig = atomic_load(&eg->sig);
+  return __builtin_popcountl(sig.mask);
 }
 
 int32_t worker_job(void *data) {
@@ -576,19 +607,31 @@ int32_t worker_job(void *data) {
   fprintf(stderr, "[WORKER %i] CLOSING\n", gab.wkid);
 #endif
 
-  gab_jbunalive(gab, gab.wkid);
-
   free(g);
 
   return 0;
 }
 
 struct gab_job *next_available_job(struct gab_triple gab) {
-  for (uint64_t i = gab.wkid; i < gab.eg->len; i++) {
+  for (;;) {
     struct gab_sig sig = atomic_load(&gab.eg->sig);
-    // If we have a dead thread, revive it
-    if (!(sig.mask & (1 << i)))
-      return gab.eg->jobs + i;
+    uint64_t shifted = sig.mask >> gab.wkid;
+    uint64_t next_available = __builtin_ctzl(~shifted);
+
+    uint64_t idx = gab.wkid + next_available;
+
+    if (idx >= gab.eg->len)
+      return nullptr;
+
+    struct gab_sig next = {
+        .schedule = sig.schedule,
+        .signal = sig.signal,
+        .mask = sig.mask | (1 << idx),
+    };
+
+    assert(!(next.signal == sGAB_IGN && next.schedule == 0));
+    if (atomic_compare_exchange_weak(&gab.eg->sig, &sig, next))
+      return gab.eg->jobs + idx;
   }
 
   // No room for new jobs
@@ -838,7 +881,6 @@ void gab_destroy(struct gab_triple gab) {
   assert(res);
 
   worker_bail(gab, gab.eg->jobs + 1);
-  gab_jbunalive(gab, 1);
 
   while (gab_njobs(gab) > 1)
     ;
@@ -992,13 +1034,19 @@ bool repl_check_needmore(struct gab_triple gab, union gab_value_pair res) {
   return false;
 }
 
+/*
+ * Should be able to take work here on 1st worker maybe.
+ */
 void repl_wait_for(struct gab_triple gab, struct gab_repl_argt *args,
                    gab_value fib) {
   while (!gab_fibisdone(fib)) {
     switch (gab_yield(gab)) {
     case sGAB_COLL:
       gab_gcepochnext(gab);
+      // Fallthrough
+    case sGAB_TERM:
       gab_sigpropagate(gab);
+      // Fallthrough
     default:
       gab_busywait(gab);
       continue;
@@ -1021,6 +1069,19 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
   v_char source = {};
 
   for (;;) {
+    // There may be signals hanging for worker 1 to handle.
+    // Take care of those at the top of each loop.
+    switch (gab_yield(gab)) {
+    case sGAB_COLL:
+      gab_gcepochnext(gab);
+      // Fallthrough
+    case sGAB_TERM:
+      gab_sigpropagate(gab);
+      // Fallthrough
+    default:
+      break;
+    }
+
   readmore:
     char *line;
     if (source.len)
@@ -1188,7 +1249,8 @@ union gab_value_pair gab_exec(struct gab_triple gab,
     if (res.status != gab_ctimeout)
       return res;
 
-    if (!worker_step(gab, gab.eg->jobs + gab.wkid))
+    if (!gab_jbisalive(gab, gab.wkid) ||
+        !worker_step(gab, gab.eg->jobs + gab.wkid))
       return worker_bail(gab, gab.eg->jobs + gab.wkid),
              gab_tfibawait(gab, fib.vresult, 1);
   }
@@ -1443,7 +1505,7 @@ int gab_vpsprintf(char *dest, size_t n, const char *prefix, const char *fmt,
         return -1;
 
       break;
-      }
+    }
     case '$': {
       gab_value arg = va_arg(varargs, gab_value);
 
@@ -1663,7 +1725,8 @@ gab_value gab_vspanicf(struct gab_triple gab, va_list va,
   char hint[cGAB_ERR_SPRINTF_BUF_MAX] = {0};
   if (args.note_fmt) {
     if (gab_vpsprintf(hint, sizeof(hint), "   | ", args.note_fmt, va) < 0)
-      assert(false);
+      ;
+      // assert(false);
   }
 
   gab_value rec = gab_recordof(
@@ -1836,7 +1899,7 @@ union gab_value_pair gab_use(struct gab_triple gab, struct gab_use_argt args) {
     args.len = gab_reclen(args.env);
   }
 
-  const char* env_sargv[args.len];
+  const char *env_sargv[args.len];
   gab_value env_vsargv[args.len];
   gab_value env_vargv[args.len];
 
@@ -1849,7 +1912,7 @@ union gab_value_pair gab_use(struct gab_triple gab, struct gab_use_argt args) {
     }
     args.sargv = env_sargv;
     args.argv = env_vargv;
-  }  
+  }
 
   const char *name = gab_strdata(&path);
 
@@ -2188,10 +2251,12 @@ GAB_API inline bool gab_signext(struct gab_triple gab, int wkid) {
         continue;
     }
 
+    // If the worker we're signalling for isn't alive,
+    // try to skip it.
     if (!(sig.mask & (1 << wkid))) {
-      uint32_t n = __builtin_ctzl(~(sig.mask >> wkid)) + wkid + 1;
-      if (n > __builtin_popcountl(n))
-        n = 0;
+      uint32_t shifted = sig.mask >> wkid;
+      uint32_t nxt_open = shifted ? __builtin_ctzl(shifted) : 0;
+      uint32_t n = nxt_open ? wkid + nxt_open : 0;
 
       assert(sig.mask & (1 << n));
       struct gab_sig next = {

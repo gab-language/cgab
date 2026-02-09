@@ -67,6 +67,11 @@ void cliinfo(const char *fmt, ...) {
   va_end(args);
 }
 
+/*
+ * TODO: It might
+ *
+ */
+
 void print_err(struct gab_triple gab, gab_value err) {
   const char *str = gab_errtocs(gab, err);
   fprintf(stderr, "%s\n", str);
@@ -91,6 +96,10 @@ void pop_and_printerr(struct gab_triple gab) {
 bool check_and_printerr(union gab_value_pair *res) {
   if (res->status == gab_ctimeout)
     *res = gab_fibawait(gab, res->vresult);
+  
+  // if (res->status == gab_cvalid && res->aresult->data[0] != gab_ok)
+  //   while (gab_egalive(gab.eg) > 1) // The GC thread will stay alive
+  //     gab_busywait(gab);
 
   pop_and_printerr(gab);
 

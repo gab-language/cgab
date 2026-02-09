@@ -1,10 +1,6 @@
 'cgab'.use
 ui = 'cgui'.use
 
-img = IO.Files.make("vendor/RGFW/logo.png" "r").unwrap
-
-imgdata = img.read(img.len)
-
 (events, app) = (Channels.make, Channels.make)
 
 Colors = {
@@ -69,25 +65,28 @@ test\result\t = { test\path: nil: test\receiver: nil: }?
 [test\result\t] .defmodule {
   expect: (lhs cmp rhs) => do
     # Run the comparison of the expect
-    behavior\outcome = cmp .test\compare (lhs, rhs)
+    assertion\outcome = cmp .test\compare (lhs, rhs)
     # Get the suite we're executing
     suite = self.test\path .at 0 .unwrap
     # Queue up the outcome of the comparison
-    events <! (resolve: behavior\outcome, self.test\path, { lhs: lhs, cmp: cmp, rhs: rhs })
+    events <! (resolve: assertion\outcome, self.test\path, { lhs: lhs, cmp: cmp, rhs: rhs })
   end,
 }
 
 Suite = test\suite:.defclass(
   suite\behaviors: suite\name:
   default:
-  {
-  })
+  {})
+
+Assertion = test\assertion:.defclass(
+  assertion\meta: assertion\outcome:
+  default:
+  {})
 
 Behavior = test\behavior:.defclass(
-  behavior\path: behavior\meta: behavior\outcome:
+  behavior\show: behavior\path: behavior\assertions:
   default:
-  {
-  })
+  {})
 
 queue_tests = (filter_by_suite) => do
   Fibers.make () => do
@@ -98,7 +97,7 @@ queue_tests = (filter_by_suite) => do
           behaviors.each (runnable behavior) => do 
             (path body) = runnable*
 
-            events <! (behavior: Behavior.make(path nil: nil:))
+            events <! (behavior: Behavior.make(false: path []))
 
             body.each(t r) => do
               t.{ test\path: path, test\receiver: r }
@@ -131,28 +130,80 @@ queue_tests = (filter_by_suite) => do
   end
 end
 
+select\up: .defcase {
+  suite: (model) => do
+    model.put_by(selected\suite: (old) => do
+      (old == 0)
+        .and old
+        .or(old--)
+    end)
+  end
+  test: (model) => do
+    model.put_by(selected\test: (old) => do
+      (old == 0)
+        .and old
+        .or(old--)
+    end)
+  end
+}
+
+select\down: .defcase {
+  suite: (model) => do
+    len = suites\all.len
+    model.put_by(selected\suite: (old) => do
+      (old == (len - 1))
+        .and old
+        .or(old++)
+    end)
+  end
+  test: (model) => do
+    (ok key) = model.test\suites.?.at(model.selected\suite)
+    (has_selected, selected ) = ok.then () => model.test\suites.at(key)
+    len = has_selected .then () => selected.suite\behaviors.len
+
+    model.put_by(selected\test: (old) => do
+      (old == (len - 1))
+        .and old
+        .or(old++)
+    end)
+  end
+}
+
 handle\keydown: .defcase {
   r: (ev model) => do
     queue_tests.()
     model.app\reset
   end
   k: (ev model) => do
-    model.put_by(selected: (old) => do
-      (old == 0)
-        .and old
-        .or(old--)
-    end)
+    model.focus.select\up(model)
   end
   j: (ev model) => do
-    len = suites\all.len
-    model.put_by(selected: (old) => do
-      (old == (len - 1))
-        .and old
-        .or(old++)
-    end)
+    model.focus.select\down(model)
+  end
+  l: (ev model) => model.put(focus: test:)
+  h: (ev model) => model.put(focus: suite:)
+  # For some reason, space: isn't working properly here.
+  (' '.to\m) (ev model) => do
+    (has_suite, suite, has_bhv, bhv) = model.app\get_selected
+
+    (has_suite & has_bhv)
+      .then(() => do
+        model
+          .put_via_by(
+            test\suites:
+            (suite.suite\name)
+            suite\behaviors:
+            bhv
+            behavior\show:
+            x => x!)
+      end)
+      .or model
   end
   Messages.t
-  (ev model) => model
+  (ev model) => do
+    'Unhandled event $\n'.sprintf(ev).eprintln
+    model
+  end
 }
 
 handle\keyup: .defcase {
@@ -194,7 +245,7 @@ handle\type: .defcase {
 spinner = "⣾⣾⣽⣽⣻⣻⢿⢿⡿⡿⣟⣟⣯⣯⣷⣷".collect []
 
 App = test\app:.defclass(
-  test\suites: test\tests: time: selected:
+  test\suites: test\tests: time: selected\suite: selected\test: focus:
   default:
   {
     app\controller: (type ev*) => do
@@ -219,16 +270,34 @@ App = test\app:.defclass(
     app\resolve_behavior: (outcome path meta) => do
       suite = path.at 0 .unwrap
       bhv = path.at 1 .unwrap
+
       self
-        .put_via(test\suites: suite suite\behaviors: bhv behavior\outcome: outcome)
-        .put_via(test\suites: suite suite\behaviors: bhv behavior\meta: meta)
-        .put_via(test\suites: suite suite\behaviors: bhv behavior\path: path)
+        .put_via_by(
+          test\suites:
+          suite
+          suite\behaviors:
+          bhv
+          behavior\assertions:
+          (xs) => xs.cons(Assertion.make(meta outcome)))
+    end
+    app\get_selected: () => do
+      app = self
+
+      (ok, selected_key) = app.test\suites.?.at(app.selected\suite)
+      (has_selected, selected) = ok.then () => app.test\suites.at(selected_key)
+
+      tests = ok.then () => selected.suite\behaviors
+
+      (has_selected_test, selected_test) = ok.then () => do
+        tests.?.at(app.selected\test)
+      end
+
+      (has_selected.ok, selected, has_selected_test.ok, selected_test)
     end
     app\view: () => do
       app = self
 
-      (ok, selected_key) = app.test\suites.?.at(app.selected)
-      (has_selected, selected) = ok.then () => app.test\suites.at(selected_key)
+      (has_selected, selected, has_selected_test, selected_test) = app.app\get_selected
 
       [
         [
@@ -241,31 +310,27 @@ App = test\app:.defclass(
           }
           [
             [
-              img:
-              {
-                w: 900,
-                h: 900,
-                content: imgdata,
-              }
-            ]
-            [
               box:
               {
                 p\x: 9
                 p\y: 21
                 h\g: 1
                 w\r: 50
-                border: { w: 1 fg: Colors.bg\hl }
+                border: { w: 1 fg: (app.focus == suite:).and(Colors.fg\hl).or(Colors.bg\hl)}
                 bg: Colors.bg
               }
               self.test\suites.map (suite, name) => do
-                pass_behaviors = suite
+                assertions = suite
                   .suite\behaviors
-                  .collect([] Streams.filter (b => b.behavior\outcome == true:))
+                  .join(
+                    []
+                    Streams.map (b => b.behavior\assertions.or []))
 
-                fail_behaviors = suite
-                  .suite\behaviors
-                  .collect([] Streams.filter(b => b.behavior\outcome == false:))
+                pass_behaviors = assertions
+                  .filter b => b.assertion\outcome == true:
+
+                fail_behaviors = assertions
+                  .filter b => b.assertion\outcome == false:
 
                 waiting = suites\all .at name .unwrap .is\closed.!
 
@@ -286,6 +351,7 @@ App = test\app:.defclass(
                     [
                       text:
                       {
+                        p\x: 9
                         w\g: 1
                         fg: color
                         size: 32
@@ -295,7 +361,7 @@ App = test\app:.defclass(
                     [
                       text:
                       {
-                        p\h: 1
+                        p\x: 9
                         fg: Colors.g
                         size: 32
                         content: "✔ $".sprintf(pass_behaviors.len)
@@ -304,7 +370,7 @@ App = test\app:.defclass(
                     [
                       text:
                       {
-                        p\h: 1
+                        p\x: 9
                         fg: Colors.r
                         size: 32
                         content: "✘ $".sprintf(fail_behaviors.len)
@@ -321,21 +387,76 @@ App = test\app:.defclass(
                 p\y: 21
                 h\g: 1
                 w\g: 1
-                border: { w: 1 fg: Colors.bg\hl }
+                border: { w: 1 fg: (app.focus == test:).and(Colors.fg\hl).or(Colors.bg\hl)}
                 bg: Colors.bg
               }
               has_selected
                 .then(() => do
                   selected
                     .suite\behaviors
-                    .map((bhv) => do
-                      [
-                        text:
-                        {
-                          size: 32
-                          content: bhv.behavior\path.join("" Streams.interpose "should" |> Streams.interpose " ")
-                        }
-                      ]
+                    .map((bhv, k) => do
+                      is_selected = (k == selected_test)
+                      color = is_selected.and(Colors.r).or(Colors.fg)
+                      some_err = bhv
+                        .behavior\assertions
+                        .any (a => a.assertion\outcome!)
+
+                      (bhv.behavior\show | some_err)
+                        .then(() => do
+                          [
+                            box:
+                            {
+                              layout: vertical:
+                              bg: Colors.bg
+                              fg: Colors.fg
+                            }
+                            [
+                              [
+                                text:
+                                {
+                                  p\x: 9
+                                  size: 32
+                                  fg: color
+                                  content: bhv.behavior\path.join("" Streams.interpose "should" |> Streams.interpose " ")
+                                }
+                              ]
+                              bhv
+                                .behavior\assertions
+                                .then(() => do
+                                  bhv
+                                    .behavior\assertions
+                                    .map(atn => do
+                                      [
+                                        text:
+                                        {
+                                          p\x: 18
+                                          size: 32
+                                          fg: color
+                                          content: '$ $ $'.sprintf(
+                                            atn.assertion\meta.lhs
+                                            atn.assertion\meta.cmp
+                                            atn.assertion\meta.rhs
+                                          )
+                                        }
+                                      ]
+                                    end)
+                                end)
+                                .or([])
+                                .*
+                            ]
+                          ]
+                        end)
+                        .else(() => do
+                          [
+                            text:
+                            {
+                              p\x: 9
+                              size: 32
+                              fg: color
+                              content: bhv.behavior\path.join("" Streams.interpose "should" |> Streams.interpose " ")
+                            }
+                          ]
+                        end)
                     end)
                 end)
                 .or([[text: { size: 32 content: "none" }]])
@@ -346,7 +467,7 @@ App = test\app:.defclass(
     end
   })
 
-model = App.make({} {} 0 0)
+model = App.make({} {} 0 0 0 suite:)
 
 queue_tests.()
 
