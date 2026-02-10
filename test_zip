@@ -1,0 +1,38 @@
+Archive:  test.exe
+  Length      Date    Time    Name
+---------  ---------- -----   ----
+      651  01-29-2026 09:27   mod/Bencode.gab
+       12  01-29-2026 09:27   mod/Binaries.gab
+       54  01-29-2026 09:27   mod/Blocks.gab
+       16  01-29-2026 09:27   mod/Channels.gab
+       14  01-29-2026 09:27   mod/Fibers.gab
+      682  01-29-2026 09:27   mod/IO.gab
+      565  01-29-2026 09:27   mod/Json.gab
+      919  01-29-2026 09:27   mod/Messages.gab
+       81  01-29-2026 09:27   mod/Numbers.gab
+      438  01-29-2026 09:27   mod/Ranges.gab
+     1158  01-29-2026 09:27   mod/Records.gab
+       31  01-29-2026 09:27   mod/Shapes.gab
+    28821  01-29-2026 09:27   mod/Specs.gab
+     4340  01-29-2026 09:27   mod/Streams.gab
+       34  01-29-2026 09:27   mod/Strings.gab
+     5079  01-29-2026 09:27   mod/__core.gab
+     8232  01-30-2026 11:49   mod/cbencode.cgab-0.0.5-x86_64-linux-gnu.so
+     5552  01-30-2026 11:49   mod/cchannels.cgab-0.0.5-x86_64-linux-gnu.so
+     4824  01-30-2026 11:49   mod/cfibers.cgab-0.0.5-x86_64-linux-gnu.so
+     7992  01-30-2026 11:49   mod/cgab.cgab-0.0.5-x86_64-linux-gnu.so
+  3207384  01-30-2026 11:49   mod/cgui.cgab-0.0.5-x86_64-linux-gnu.so
+    61912  01-30-2026 11:49   mod/chttp.cgab-0.0.5-x86_64-linux-gnu.so
+   272648  01-30-2026 11:49   mod/cio.cgab-0.0.5-x86_64-linux-gnu.so
+     7472  01-30-2026 11:49   mod/cjson.cgab-0.0.5-x86_64-linux-gnu.so
+    11168  01-30-2026 11:49   mod/cmessages.cgab-0.0.5-x86_64-linux-gnu.so
+     6592  01-30-2026 11:49   mod/cnumbers.cgab-0.0.5-x86_64-linux-gnu.so
+    14296  01-30-2026 11:49   mod/crecords.cgab-0.0.5-x86_64-linux-gnu.so
+    10096  01-30-2026 11:49   mod/cshapes.cgab-0.0.5-x86_64-linux-gnu.so
+   870064  01-30-2026 11:49   mod/csqlite.cgab-0.0.5-x86_64-linux-gnu.so
+   105520  01-30-2026 11:49   mod/cstrings.cgab-0.0.5-x86_64-linux-gnu.so
+     1029  01-29-2026 09:27   mod/http.gab
+     6838  01-29-2026 09:27   mod/tests.gab
+    13925  01-29-2026 09:27   test/mod.gab
+---------                     -------
+  4658439                     33 files
