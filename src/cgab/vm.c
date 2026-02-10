@@ -525,7 +525,7 @@ static inline uint64_t compute_token_from_ip(struct gab_triple gab,
                                              uint8_t *ip) {
   struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(b->p);
 
-  assert(ip > proto_srcbegin(gab, p));
+  assert(ip >= proto_srcbegin(gab, p));
   uint64_t offset = ip - proto_srcbegin(gab, p);
 
   if (offset)
@@ -637,8 +637,6 @@ union gab_value_pair vvm_terminate(struct gab_triple gab, const char *fmt,
 
   gab_egkeep(gab.eg, gab_iref(gab, env));
 
-  v_gab_value_thrd_push(&gab.eg->err, err);
-
   assert(GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERRUNNING);
   GAB_VAL_TO_FIBER(fiber)->res_values = res;
   GAB_VAL_TO_FIBER(fiber)->res_env = env;
@@ -658,11 +656,6 @@ union gab_value_pair vm_givenerr(struct gab_triple gab,
       gab_recordfrom(gab, shape, 1, gab_shplen(shape), vm->fp, nullptr);
 
   gab_egkeep(gab.eg, gab_iref(gab, env));
-
-  // If our given is valid and we're in this codepath, then
-  // a given_err returned a panic and we shoud push that.
-  if (given.status == gab_cvalid)
-    v_gab_value_thrd_push(&gab.eg->err, given.aresult->data[1]);
 
   assert(GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERRUNNING);
   GAB_VAL_TO_FIBER(fiber)->res_values = given;
@@ -702,8 +695,6 @@ union gab_value_pair vvm_error(struct gab_triple gab, enum gab_status s,
   gab_negkeep(gab.eg, results->len, results->data);
 
   union gab_value_pair res = {.status = gab_cvalid, .aresult = results};
-
-  v_gab_value_thrd_push(&gab.eg->err, err);
 
   assert(GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERRUNNING);
   GAB_VAL_TO_FIBER(fiber)->res_values = res;
@@ -745,18 +736,18 @@ union gab_value_pair vm_error(struct gab_triple gab, enum gab_status s,
 }
 
 #define FMT_TYPEMISMATCH                                                       \
-  "$ $ found an unexpected value.\n\n"                                         \
-  "    | $\n\n"                                                                \
+  "@ @ found a value with an unexpected type.\n\n"                             \
+  "$\n\n"                                                                      \
   "which has type\n\n"                                                         \
-  "    | $\n\n"                                                                \
+  "$\n\n"                                                                      \
   "but expected type\n\n"                                                      \
-  "    | $\n"
+  "$\n"
 
 #define FMT_MISSINGIMPL                                                        \
-  "Sent message $ does not specialize for this receiver.\n\n"                  \
-  "    | $\n\n"                                                                \
+  "Sent message @ does not specialize for this receiver.\n\n"                  \
+  "$\n\n"                                                                      \
   "of type\n\n"                                                                \
-  "    | $ \n"
+  "$\n"
 
 union gab_value_pair gab_vpanicf(struct gab_triple gab, const char *fmt,
                                  va_list va) {
@@ -774,8 +765,6 @@ union gab_value_pair gab_vpanicf(struct gab_triple gab, const char *fmt,
     gab_value res[] = {gab_err, err};
     a_gab_value *results =
         a_gab_value_create(res, sizeof(res) / sizeof(gab_value));
-
-    v_gab_value_thrd_push(&gab.eg->err, err);
 
     return (union gab_value_pair){
         .status = gab_cvalid,
@@ -809,7 +798,6 @@ gab_value gab_vmmsg(struct gab_vm *vm) {
   uint8_t *__ip = vm->ip - SEND_CACHE_DIST + 1;
   gab_value *__kb = vm->kb;
   gab_value *ks = READ_SENDCONSTANTS;
-  printf("IP: %p\nKB: %p\nKS: %p\n", __ip, __kb, ks);
   return ks[GAB_SEND_KMESSAGE];
 }
 
@@ -817,7 +805,6 @@ gab_value gab_vmspec(struct gab_vm *vm) {
   uint8_t *__ip = vm->ip - SEND_CACHE_DIST + 1;
   gab_value *__kb = vm->kb;
   gab_value *ks = READ_SENDCONSTANTS;
-  printf("IP: %p\nKB: %p\nKS: %p\n", __ip, __kb, ks);
   return ks[GAB_SEND_KSPEC];
 }
 
@@ -1747,25 +1734,16 @@ CASE_CODE(SEND_PRIMITIVE_USE) {
      * is a little scuffed. I'd rather do it a different way.
      */
     gab_value shp = gab_prtshp(BLOCK()->p);
-    gab_value svargs[32];
-    const char *sargs[32];
 
-    size_t len = gab_shplen(shp);
-    assert(len < 32);
-
-    for (int i = 0; i < len; i++) {
-      svargs[i] = gab_ushpat(shp, i);
-      sargs[i] = gab_strdata(svargs + i);
-    }
+    gab_value rec =
+        gab_recordfrom(GAB(), shp, 1, gab_shplen(shp), FB() + 1, nullptr);
 
     bool should_reload = have > 1 ? PEEK_N(have - 1) == gab_true : false;
 
     mod = gab_use(GAB(), (struct gab_use_argt){
                              .flags = should_reload ? fGAB_USE_RELOAD : 0,
                              .vname = r,
-                             .len = BLOCK_PROTO()->narguments,
-                             .argv = FB() + 1, // To skip self local
-                             .sargv = sargs,
+                             .env = rec,
                          });
   }
 
@@ -2574,10 +2552,14 @@ CASE_CODE(SEND_PRIMITIVE_FIBER) {
   gab_value result = gab_tchnput(GAB(), EG()->work_channel, fb, 1 << 16);
 
   switch (result) {
+  // Timed out
   case gab_ctimeout:
     VM_YIELD(fb);
+  // Terminated
   case gab_cinvalid:
     VM_TERM();
+  // For the successful put & closed case:
+  case gab_cundefined:
   case gab_cvalid:
   fin:
     RESET_REENTRANT();
@@ -2589,6 +2571,7 @@ CASE_CODE(SEND_PRIMITIVE_FIBER) {
 
     NEXT();
   default:
+    gab_fprintf(stdout, "UNREACHABLE: $\n", result);
     assert(false && "UNEXPECTED");
   }
 }

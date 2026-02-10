@@ -111,6 +111,43 @@ struct gab_onative {
   gab_value name;
 };
 
+/**
+ * @brief A shape defines what keys are in a record
+ *
+ * This needs to be optimized. It:
+ *  - Isn't space efficient, as it copies keys heavily.
+ *  - Mutates transition vector kinda nastily
+ *  - Lists, (kGAB_SHAPELIST), stores its shape and does
+ *    everything O(n) when it could be constant time
+ *
+ * Desires from this data structure:
+ *  - Constant time key->idx lookup (or scan through nearby array)
+ *
+ *           [s]
+ *          /  \
+ *      [...] [...]
+ *     /
+ *   [
+ *
+ *   big_int len;
+ *
+ *   gab_value edge;
+ *
+ *   The data array contains the keys, edges, and child values.
+ *
+ *   To add a transition, we have to traverse back *up* the tree to the root.
+ *
+ *   There is no O(log(n)) happening, its just O(n) back up bc each shape
+ *   needs its own node.
+ *
+ *   Maybe I can introduce *shortcut edges* somehow?
+ *
+ *   Most code doesn't traverse down the whole tree, it puts from one shape to another.
+ *   That does still require traversing up the tree and copying nodes in O(n)
+ *
+ *   gab_value data[]
+ *
+ */
 struct gab_oshape {
   struct gab_obj header;
 
@@ -328,7 +365,7 @@ struct gab_oprototype {
   /**
    * The number of arguments, captures, slots (stack space) and locals.
    */
-  unsigned char narguments, nupvalues, nslots, nlocals;
+  uint8_t narguments, nupvalues, nslots, nlocals;
 
   /**
    * The source file this prototype is from.
@@ -468,8 +505,6 @@ void gab_srcdestroy(struct gab_src *self);
  * needed for the gab environment.
  */
 struct gab_eg {
-  _Atomic int8_t njobs;
-
   uint64_t hash_seed;
 
   v_gab_value scratch;
@@ -478,9 +513,14 @@ struct gab_eg {
 
   gab_value types[kGAB_NKINDS];
 
-  struct gab_sig {
-    _Atomic int8_t schedule;
-    _Atomic int8_t signal;
+  // An atomic struct which tracks the state of
+  // scheduling/aliveness in the workers.
+  // These are swapped/compared as a whole.
+  // Neat, all our state is atomic!
+  _Atomic struct gab_sig {
+    int32_t mask;
+    int8_t schedule;
+    int8_t signal;
   } sig;
 
   const char *resroots[cGAB_RESOURCE_MAX];
@@ -510,12 +550,11 @@ struct gab_eg {
   struct gab_job {
     thrd_t td;
 
-    uint8_t alive;
-
     uint32_t epoch;
     int32_t locked;
     v_gab_value lock_keep;
 
+    gab_value work_channel;
     q_gab_value queue;
 
     struct gab_gcbuf {
@@ -541,6 +580,7 @@ bool gab_gctrigger(struct gab_triple gab);
 
 void gab_gcdocollect(struct gab_triple gab);
 
+void gab_gcloglen(struct gab_triple gab);
 void gab_gcassertdone(struct gab_triple gab);
 
 typedef void (*gab_gc_visitor)(struct gab_triple gab, struct gab_obj *obj);
@@ -656,6 +696,9 @@ static inline int gsnprintf_through(char **dst, size_t *n, const char *fmt,
 }
 
 bool gab_wkspawn(struct gab_triple gab, gab_value fiber);
+
+void gab_jbalive(struct gab_triple gab, int32_t wkid);
+void gab_jbunalive(struct gab_triple gab, int32_t wkid);
 
 gab_value __gab_shape(struct gab_triple gab, uint64_t len);
 

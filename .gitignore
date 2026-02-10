@@ -4,13 +4,14 @@ docs/
 .cache/
 .vscode/
 mod/*.so
-mod/*.dynlib
+mod/*.dylib
 mod/*.dll
 mod/*.lib
 mod/*.pdb
 *.exe
+cgab-*
 compile_commands.json
-configuration
+*.configuration
 .zig-cache
 vendor/ta.h
 etag.txt
@@ -20,3 +21,7 @@ vendor/llhttp.h
 cacert.pem
 vendor/duckdb.cc
 vendor/sqlite3.c
+MyCertificate.crt
+MyKey.key
+cert_pubkey.pem
+key_pubkey.pem

@@ -15,10 +15,8 @@
   ")" GAB_MAGENTA "\t# A tuple\n" GAB_RESET "  "                               \
   "a_variable" GAB_MAGENTA "\t\t# Or a variable!" GAB_RESET
 
-#define FMT_REFERENCE_BEFORE_INIT "$ is referenced before it is initialized."
-
 #define FMT_ID_NOT_FOUND                                                       \
-  "Symbol $ is not yet bound in this scope, or parent scopes.\n\n"             \
+  "Symbol @ is not yet bound in this scope, or parent scopes.\n\n"             \
   "Assignment expressions bind values to symbols.\n\n"                         \
   "  a = " GAB_CYAN "true:" GAB_RESET "\n\n"                                   \
   "Symbols within local scope may be rebound at any time.\n\n"                 \
@@ -873,7 +871,7 @@ gab_value parse(struct gab_triple gab, struct parser *parser) {
     return gab_cinvalid;
 
   if (gab.flags & fGAB_AST_DUMP)
-    gab_fprintf(stdout, "$\n", gab_pvalintos(gab, ast));
+    gab_fprintf(stdout, "$\n", gab_pvalintos(gab, ast, ""));
 
   gab_iref(gab, ast);
   gab_egkeep(gab.eg, ast);

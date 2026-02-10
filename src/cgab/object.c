@@ -1595,11 +1595,11 @@ void *gab_fibmalloc(gab_value f, uint64_t n) {
   assert(gab_valkind(f) >= kGAB_FIBER && gab_valkind(f) <= kGAB_FIBERRUNNING);
   struct gab_ofiber *fiber = GAB_VAL_TO_FIBER(f);
 
-  if (fiber->allocator.cap - fiber->allocator.len < n)
-    v_uint8_t_cap(&fiber->allocator, fiber->allocator.cap * 2);
+  v_uint8_t_cap(&fiber->allocator, fiber->len + n + 1);
 
-  uint8_t *ptr = v_uint8_t_ref_at(&fiber->allocator, fiber->allocator.len);
+
   fiber->allocator.len += n;
+  uint8_t *ptr = v_uint8_t_ref_at(&fiber->allocator, fiber->allocator.len - n);
   return ptr;
 }
 
@@ -2781,8 +2781,12 @@ struct layout dolayout(v_gab_pprint *self, int32_t t, int32_t indent) {
   return l;
 }
 
-int spprint_tokens(char **dest, size_t *n, v_gab_pprint *self) {
+int spprint_tokens(char **dest, size_t *n, v_gab_pprint *self,
+                   const char *prefix) {
   int32_t indent = 0;
+
+  if (snprintf_through(dest, n, "%s", prefix) < 0)
+    return -1;
 
   for (uint64_t i = 0; i < self->len; i++) {
     struct gab_pprint t = v_gab_pprint_val_at(self, i);
@@ -2799,22 +2803,27 @@ int spprint_tokens(char **dest, size_t *n, v_gab_pprint *self) {
     if (spprint_through(dest, n, t) < 0)
       return -1;
 
-    if (t.k == kPPRINT_BREAK)
+    if (t.k == kPPRINT_BREAK) {
+      if (snprintf_through(dest, n, "%s", prefix) < 0)
+        return -1;
+
       for (int32_t i = 0; i < indent; i++)
         if (snprintf_through(dest, n, "  ") < 0)
           return -1;
+    };
   }
 
   return 0;
 }
 
-int gab_psvalinspect(char **dest, size_t *n, gab_value value, int depth) {
+int gab_psvalinspect(char **dest, size_t *n, gab_value value,
+                     const char *prefix, int depth) {
   v_gab_pprint tokens = {};
 
   if (pprint_tokify(&tokens, value))
     dolayout(&tokens, 0, 0);
 
-  if (spprint_tokens(dest, n, &tokens) < 0)
+  if (spprint_tokens(dest, n, &tokens, prefix) < 0)
     return v_gab_pprint_destroy(&tokens), -1;
 
   return v_gab_pprint_destroy(&tokens), 0;

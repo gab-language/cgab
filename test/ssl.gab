@@ -1,6 +1,44 @@
 'chttp'.use
 Socket = IO.Sockets
 
+cert = IO.Files.make("MyCertificate.crt" "r").unwrap
+pkey = IO.Files.make("MyKey.key" "r").unwrap
+
+cert = cert.read(cert.len).unwrap
+pkey = pkey.read(pkey.len).unwrap
+
+server_fiber = Fibers.make () => do
+
+  server = Socket.make tcp\tls: .unwrap
+
+  server
+    .bind("::1" 443 cert pkey)
+    .unwrap
+
+  server
+    .listen 5
+    .unwrap
+
+  'SERVER LISTENING ON ::1 443'.println
+
+  Fibers.make () => do
+    client = server
+      .accept
+      .unwrap
+
+    'Accepted client: $\n'.sprintf(client).println
+
+    req = client.until('\n'.to\b).unwrap
+
+    'CLIENT SENT: "$"\n'.sprintf(req.as\s.unwrap).println
+
+    client.write(req)
+    client.write('\0'.to\b)
+  end
+end
+
+server_fiber.await
+
 req = 'GET / HTTP/1.0\r\nHost:www.google.com\r\n\r\n'
 
 sock = Socket
@@ -8,7 +46,7 @@ sock = Socket
   .unwrap
 
 sock
-  .connect("www.google.com" 443)
+  .connect("::1" 443 cert)
   .unwrap
 
 sock
@@ -40,6 +78,7 @@ http_res = data
   .sprintf(
     http_res.http\status
     http_res.http\headers.join(
+      ""
       Streams.map((value field) => do
         '$: $'.sprintf(field value)
       end)

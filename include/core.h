@@ -46,7 +46,7 @@
 // New workers are spawned as needed up until a maximum is reached (specified at
 // runtime)
 #ifndef cGAB_WORKER_IDLE_TRIES
-#define cGAB_WORKER_IDLE_TRIES ((size_t)256)
+#define cGAB_WORKER_IDLE_TRIES ((size_t)2)
 #endif
 
 #ifndef cGAB_VM_CHANNEL_PUT_TRIES
