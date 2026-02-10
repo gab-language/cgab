@@ -111,6 +111,43 @@ struct gab_onative {
   gab_value name;
 };
 
+/**
+ * @brief A shape defines what keys are in a record
+ *
+ * This needs to be optimized. It:
+ *  - Isn't space efficient, as it copies keys heavily.
+ *  - Mutates transition vector kinda nastily
+ *  - Lists, (kGAB_SHAPELIST), stores its shape and does
+ *    everything O(n) when it could be constant time
+ *
+ * Desires from this data structure:
+ *  - Constant time key->idx lookup (or scan through nearby array)
+ *
+ *           [s]
+ *          /  \
+ *      [...] [...]
+ *     /
+ *   [
+ *
+ *   big_int len;
+ *
+ *   gab_value edge;
+ *
+ *   The data array contains the keys, edges, and child values.
+ *
+ *   To add a transition, we have to traverse back *up* the tree to the root.
+ *
+ *   There is no O(log(n)) happening, its just O(n) back up bc each shape
+ *   needs its own node.
+ *
+ *   Maybe I can introduce *shortcut edges* somehow?
+ *
+ *   Most code doesn't traverse down the whole tree, it puts from one shape to another.
+ *   That does still require traversing up the tree and copying nodes in O(n)
+ *
+ *   gab_value data[]
+ *
+ */
 struct gab_oshape {
   struct gab_obj header;
 
@@ -328,7 +365,7 @@ struct gab_oprototype {
   /**
    * The number of arguments, captures, slots (stack space) and locals.
    */
-  unsigned char narguments, nupvalues, nslots, nlocals;
+  uint8_t narguments, nupvalues, nslots, nlocals;
 
   /**
    * The source file this prototype is from.

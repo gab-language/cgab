@@ -412,7 +412,7 @@ int run_repl(int flags, uint32_t wait, size_t nmodules, const char **modules) {
 
   union gab_value_pair res = gab_create(
       (struct gab_create_argt){
-          .wait = wait ? wait : 50000,
+          .wait = wait,
           .modules = modules,
           .roots = roots,
           .resources = native_file_resources,
@@ -1374,6 +1374,7 @@ struct command_arguments parse_options(int argc, const char **argv,
       .argc = argc,
       .argv = argv,
       .njobs = cGAB_DEFAULT_NJOBS,
+      .wait = 50000,
   };
 
   v_s_char_create(&args.modules, 32);

@@ -4,17 +4,17 @@ ui = 'cgui'.use
 (events, app) = (Channels.make, Channels.make)
 
 Colors = {
-  bg: "0x161821".as\n
-  fg: "0xcdd6f5".as\n
-  bg\hl: "0x272c42".as\n
-  fg\hl: "0xc6c8d1".as\n
-  r: "0xf38ba9".as\n
-  o: "0xfab388".as\n
-  y: "0xf9e2b0".as\n
-  g: "0xa6e3a2".as\n
-  b: "0x89b4fb".as\n
-  i: "0x94e2d6".as\n
-  v: "0xcba6f8".as\n
+  bg: 0xff161821
+  fg: 0xffcdd6f5
+  bg\hl: 0xff272c42
+  fg\hl: 0xffc6c8d1
+  r: 0xfff38ba9
+  o: 0xfffab388
+  y: 0xfff9e2b0
+  g: 0xffa6e3a2
+  b: 0xff89b4fb
+  i: 0xff94e2d6
+  v: 0xffcba6f8
 }
 
 Spacer = [ box: { width\grow: 10 } [] ]
@@ -201,7 +201,7 @@ handle\keydown: .defcase {
   end
   Messages.t
   (ev model) => do
-    'Unhandled event $\n'.sprintf(ev).eprintln
+    #'Unhandled event $\n'.sprintf(ev).eprintln
     model
   end
 }
@@ -245,7 +245,7 @@ handle\type: .defcase {
 spinner = "⣾⣾⣽⣽⣻⣻⢿⢿⡿⡿⣟⣟⣯⣯⣷⣷".collect []
 
 App = test\app:.defclass(
-  test\suites: test\tests: time: selected\suite: selected\test: focus:
+  test\suites: time: selected\suite: selected\test: focus:
   default:
   {
     app\controller: (type ev*) => do
@@ -254,7 +254,6 @@ App = test\app:.defclass(
     app\reset: () => do
       self
         .put(test\suites: {})
-        .put(test\tests: {})
     end
     app\push_suite: (suite) => do
       self
@@ -270,6 +269,8 @@ App = test\app:.defclass(
     app\resolve_behavior: (outcome path meta) => do
       suite = path.at 0 .unwrap
       bhv = path.at 1 .unwrap
+
+      self.at_via(test\suites: suite suite\behaviors: bhv).unwrap
 
       self
         .put_via_by(
@@ -324,7 +325,7 @@ App = test\app:.defclass(
                   .suite\behaviors
                   .join(
                     []
-                    Streams.map (b => b.behavior\assertions.or []))
+                    Streams.map (b => b.behavior\assertions))
 
                 pass_behaviors = assertions
                   .filter b => b.assertion\outcome == true:
@@ -354,6 +355,7 @@ App = test\app:.defclass(
                         p\x: 9
                         w\g: 1
                         fg: color
+                        bg: Colors.bg
                         size: 32
                         content: "$ $".sprintf(spinner_char, name)
                       }
@@ -363,6 +365,7 @@ App = test\app:.defclass(
                       {
                         p\x: 9
                         fg: Colors.g
+                        bg: Colors.bg
                         size: 32
                         content: "✔ $".sprintf(pass_behaviors.len)
                       }
@@ -372,6 +375,7 @@ App = test\app:.defclass(
                       {
                         p\x: 9
                         fg: Colors.r
+                        bg: Colors.bg
                         size: 32
                         content: "✘ $".sprintf(fail_behaviors.len)
                       }
@@ -417,6 +421,7 @@ App = test\app:.defclass(
                                   p\x: 9
                                   size: 32
                                   fg: color
+                                  bg: Colors.bg
                                   content: bhv.behavior\path.join("" Streams.interpose "should" |> Streams.interpose " ")
                                 }
                               ]
@@ -432,6 +437,7 @@ App = test\app:.defclass(
                                           p\x: 18
                                           size: 32
                                           fg: color
+                                          bg: Colors.bg
                                           content: '$ $ $'.sprintf(
                                             atn.assertion\meta.lhs
                                             atn.assertion\meta.cmp
@@ -453,6 +459,7 @@ App = test\app:.defclass(
                               p\x: 9
                               size: 32
                               fg: color
+                              bg: Colors.bg
                               content: bhv.behavior\path.join("" Streams.interpose "should" |> Streams.interpose " ")
                             }
                           ]
@@ -467,7 +474,7 @@ App = test\app:.defclass(
     end
   })
 
-model = App.make({} {} 0 0 0 suite:)
+model = App.make({} 0 0 0 suite:)
 
 queue_tests.()
 

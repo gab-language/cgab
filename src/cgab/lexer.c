@@ -39,6 +39,19 @@ bool can_continue_symbol(uint8_t c) {
   return can_start_symbol(c) || isdigit(c) || c == '\\';
 }
 
+bool can_continue_hex(uint8_t c) {
+  if (isdigit(c))
+    return true;
+
+  if (c >= 'a' && c <= 'f')
+    return true;
+
+  if (c >= 'A' && c <= 'F')
+    return true;
+
+  return false;
+}
+
 bool is_comment(uint8_t c) { return c == '#'; }
 
 typedef struct gab_lx {
@@ -211,8 +224,8 @@ gab_token decimal(gab_lx *self) {
 }
 
 gab_token hex(gab_lx *self) {
-  if (integer(self) == TOKEN_ERROR)
-    return TOKEN_ERROR;
+  while (can_continue_hex(peek(self)))
+    advance(self);
 
   // Binary Exponent
   if (peek(self) == 'p' && isexponent(peek_next(self)))

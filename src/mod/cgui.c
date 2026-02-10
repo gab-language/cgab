@@ -41,6 +41,7 @@
 #define FONTSTASH_IMPLEMENTATION
 #include "fontstash/src/fontstash.h"
 
+// TODO: This font isn't great, replace it
 unsigned char fontData[] = {
 #embed "resources/SauceCodeProNerdFont-Regular.ttf"
 };
@@ -134,15 +135,15 @@ bool clay_RGFW_update(struct gab_triple gab, struct gui *gui, double deltaTime,
     gab_value target = clayGetTopmostId(gab);
     switch (ev->button.type) {
     case RGFW_mouseScroll:
-      // Clay_UpdateScrollContainers(false, (Clay_Vector2){0, ev->scroll.y},
-      //                             deltaTime);
+      Clay_UpdateScrollContainers(false, (Clay_Vector2){0, ev->scroll.y},
+                                  deltaTime);
       return false;
     case RGFW_mouseLeft:
+      Clay_SetPointerState(mousePosition, true);
       return putevent(gab, gui, "mouse", "left", target, gab_nil, gab_nil);
-      // Clay_SetPointerState(mousePosition, true);
     case RGFW_mouseRight:
+      Clay_SetPointerState(mousePosition, true);
       return putevent(gab, gui, "mouse", "right", target, gab_nil, gab_nil);
-      // Clay_SetPointerState(mousePosition, true);
     }
 
     return false;
@@ -151,18 +152,18 @@ bool clay_RGFW_update(struct gab_triple gab, struct gui *gui, double deltaTime,
     gab_value target = clayGetTopmostId(gab);
     switch (ev->button.value) {
     case RGFW_mouseLeft:
+      Clay_SetPointerState(mousePosition, true);
       return putevent(gab, gui, "mouse", "left", target, gab_nil, gab_nil);
-      // Clay_SetPointerState(mousePosition, true);
     case RGFW_mouseRight:
+      Clay_SetPointerState(mousePosition, true);
       return putevent(gab, gui, "mouse", "right", target, gab_nil, gab_nil);
-      // Clay_SetPointerState(mousePosition, true);
     }
 
     return false;
   }
   case RGFW_mousePosChanged:
     mousePosition = (Clay_Vector2){(float)ev->mouse.x, (float)ev->mouse.y};
-    // Clay_SetPointerState(mousePosition, RGFW_isMousePressed(RGFW_mouseLeft));
+    Clay_SetPointerState(mousePosition, RGFW_isMousePressed(RGFW_mouseLeft));
     return false;
   case RGFW_windowMoved:
   case RGFW_windowResized:
@@ -250,23 +251,23 @@ bool clay_termbox_update(struct gab_triple gab, struct gui *gui,
   case TB_EVENT_MOUSE:
     switch (e->key) {
     case TB_KEY_MOUSE_RELEASE:
-      // Clay_SetPointerState((Clay_Vector2){e->x, e->y}, false);
+      Clay_SetPointerState((Clay_Vector2){e->x, e->y}, false);
       return putevent(gab, gui, "mouse", "left", gab_number(0), gab_false,
                       clayGetTopmostId(gab));
     case TB_KEY_MOUSE_RIGHT:
-      // Clay_SetPointerState((Clay_Vector2){e->x, e->y}, false);
+      Clay_SetPointerState((Clay_Vector2){e->x, e->y}, false);
       return putevent(gab, gui, "mouse", "right", gab_number(0), gab_true,
                       clayGetTopmostId(gab));
     case TB_KEY_MOUSE_LEFT:
-      // Clay_SetPointerState((Clay_Vector2){e->x, e->y}, true);
+      Clay_SetPointerState((Clay_Vector2){e->x, e->y}, true);
       return putevent(gab, gui, "mouse", "left", gab_number(0), gab_true,
                       clayGetTopmostId(gab));
     case TB_KEY_MOUSE_WHEEL_UP:
-      // Clay_UpdateScrollContainers(false, (Clay_Vector2){0, e->y}, deltaTime);
+      Clay_UpdateScrollContainers(false, (Clay_Vector2){0, e->y}, deltaTime);
       return putevent(gab, gui, "mouse", "scroll\\up", gab_number(0), gab_false,
                       clayGetTopmostId(gab));
     case TB_KEY_MOUSE_WHEEL_DOWN:
-      // Clay_UpdateScrollContainers(false, (Clay_Vector2){0, e->y}, deltaTime);
+      Clay_UpdateScrollContainers(false, (Clay_Vector2){0, e->y}, deltaTime);
       return putevent(gab, gui, "mouse", "scroll\\down", gab_number(0),
                       gab_false, clayGetTopmostId(gab));
     default:
@@ -292,10 +293,10 @@ Clay_Color packedToClayColor(gab_value vcolor) {
   // };
 
   return (Clay_Color){
-      color >> 24 & 0xff,
-      color >> 16 & 0xff,
-      color >> 8 & 0xff,
-      color & 0xff,
+      .r = color & 0xff,
+      .g = color >> 8 & 0xff,
+      .b = color >> 16 & 0xff,
+      .a = color >> 24 & 0xff,
   };
 }
 
@@ -578,7 +579,8 @@ union gab_value_pair render_rect(struct gab_triple gab, struct gui *gui,
  *  - Allow arguments to be passed to use:, and therefore to GAB_DYNLIB_MAIN_FN
  *  This would allow 'ui'.use gui: or 'ui'.use tui:, which would let us know at
  *  load time which implementation to instantiate
- *  - Also - I want all the numbers that are "pixels" to translate to "cells" in the TUI api.
+ *  - Also - I want all the numbers that are "pixels" to translate to "cells" in
+ * the TUI api.
  *  - This means we need to wrap them up with some conversions.
  */
 [[nodiscard]]
@@ -683,6 +685,13 @@ union gab_value_pair render_text(struct gab_triple gab, struct gui *gui,
   if (gab_valkind(vfg) != kGAB_NUMBER)
     return gab_pktypemismatch(gab, vfg, kGAB_NUMBER);
 
+  gab_value vbg = gab_mrecat(gab, props, "bg");
+  if (vbg == gab_cundefined)
+    vbg = gab_number(0xffffffff);
+
+  if (gab_valkind(vbg) != kGAB_NUMBER)
+    return gab_pktypemismatch(gab, vbg, kGAB_NUMBER);
+
   gab_value vspacing = gab_mrecat(gab, props, "spacing");
   if (vspacing == gab_cundefined)
     vspacing = gab_number(0);
@@ -713,6 +722,7 @@ union gab_value_pair render_text(struct gab_triple gab, struct gui *gui,
 
   CLAY(CLAY_IDI("", gui->n++), {
                                    .layout = parseLayout(gab, props),
+                                   .backgroundColor = packedToClayColor(vbg),
                                }) {
     CLAY_TEXT(text, CLAY_TEXT_CONFIG({
                         .fontSize = size,
@@ -882,6 +892,8 @@ bool doguirender(struct gab_triple gab, struct gui *gui) {
   return true;
 }
 
+// TODO: Limit FPS so we don't burn up your computer
+
 #ifdef GAB_PLATFORM_UNIX
 
 GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
@@ -954,28 +966,32 @@ fin:
 GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
   gab_value vgui = gab_arg(0);
 
-  if (gab_valtype(gab, vgui) != gab_string(gab, "gab\\gui"))
-    return gab_ptypemismatch(gab, vgui, gab_string(gab, "gab\\gui"));
+  if (!reentrant) {
+    if (gab_valtype(gab, vgui) != gab_string(gab, "gab\\gui"))
+      return gab_ptypemismatch(gab, vgui, gab_string(gab, "gab\\gui"));
 
-  Clay_Termbox_Initialize(TB_OUTPUT_TRUECOLOR, CLAY_TB_BORDER_MODE_MINIMUM,
-                          CLAY_TB_BORDER_CHARS_BLANK,
-                          CLAY_TB_IMAGE_MODE_UNICODE, true);
+    Clay_Termbox_Initialize(TB_OUTPUT_TRUECOLOR, CLAY_TB_BORDER_MODE_MINIMUM,
+                            CLAY_TB_BORDER_CHARS_BLANK,
+                            CLAY_TB_IMAGE_MODE_UNICODE, true);
 
-  uint64_t totalMemorySize = Clay_MinMemorySize();
-  Clay_Arena clayMemory = Clay_CreateArenaWithCapacityAndMemory(
-      totalMemorySize, malloc(totalMemorySize));
+    uint64_t totalMemorySize = Clay_MinMemorySize();
+    Clay_Arena clayMemory = Clay_CreateArenaWithCapacityAndMemory(
+        totalMemorySize, malloc(totalMemorySize));
 
-  Clay_Initialize(clayMemory,
-                  (Clay_Dimensions){
-                      .width = Clay_Termbox_Width(),
-                      .height = Clay_Termbox_Height(),
-                  },
-                  (Clay_ErrorHandler){
-                      HandleClayErrors,
-                      nullptr,
-                  });
+    Clay_Initialize(clayMemory,
+                    (Clay_Dimensions){
+                        .width = Clay_Termbox_Width(),
+                        .height = Clay_Termbox_Height(),
+                    },
+                    (Clay_ErrorHandler){
+                        HandleClayErrors,
+                        nullptr,
+                    });
 
-  Clay_SetMeasureTextFunction(Clay_Termbox_MeasureText, nullptr);
+    Clay_SetMeasureTextFunction(Clay_Termbox_MeasureText, nullptr);
+
+    // Clay_SetDebugModeEnabled(true);
+  }
 
   struct gui *gui = gab_boxdata(vgui);
   for (;;) {
@@ -1096,6 +1112,8 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_render) {
                     });
 
     Clay_SetMeasureTextFunction(sclay_measure_text, &fonts);
+
+    // Clay_SetDebugModeEnabled(true);
 
     gui->ready = true;
   }
