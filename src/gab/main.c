@@ -1762,8 +1762,12 @@ int run(struct command_arguments *args) {
   for (int i = 0; i < nmodules; i++)
     cstr_modules[i] = v_s_char_ref_at(&modules, i)->data;
 
-  return run_file(path, args->flags, args->wait, args->njobs, nmodules - 1,
-                  cstr_modules);
+  int res = run_file(path, args->flags, args->wait, args->njobs, nmodules - 1,
+                     cstr_modules);
+
+  v_s_char_destroy(&modules);
+
+  return res;
 }
 
 int exec(struct command_arguments *args) {
@@ -1793,8 +1797,12 @@ int exec(struct command_arguments *args) {
   for (int i = 0; i < nmodules; i++)
     cstr_modules[i] = v_s_char_ref_at(&modules, i)->data;
 
-  return run_string(args->argv[0], args->flags, args->wait, args->njobs,
-                    nmodules - 1, cstr_modules);
+  int res = run_string(args->argv[0], args->flags, args->wait, args->njobs,
+                       nmodules - 1, cstr_modules);
+
+  v_s_char_destroy(&modules);
+
+  return res;
 }
 
 int repl(struct command_arguments *args) {
@@ -1819,7 +1827,11 @@ int repl(struct command_arguments *args) {
   for (int i = 0; i < nmodules; i++)
     cstr_modules[i] = v_s_char_ref_at(&modules, i)->data;
 
-  return run_repl(args->flags, args->wait, nmodules - 1, cstr_modules);
+  int res = run_repl(args->flags, args->wait, nmodules - 1, cstr_modules);
+
+  v_s_char_destroy(&modules);
+
+  return res;
 }
 
 void cmd_summary(int i) {

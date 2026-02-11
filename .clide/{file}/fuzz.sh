@@ -1,18 +1,7 @@
 #!/usr/bin/env bash
 set -u
 
-# Everything after -- is the command
-if [[ "$#" -lt 1 ]]; then
-  echo "usage: $0 -- command [args...]" >&2
-  exit 2
-fi
-
-# Strip optional --
-if [[ "$1" == "--" ]]; then
-  shift
-fi
-
-cmd=( "$@" )
+cd "$CLIDE_PATH/../" || exit 1
 
 iter=0
 while true; do
@@ -21,7 +10,7 @@ while true; do
 
   printf "\r%010i: %s" "$iter" "$seed"
 
-  UNTHREAD_SEED="$seed" "${cmd[@]}"
+  UNTHREAD_SEED="$seed" gab run "${file:0:-4}"
   status=$?
   iter=`expr $iter + 1`
 
