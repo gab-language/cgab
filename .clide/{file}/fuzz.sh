@@ -10,7 +10,7 @@ while true; do
 
   printf "\r%010i: %s" "$iter" "$seed"
 
-  UNTHREAD_SEED="$seed" gab run "${file:0:-4}"
+  UNTHREAD_SEED="$seed" gab run "${file:0:-4}" 2> eout
   status=$?
   iter=`expr $iter + 1`
 

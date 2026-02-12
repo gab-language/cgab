@@ -338,6 +338,37 @@ void gab_objdestroy(struct gab_triple gab, struct gab_obj *self) {
      *
      * TO RESOLVE THIS ISSUE: Strings are incremented as they are created.
      * This means strings are never deallocated (not an ideal solution)
+     *
+     *             string reused
+     *             |           |
+     * worker |--@-$-*---*---*-$------
+     *           |
+     *         string created, dec queued
+     *
+     *     gc |-------*----*-----*----
+     *                           |
+     *                          string destroyed
+     *
+     *   Epochs are marked with '*'
+     *
+     *   The string is reused, but wasn't touched during any epoch on the
+     * worker. Therefor the gc tries to free it, and the latest reuse on the
+     * worker is a UAF.
+     *
+     *   A Big String Refactor could look like the following:
+     *     - Allocate string data separately from string objects.
+     *     - ARC the string data, in real time. All the re-uses will inc and dec
+     * the str data.
+     *     - When the str data ARC reaches zero, we can free it.
+     *     - String objects store slices into the ARC arena.
+     *
+     *   I think this is possible by storing an atomic int on the str itself.
+     *     - When a str is returned (interned or not), we increment the ARC.
+     *     - When a str is destroyed (decrement the ARC).
+     *     - If the ARC is zero, we can deallocate the ostring and remove it
+     * from the dict.
+     *     - It also doesn't really make sense, as I think about it.
+     *
      */
     d_strings_remove(&gab.eg->strings, (struct gab_ostring *)self);
     mtx_unlock(&gab.eg->strings_mtx);
@@ -404,7 +435,6 @@ gab_value nstring(struct gab_triple gab, uint64_t hash, uint64_t len,
   const char *cursor = self->data;
   self->mb_len = mbsrtowcs(NULL, &cursor, 0, &state);
 
-  /* The strings table should hold a reference to this string */
   d_strings_insert(&gab.eg->strings, self, 0);
   return gab_iref(gab, __gab_obj(self));
 }
@@ -1596,7 +1626,6 @@ void *gab_fibmalloc(gab_value f, uint64_t n) {
   struct gab_ofiber *fiber = GAB_VAL_TO_FIBER(f);
 
   v_uint8_t_cap(&fiber->allocator, fiber->len + n + 1);
-
 
   fiber->allocator.len += n;
   uint8_t *ptr = v_uint8_t_ref_at(&fiber->allocator, fiber->allocator.len - n);

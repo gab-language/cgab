@@ -67,11 +67,6 @@ void cliinfo(const char *fmt, ...) {
   va_end(args);
 }
 
-/*
- * TODO: It might
- *
- */
-
 void print_err(struct gab_triple gab, gab_value err) {
   const char *str = gab_errtocs(gab, err);
   fprintf(stderr, "%s\n", str);

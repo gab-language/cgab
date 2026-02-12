@@ -56,11 +56,20 @@ struct gab_obj {
   uint8_t references;
   /**
    * @brief Flags used by garbage collection and for debug information.
+   *
+   * These *don't* have to be atomic, even though theoretically they are consumed
+   * by the worker *and* gc threads.
+   *
+   * This because the worker threads only touch this field on object *creation*,
+   * before the GC knows that the object exists. From that point on though,
+   * this field is owned and modified *exclusively* by the GC thread.
    */
   uint8_t flags;
   /**
    * @brief a flag denoting the kind of object referenced by this pointer -
    * defines how to interpret the remaining bytes of this allocation.
+   *
+   * Some objects do modify this field - Fibers notably change their running/done state here.
    */
   uint8_t kind;
 };

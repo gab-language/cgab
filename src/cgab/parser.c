@@ -985,8 +985,7 @@ static inline void push_short(struct bc *bc, uint16_t data, gab_value node) {
 
 static inline uint16_t addk(struct gab_triple gab, struct bc *bc,
                             gab_value value) {
-  gab_iref(gab, value);
-  gab_egkeep(gab.eg, value);
+  gab_egkeep(gab.eg, gab_iref(gab, value));
 
   assert(bc->ks->len < UINT16_MAX);
 

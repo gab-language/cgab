@@ -37,7 +37,7 @@ void gab_gcloglen(struct gab_triple gab) {
   for (int i = 0; i < gab.eg->len; i++) {
     for (int j = 0; j < kGAB_NBUF; j++) {
       for (int k = 0; k < GAB_GCNEPOCHS; k++) {
-        uint64_t len =  buflen(gab, j, i, k);
+        uint64_t len = buflen(gab, j, i, k);
         if (len)
           printf("WKID %i BUF %i(%i) [%lu]\n", i, j, k, len);
       }
@@ -241,6 +241,15 @@ static inline void for_child_do(struct gab_obj *obj, gab_gc_visitor fnc,
   default:
     break;
 
+  case kGAB_NATIVE: {
+    struct gab_onative *ntv = (struct gab_onative *)obj;
+
+    if(gab_valiso(ntv->name))
+      fnc(gab, gab_valtoo(ntv->name));
+
+    break;
+  }
+
   case kGAB_PROTOTYPE: {
     struct gab_oprototype *prt = (struct gab_oprototype *)obj;
 
@@ -356,6 +365,7 @@ static inline void destroy(struct gab_triple gab, struct gab_obj *obj) {
   assert(obj->references == 0);
   gab_objdestroy(gab, obj);
   gab_egalloc(gab, obj, 0);
+
 #endif
 }
 

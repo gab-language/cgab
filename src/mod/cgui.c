@@ -825,6 +825,8 @@ bool render(struct gab_triple gab, struct gui *gui,
   if (app == gab_cinvalid)
     return false;
 
+  gab_iref(gab, app);
+
   Clay_BeginLayout();
 
   union gab_value_pair res =
@@ -834,6 +836,9 @@ bool render(struct gab_triple gab, struct gui *gui,
     return false;
 
   *array_out = Clay_EndLayout();
+
+  gab_dref(gab, app);
+
   return true;
 }
 
