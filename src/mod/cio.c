@@ -2045,7 +2045,7 @@ GAB_DYNLIB_MAIN_FN {
     return gab_panicf(gab, "Failed to initialize QIO");
 
   while (!atomic_load(&initialized))
-    ;
+    gab_busywait(gab);
 
   if (atomic_load(&initialized) < 0)
     return gab_panicf(gab, "Failed to initialize QIO");

@@ -1694,7 +1694,12 @@ CASE_CODE(SEND_PRIMITIVE_CONCAT) {
   VM_PANIC_GUARD_ISS(val_b);
 
   STORE_SP();
-  gab_value val_ab = gab_strcat(GAB(), val_a, val_b);
+  gab_value val_ab = gab_tstrcat(GAB(), val_a, val_b);
+
+  if (val_ab == gab_ctimeout)
+    VM_YIELD(gab_nil);
+
+  assert(gab_valkind(val_ab) == kGAB_STRING);
 
   DROP_N(have + 1);
   PUSH(val_ab);

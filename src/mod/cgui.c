@@ -135,14 +135,14 @@ bool clay_RGFW_update(struct gab_triple gab, struct gui *gui, double deltaTime,
     gab_value target = clayGetTopmostId(gab);
     switch (ev->button.type) {
     case RGFW_mouseScroll:
-      Clay_UpdateScrollContainers(false, (Clay_Vector2){0, ev->scroll.y},
-                                  deltaTime);
+      // Clay_UpdateScrollContainers(false, (Clay_Vector2){0, ev->scroll.y},
+      //                             deltaTime);
       return false;
     case RGFW_mouseLeft:
-      Clay_SetPointerState(mousePosition, true);
+      // Clay_SetPointerState(mousePosition, true);
       return putevent(gab, gui, "mouse", "left", target, gab_nil, gab_nil);
     case RGFW_mouseRight:
-      Clay_SetPointerState(mousePosition, true);
+      // Clay_SetPointerState(mousePosition, true);
       return putevent(gab, gui, "mouse", "right", target, gab_nil, gab_nil);
     }
 
@@ -152,10 +152,10 @@ bool clay_RGFW_update(struct gab_triple gab, struct gui *gui, double deltaTime,
     gab_value target = clayGetTopmostId(gab);
     switch (ev->button.value) {
     case RGFW_mouseLeft:
-      Clay_SetPointerState(mousePosition, true);
+      // Clay_SetPointerState(mousePosition, true);
       return putevent(gab, gui, "mouse", "left", target, gab_nil, gab_nil);
     case RGFW_mouseRight:
-      Clay_SetPointerState(mousePosition, true);
+      // Clay_SetPointerState(mousePosition, true);
       return putevent(gab, gui, "mouse", "right", target, gab_nil, gab_nil);
     }
 
@@ -163,7 +163,7 @@ bool clay_RGFW_update(struct gab_triple gab, struct gui *gui, double deltaTime,
   }
   case RGFW_mousePosChanged:
     mousePosition = (Clay_Vector2){(float)ev->mouse.x, (float)ev->mouse.y};
-    Clay_SetPointerState(mousePosition, RGFW_isMousePressed(RGFW_mouseLeft));
+    // Clay_SetPointerState(mousePosition, RGFW_isMousePressed(RGFW_mouseLeft));
     return false;
   case RGFW_windowMoved:
   case RGFW_windowResized:
@@ -251,23 +251,23 @@ bool clay_termbox_update(struct gab_triple gab, struct gui *gui,
   case TB_EVENT_MOUSE:
     switch (e->key) {
     case TB_KEY_MOUSE_RELEASE:
-      Clay_SetPointerState((Clay_Vector2){e->x, e->y}, false);
+      // Clay_SetPointerState((Clay_Vector2){e->x, e->y}, false);
       return putevent(gab, gui, "mouse", "left", gab_number(0), gab_false,
                       clayGetTopmostId(gab));
     case TB_KEY_MOUSE_RIGHT:
-      Clay_SetPointerState((Clay_Vector2){e->x, e->y}, false);
+      // Clay_SetPointerState((Clay_Vector2){e->x, e->y}, false);
       return putevent(gab, gui, "mouse", "right", gab_number(0), gab_true,
                       clayGetTopmostId(gab));
     case TB_KEY_MOUSE_LEFT:
-      Clay_SetPointerState((Clay_Vector2){e->x, e->y}, true);
+      // Clay_SetPointerState((Clay_Vector2){e->x, e->y}, true);
       return putevent(gab, gui, "mouse", "left", gab_number(0), gab_true,
                       clayGetTopmostId(gab));
     case TB_KEY_MOUSE_WHEEL_UP:
-      Clay_UpdateScrollContainers(false, (Clay_Vector2){0, e->y}, deltaTime);
+      // Clay_UpdateScrollContainers(false, (Clay_Vector2){0, e->y}, deltaTime);
       return putevent(gab, gui, "mouse", "scroll\\up", gab_number(0), gab_false,
                       clayGetTopmostId(gab));
     case TB_KEY_MOUSE_WHEEL_DOWN:
-      Clay_UpdateScrollContainers(false, (Clay_Vector2){0, e->y}, deltaTime);
+      // Clay_UpdateScrollContainers(false, (Clay_Vector2){0, e->y}, deltaTime);
       return putevent(gab, gui, "mouse", "scroll\\down", gab_number(0),
                       gab_false, clayGetTopmostId(gab));
     default:
@@ -825,10 +825,14 @@ bool render(struct gab_triple gab, struct gui *gui,
   if (app == gab_cinvalid)
     return false;
 
+  gab_iref(gab, app);
+
   Clay_BeginLayout();
 
   union gab_value_pair res =
       render_componentlist(gab, gui, app, CLAY_TOP_TO_BOTTOM);
+
+  gab_dref(gab, app);
 
   if (res.status != gab_cundefined)
     return false;

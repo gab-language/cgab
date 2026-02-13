@@ -1698,6 +1698,9 @@ GAB_API_INLINE bool gab_valhast(gab_value value) {
 GAB_API gab_value gab_nstring(struct gab_triple gab, uint64_t len,
                               const char *data);
 
+GAB_API gab_value gab_tnstring(struct gab_triple gab, uint64_t len,
+                              const char *data);
+
 /**
  * @brief Create a gab_value from a c-string
  *
@@ -1718,6 +1721,17 @@ GAB_API_INLINE gab_value gab_string(struct gab_triple gab, const char *data) {
  * @return The value.
  */
 GAB_API gab_value gab_strcat(struct gab_triple gab, gab_value a, gab_value b);
+
+/**
+ * @brief Concatenate two gab strings. This can timeout, as it needs to hold
+ * a mutex in order to complete its work.
+ *
+ * @param gab The engine.
+ * @param a The first string.
+ * @param b The second string.
+ * @return The value.
+ */
+GAB_API gab_value gab_tstrcat(struct gab_triple gab, gab_value a, gab_value b);
 
 GAB_API_INLINE gab_value gab_sstrcat(struct gab_triple gab, gab_value a,
                                      const char *b) {
@@ -2734,7 +2748,7 @@ GAB_API_INLINE gab_value gab_thisvmmsg(struct gab_triple gab) {
 };
 
 enum gab_signal {
-  sGAB_IGN,
+  sGAB_IGN = 0,
   sGAB_COLL,
   sGAB_TERM,
 };
@@ -2907,6 +2921,7 @@ GAB_API bool gab_sigclear(struct gab_triple gab);
  *
  * This should be made atomic.
  */
+;
 GAB_API bool gab_signal(struct gab_triple gab, enum gab_signal s, int wkid);
 
 #ifdef __cplusplus

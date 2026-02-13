@@ -2,6 +2,7 @@
 #include "core.h"
 #include "gab.h"
 #include <stdatomic.h>
+#include <threads.h>
 
 struct errdetails {
   const char *src_name, *tok_name, *msg_name;
@@ -305,8 +306,10 @@ enum gab_signal gab_yield(struct gab_triple gab) {
 }
 
 void gab_busywait(struct gab_triple gab) {
-  if (gab.eg->wait > 0)
+  if (gab.eg->wait > 0) {
     thrd_sleep(&(const struct timespec){.tv_nsec = gab.eg->wait}, nullptr);
+    thrd_yield();
+  }
 }
 
 int32_t gab_njobs(struct gab_triple gab) {
@@ -327,6 +330,8 @@ void gab_jbalive(struct gab_triple gab, int32_t wkid) {
     assert(!(next.signal == sGAB_IGN && next.schedule == 0));
     if (atomic_compare_exchange_weak(&gab.eg->sig, &sig, next))
       break;
+
+    gab_busywait(gab);
   }
 }
 
@@ -382,6 +387,7 @@ int32_t gc_job(void *data) {
       struct gab_sig sig = atomic_load(&gab.eg->sig);
       assert(!(sig.schedule == 0 && sig.signal == sGAB_IGN));
 
+      mtx_unlock(&gab.eg->strings_mtx);
       continue;
     }
     default:
@@ -599,7 +605,7 @@ int32_t worker_job(void *data) {
 #endif
 
   while (worker_step(gab, job))
-    ;
+    gab_busywait(gab);
 
   worker_bail(gab, job);
 
@@ -632,6 +638,8 @@ struct gab_job *next_available_job(struct gab_triple gab) {
     assert(!(next.signal == sGAB_IGN && next.schedule == 0));
     if (atomic_compare_exchange_weak(&gab.eg->sig, &sig, next))
       return gab.eg->jobs + idx;
+
+    gab_busywait(gab);
   }
 
   // No room for new jobs
@@ -880,17 +888,18 @@ void gab_destroy(struct gab_triple gab) {
   bool res = gab_sigterm(gab);
   assert(res);
 
-  worker_bail(gab, gab.eg->jobs + 1);
+  if (gab_jbisalive(gab, gab.wkid))
+    worker_bail(gab, gab.eg->jobs + 1);
 
   while (gab_njobs(gab) > 1)
-    ;
+    gab_busywait(gab);
 
   gab_dref(gab, gab.eg->work_channel);
   gab_ndref(gab, 1, gab.eg->scratch.len, gab.eg->scratch.data);
 
-  for (uint64_t i = 0; i < gab.eg->strings.cap; i++)
-    if (d_strings_iexists(&gab.eg->strings, i))
-      gab_dref(gab, __gab_obj(d_strings_ikey(&gab.eg->strings, i)));
+  // for (uint64_t i = 0; i < gab.eg->strings.cap; i++)
+  //   if (d_strings_iexists(&gab.eg->strings, i))
+  //     gab_dref(gab, __gab_obj(d_strings_ikey(&gab.eg->strings, i)));
 
   if (gab_valkind(gab.eg->shapes) == kGAB_SHAPELIST)
     dec_child_shapes(gab, gab.eg->shapes);
@@ -919,7 +928,7 @@ void gab_destroy(struct gab_triple gab) {
   // gab_gcloglen(gab);
   res = gab_sigcoll(gab);
   while (gab_signaling(gab))
-    ;
+    gab_busywait(gab);
 
   struct gab_sig sig = atomic_load(&gab.eg->sig);
   assert(res);
@@ -928,7 +937,7 @@ void gab_destroy(struct gab_triple gab) {
   // gab_gcloglen(gab);
   res = gab_sigcoll(gab);
   while (gab_signaling(gab))
-    ;
+    gab_busywait(gab);
 
   sig = atomic_load(&gab.eg->sig);
   assert(res);
@@ -938,7 +947,7 @@ void gab_destroy(struct gab_triple gab) {
   res = gab_sigcoll(gab);
 
   while (gab_signaling(gab))
-    ;
+    gab_busywait(gab);
 
   sig = atomic_load(&gab.eg->sig);
   assert(res);
@@ -948,7 +957,7 @@ void gab_destroy(struct gab_triple gab) {
   res = gab_sigcoll(gab);
 
   while (gab_signaling(gab))
-    ;
+    gab_busywait(gab);
 
   sig = atomic_load(&gab.eg->sig);
   assert(res);
@@ -1238,8 +1247,8 @@ union gab_value_pair gab_exec(struct gab_triple gab,
     return fib;
 
   // If we aren't the main-thread, we just return the await.
-  // if (gab.wkid != 1)
-  return gab_fibawait(gab, fib.vresult);
+  if (gab.wkid != 1)
+    return gab_fibawait(gab, fib.vresult);
 
   // If we are on the main thread, we
   // can do some work while we block.
@@ -1284,10 +1293,13 @@ bool gab_ndef(struct gab_triple gab, uint64_t len,
               struct gab_def_argt args[static len]) {
   gab_value messages = atomic_load(&gab.eg->messages);
 
-  for (;;)
+  for (;;) {
     if (atomic_compare_exchange_weak(&gab.eg->messages, &messages,
                                      dodef(gab, messages, len, args)))
       return atomic_fetch_add(&gab.eg->messages_epoch, 1), true;
+
+    gab_busywait(gab);
+  }
 
   return false;
 }
@@ -1726,7 +1738,7 @@ gab_value gab_vspanicf(struct gab_triple gab, va_list va,
   if (args.note_fmt) {
     if (gab_vpsprintf(hint, sizeof(hint), "   | ", args.note_fmt, va) < 0)
       ;
-      // assert(false);
+    // assert(false);
   }
 
   gab_value rec = gab_recordof(
@@ -2084,6 +2096,15 @@ bool gab_sigterm(struct gab_triple gab) {
 }
 
 bool gab_asigcoll(struct gab_triple gab) {
+
+  /*
+   * HERE IS A NEW ISSUE: If this collection is triggered
+   * during a string creation, then the mutex is already locked
+   * and this will block forever.
+   */
+  if (gab_signaling(gab) != sGAB_COLL)
+    mtx_lock(&gab.eg->strings_mtx);
+
   return gab_signal(gab, sGAB_COLL, 1);
 }
 
@@ -2215,7 +2236,7 @@ GAB_API inline bool gab_signaling(struct gab_triple gab) {
   /*printf("SCHEDULE: %i, SIGNALING: %d\n", gab.eg->sig.schedule,
    * gab.eg->sig.schedule >= 0);*/
   struct gab_sig sig = atomic_load_explicit(&gab.eg->sig, memory_order_acquire);
-  return sig.schedule >= 0;
+  return sig.signal;
 }
 
 /*
@@ -2225,6 +2246,8 @@ GAB_API inline bool gab_signaling(struct gab_triple gab) {
  */
 GAB_API inline bool gab_signext(struct gab_triple gab, int wkid) {
   for (;;) {
+    gab_busywait(gab);
+
     struct gab_sig sig = atomic_load(&gab.eg->sig);
 
 #if cGAB_LOG_EG
@@ -2304,6 +2327,8 @@ GAB_API inline bool gab_sigclear(struct gab_triple gab) {
 #endif
       return true;
     }
+
+    gab_busywait(gab);
   }
 }
 
@@ -2326,5 +2351,7 @@ GAB_API inline bool gab_signal(struct gab_triple gab, enum gab_signal s,
 #endif
       return gab_signext(gab, wkid);
     }
+
+    gab_busywait(gab);
   }
 };

@@ -329,7 +329,7 @@ void gab_objdestroy(struct gab_triple gab, struct gab_obj *self) {
     break;
   }
   case kGAB_STRING:
-    mtx_lock(&gab.eg->strings_mtx);
+    assert(mtx_trylock(&gab.eg->strings_mtx) == thrd_busy);
     /*
      * ASYNC ISSUE: Because collections happen asynchronously (and the strings
      * intern table *doesn't hold references) Strings that are queued for
@@ -371,7 +371,6 @@ void gab_objdestroy(struct gab_triple gab, struct gab_obj *self) {
      *
      */
     d_strings_remove(&gab.eg->strings, (struct gab_ostring *)self);
-    mtx_unlock(&gab.eg->strings_mtx);
     break;
   default:
     break;
@@ -420,6 +419,9 @@ gab_value __gab_shortstrcat(gab_value _a, gab_value _b) {
   return v;
 }
 
+/* TODO: Workout how this locking should work
+ *
+ */
 gab_value nstring(struct gab_triple gab, uint64_t hash, uint64_t len,
                   const char *data) {
   s_char str = s_char_create(data, len);
@@ -435,15 +437,12 @@ gab_value nstring(struct gab_triple gab, uint64_t hash, uint64_t len,
   const char *cursor = self->data;
   self->mb_len = mbsrtowcs(NULL, &cursor, 0, &state);
 
-  d_strings_insert(&gab.eg->strings, self, 0);
-  return gab_iref(gab, __gab_obj(self));
+  return __gab_obj(self);
 }
 
-gab_value gab_nstring(struct gab_triple gab, uint64_t len, const char *data) {
+gab_value gab_tnstring(struct gab_triple gab, uint64_t len, const char *data) {
   if (len <= 5)
     return gab_shorstr(len, data);
-
-  mtx_lock(&gab.eg->strings_mtx);
 
 #if cGAB_STRING_HASHLEN > 0
   uint64_t hash =
@@ -453,15 +452,99 @@ gab_value gab_nstring(struct gab_triple gab, uint64_t len, const char *data) {
   uint64_t hash = hash_bytes(len, (unsigned char *)data);
 #endif
 
+  switch (mtx_trylock(&gab.eg->strings_mtx)) {
+  case thrd_success:
+    break;
+  case thrd_busy:
+    return gab_ctimeout;
+  case thrd_error:
+    return gab_cinvalid;
+  }
+
   struct gab_ostring *interned = gab_egstrfind(gab.eg, hash, len, data);
 
-  if (interned)
-    return mtx_unlock(&gab.eg->strings_mtx), __gab_obj(interned);
+  mtx_unlock(&gab.eg->strings_mtx);
 
+  if (interned)
+    return __gab_obj(interned);
+
+  /*
+   * We can't hold the strings_mtx lock here in the call
+   * to nstring, because the creation of this object
+   * might signal a collection. In that case, the gc needs to hold
+   * the strings_mtx for the duration of the collection.
+   */
   gab_value s = nstring(gab, hash, len, data);
 
-  return mtx_unlock(&gab.eg->strings_mtx), s;
+  switch (mtx_trylock(&gab.eg->strings_mtx)) {
+  case thrd_success:
+    break;
+  case thrd_busy:
+    return gab_ctimeout;
+  case thrd_error:
+    return gab_cinvalid;
+  }
+
+  d_strings_insert(&gab.eg->strings, GAB_VAL_TO_STRING(s), 0);
+
+  mtx_unlock(&gab.eg->strings_mtx);
+
+  return s;
+}
+
+gab_value gab_nstring(struct gab_triple gab, uint64_t len, const char *data) {
+  for (;;) {
+    switch (gab_yield(gab)) {
+    case sGAB_TERM:
+      break;
+    case sGAB_IGN:
+      break;
+    case sGAB_COLL:
+      gab_gcepochnext(gab);
+      gab_sigpropagate(gab);
+      break;
+    }
+
+    gab_value str = gab_tnstring(gab, len, data);
+    if (str == gab_cinvalid) {
+      assert(false && "error");
+      continue;
+    }
+
+    if (str == gab_ctimeout)
+      continue;
+
+    assert(gab_valkind(str) == kGAB_STRING);
+    return str;
+  }
 };
+
+gab_value gab_strcat(struct gab_triple gab, gab_value _a, gab_value _b) {
+  for (;;) {
+    switch (gab_yield(gab)) {
+    case sGAB_TERM:
+      break;
+    case sGAB_IGN:
+      break;
+    case sGAB_COLL:
+      gab_gcepochnext(gab);
+      gab_sigpropagate(gab);
+      break;
+    }
+
+    gab_value str = gab_tstrcat(gab, _a, _b);
+    if (str == gab_cinvalid) {
+      assert(false && "error");
+      continue;
+    }
+
+    if (str == gab_ctimeout)
+      continue;
+
+    assert(gab_valkind(str) == kGAB_STRING);
+    return str;
+  }
+}
 
 GAB_API inline const char *gab_strdata(gab_value *str) {
   assert(gab_valkind(*str) == kGAB_STRING ||
@@ -520,7 +603,7 @@ GAB_API inline int gab_binat(gab_value str, size_t idx) {
 /*
   Given two strings, create a third which is the concatenation a+b
 */
-gab_value gab_strcat(struct gab_triple gab, gab_value _a, gab_value _b) {
+gab_value gab_tstrcat(struct gab_triple gab, gab_value _a, gab_value _b) {
   assert(gab_valkind(_a) == kGAB_STRING);
   assert(gab_valkind(_b) == kGAB_STRING);
 
@@ -559,20 +642,42 @@ gab_value gab_strcat(struct gab_triple gab, gab_value _a, gab_value _b) {
     Unfortunately, we can't check for this before copying and computing the
     hash.
   */
-  mtx_lock(&gab.eg->strings_mtx);
+
+  switch (mtx_trylock(&gab.eg->strings_mtx)) {
+  case thrd_success:
+    break;
+  case thrd_busy:
+    return gab_ctimeout;
+  case thrd_error:
+    return gab_cinvalid;
+  }
 
   struct gab_ostring *interned = gab_egstrfind(gab.eg, hash, len, buff->data);
 
+  mtx_unlock(&gab.eg->strings_mtx);
+
   if (interned)
-    return a_char_destroy(buff), mtx_unlock(&gab.eg->strings_mtx),
-           __gab_obj(interned);
+    return a_char_destroy(buff), __gab_obj(interned);
 
   gab_value result = nstring(gab, hash, len, buff->data);
+
+  switch (mtx_trylock(&gab.eg->strings_mtx)) {
+  case thrd_success:
+    break;
+  case thrd_busy:
+    return gab_ctimeout;
+  case thrd_error:
+    return gab_cinvalid;
+  }
+
+  d_strings_insert(&gab.eg->strings, GAB_VAL_TO_STRING(result), 0);
+
+  mtx_unlock(&gab.eg->strings_mtx);
 
   assert(gab_valkind(result) == kGAB_STRING);
   assert(gab_strlen(result) == len);
 
-  return a_char_destroy(buff), mtx_unlock(&gab.eg->strings_mtx), result;
+  return a_char_destroy(buff), result;
 };
 
 gab_value gab_prototype(struct gab_triple gab, struct gab_src *src,
