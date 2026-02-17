@@ -564,7 +564,7 @@ int run_file(const char *path, int flags, uint32_t wait, size_t jobs,
 
 bool add_module(mz_zip_archive *zip_o, const char **roots,
                 const struct gab_resource *resources, s_char module,
-                const char **prefix_out, const char **suffix_out) {
+                const char **prefix_out, const char **suffix_out, const char **path_out) {
 
   char cstr_module[module.len + 1];
   memcpy(cstr_module, module.data, module.len);
@@ -578,6 +578,9 @@ bool add_module(mz_zip_archive *zip_o, const char **roots,
 
   const char *prefix = *prefix_out;
   const char *suffix = *suffix_out;
+
+  if (path_out)
+    *path_out = path;
 
   size_t lenprefix = strlen(prefix);
   size_t lensuffix = strlen(suffix);
@@ -646,6 +649,7 @@ struct step {
       s_char module;
       const char **prefix_out;
       const char **suffix_out;
+      const char *path_out;
     } archive_add_module;
 
     struct {
@@ -763,7 +767,8 @@ int step(struct step *step) {
                        step->as.archive_add_module.resources,
                        step->as.archive_add_module.module,
                        step->as.archive_add_module.prefix_out,
-                       step->as.archive_add_module.suffix_out);
+                       step->as.archive_add_module.suffix_out,
+                       &step->as.archive_add_module.path_out);
   case kSTEP_ARCHIVE_FINALIZE: {
     mz_zip_archive *zip = step->as.archive_finalize.zip;
     FILE *bundle_f = zip->m_pState->m_pFile;
@@ -878,13 +883,10 @@ void slogstep(struct step *step, int i) {
   case kSTEP_ARCHIVE_OPEN:
     return clisuccess(" %i Opened bundle %s\n", i, step->as.archive_open.path);
   case kSTEP_ARCHIVE_ADD_MODULE:
-    return clisuccess(" %i Added module %.*s\n\t%s%.*s%s\n", i,
+    return clisuccess(" %i Added module %.*s\n\t%s\n", i,
                       step->as.archive_add_module.module.len,
                       step->as.archive_add_module.module.data,
-                      *step->as.archive_add_module.prefix_out,
-                      step->as.archive_add_module.module.len,
-                      step->as.archive_add_module.module.data,
-                      *step->as.archive_add_module.suffix_out);
+                      step->as.archive_add_module.path_out);
   case kSTEP_ARCHIVE_FINALIZE:
     return clisuccess(" %i Finalized bundle.\n", i);
   }
