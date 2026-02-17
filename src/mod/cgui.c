@@ -4,22 +4,22 @@
  *  Copyright (c) 2023 Teddy Randby
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy
- *  of this software and associated documentation files (the "Software"), to deal
- *  in the Software without restriction, including without limitation the rights
- *  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- *  copies of the Software, and to permit persons to whom the Software is
+ *  of this software and associated documentation files (the "Software"), to
+ * deal in the Software without restriction, including without limitation the
+ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+ * sell copies of the Software, and to permit persons to whom the Software is
  *  furnished to do so, subject to the following conditions:
  *
- *  The above copyright notice and this permission notice shall be included in all
- *  copies or substantial portions of the Software.
+ *  The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
  *
  *  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  *  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  *  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
  *  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- *  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- *  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- *  SOFTWARE.
+ *  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+ * IN THE SOFTWARE.
  */
 
 #include "core.h"
@@ -113,21 +113,19 @@ void HandleClayErrors(Clay_ErrorData errorData) {
 bool putevent(struct gab_triple gab, struct gui *gui, const char *type,
               const char *event, gab_value data1, gab_value data2,
               gab_value data3) {
-  if (gui->evch != gab_cundefined) {
-    gab_value ev[] = {
-        gab_message(gab, type), gab_message(gab, event), data1, data2, data3,
-    };
+  gab_value ev[] = {
+      gab_message(gab, type), gab_message(gab, event), data1, data2, data3,
+  };
 
-    size_t len = sizeof(ev) / sizeof(gab_value) - (data3 == gab_cundefined);
+  size_t len = sizeof(ev) / sizeof(gab_value) - (data3 == gab_cundefined) -
+               (data2 == gab_cundefined);
 
-    gab_niref(gab, 1, LEN_CARRAY(ev), ev);
+  gab_niref(gab, 1, len, ev);
 
-    if (gab_nchnput(gab, gui->evch, len, ev) == gab_cinvalid)
-      return true;
+  for (size_t i = 0; i < len; i++)
+    gab_wfibpush(gab_thisfiber(gab), ev[i]);
 
-    gab_ndref(gab, 1, LEN_CARRAY(ev), ev);
-  }
-
+  // Don't request shutdown
   return false;
 }
 
@@ -866,20 +864,6 @@ bool render(struct gab_triple gab, struct gui *gui,
   return true;
 }
 
-bool dotuirender(struct gab_triple gab, struct gui *gui) {
-  Clay_RenderCommandArray renderCommands;
-  if (!render(gab, gui, &renderCommands))
-    return false;
-
-#if GAB_PLATFORM_UNIX
-  tb_clear();
-  Clay_Termbox_Render(renderCommands);
-  tb_present();
-#endif
-
-  return true;
-}
-
 bool doguirender(struct gab_triple gab, struct gui *gui) {
   Clay_Dimensions dim = {
       .width = gui->win.w,
@@ -921,8 +905,6 @@ bool doguirender(struct gab_triple gab, struct gui *gui) {
   return true;
 }
 
-// TODO: Limit FPS so we don't burn up your computer
-
 #ifdef GAB_PLATFORM_UNIX
 
 GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
@@ -933,33 +915,61 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
 
   struct gui *gui = gab_boxdata(vgui);
 
-  for (;;) {
-    if (gab_chnisclosed(gui->appch))
+  if (reentrant && gab_fibsize(gab_thisfiber(gab)))
+    goto put_event;
+
+  if (gab_chnisclosed(gui->appch))
+    goto fin;
+
+  if (gab_chnisclosed(gui->evch))
+    goto fin;
+
+  struct tb_event e;
+  int res = tb_peek_event(&e, 0);
+
+  switch (res) {
+  case TB_ERR_NO_EVENT:
+    break;
+
+    goto put_event;
+  case TB_OK:
+    if (clay_termbox_update(gab, gui, &e, 10))
       goto fin;
 
-    if (gab_chnisclosed(gui->evch))
+  put_event:
+    // Assert we have a number of bytes which is reasonable for a list of
+    // gab_values
+    assert(gab_fibsize(gab_thisfiber(gab)) % sizeof(gab_value) == 0);
+    // Determine the number of values
+    size_t len = gab_fibsize(gab_thisfiber(gab)) / sizeof(gab_value);
+    // Get the ptr
+    gab_value *ev = gab_fibat(gab_thisfiber(gab), 0);
+    // Try the put
+    gab_value res = gab_ntchnput(gab, gui->evch, len, ev, 10000);
+
+    // Check for error and timeout
+    if (res == gab_cundefined)
       goto fin;
 
-    struct tb_event e;
-    int res = tb_peek_event(&e, 0);
+    if (res == gab_cinvalid)
+      goto fin;
 
-    switch (res) {
-    case TB_ERR_NO_EVENT:
+    if (res == gab_ctimeout)
+      return gab_union_ctimeout(gab_cundefined);
+
+    // Otherwise we succeeded, and can deref the values and go to next event
+    gab_ndref(gab, 1, len, ev);
+
+    // Clear the event we put
+    gab_fibclear(gab_thisfiber(gab));
+
+    break;
+  case TB_ERR_POLL:
+    if (tb_last_errno() == EINTR)
       break;
-    case TB_OK:
-      if (clay_termbox_update(gab, gui, &e, 10))
-        goto fin;
 
-      continue;
-    case TB_ERR_POLL:
-      if (tb_last_errno() == EINTR)
-        continue;
-
-      goto fin;
-    default:
-      break;
-    }
-
+    goto fin;
+  default:
     break;
   }
 
@@ -974,17 +984,7 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
     break;
   }
 
-  switch (gab_chnput(gab, gui->evch, gab_message(gab, "tick"))) {
-  case gab_cundefined:
-  case gab_cinvalid:
-    goto fin;
-  case gab_cvalid:
-    return gab_union_ctimeout(gab_cundefined);
-  case gab_ctimeout:
-    assert(false && "UNREACHABLETIMEOUT");
-  default:
-    assert(false && "UNREACHABLE");
-  };
+  return gab_union_ctimeout(gab_cundefined);
 
 fin:
   gab_chnclose(gui->appch);
@@ -1023,13 +1023,31 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
   }
 
   struct gui *gui = gab_boxdata(vgui);
-  for (;;) {
 
+  for (;;) {
     if (gab_chnisclosed(gui->appch))
       goto fin;
 
     if (gab_chnisclosed(gui->evch))
       goto fin;
+
+    gab_value app = gab_tchntake(gab, gui->appch, 10000);
+
+    if (app == gab_cundefined)
+      goto fin;
+
+    if (app == gab_cinvalid)
+      goto err;
+
+    if (app == gab_ctimeout)
+      return gab_union_ctimeout(gab_cundefined);
+
+    // Reset our id counter;
+    gui->n = 0;
+
+    // Increment the app data structure, so it isn't collected while
+    // we are in this function.
+    gab_iref(gab, app);
 
     // Somehow here, call Clay_Termbox_set_cell_size() to update the cell size
     // to match terminal font/pixel size.
@@ -1041,8 +1059,23 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
         .height = Clay_Termbox_Height(),
     });
 
-    if (!dotuirender(gab, gui))
+    Clay_BeginLayout();
+
+    union gab_value_pair res =
+        render_componentlist(gab, gui, app, CLAY_TOP_TO_BOTTOM);
+
+    if (res.status != gab_cundefined)
       goto err;
+
+    Clay_RenderCommandArray cmd = Clay_EndLayout();
+
+#if GAB_PLATFORM_UNIX
+    tb_clear();
+    Clay_Termbox_Render(cmd);
+    tb_present();
+#endif
+
+    gab_dref(gab, app);
 
     switch (gab_yield(gab)) {
     case sGAB_TERM:
@@ -1055,8 +1088,6 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
       break;
     }
   }
-
-  return gab_union_ctimeout(gab_cundefined);
 
 err:
   gab_chnclose(gui->appch);

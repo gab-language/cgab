@@ -26,7 +26,6 @@
 #include "core.h"
 #include "gab.h"
 #include <stdatomic.h>
-#include <threads.h>
 
 struct errdetails {
   const char *src_name, *tok_name, *msg_name;
