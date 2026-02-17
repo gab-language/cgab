@@ -67,7 +67,7 @@
 
 // TODO: This font isn't great, replace it
 unsigned char fontData[] = {
-#embed "resources/SauceCodeProNerdFont-Regular.ttf"
+#embed "resources/JetBrainsMonoNLNerdFontMono-Regular.ttf"
 };
 
 #define SOKOL_IMPL
@@ -216,7 +216,7 @@ bool clay_RGFW_update(struct gab_triple gab, struct gui *gui, double deltaTime,
       RGFW_KEY_CASE(F11, f11);
       RGFW_KEY_CASE(F12, f12);
     default:
-      const char event[] = {ev->key.value, '\0'};
+      const char event[] = {ev->keyChar.value, '\0'};
       return putevent(gab, gui, "key", event, gab_number(ev->key.mod),
                       gab_bool(ev->type == RGFW_keyPressed), gab_cundefined);
     }
@@ -307,17 +307,10 @@ err:
 Clay_Color packedToClayColor(gab_value vcolor) {
   gab_uint color = gab_valtou(vcolor);
 
-  // return (Clay_Color){
-  //   255,
-  //   255,
-  //   255,
-  //   255,
-  // };
-
   return (Clay_Color){
-      .r = color & 0xff,
+      .b = color & 0xff,
       .g = color >> 8 & 0xff,
-      .b = color >> 16 & 0xff,
+      .r = color >> 16 & 0xff,
       .a = color >> 24 & 0xff,
   };
 }
@@ -832,79 +825,6 @@ union gab_value_pair render_componentlist(struct gab_triple gab,
 
 sclay_font_t fonts[1];
 
-[[nodiscard]]
-bool render(struct gab_triple gab, struct gui *gui,
-            Clay_RenderCommandArray *array_out) {
-  // Reset our id counter;
-  gui->n = 0;
-
-  assert(!gab_chnisclosed(gui->appch));
-  gab_value app = gab_chntake(gab, gui->appch);
-
-  if (app == gab_cundefined)
-    return false;
-
-  if (app == gab_cinvalid)
-    return false;
-
-  gab_iref(gab, app);
-
-  Clay_BeginLayout();
-
-  union gab_value_pair res =
-      render_componentlist(gab, gui, app, CLAY_TOP_TO_BOTTOM);
-
-  gab_dref(gab, app);
-
-  if (res.status != gab_cundefined)
-    return false;
-
-  *array_out = Clay_EndLayout();
-
-  return true;
-}
-
-bool doguirender(struct gab_triple gab, struct gui *gui) {
-  Clay_Dimensions dim = {
-      .width = gui->win.w,
-      .height = gui->win.h,
-  };
-
-  sclay_set_layout_dimensions(dim, 1);
-
-  Clay_RenderCommandArray renderCommands;
-  if (!render(gab, gui, &renderCommands))
-    return false;
-
-  sg_begin_pass(&(sg_pass){
-      .action =
-          {
-              .colors[0] =
-                  {
-                      .load_action = SG_LOADACTION_CLEAR,
-                      .clear_value = {0.f, 0.f, 0.f, 1.f},
-                  },
-          },
-      .swapchain =
-          {
-              .width = dim.width,
-              .height = dim.height,
-          },
-  });
-
-  sgl_matrix_mode_modelview();
-  sgl_load_identity();
-
-  sclay_render(renderCommands, fonts);
-
-  sgl_draw();
-  sg_end_pass();
-  sg_commit();
-
-  RGFW_window_swapBuffers_OpenGL(&gui->win);
-  return true;
-}
-
 #ifdef GAB_PLATFORM_UNIX
 
 GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
@@ -918,72 +838,69 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
   if (reentrant && gab_fibsize(gab_thisfiber(gab)))
     goto put_event;
 
-  if (gab_chnisclosed(gui->appch))
-    goto fin;
-
-  if (gab_chnisclosed(gui->evch))
-    goto fin;
-
-  struct tb_event e;
-  int res = tb_peek_event(&e, 0);
-
-  switch (res) {
-  case TB_ERR_NO_EVENT:
-    break;
-
-    goto put_event;
-  case TB_OK:
-    if (clay_termbox_update(gab, gui, &e, 10))
+  for (;;) {
+    if (gab_chnisclosed(gui->appch))
       goto fin;
 
-  put_event:
-    // Assert we have a number of bytes which is reasonable for a list of
-    // gab_values
-    assert(gab_fibsize(gab_thisfiber(gab)) % sizeof(gab_value) == 0);
-    // Determine the number of values
-    size_t len = gab_fibsize(gab_thisfiber(gab)) / sizeof(gab_value);
-    // Get the ptr
-    gab_value *ev = gab_fibat(gab_thisfiber(gab), 0);
-    // Try the put
-    gab_value res = gab_ntchnput(gab, gui->evch, len, ev, 10000);
-
-    // Check for error and timeout
-    if (res == gab_cundefined)
+    if (gab_chnisclosed(gui->evch))
       goto fin;
 
-    if (res == gab_cinvalid)
-      goto fin;
+    struct tb_event e;
+    int res = tb_peek_event(&e, 0);
 
-    if (res == gab_ctimeout)
-      return gab_union_ctimeout(gab_cundefined);
+    switch (res) {
+    case TB_ERR_NO_EVENT:
+      goto yield;
 
-    // Otherwise we succeeded, and can deref the values and go to next event
-    gab_ndref(gab, 1, len, ev);
+      goto put_event;
+    case TB_OK:
+      if (clay_termbox_update(gab, gui, &e, 10))
+        goto fin;
 
-    // Clear the event we put
-    gab_fibclear(gab_thisfiber(gab));
+    put_event:
+      // Our event did not yield a value.
+      if (!gab_fibsize(gab_thisfiber(gab)))
+        goto yield;
 
-    break;
-  case TB_ERR_POLL:
-    if (tb_last_errno() == EINTR)
+      // Assert we have a number of bytes which is reasonable for a list of
+      // gab_values
+      assert(gab_fibsize(gab_thisfiber(gab)) % sizeof(gab_value) == 0);
+      // Determine the number of values
+      size_t len = gab_fibsize(gab_thisfiber(gab)) / sizeof(gab_value);
+      // Get the ptr
+      gab_value *ev = gab_fibat(gab_thisfiber(gab), 0);
+      // Try the put
+      gab_value res = gab_ntchnput(gab, gui->evch, len, ev, 1000);
+
+      // Check for error and timeout
+      if (res == gab_cundefined)
+        goto fin;
+
+      if (res == gab_cinvalid)
+        goto fin;
+
+      if (res == gab_ctimeout)
+        goto yield;
+
+      // Otherwise we succeeded, and can deref the values and go to next
+      // event
+      gab_ndref(gab, 1, len, ev);
+
+      // Clear the event we put
+      gab_fibclear(gab_thisfiber(gab));
+
       break;
+    case TB_ERR_POLL:
+      if (tb_last_errno() == EINTR)
+        break;
 
-    goto fin;
-  default:
-    break;
+      goto fin;
+    default:
+      break;
+    }
   }
 
-  switch (gab_yield(gab)) {
-  case sGAB_TERM:
-    goto fin;
-  case sGAB_COLL:
-    gab_gcepochnext(gab);
-    gab_sigpropagate(gab);
-    break;
-  default:
-    break;
-  }
-
+yield:
   return gab_union_ctimeout(gab_cundefined);
 
 fin:
@@ -1031,7 +948,7 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
     if (gab_chnisclosed(gui->evch))
       goto fin;
 
-    gab_value app = gab_tchntake(gab, gui->appch, 10000);
+    gab_value app = gab_tchntake(gab, gui->appch, 1000);
 
     if (app == gab_cundefined)
       goto fin;
@@ -1076,17 +993,6 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
 #endif
 
     gab_dref(gab, app);
-
-    switch (gab_yield(gab)) {
-    case sGAB_TERM:
-      goto err;
-    case sGAB_COLL:
-      gab_gcepochnext(gab);
-      gab_sigpropagate(gab);
-      break;
-    default:
-      break;
-    }
   }
 
 err:
@@ -1101,7 +1007,9 @@ fin:
   Clay_Termbox_Close();
   return gab_union_cinvalid;
 }
+
 #endif
+
 GAB_DYNLIB_NATIVE_FN(ui, gui_render) {
   gab_value vgui = gab_arg(0);
 
@@ -1179,30 +1087,85 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_render) {
   }
 
   for (;;) {
-    RGFW_pollEvents();
-
     if (gab_chnisclosed(gui->appch))
       goto fin;
 
     if (gab_chnisclosed(gui->evch))
       goto fin;
 
-    if (!doguirender(gab, gui))
+    gab_value app = gab_tchntake(gab, gui->appch, 10000);
+
+    if (app == gab_cundefined)
       goto fin;
 
-    switch (gab_yield(gab)) {
-    case sGAB_TERM:
-      goto fin;
-    case sGAB_COLL:
-      gab_gcepochnext(gab);
-      gab_sigpropagate(gab);
-      break;
-    default:
-      continue;
-    }
+    if (app == gab_cinvalid)
+      goto err;
+
+    if (app == gab_ctimeout)
+      return gab_union_ctimeout(gab_cundefined);
+
+    // Reset our id counter;
+    gui->n = 0;
+
+    // Increment the app data structure, so it isn't collected while
+    // we are in this function.
+    gab_iref(gab, app);
+
+    Clay_Dimensions dim = {
+        .width = gui->win.w,
+        .height = gui->win.h,
+    };
+
+    sclay_set_layout_dimensions(dim, 1);
+
+    Clay_BeginLayout();
+
+    union gab_value_pair res =
+        render_componentlist(gab, gui, app, CLAY_TOP_TO_BOTTOM);
+
+    if (res.status != gab_cundefined)
+      goto err;
+
+    Clay_RenderCommandArray cmd = Clay_EndLayout();
+
+    sg_begin_pass(&(sg_pass){
+        .action =
+            {
+                .colors[0] =
+                    {
+                        .load_action = SG_LOADACTION_CLEAR,
+                        .clear_value = {0.f, 0.f, 0.f, 1.f},
+                    },
+            },
+        .swapchain =
+            {
+                .width = dim.width,
+                .height = dim.height,
+            },
+    });
+
+    sgl_matrix_mode_modelview();
+    sgl_load_identity();
+
+    sclay_render(cmd, fonts);
+
+    sgl_draw();
+    sg_end_pass();
+    sg_commit();
+
+    RGFW_window_swapBuffers_OpenGL(&gui->win);
+
+    gab_dref(gab, app);
   }
 
   return gab_union_ctimeout(gab_cundefined);
+
+err:
+  gab_chnclose(gui->appch);
+  gab_chnclose(gui->evch);
+  sclay_shutdown();
+  RGFW_window_closePtr(&gui->win);
+  return gab_panicf(gab, "Crashed UI Thread due to some error");
 
 fin:
   gab_chnclose(gui->appch);
@@ -1220,16 +1183,21 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_event) {
 
   struct gui *gui = gab_boxdata(vgui);
   if (!gui->ready)
-    return gab_union_ctimeout(gab_cundefined);
+    goto yield;
 
-  if (RGFW_window_shouldClose(&gui->win) == RGFW_TRUE)
-    goto fin;
+  if (reentrant && gab_fibsize(gab_thisfiber(gab)))
+    goto put_event;
 
   if (gab_chnisclosed(gui->appch))
     goto fin;
 
   if (gab_chnisclosed(gui->evch))
     goto fin;
+
+  if (RGFW_window_shouldClose(&gui->win) == RGFW_TRUE)
+    goto fin;
+
+  RGFW_pollEvents();
 
   RGFW_event ev;
   while (RGFW_window_checkQueuedEvent(&gui->win, &ev)) {
@@ -1244,20 +1212,41 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_event) {
 
     if (clay_RGFW_update(gab, gui, 10, &ev))
       goto fin;
+
+  put_event:
+    // Our event did not yield a value.
+    if (!gab_fibsize(gab_thisfiber(gab)))
+      goto yield;
+
+    // Assert we have a number of bytes which is reasonable for a list of
+    // gab_values
+    assert(gab_fibsize(gab_thisfiber(gab)) % sizeof(gab_value) == 0);
+    assert(gab_fibsize(gab_thisfiber(gab)) > 0);
+    // Determine the number of values
+    size_t len = gab_fibsize(gab_thisfiber(gab)) / sizeof(gab_value);
+    // Get the ptr
+    gab_value *ev = gab_fibat(gab_thisfiber(gab), 0);
+    // Try the put
+    gab_value res = gab_ntchnput(gab, gui->evch, len, ev, 10000);
+
+    // Check for error and timeout
+    if (res == gab_cundefined)
+      goto fin;
+
+    if (res == gab_cinvalid)
+      goto fin;
+
+    if (res == gab_ctimeout)
+      goto yield;
+
+    // Otherwise we succeeded, and can deref the values and go to next event
+    gab_ndref(gab, 1, len, ev);
+
+    // Clear the event we put
+    gab_fibclear(gab_thisfiber(gab));
   }
 
-  switch (gab_yield(gab)) {
-  case sGAB_TERM:
-    goto fin;
-  case sGAB_COLL:
-    gab_gcepochnext(gab);
-    gab_sigpropagate(gab);
-    break;
-  default:
-    break;
-  }
-
-  gab_chnput(gab, gui->evch, gab_message(gab, "tick"));
+yield:
   return gab_union_ctimeout(gab_cundefined);
 
 fin:
@@ -1266,15 +1255,37 @@ fin:
   return gab_union_cinvalid;
 }
 
-GAB_DYNLIB_NATIVE_FN(ui, run_gui) {
-  gab_value evch = gab_arg(1);
-  gab_value appch = gab_arg(2);
+GAB_DYNLIB_NATIVE_FN(ui, run) {
+  gab_value kind = gab_arg(1);
+  gab_value evch = gab_arg(2);
+  gab_value appch = gab_arg(3);
 
   if (!gab_valischn(evch))
     return gab_pktypemismatch(gab, appch, kGAB_CHANNEL);
 
   if (!gab_valischn(appch))
     return gab_pktypemismatch(gab, evch, kGAB_CHANNEL);
+
+  const char *render_rec_name = nullptr;
+  gab_native_f render_rec_target = nullptr;
+
+  const char *event_rec_name = nullptr;
+  gab_native_f event_rec_target = nullptr;
+
+  if (kind == gab_message(gab, "gui")) {
+    render_rec_name = "ui\\gui\\loop\\render";
+    render_rec_target = gab_mod_ui_gui_render;
+    event_rec_name = "ui\\gui\\loop\\event";
+    event_rec_target = gab_mod_ui_gui_event;
+  } else if (kind == gab_message(gab, "tui")) {
+    render_rec_name = "ui\\tui\\loop\\render";
+    render_rec_target = gab_mod_ui_tui_render;
+    event_rec_name = "ui\\tui\\loop\\event";
+    event_rec_target = gab_mod_ui_tui_event;
+  } else {
+    return gab_panicf(gab, "Expected @ or @, found @", gab_message(gab, "gui"),
+                      gab_message(gab, "tui"), kind);
+  }
 
   gab_value vgui = gab_gui(gab);
   struct gui *gui = gab_boxdata(vgui);
@@ -1284,26 +1295,25 @@ GAB_DYNLIB_NATIVE_FN(ui, run_gui) {
   gui->appch = appch;
   gui->evch = evch;
 
-  union gab_value_pair res =
-      gab_asend(gab, (struct gab_send_argt){
-                         .message = gab_message(gab, mGAB_CALL),
-                         .receiver = gab_snative(gab, "ui\\gui\\loop\\render",
-                                                 gab_mod_ui_gui_render),
-                         .len = 1,
-                         .argv = (gab_value[]){vgui},
-                     });
+  union gab_value_pair res = gab_asend(
+      gab, (struct gab_send_argt){
+               .message = gab_message(gab, mGAB_CALL),
+               .receiver = gab_snative(gab, render_rec_name, render_rec_target),
+               .len = 1,
+               .argv = (gab_value[]){vgui},
+           });
 
   if (res.status != gab_cvalid) {
     return gab_panicf(gab, "Couldn't start render thread");
   }
 
-  res = gab_asend(gab, (struct gab_send_argt){
-                           .message = gab_message(gab, mGAB_CALL),
-                           .receiver = gab_snative(gab, "ui\\gui\\loop\\event",
-                                                   gab_mod_ui_gui_event),
-                           .len = 1,
-                           .argv = (gab_value[]){vgui},
-                       });
+  res = gab_asend(
+      gab, (struct gab_send_argt){
+               .message = gab_message(gab, mGAB_CALL),
+               .receiver = gab_snative(gab, event_rec_name, event_rec_target),
+               .len = 1,
+               .argv = (gab_value[]){vgui},
+           });
 
   if (res.status != gab_cvalid) {
     return gab_panicf(gab, "Couldn't start event thread");
@@ -1311,71 +1321,15 @@ GAB_DYNLIB_NATIVE_FN(ui, run_gui) {
 
   return gab_vmpush(gab_thisvm(gab), gab_ok), gab_union_cvalid(gab_nil);
 }
-
-#ifdef GAB_PLATFORM_UNIX
-GAB_DYNLIB_NATIVE_FN(ui, run_tui) {
-  gab_value evch = gab_arg(1);
-  gab_value appch = gab_arg(2);
-
-  gab_value vgui = gab_gui(gab);
-  struct gui *gui = gab_boxdata(vgui);
-
-  if (!gab_valischn(evch))
-    return gab_pktypemismatch(gab, appch, kGAB_CHANNEL);
-
-  if (!gab_valischn(appch))
-    return gab_pktypemismatch(gab, evch, kGAB_CHANNEL);
-
-  gab_irefall(gab, evch, appch, vgui);
-
-  gui->appch = appch;
-  gui->evch = evch;
-
-  union gab_value_pair res =
-      gab_asend(gab, (struct gab_send_argt){
-                         .message = gab_message(gab, mGAB_CALL),
-                         .receiver = gab_snative(gab, "ui\\tui\\loop\\render",
-                                                 gab_mod_ui_tui_render),
-                         .len = 1,
-                         .argv = (gab_value[]){vgui},
-                     });
-
-  if (res.status != gab_cvalid) {
-    return gab_panicf(gab, "Couldn't start render thread");
-  }
-
-  res = gab_asend(gab, (struct gab_send_argt){
-                           .message = gab_message(gab, mGAB_CALL),
-                           .receiver = gab_snative(gab, "ui\\tui\\loop\\event",
-                                                   gab_mod_ui_tui_event),
-                           .len = 1,
-                           .argv = (gab_value[]){vgui},
-                       });
-
-  if (res.status != gab_cvalid) {
-    return gab_panicf(gab, "Couldn't start event thread");
-  }
-
-  return gab_vmpush(gab_thisvm(gab), gab_ok), gab_union_cvalid(gab_nil);
-}
-#endif
 
 GAB_DYNLIB_MAIN_FN {
   gab_value mod = gab_message(gab, "ui");
   gab_def(gab,
           {
-              gab_message(gab, "run\\gui"),
+              gab_message(gab, "run"),
               mod,
-              gab_snative(gab, "run\\gui", gab_mod_ui_run_gui),
-          },
-#ifdef GAB_PLATFORM_UNIX
-          {
-              gab_message(gab, "run\\tui"),
-              mod,
-              gab_snative(gab, "run\\tui", gab_mod_ui_run_tui),
-          },
-#endif
-  );
+              gab_snative(gab, "run", gab_mod_ui_run),
+          }, );
 
   gab_value res[] = {gab_ok, mod};
 

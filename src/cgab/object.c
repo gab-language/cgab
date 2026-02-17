@@ -4,22 +4,22 @@
  *  Copyright (c) 2023 Teddy Randby
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy
- *  of this software and associated documentation files (the "Software"), to deal
- *  in the Software without restriction, including without limitation the rights
- *  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- *  copies of the Software, and to permit persons to whom the Software is
+ *  of this software and associated documentation files (the "Software"), to
+ * deal in the Software without restriction, including without limitation the
+ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+ * sell copies of the Software, and to permit persons to whom the Software is
  *  furnished to do so, subject to the following conditions:
  *
- *  The above copyright notice and this permission notice shall be included in all
- *  copies or substantial portions of the Software.
+ *  The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
  *
  *  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  *  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  *  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
  *  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- *  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- *  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- *  SOFTWARE.
+ *  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+ * IN THE SOFTWARE.
  */
 
 #include "engine.h"
@@ -1905,8 +1905,10 @@ bool gab_chnisfull(gab_value c) {
  * Abandon a put by storing nullptr into data.
  */
 void channel_abandon(struct gab_ochannel *channel) {
-  atomic_store(&channel->len, 0);
-  atomic_store(&channel->data, nullptr);
+  // Masquerades as a take, so has to cex the same way.
+  uint64_t len = atomic_load(&channel->len);
+  if (atomic_compare_exchange_strong(&channel->len, &len, 0))
+    atomic_store(&channel->data, nullptr);
 }
 
 /*
@@ -1916,9 +1918,8 @@ void channel_abandon(struct gab_ochannel *channel) {
 bool channel_put(struct gab_ochannel *channel, uint64_t len, gab_value *vs) {
   static gab_value *null = nullptr;
 
-  if (atomic_compare_exchange_weak(&channel->data, &null, vs)) {
+  if (atomic_compare_exchange_weak(&channel->data, &null, vs))
     return atomic_store(&channel->len, len), true;
-  }
 
   return false;
 }
@@ -2029,18 +2030,28 @@ gab_value channel_blocking_put(struct gab_triple gab,
   uint64_t sofar = 0;
 
   // TODO: Check result of following
-  unsafe_channel_blocking_put(gab, channel, c, len, vs, tries, &sofar);
+  gab_value res =
+      unsafe_channel_blocking_put(gab, channel, c, len, vs, tries, &sofar);
 
-  // If a taker never arrives, we should remove our value as if our put
-  // failed and return a timeout.
-  gab_value res = channel_block_while_full(gab, channel, c, tries, &sofar);
+  // In any of these cases, we failed to put and
+  // can forward the error.
+  switch (res) {
+  case gab_ctimeout:
+  case gab_cinvalid:
+  case gab_cundefined:
+    return res;
+  }
+
+  // Wait for a taker.
+  res = channel_block_while_full(gab, channel, c, tries, &sofar);
 
   switch (res) {
   // We were interrupted, timed out, or the channel closed.
   case gab_ctimeout:
   case gab_cinvalid:
   case gab_cundefined:
-    // Take the value we put in out, and return.
+    // If a taker never arrives, we should remove our value as if our put
+    // failed and return a timeout.
     return channel_abandon(channel), res;
   // A taker arrived.
   default:

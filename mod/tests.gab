@@ -20,7 +20,7 @@ Colors = {
 Spacer = [ box: { width\grow: 10 } [] ]
 
 ui
-  .run\tui(events, app)
+  .run(tui: events app)
   .unwrap
 
 is\unittest:.def(
@@ -91,13 +91,13 @@ Behavior = test\behavior:.defclass(
 queue_tests = (filter_by_suite) => do
   Fibers.make () => do
     xf = Streams.map (behaviors suite) => do
-        events <! (suite: Suite.make([] suite))
+        #events <! (suite: Suite.make([] suite))
 
         Fibers.make () => do
           behaviors.each (runnable behavior) => do 
             (path body) = runnable*
 
-            events <! (behavior: Behavior.make(false: path []))
+            #events <! (behavior: Behavior.make(false: path []))
 
             body.each(t r) => do
               t.{ test\path: path, test\receiver: r }
@@ -125,8 +125,8 @@ queue_tests = (filter_by_suite) => do
     fibers.map f => f.await
 
     #TODO: Make this configurable from the cmdline
-    events.close
-    app.close
+    #events.close
+    #app.close
   end
 end
 
@@ -229,20 +229,10 @@ handle\type: .defcase {
     down = ev.at 2 .unwrap
     down.handle\key(keymsg ev model)
   end
-  suite: (ev model) => do
-    suite = ev .at 0 .unwrap
-    model.app\push_suite(suite)
-  end
-  behavior: (ev model) => do
-    behavior = ev .at 0 .unwrap
-    model.app\push_behavior(behavior)
-  end
   resolve: (ev model) => do
     model.app\resolve_behavior(ev*)
   end
 }
-
-spinner = "⣾⣾⣽⣽⣻⣻⢿⢿⡿⡿⣟⣟⣯⣯⣷⣷".collect []
 
 App = test\app:.defclass(
   test\suites: time: selected\suite: selected\test: focus:
@@ -270,7 +260,21 @@ App = test\app:.defclass(
       suite = path.at 0 .unwrap
       bhv = path.at 1 .unwrap
 
-      self.at_via(test\suites: suite suite\behaviors: bhv).unwrap
+      ok = self.at_via(test\suites: suite)
+
+      app = self
+      self = ok.and self .else () => do
+        app
+          .app\push_suite(Suite.make([] suite))
+      end
+
+      ok = self.at_via(test\suites: suite suite\behaviors: bhv)
+
+      app = self
+      self = ok.and self .else () => do
+        app
+          .app\push_behavior(Behavior.make(false: path []))
+      end
 
       self
         .put_via_by(
@@ -335,9 +339,7 @@ App = test\app:.defclass(
 
                 waiting = suites\all .at name .unwrap .is\closed.!
 
-                spinner_char = (waiting)
-                  .then(() => spinner.at(app.time % spinner.len).unwrap)
-                  .or " "
+                spinner_char = " "
 
                 color = (selected == suite).and(Colors.r).or(Colors.fg)
 
@@ -367,7 +369,7 @@ App = test\app:.defclass(
                         fg: Colors.g
                         bg: Colors.bg
                         size: 32
-                        content: "✔ $".sprintf(pass_behaviors.len)
+                        content: '\u[2713] $'.sprintf(pass_behaviors.len)
                       }
                     ]
                     [
@@ -377,7 +379,7 @@ App = test\app:.defclass(
                         fg: Colors.r
                         bg: Colors.bg
                         size: 32
-                        content: "✘ $".sprintf(fail_behaviors.len)
+                        content: '\u[2717] $'.sprintf(fail_behaviors.len)
                       }
                     ]
                   ]

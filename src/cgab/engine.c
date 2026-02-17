@@ -4,22 +4,22 @@
  *  Copyright (c) 2023 Teddy Randby
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy
- *  of this software and associated documentation files (the "Software"), to deal
- *  in the Software without restriction, including without limitation the rights
- *  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- *  copies of the Software, and to permit persons to whom the Software is
+ *  of this software and associated documentation files (the "Software"), to
+ * deal in the Software without restriction, including without limitation the
+ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+ * sell copies of the Software, and to permit persons to whom the Software is
  *  furnished to do so, subject to the following conditions:
  *
- *  The above copyright notice and this permission notice shall be included in all
- *  copies or substantial portions of the Software.
+ *  The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
  *
  *  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  *  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  *  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
  *  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- *  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- *  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- *  SOFTWARE.
+ *  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+ * IN THE SOFTWARE.
  */
 
 #include "engine.h"
@@ -308,11 +308,6 @@ static const struct timespec t = {.tv_nsec = GAB_YIELD_SLEEPTIME_NS};
 #endif
 
 enum gab_signal gab_yield(struct gab_triple gab) {
-
-  // This might not be optimal
-  // Without thrd_yield here, we can't find the bug.
-  thrd_yield();
-
   if (gab_sigwaiting(gab)) {
 #if cGAB_LOG_EG
     fprintf(stderr, "[WORKER %i] RECV SIG: %i\n", gab.wkid, gab.eg->sig.signal);
@@ -321,9 +316,7 @@ enum gab_signal gab_yield(struct gab_triple gab) {
     return sig.signal;
   }
 
-#if GAB_YIELD_SLEEPTIME_NS != 0
-  thrd_sleep(&t, nullptr);
-#endif
+  // gab_busywait(gab);
 
   return sGAB_IGN;
 }
@@ -331,8 +324,9 @@ enum gab_signal gab_yield(struct gab_triple gab) {
 void gab_busywait(struct gab_triple gab) {
   if (gab.eg->wait > 0) {
     thrd_sleep(&(const struct timespec){.tv_nsec = gab.eg->wait}, nullptr);
-    thrd_yield();
   }
+
+  thrd_yield();
 }
 
 int32_t gab_njobs(struct gab_triple gab) {
@@ -1485,9 +1479,23 @@ int gab_nsprintf(char *dest, size_t n, const char *fmt, uint64_t argc,
   size_t remaining = n;
   uint64_t i = 0;
 
-  while (*c != '\0') {
-    switch (*c) {
-    case '$': {
+  mbstate_t state = {0};
+
+  while (true) {
+    size_t width = mbrlen(c, MB_CUR_MAX, &state);
+
+    // Null char encountered, we are done.
+    if (width == 0)
+      break;
+
+    if (width == (size_t)-1)
+      return -EILSEQ;
+
+    if (width == (size_t)-2)
+      return -1;
+
+    // Success, encountered a full glyph
+    if (width == 1 && *c == '$') {
       if (i >= argc)
         return -1;
 
@@ -1496,19 +1504,21 @@ int gab_nsprintf(char *dest, size_t n, const char *fmt, uint64_t argc,
       int res = gab_svalinspect(&cursor, &remaining, arg, 1);
 
       if (res < 0)
-        return res;
-
-      break;
-    }
-    default:
-      if (remaining == 0)
         return -1;
 
-      *cursor++ = *c;
-      remaining -= 1;
+    } else {
+      if (remaining < width)
+        return -1;
+
+      memcpy(cursor, c, width);
+
+      // Advance cursor and remaining by the number of bytes written.
+      cursor += width;
+      remaining -= width;
     }
 
-    c++;
+    // Advance the source string by number of bytes read.
+    c += width;
   }
 
   if (remaining == 0)
@@ -1575,9 +1585,24 @@ int gab_vsprintf(char *dest, size_t n, const char *fmt, va_list varargs) {
   char *cursor = dest;
   size_t remaining = n;
 
+  mbstate_t state = {0};
+
+  // This logic has a bug with codepoints. Jenkies
   while (*c != '\0') {
-    switch (*c) {
-    case '$': {
+
+    size_t width = mbrlen(c, MB_CUR_MAX, &state);
+
+    // Success, encountered a full glyph
+    if (width == 0)
+      break;
+
+    if (width == (size_t)-1)
+      return -EILSEQ;
+
+    if (width == (size_t)-2)
+      return -1;
+
+    if (width == 1 && *c == '$') {
       gab_value arg = va_arg(varargs, gab_value);
 
       int res = gab_svalinspect(&cursor, &remaining, arg, 1);
@@ -1585,16 +1610,19 @@ int gab_vsprintf(char *dest, size_t n, const char *fmt, va_list varargs) {
       if (res < 0)
         return -1;
 
-      break;
-    }
-    default:
-      if (remaining == 0)
+    } else {
+      if (remaining < width)
         return -1;
 
-      *cursor++ = *c;
-      remaining -= 1;
+      memcpy(cursor, c, width);
+
+      // Advance cursor and remaining by the number of bytes written.
+      cursor += width;
+      remaining -= width;
     }
-    c++;
+
+    // Advance the source string by number of bytes read.
+    c += width;
   }
 
   if (remaining == 0)

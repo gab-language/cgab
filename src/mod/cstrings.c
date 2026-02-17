@@ -589,6 +589,10 @@ GAB_DYNLIB_NATIVE_FN(fmt, sprintf) {
 
   for (size_t n = 2048;; n *= 2) {
     char *buf = malloc(n);
+
+    if (!buf)
+      return gab_panicf(gab, "FMT TOO BIG");
+
     int len = gab_nsprintf(buf, n, fmt, argc - 1, argv + 1);
 
     if (len < 0) {

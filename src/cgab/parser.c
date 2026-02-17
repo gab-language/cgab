@@ -4,22 +4,22 @@
  *  Copyright (c) 2023 Teddy Randby
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy
- *  of this software and associated documentation files (the "Software"), to deal
- *  in the Software without restriction, including without limitation the rights
- *  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- *  copies of the Software, and to permit persons to whom the Software is
+ *  of this software and associated documentation files (the "Software"), to
+ * deal in the Software without restriction, including without limitation the
+ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+ * sell copies of the Software, and to permit persons to whom the Software is
  *  furnished to do so, subject to the following conditions:
  *
- *  The above copyright notice and this permission notice shall be included in all
- *  copies or substantial portions of the Software.
+ *  The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
  *
  *  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  *  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  *  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
  *  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- *  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- *  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- *  SOFTWARE.
+ *  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+ * IN THE SOFTWARE.
  */
 
 #include "core.h"
@@ -226,9 +226,9 @@ static a_char *parse_raw_str(struct parser *parser, s_char raw_str) {
     int8_t c = raw_str.data[i];
 
     if (c == '\\') {
+      i++;
 
-      switch (raw_str.data[i + 1]) {
-
+      switch (raw_str.data[i]) {
       case 'r':
         buffer[buf_end++] = '\r';
         break;
@@ -257,11 +257,10 @@ static a_char *parse_raw_str(struct parser *parser, s_char raw_str) {
         buffer[buf_end++] = '\033';
         break;
       case 'u':
-        i += 2;
+        i++;
 
-        if (raw_str.data[i] != '[') {
+        if (raw_str.data[i] != '[')
           return nullptr;
-        }
 
         i++;
 
@@ -278,8 +277,6 @@ static a_char *parse_raw_str(struct parser *parser, s_char raw_str) {
 
           codepoint[cpl++] = raw_str.data[i++];
         }
-
-        i++;
 
         char *endptr = nullptr;
         long cp = strtol(codepoint, &endptr, 16);
@@ -298,9 +295,6 @@ static a_char *parse_raw_str(struct parser *parser, s_char raw_str) {
       default:
         return nullptr;
       }
-
-      i++;
-
     } else {
       buffer[buf_end++] = c;
     }
