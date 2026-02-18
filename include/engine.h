@@ -532,6 +532,8 @@ struct gab_eg {
     int8_t signal;
   } sig;
 
+  cnd_t gc_cnd;
+
   const char *resroots[cGAB_RESOURCE_MAX];
 
   struct gab_resource res[cGAB_RESOURCE_MAX];
@@ -545,7 +547,7 @@ struct gab_eg {
   mtx_t shapes_mtx;
   gab_value shapes;
 
-  mtx_t strings_mtx;
+  mtx_t gc_mtx;
   d_strings strings;
 
   mtx_t sources_mtx;

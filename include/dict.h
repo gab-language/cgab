@@ -42,6 +42,18 @@
 #define LINKAGE static inline
 #define METHOD(name) CONCAT(PREFIX, CONCAT(_, name))
 
+#ifdef D_CONCURRENT
+#define INIT_LOCK(self) (mtx_init(&self->mtx, mtx_plain))
+#define DESTROY_LOCK(self) (mtx_destroy(&self->mtx))
+#define AQUIRE_LOCK(self) (mtx_lock(&self->mtx))
+#define RELEASE_LOCK(self) (mtx_unlock(&self->mtx))
+#else
+#define INIT_LOCK(self)
+#define DESTROY_LOCK(self)
+#define AQUIRE_LOCK(self)
+#define RELEASE_LOCK(self)
+#endif
+
 #ifndef CORE_DICT_H
 #define CORE_DICT_H
 
@@ -64,6 +76,9 @@ typedef struct TYPENAME TYPENAME;
 struct TYPENAME {
   size_t len, cap;
   BUCKET_T *buckets;
+#ifdef D_CONCURRENT
+  mtx_t mtx;
+#endif
 };
 
 LINKAGE K METHOD(ikey)(TYPENAME *self, size_t index) {
@@ -125,9 +140,14 @@ LINKAGE void METHOD(create)(TYPENAME *self, size_t cap) {
 
   self->cap = cap;
   self->len = 0;
+
+  INIT_LOCK(self);
 }
 
-LINKAGE void METHOD(destroy)(TYPENAME *self) { free(self->buckets); }
+LINKAGE void METHOD(destroy)(TYPENAME *self) {
+  free(self->buckets);
+  DESTROY_LOCK(self);
+}
 
 LINKAGE size_t METHOD(index_of)(TYPENAME *self, K key) {
   size_t index = HASH(key) & (self->cap - 1);
@@ -180,6 +200,8 @@ LINKAGE void METHOD(cap)(TYPENAME *self, size_t cap) {
 }
 
 LINKAGE bool METHOD(insert)(TYPENAME *self, K key, V val) {
+  AQUIRE_LOCK(self);
+
   if (self->len >= (self->cap * LOAD))
     METHOD(cap)(self, MAX(self->cap * 2, 8));
 
@@ -196,44 +218,63 @@ LINKAGE bool METHOD(insert)(TYPENAME *self, K key, V val) {
   bucket->val = val;
   bucket->status = D_FULL;
 
+  RELEASE_LOCK(self);
   return is_new;
 }
 
 LINKAGE bool METHOD(remove)(TYPENAME *self, K key) {
-  if (self->len == 0)
+  AQUIRE_LOCK(self);
+
+  if (self->len == 0) {
+    RELEASE_LOCK(self);
     return false;
+  }
 
   size_t index = METHOD(index_of)(self, key);
 
   BUCKET_T *bucket = self->buckets + index;
 
-  if (bucket->status != D_FULL)
+  if (bucket->status != D_FULL) {
+    RELEASE_LOCK(self);
     return false;
+  }
 
   bucket->status = D_TOMBSTONE;
+  RELEASE_LOCK(self);
   return true;
 }
 
 LINKAGE bool METHOD(exists)(TYPENAME *self, K key) {
-  if (self->len == 0)
+  AQUIRE_LOCK(self);
+
+  if (self->len == 0) {
+    RELEASE_LOCK(self);
     return false;
+  }
 
   size_t index = METHOD(index_of)(self, key);
 
   BUCKET_T *bucket = self->buckets + index;
 
-  return bucket->status == D_FULL;
+  bool full = bucket->status == D_FULL;
+  RELEASE_LOCK(self);
+  return full;
 }
 
 LINKAGE V METHOD(read)(TYPENAME *self, K key) {
-  if (self->len == 0)
+  AQUIRE_LOCK(self);
+  if (self->len == 0) {
+    RELEASE_LOCK(self);
     return DEF_V;
+  }
 
   size_t index = METHOD(index_of)(self, key);
 
   BUCKET_T *bucket = self->buckets + index;
 
-  return bucket->status == D_FULL ? bucket->val : DEF_V;
+  V val = bucket->status == D_FULL ? bucket->val : DEF_V;
+  RELEASE_LOCK(self);
+  return val;
 }
 
 #undef NAME
@@ -251,3 +292,8 @@ LINKAGE V METHOD(read)(TYPENAME *self, K key) {
 #undef CONCAT
 #undef CONCAT_
 #undef MAX
+#undef INIT_LOCK
+#undef DESTROY_LOCK
+#undef AQUIRE_LOCK
+#undef RELEASE_LOCK
+#undef D_CONCURRENT

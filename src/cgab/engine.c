@@ -316,8 +316,6 @@ enum gab_signal gab_yield(struct gab_triple gab) {
     return sig.signal;
   }
 
-  // gab_busywait(gab);
-
   return sGAB_IGN;
 }
 
@@ -392,7 +390,19 @@ int32_t gc_job(void *data) {
 
   struct gab_job *job = gab.eg->jobs + gab.wkid;
 
+  cnd_init(&gab.eg->gc_cnd);
+  mtx_lock(&gab.eg->gc_mtx);
+
   while (gab_njobs(gab) > 0) {
+    int res = cnd_timedwait(&gab.eg->gc_cnd, &gab.eg->gc_mtx,
+                            &(struct timespec){
+                                .tv_nsec = 1000000,
+                            });
+
+    if (res == thrd_error)
+      continue;
+
+  read_signal:
     switch (gab_yield(gab)) {
     case sGAB_TERM:
       gab_sigclear(gab);
@@ -404,15 +414,25 @@ int32_t gc_job(void *data) {
       struct gab_sig sig = atomic_load(&gab.eg->sig);
       assert(!(sig.schedule == 0 && sig.signal == sGAB_IGN));
 
-      mtx_unlock(&gab.eg->strings_mtx);
       continue;
     }
-    default:
+    case sGAB_IGN:
+      struct gab_sig sig = atomic_load(&gab.eg->sig);
+      struct gab_sig expected = {sig.mask, -2, sig.signal};
+      struct gab_sig desired = {sig.mask, -1, sig.signal};
+      atomic_compare_exchange_weak(&gab.eg->sig, &expected, desired);
+
       gab_busywait(gab);
+      // If we woke up due to a signal, we need
+      // to continue looping until we receive the signal.
+      if (res == thrd_success && gab_njobs(gab) > 0)
+        goto read_signal;
+
       break;
     }
 
     /*
+     * TODO:
      * Coordinate work stealing here, where we are guaranteed to *not*
      * be collecting
      *
@@ -426,6 +446,8 @@ int32_t gc_job(void *data) {
 #endif
   free(g);
   v_gab_value_destroy(&job->lock_keep);
+  cnd_destroy(&gab.eg->gc_cnd);
+  mtx_unlock(&gab.eg->gc_mtx);
   return 0;
 }
 
@@ -728,7 +750,7 @@ union gab_value_pair gab_create(struct gab_create_argt args,
 
   mtx_init(&eg->shapes_mtx, mtx_plain);
   mtx_init(&eg->sources_mtx, mtx_plain);
-  mtx_init(&eg->strings_mtx, mtx_plain);
+  mtx_init(&eg->gc_mtx, mtx_plain);
   mtx_init(&eg->modules_mtx, mtx_plain);
 
   d_gab_src_create(&eg->sources, 8);
@@ -989,6 +1011,8 @@ void gab_destroy(struct gab_triple gab) {
 
   assert(gab_njobs(gab) == 0);
 
+  cnd_signal(&gab.eg->gc_cnd);
+
   thrd_join(gab.eg->jobs[0].td, nullptr);
 
   for (uint64_t i = 0; i < gab.eg->sources.cap; i++) {
@@ -1006,7 +1030,7 @@ void gab_destroy(struct gab_triple gab) {
   v_gab_value_thrd_destroy(&gab.eg->err);
 
   mtx_destroy(&gab.eg->shapes_mtx);
-  mtx_destroy(&gab.eg->strings_mtx);
+  mtx_destroy(&gab.eg->gc_mtx);
   mtx_destroy(&gab.eg->sources_mtx);
   mtx_destroy(&gab.eg->modules_mtx);
 
@@ -1895,6 +1919,8 @@ const char *gab_errtocs(struct gab_triple gab, gab_value err) {
     assert(next_err != gab_nil);
     gab_value next_str = single_errtos(gab, next_err);
     total_str = gab_strcat(gab, total_str, next_str);
+    if (total_str == gab_cinvalid)
+      return nullptr;
   }
 
   assert(gab_strlen(total_str) > 5);
@@ -2147,15 +2173,6 @@ bool gab_sigterm(struct gab_triple gab) {
 }
 
 bool gab_asigcoll(struct gab_triple gab) {
-
-  /*
-   * HERE IS A NEW ISSUE: If this collection is triggered
-   * during a string creation, then the mutex is already locked
-   * and this will block forever.
-   */
-  if (gab_signaling(gab) != sGAB_COLL)
-    mtx_lock(&gab.eg->strings_mtx);
-
   return gab_signal(gab, sGAB_COLL, 1);
 }
 
@@ -2319,6 +2336,8 @@ GAB_API inline bool gab_signext(struct gab_triple gab, int wkid) {
 #if cGAB_LOG_EG
         fprintf(stderr, "[WORKER %i] WRAP NEXT %i\n", gab.wkid, 0);
 #endif
+        // Wake up the gc thrd to recv this if it isn't awake.
+        cnd_signal(&gab.eg->gc_cnd);
 
         return true;
       } else
@@ -2333,9 +2352,12 @@ GAB_API inline bool gab_signext(struct gab_triple gab, int wkid) {
       uint32_t n = nxt_open ? wkid + nxt_open : 0;
 
       assert(sig.mask & (1 << n));
+
       struct gab_sig next = {
           .mask = sig.mask, .schedule = n, .signal = sig.signal};
+
       assert(next.signal != sGAB_IGN);
+
       if (atomic_compare_exchange_weak(&gab.eg->sig, &sig, next)) {
 #if cGAB_LOG_EG
         fprintf(stderr, "[WORKER %i] SKIP NEXT %i => %i\n", gab.wkid, wkid, n);
@@ -2378,12 +2400,9 @@ GAB_API inline bool gab_sigclear(struct gab_triple gab) {
 #endif
       return true;
     }
-
-    gab_busywait(gab);
   }
 }
 
-// This needs to become atomic
 GAB_API inline bool gab_signal(struct gab_triple gab, enum gab_signal s,
                                int wkid) {
   assert(wkid < gab.eg->len);
@@ -2395,14 +2414,24 @@ GAB_API inline bool gab_signal(struct gab_triple gab, enum gab_signal s,
     if (sig.signal == s)
       return true;
 
-    if (atomic_compare_exchange_strong(&gab.eg->sig, &none,
-                                       ((struct gab_sig){sig.mask, -1, s}))) {
+    if (atomic_compare_exchange_weak(&gab.eg->sig, &none,
+                                     ((struct gab_sig){sig.mask, -2, s}))) {
 #if cGAB_LOG_EG
       fprintf(stderr, "[WORKER %i] SIGNAL %i TO %b\n", gab.wkid, s, sig.mask);
 #endif
+
+      mtx_lock(&gab.eg->gc_mtx);
+      cnd_signal(&gab.eg->gc_cnd);
+      mtx_unlock(&gab.eg->gc_mtx);
+
+      // Wait for gc thread to ack
+      for (;;) {
+        struct gab_sig sig = atomic_load(&gab.eg->sig);
+        if (sig.schedule == -1)
+          break;
+      }
+
       return gab_signext(gab, wkid);
     }
-
-    gab_busywait(gab);
   }
 };

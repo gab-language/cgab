@@ -1074,29 +1074,37 @@ bool busywait_handler(struct command_arguments *args) {
   args->argv++;
   args->argc--;
 
-  if (args->argc <= 0) {
+  const char* arg = strchr(flag, '=');
+
+
+  if (!(arg && strlen(arg)) && args->argc <= 0) {
     clierror("No argument to flag '%s'.\n", flag);
     return false;
   }
 
-  const char *wait = *args->argv;
-  args->argv++;
-  args->argc--;
+  if (arg) {
+    arg++;
+  } else {
+    arg = *args->argv;
+    args->argv++;
+    args->argc--;
+  }
 
   uint32_t nwait = 0;
 
-  if (!strcmp(wait, "none"))
-    return true;
+  if (!strcmp(arg, "none"))
+    goto fin;
 
-  if (!strcmp(wait, "no"))
-    return true;
+  if (!strcmp(arg, "no"))
+    goto fin;
 
-  nwait = atoll(wait);
+  nwait = atoll(arg);
   if (nwait == 0) {
     clierror("Specify a busy-wait greater than 0, or use none|no.");
     return false;
   }
 
+fin:
   args->wait = nwait;
   return true;
 }

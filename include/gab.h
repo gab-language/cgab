@@ -4,22 +4,22 @@
  *  Copyright (c) 2023 Teddy Randby
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy
- *  of this software and associated documentation files (the "Software"), to deal
- *  in the Software without restriction, including without limitation the rights
- *  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- *  copies of the Software, and to permit persons to whom the Software is
+ *  of this software and associated documentation files (the "Software"), to
+ * deal in the Software without restriction, including without limitation the
+ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+ * sell copies of the Software, and to permit persons to whom the Software is
  *  furnished to do so, subject to the following conditions:
  *
- *  The above copyright notice and this permission notice shall be included in all
- *  copies or substantial portions of the Software.
+ *  The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
  *
  *  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  *  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  *  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
  *  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- *  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- *  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- *  SOFTWARE.
+ *  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+ * IN THE SOFTWARE.
  *
  * @file
  * @brief A small, fast, and portable implementation of the gab programming
@@ -709,7 +709,8 @@ GAB_API int gab_psvalinspect(char **dest, size_t *n, gab_value value,
  * @return the number of bytes written to the buffer, or -1.
  */
 GAB_API int gab_sprintf(char *dst, size_t n, const char *fmt, ...);
-GAB_API int gab_psprintf(char *dst, size_t n, const char*prefix, const char *fmt, ...);
+GAB_API int gab_psprintf(char *dst, size_t n, const char *prefix,
+                         const char *fmt, ...);
 
 /**
  * @brief Format the given string to the given stream.
@@ -1721,7 +1722,7 @@ GAB_API gab_value gab_nstring(struct gab_triple gab, uint64_t len,
                               const char *data);
 
 GAB_API gab_value gab_tnstring(struct gab_triple gab, uint64_t len,
-                              const char *data);
+                               const char *data);
 
 /**
  * @brief Create a gab_value from a c-string
@@ -1808,6 +1809,9 @@ GAB_API uint64_t gab_strhash(gab_value str);
  * @return The message
  */
 GAB_API_INLINE gab_value gab_strtomsg(gab_value str) {
+  if (str == gab_cinvalid)
+    return gab_cinvalid;
+
   assert(gab_valkind(str) == kGAB_STRING);
   return str | (uint64_t)kGAB_MESSAGE << __GAB_TAGOFFSET;
 }
@@ -1816,6 +1820,9 @@ GAB_API_INLINE gab_value gab_strtomsg(gab_value str) {
  * @brief Convert a string into a binary. This is constant-time.
  */
 GAB_API_INLINE gab_value gab_strtobin(gab_value str) {
+  if (str == gab_cinvalid)
+    return gab_cinvalid;
+
   assert(gab_valkind(str) == kGAB_STRING);
   return str | (uint64_t)kGAB_BINARY << __GAB_TAGOFFSET;
 }
@@ -1851,11 +1858,17 @@ GAB_API_INLINE gab_value gab_message(struct gab_triple gab, const char *data) {
  * @return the name.
  */
 GAB_API_INLINE gab_value gab_msgtostr(gab_value msg) {
+  if (msg == gab_cinvalid)
+    return gab_cinvalid;
+
   assert(gab_valkind(msg) == kGAB_MESSAGE);
   return msg & ~((uint64_t)kGAB_MESSAGE << __GAB_TAGOFFSET);
 }
 
 GAB_API_INLINE gab_value gab_ubintostr(gab_value bin) {
+  if (bin == gab_cinvalid)
+    return gab_cinvalid;
+
   assert(gab_valkind(bin) == kGAB_BINARY);
   return bin & ~((uint64_t)kGAB_BINARY << __GAB_TAGOFFSET);
 }
@@ -1868,6 +1881,9 @@ GAB_API_INLINE gab_value gab_ubintostr(gab_value bin) {
  * @return The string if bin is valid utf8, otherwise gab_cinvalid.
  */
 GAB_API_INLINE gab_value gab_bintostr(gab_value bin) {
+  if (bin == gab_cinvalid)
+    return gab_cinvalid;
+
   assert(gab_valkind(bin) == kGAB_BINARY);
 
   if (gab_strmblen(bin) == -1)
@@ -1885,8 +1901,12 @@ GAB_API_INLINE gab_value gab_bincat(struct gab_triple gab, gab_value a,
 
   gab_value astr = gab_ubintostr(a);
   gab_value bstr = gab_ubintostr(b);
+  gab_value abstr = gab_strcat(gab, astr, bstr);
 
-  return gab_strtobin(gab_strcat(gab, astr, bstr));
+  if (abstr == gab_cinvalid)
+    return abstr;
+
+  return gab_strtobin(abstr);
 }
 
 /**
@@ -1907,7 +1927,12 @@ GAB_API_INLINE gab_value gab_nbinary(struct gab_triple gab, size_t len,
 GAB_API_INLINE gab_value gab_nbincat(struct gab_triple gab, gab_value a,
                                      uint64_t len, const uint8_t *b) {
   assert(gab_valkind(a) == kGAB_BINARY);
-  return gab_bincat(gab, a, gab_nbinary(gab, len, b));
+  gab_value bin = gab_nbinary(gab, len, b);
+
+  if (bin == gab_cinvalid)
+    return bin;
+
+  return gab_bincat(gab, a, bin);
 }
 
 /* Cast a value to a (gab_onative*) */
@@ -2237,7 +2262,12 @@ GAB_API_INLINE gab_value gab_recat(gab_value record, gab_value key) {
  */
 GAB_API_INLINE gab_value gab_srecat(struct gab_triple gab, gab_value record,
                                     const char *key) {
-  return gab_recat(record, gab_string(gab, key));
+  gab_value s = gab_string(gab, key);
+
+  if (s == gab_cinvalid)
+    return s;
+
+  return gab_recat(record, s);
 }
 
 /**
@@ -2250,7 +2280,12 @@ GAB_API_INLINE gab_value gab_srecat(struct gab_triple gab, gab_value record,
  */
 GAB_API_INLINE gab_value gab_mrecat(struct gab_triple gab, gab_value rec,
                                     const char *key) {
-  return gab_recat(rec, gab_message(gab, key));
+  gab_value m = gab_message(gab, key);
+
+  if (m == gab_cinvalid)
+    return m;
+
+  return gab_recat(rec, m);
 }
 
 /**

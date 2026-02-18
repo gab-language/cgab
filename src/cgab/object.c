@@ -353,7 +353,7 @@ void gab_objdestroy(struct gab_triple gab, struct gab_obj *self) {
     break;
   }
   case kGAB_STRING:
-    assert(mtx_trylock(&gab.eg->strings_mtx) == thrd_busy);
+    assert(mtx_trylock(&gab.eg->gc_mtx) == thrd_busy);
     /*
      * ASYNC ISSUE: Because collections happen asynchronously (and the strings
      * intern table *doesn't hold references) Strings that are queued for
@@ -443,9 +443,6 @@ gab_value __gab_shortstrcat(gab_value _a, gab_value _b) {
   return v;
 }
 
-/* TODO: Workout how this locking should work
- *
- */
 gab_value nstring(struct gab_triple gab, uint64_t hash, uint64_t len,
                   const char *data) {
   s_char str = s_char_create(data, len);
@@ -476,7 +473,7 @@ gab_value gab_tnstring(struct gab_triple gab, uint64_t len, const char *data) {
   uint64_t hash = hash_bytes(len, (unsigned char *)data);
 #endif
 
-  switch (mtx_trylock(&gab.eg->strings_mtx)) {
+  switch (mtx_trylock(&gab.eg->gc_mtx)) {
   case thrd_success:
     break;
   case thrd_busy:
@@ -487,7 +484,7 @@ gab_value gab_tnstring(struct gab_triple gab, uint64_t len, const char *data) {
 
   struct gab_ostring *interned = gab_egstrfind(gab.eg, hash, len, data);
 
-  mtx_unlock(&gab.eg->strings_mtx);
+  mtx_unlock(&gab.eg->gc_mtx);
 
   if (interned)
     return __gab_obj(interned);
@@ -500,7 +497,13 @@ gab_value gab_tnstring(struct gab_triple gab, uint64_t len, const char *data) {
    */
   gab_value s = nstring(gab, hash, len, data);
 
-  switch (mtx_trylock(&gab.eg->strings_mtx)) {
+  /*
+   * TODO: Inbetween the two lock holds here, another thread
+   * *could* insert the string we want into the dict.
+   * Fix this
+   */
+
+  switch (mtx_trylock(&gab.eg->gc_mtx)) {
   case thrd_success:
     break;
   case thrd_busy:
@@ -511,7 +514,7 @@ gab_value gab_tnstring(struct gab_triple gab, uint64_t len, const char *data) {
 
   d_strings_insert(&gab.eg->strings, GAB_VAL_TO_STRING(s), 0);
 
-  mtx_unlock(&gab.eg->strings_mtx);
+  mtx_unlock(&gab.eg->gc_mtx);
 
   return s;
 }
@@ -519,10 +522,10 @@ gab_value gab_tnstring(struct gab_triple gab, uint64_t len, const char *data) {
 gab_value gab_nstring(struct gab_triple gab, uint64_t len, const char *data) {
   for (;;) {
     switch (gab_yield(gab)) {
-    case sGAB_TERM:
-      break;
     case sGAB_IGN:
       break;
+    case sGAB_TERM:
+      return gab_cinvalid;
     case sGAB_COLL:
       gab_gcepochnext(gab);
       gab_sigpropagate(gab);
@@ -530,10 +533,8 @@ gab_value gab_nstring(struct gab_triple gab, uint64_t len, const char *data) {
     }
 
     gab_value str = gab_tnstring(gab, len, data);
-    if (str == gab_cinvalid) {
-      assert(false && "error");
-      continue;
-    }
+    if (str == gab_cinvalid)
+      return str;
 
     if (str == gab_ctimeout)
       continue;
@@ -546,10 +547,10 @@ gab_value gab_nstring(struct gab_triple gab, uint64_t len, const char *data) {
 gab_value gab_strcat(struct gab_triple gab, gab_value _a, gab_value _b) {
   for (;;) {
     switch (gab_yield(gab)) {
-    case sGAB_TERM:
-      break;
     case sGAB_IGN:
       break;
+    case sGAB_TERM:
+      return gab_cinvalid;
     case sGAB_COLL:
       gab_gcepochnext(gab);
       gab_sigpropagate(gab);
@@ -557,10 +558,8 @@ gab_value gab_strcat(struct gab_triple gab, gab_value _a, gab_value _b) {
     }
 
     gab_value str = gab_tstrcat(gab, _a, _b);
-    if (str == gab_cinvalid) {
-      assert(false && "error");
-      continue;
-    }
+    if (str == gab_cinvalid)
+      return str;
 
     if (str == gab_ctimeout)
       continue;
@@ -667,7 +666,7 @@ gab_value gab_tstrcat(struct gab_triple gab, gab_value _a, gab_value _b) {
     hash.
   */
 
-  switch (mtx_trylock(&gab.eg->strings_mtx)) {
+  switch (mtx_trylock(&gab.eg->gc_mtx)) {
   case thrd_success:
     break;
   case thrd_busy:
@@ -678,14 +677,14 @@ gab_value gab_tstrcat(struct gab_triple gab, gab_value _a, gab_value _b) {
 
   struct gab_ostring *interned = gab_egstrfind(gab.eg, hash, len, buff->data);
 
-  mtx_unlock(&gab.eg->strings_mtx);
+  mtx_unlock(&gab.eg->gc_mtx);
 
   if (interned)
     return a_char_destroy(buff), __gab_obj(interned);
 
   gab_value result = nstring(gab, hash, len, buff->data);
 
-  switch (mtx_trylock(&gab.eg->strings_mtx)) {
+  switch (mtx_trylock(&gab.eg->gc_mtx)) {
   case thrd_success:
     break;
   case thrd_busy:
@@ -696,7 +695,7 @@ gab_value gab_tstrcat(struct gab_triple gab, gab_value _a, gab_value _b) {
 
   d_strings_insert(&gab.eg->strings, GAB_VAL_TO_STRING(result), 0);
 
-  mtx_unlock(&gab.eg->strings_mtx);
+  mtx_unlock(&gab.eg->gc_mtx);
 
   assert(gab_valkind(result) == kGAB_STRING);
   assert(gab_strlen(result) == len);
@@ -2597,7 +2596,7 @@ int32_t pprint_width(gab_value val) {
   case kGAB_FIBERRUNNING:
     return 11; // Needs to be updated to match
   default:
-    fprintf(stderr, "%d\n", gab_valkind(val));
+    fprintf(stderr, "unrecognized kind in pprint width: %d\n", gab_valkind(val));
     fflush(stderr);
     assert(false && "unreachable");
     return 0;
