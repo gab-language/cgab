@@ -830,15 +830,12 @@ sclay_font_t fonts[1];
 GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
   gab_value vgui = gab_arg(0);
 
-  fprintf(stderr, "TUIEVENT\n");
   if (gab_valtype(gab, vgui) != gab_string(gab, "gab\\gui"))
     return gab_ptypemismatch(gab, vgui, gab_string(gab, "gab\\gui"));
 
   struct gui *gui = gab_boxdata(vgui);
   if (!gui->ready)
     goto yield;
-
-  fprintf(stderr, "TUIEVENT INIT: %b\n", global.initialized);
 
   if (reentrant && gab_fibsize(gab_thisfiber(gab)))
     goto put_event;
@@ -853,7 +850,6 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
 
     struct tb_event e;
     int res = tb_peek_event(&e, 0);
-    fprintf(stderr, "TUIEVENT PEEK: %i (%s)\n", res, tb_strerror(res));
 
     switch (res) {
     case TB_ERR_NOT_INIT:
@@ -865,7 +861,6 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
         goto fin;
 
     put_event:
-      fprintf(stderr, "TUIEVENT PUTEVENT\n");
       // Our event did not yield a value.
       if (!gab_fibsize(gab_thisfiber(gab)))
         goto yield;
@@ -901,20 +896,17 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
     case TB_ERR:
     case TB_ERR_READ:
     case TB_ERR_POLL:
-      fprintf(stderr, "TUIEVENT ERR: %s\n", tb_strerror(tb_last_errno()));
       if (tb_last_errno() == EINTR)
         break;
 
       goto fin;
     default:
-      fprintf(stderr, "TUIEVENT ERR: %s\n", tb_strerror(tb_last_errno()));
       goto fin;
       break;
     }
   }
 
 yield:
-  fprintf(stderr, "TUIEVENT YIELD\n");
   switch (gab_yield(gab)) {
   case sGAB_TERM:
     goto fin;
@@ -923,7 +915,6 @@ yield:
   }
 
 fin:
-  fprintf(stderr, "TUIEVENT FIN\n");
   gab_chnclose(gui->appch);
   gab_chnclose(gui->evch);
   return gab_union_cvalid(gab_ok);
@@ -960,7 +951,6 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
 
     // Clay_SetDebugModeEnabled(true);
     gui->ready = true;
-    fprintf(stderr, "TUIRENDER INIT: %b\n", global.initialized);
   }
 
   for (;;) {
@@ -1309,9 +1299,6 @@ GAB_DYNLIB_NATIVE_FN(ui, run) {
                       gab_message(gab, "tui"), kind);
   }
 
-  fprintf(stderr, "BEGINNING UI LOOP:\n%s\n%s\n", render_rec_name,
-          event_rec_name);
-
   gab_value vgui = gab_gui(gab);
   struct gui *gui = gab_boxdata(vgui);
 
@@ -1332,8 +1319,6 @@ GAB_DYNLIB_NATIVE_FN(ui, run) {
     return gab_panicf(gab, "Couldn't start render thread");
   }
 
-  fprintf(stderr, "BEGUN RENDER LOOP\n");
-
   res = gab_asend(
       gab, (struct gab_send_argt){
                .message = gab_message(gab, mGAB_CALL),
@@ -1345,8 +1330,6 @@ GAB_DYNLIB_NATIVE_FN(ui, run) {
   if (res.status != gab_cvalid) {
     return gab_panicf(gab, "Couldn't start event thread");
   }
-
-  fprintf(stderr, "BEGUN EVENT LOOP\n");
 
   return gab_vmpush(gab_thisvm(gab), gab_ok), gab_union_cvalid(gab_nil);
 }

@@ -386,7 +386,7 @@ static inline void __gab_assert_fail(const char *expr, const char *file,
  */
 #define gab_assert(expr, reason)                                               \
   ((expr) ? (void)(0)                                                          \
-          : __gab_assert_fail(#expr, __FILE__, __PRETTY_FUNCTION__, __LINE__,  \
+          : __gab_assert_fail(#expr, __FILE__, __FUNCTION__, __LINE__,  \
                               reason))
 
 #endif
