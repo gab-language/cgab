@@ -846,9 +846,9 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
     if (gab_chnisclosed(gui->evch))
       goto fin;
 
-    fprintf(stderr, "TUIEVENT PEEK\n");
     struct tb_event e;
     int res = tb_peek_event(&e, 0);
+    fprintf(stderr, "TUIEVENT PEEK: %i (%s)\n", res, tb_strerror(res));
 
     switch (res) {
     case TB_ERR_NO_EVENT:

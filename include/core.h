@@ -376,8 +376,8 @@ static inline void v_uint8_t_npush(v_uint8_t *self, size_t n, uint8_t *buff) {
 static inline void __gab_assert_fail(const char *expr, const char *file,
                                      const char *function, size_t line,
                                      const char *reason) {
-  fprintf(stderr, "[%s] assertion '%s' failed at %s:%lu", function, expr, file,
-          line);
+  fprintf(stderr, "[%s] assertion '%s' failed at %s:%lu. %s", function, expr,
+          file, line, reason);
   exit(EXIT_FAILURE);
 };
 
