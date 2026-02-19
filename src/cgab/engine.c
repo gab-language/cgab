@@ -47,8 +47,8 @@ gab_value *gab_egerrs(struct gab_eg *eg) {
 
   /* Just free the mutex, leave the pointer to be cleaned up by caller */
   mtx_destroy(&errs.mtx);
-  assert(errs.data != nullptr);
-  assert(errs.len > 0);
+  gab_assert(errs.len > 0, "The array of errors shall have len > 0 in this codepath");
+  gab_assert(errs.data != nullptr, "The array of errors returned shall not be null when errs.len > 0");
   return errs.data;
 };
 
@@ -342,7 +342,7 @@ void gab_jbalive(struct gab_triple gab, int32_t wkid) {
         .mask = sig.mask | (1 << wkid),
     };
 
-    assert(!(next.signal == sGAB_IGN && next.schedule == 0));
+    gab_assert(!(next.signal == sGAB_IGN && next.schedule == 0), "Signalling GAB_IGN is invalid");
     if (atomic_compare_exchange_weak(&gab.eg->sig, &sig, next))
       break;
 
@@ -377,7 +377,7 @@ void gab_jbunalive(struct gab_triple gab, int32_t wkid) {
         .mask = sig.mask & ~(1 << wkid),
     };
 
-    assert(!(next.signal == sGAB_IGN && next.schedule == 0));
+    gab_assert(!(next.signal == sGAB_IGN && next.schedule == 0), "Signalling GAB_IGN is invalid");
     if (atomic_compare_exchange_weak(&gab.eg->sig, &sig, next))
       break;
   }
@@ -386,7 +386,7 @@ void gab_jbunalive(struct gab_triple gab, int32_t wkid) {
 int32_t gc_job(void *data) {
   struct gab_triple *g = data;
   struct gab_triple gab = *g;
-  assert(gab.wkid == 0);
+  gab_assert(gab.wkid == 0, "The GC worker shall have wkid = 0");
 
   struct gab_job *job = gab.eg->jobs + gab.wkid;
 
@@ -513,7 +513,7 @@ static inline bool worker_step(struct gab_triple gab, struct gab_job *job) {
     } else {
       // Our global take succeeded - append to our local queue.
       if (!q_gab_value_push(&job->queue, fiber))
-        assert(false && "PUSH FAILED");
+        gab_assert(false, "In this codepath, the queue is guaranteed to have room for the fiber.");
     }
   }
 
@@ -523,12 +523,12 @@ static inline bool worker_step(struct gab_triple gab, struct gab_job *job) {
 #if cGAB_LOG_EG
   gab_fprintf(stderr, "[WORKER $] EXECUTING $\n", gab_number(gab.wkid), fiber);
 #endif
-  assert(gab_valkind(fiber) != kGAB_FIBERDONE);
+  gab_assert(gab_valkind(fiber) != kGAB_FIBERDONE, "Fibers about to be run shall not be kGAB_FIBERDONE.");
 
   // Run our fiber.
   union gab_value_pair res = gab_vmexec(gab, fiber);
 
-  assert(q_gab_value_peek(&job->queue) == fiber);
+  gab_assert(q_gab_value_peek(&job->queue) == fiber, "The fiber about to be run shall be at the front of the queue.");
 
 #if cGAB_LOG_EG
   gab_fprintf(stderr, "[WORKER $] ran: $ -> $\n", gab_number(gab.wkid), fiber,

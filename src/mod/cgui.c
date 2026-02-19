@@ -931,12 +931,8 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
   struct gui *gui = gab_boxdata(vgui);
 
   if (!reentrant) {
-    fprintf(stderr, "TUIRENDER INIT\n");
-
     if (gab_valtype(gab, vgui) != gab_string(gab, "gab\\gui"))
       return gab_ptypemismatch(gab, vgui, gab_string(gab, "gab\\gui"));
-
-
 
     Clay_Termbox_Initialize(TB_OUTPUT_TRUECOLOR, CLAY_TB_BORDER_MODE_MINIMUM,
                             CLAY_TB_BORDER_CHARS_BLANK,
@@ -960,6 +956,7 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
 
     // Clay_SetDebugModeEnabled(true);
     gui->ready = true;
+    fprintf(stderr, "TUIRENDER INIT\n");
   }
 
   for (;;) {
