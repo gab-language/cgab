@@ -25,7 +25,6 @@
 #include "engine.h"
 #include "core.h"
 #include "gab.h"
-#include <asm-generic/errno-base.h>
 #include <stdatomic.h>
 
 struct errdetails {
