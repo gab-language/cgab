@@ -937,6 +937,10 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
     if (gab_valtype(gab, vgui) != gab_string(gab, "gab\\gui"))
       return gab_ptypemismatch(gab, vgui, gab_string(gab, "gab\\gui"));
 
+    int res = tb_init();
+    if (res != TB_OK)
+      return gab_panicf(gab,"Failed to initialize termbox");
+
     Clay_Termbox_Initialize(TB_OUTPUT_TRUECOLOR, CLAY_TB_BORDER_MODE_MINIMUM,
                             CLAY_TB_BORDER_CHARS_BLANK,
                             CLAY_TB_IMAGE_MODE_UNICODE, true);
