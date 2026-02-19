@@ -371,4 +371,8 @@ static inline void v_uint8_t_npush(v_uint8_t *self, size_t n, uint8_t *buff) {
 #define GAB_RESET "\x1b[0m"
 #define GAB_CLEAR "\x1b[2J"
 
+/*
+ * TODO: Better 'asserts' which are self-describing.
+ */
+
 #endif

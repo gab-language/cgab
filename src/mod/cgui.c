@@ -966,8 +966,7 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
       goto err;
 
     if (app == gab_ctimeout)
-      return fprintf(stderr, "TUIRENDER TAKETIMEOUT\n"),
-             gab_union_ctimeout(gab_cundefined);
+      return gab_union_ctimeout(gab_cundefined);
 
     // Reset our id counter;
     gui->n = 0;
@@ -1320,6 +1319,8 @@ GAB_DYNLIB_NATIVE_FN(ui, run) {
     return gab_panicf(gab, "Couldn't start render thread");
   }
 
+  fprintf(stderr, "BEGUN RENDER LOOP\n");
+
   res = gab_asend(
       gab, (struct gab_send_argt){
                .message = gab_message(gab, mGAB_CALL),
@@ -1331,6 +1332,8 @@ GAB_DYNLIB_NATIVE_FN(ui, run) {
   if (res.status != gab_cvalid) {
     return gab_panicf(gab, "Couldn't start event thread");
   }
+
+  fprintf(stderr, "BEGUN EVENT LOOP\n");
 
   return gab_vmpush(gab_thisvm(gab), gab_ok), gab_union_cvalid(gab_nil);
 }
