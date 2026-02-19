@@ -309,10 +309,10 @@ static const struct timespec t = {.tv_nsec = GAB_YIELD_SLEEPTIME_NS};
 
 enum gab_signal gab_yield(struct gab_triple gab) {
   if (gab_sigwaiting(gab)) {
-#if cGAB_LOG_EG
-    fprintf(stderr, "[WORKER %i] RECV SIG: %i\n", gab.wkid, gab.eg->sig.signal);
-#endif
     struct gab_sig sig = atomic_load(&gab.eg->sig);
+#if cGAB_LOG_EG
+    fprintf(stderr, "[WORKER %i] RECV SIG: %i\n", gab.wkid, sig.signal);
+#endif
     return sig.signal;
   }
 
