@@ -399,8 +399,8 @@ int32_t gc_job(void *data) {
     if (res == thrd_timedout)
       continue;
 
-    if (res == thrd_success)
-      fprintf(stderr, "WAKEUP\n");
+    // if (res == thrd_success)
+    //   fprintf(stderr, "WAKEUP\n");
 
     for (;;) {
       struct gab_sig sig = atomic_load(&gab.eg->sig);
@@ -410,7 +410,7 @@ int32_t gc_job(void *data) {
         break;
     }
 
-    fprintf(stderr, "SIGNALED TO WORKER THAT LOCK IS AQUIRED\n");
+    // fprintf(stderr, "SIGNALED TO WORKER THAT LOCK IS AQUIRED\n");
 
     if (res == thrd_error)
       continue;

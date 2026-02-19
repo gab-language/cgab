@@ -830,6 +830,8 @@ sclay_font_t fonts[1];
 GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
   gab_value vgui = gab_arg(0);
 
+  fprintf(stderr, "TUIEVENT\n");
+
   if (gab_valtype(gab, vgui) != gab_string(gab, "gab\\gui"))
     return gab_ptypemismatch(gab, vgui, gab_string(gab, "gab\\gui"));
 
@@ -911,6 +913,8 @@ fin:
 
 GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
   gab_value vgui = gab_arg(0);
+
+  fprintf(stderr, "TUIRENDER\n");
 
   if (!reentrant) {
     if (gab_valtype(gab, vgui) != gab_string(gab, "gab\\gui"))
@@ -1286,6 +1290,8 @@ GAB_DYNLIB_NATIVE_FN(ui, run) {
     return gab_panicf(gab, "Expected @ or @, found @", gab_message(gab, "gui"),
                       gab_message(gab, "tui"), kind);
   }
+
+ fprintf(stderr, "BEGINNING UI LOOP:\n%s\n%s\n", render_rec_name, event_rec_name);
 
   gab_value vgui = gab_gui(gab);
   struct gui *gui = gab_boxdata(vgui);
