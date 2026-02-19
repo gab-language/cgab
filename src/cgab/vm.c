@@ -1722,6 +1722,9 @@ CASE_CODE(SEND_PRIMITIVE_CONCAT) {
   STORE_SP();
   gab_value val_ab = gab_tstrcat(GAB(), val_a, val_b);
 
+  if (val_ab == gab_cinvalid)
+    VM_TERM();
+
   if (val_ab == gab_ctimeout)
     VM_YIELD(gab_nil);
 
