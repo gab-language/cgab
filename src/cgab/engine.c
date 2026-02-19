@@ -537,19 +537,19 @@ static inline bool worker_step(struct gab_triple gab, struct gab_job *job) {
 
   // We did work - pop it off the queue now.
   gab_value popped = q_gab_value_pop(&job->queue);
-  assert(fiber == popped);
+  gab_assert(fiber == popped, "The popped fiber shall match the fiber we ran off the front of the queue.");
 
   switch (res.status) {
   case gab_ctimeout:
-    assert(!gab_fibisrunning(popped));
-    assert(!gab_fibisdone(popped));
+    gab_assert(!gab_fibisrunning(popped), "A popped fiber shall not be running");
+    gab_assert(!gab_fibisdone(popped), "A timedout fiber shall not be done");
     // We did not complete the work. Push back onto our queue.
     if (!q_gab_value_push(&job->queue, fiber))
-      assert(false && "PUSH FAILED");
+      gab_assert(false, "There is guaranteed to be space for the fiber in this codepath.");
     break;
   // We completed the work. Nothing else to do.
   case gab_cvalid:
-    assert(gab_fibisdone(popped));
+    gab_assert(gab_fibisdone(popped), "A valid fiber shall be done");
     // We panicked. Crash the system.
     if (res.aresult->data[0] != gab_ok) {
       gab_value err = res.aresult->data[1];
@@ -563,10 +563,10 @@ static inline bool worker_step(struct gab_triple gab, struct gab_job *job) {
 
   // We were interruppted by sGAB_TERM. Signal will be handled below.
   case gab_cinvalid:
-    assert(gab_fibisdone(popped));
+    gab_assert(gab_fibisdone(popped), "A terminated fiber shall be done");
     return false;
   default:
-    assert(false && "UNREACHABLE");
+    gab_assert(false, "Unhandled result.status value");
   }
 
   return true;
@@ -594,7 +594,7 @@ bail:
   while (!q_gab_value_is_empty(&job->queue)) {
     gab_value fiber = q_gab_value_peek(&job->queue);
 
-    assert(gab_sigwaiting(gab));
+    gab_assert(gab_sigwaiting(gab), "While bailing, there shall be a sGAB_TERM signal waiting for this worker");
     // Run each queued fiber. Since there is a TERM signal waiting on this
     // worker, each fiber will terminate itself here, in one instruction.
     union gab_value_pair res = gab_vmexec(gab, fiber);
@@ -604,8 +604,8 @@ bail:
                   fiber);
 #endif
     // Ensure that the termination occurred.
-    assert(res.status != gab_ctimeout);
-    assert(gab_fibisdone(fiber));
+    gab_assert(res.status != gab_ctimeout, "One step of execution shall 'bail' the fiber");
+    gab_assert(gab_fibisdone(fiber), "A terminated fiber shall be done");
 
     gab_value err = gab_fibstacktrace(gab, fiber);
 
@@ -618,11 +618,11 @@ bail:
     q_gab_value_pop(&job->queue);
   }
 
-  assert(q_gab_value_is_empty(&job->queue));
+  gab_assert(q_gab_value_is_empty(&job->queue), "The queue shall be empty once all fibers have bailed");
 
   gab_jbunalive(gab, gab.wkid);
 
-  assert(job->locked == 0);
+  gab_assert(job->locked == 0, "The worker shall have a balanced 'lock' value of 0 when bailed.");
   v_gab_value_destroy(&job->lock_keep);
 }
 

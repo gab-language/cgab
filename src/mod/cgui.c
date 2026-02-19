@@ -838,8 +838,11 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
   if (!gui->ready)
     goto yield;
 
+  fprintf(stderr, "TUIEVENT INIT: %b\n", global.initialized);
+
   if (reentrant && gab_fibsize(gab_thisfiber(gab)))
     goto put_event;
+
 
   for (;;) {
     if (gab_chnisclosed(gui->appch))
@@ -956,7 +959,7 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
 
     // Clay_SetDebugModeEnabled(true);
     gui->ready = true;
-    fprintf(stderr, "TUIRENDER INIT\n");
+    fprintf(stderr, "TUIRENDER INIT: %b\n", global.initialized);
   }
 
   for (;;) {
