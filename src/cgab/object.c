@@ -1962,6 +1962,7 @@ gab_value channel_block_while_full(struct gab_triple gab,
     case sGAB_TERM:
       return gab_cinvalid;
     default:
+      gab_busywait(gab);
       break;
     }
 
@@ -1989,6 +1990,7 @@ gab_value channel_block_while_empty(struct gab_triple gab,
     case sGAB_TERM:
       return gab_cinvalid;
     default:
+      gab_busywait(gab);
       break;
     }
 
@@ -2596,7 +2598,8 @@ int32_t pprint_width(gab_value val) {
   case kGAB_FIBERRUNNING:
     return 11; // Needs to be updated to match
   default:
-    fprintf(stderr, "unrecognized kind in pprint width: %d\n", gab_valkind(val));
+    fprintf(stderr, "unrecognized kind in pprint width: %d\n",
+            gab_valkind(val));
     fflush(stderr);
     assert(false && "unreachable");
     return 0;

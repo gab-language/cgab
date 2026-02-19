@@ -399,9 +399,6 @@ int32_t gc_job(void *data) {
     if (res == thrd_timedout)
       continue;
 
-    // if (res == thrd_success)
-    //   fprintf(stderr, "WAKEUP\n");
-
     for (;;) {
       struct gab_sig sig = atomic_load(&gab.eg->sig);
       struct gab_sig expected = {sig.mask, -2, sig.signal};
@@ -409,8 +406,6 @@ int32_t gc_job(void *data) {
       if (atomic_compare_exchange_weak(&gab.eg->sig, &expected, desired))
         break;
     }
-
-    // fprintf(stderr, "SIGNALED TO WORKER THAT LOCK IS AQUIRED\n");
 
     if (res == thrd_error)
       continue;
@@ -2315,11 +2310,6 @@ GAB_API inline bool gab_signaling(struct gab_triple gab) {
   return sig.signal;
 }
 
-/*
- * Race conditions are impossible by construction - only workers whose turn it
- * is call this function.
-
- */
 GAB_API inline bool gab_signext(struct gab_triple gab, int wkid) {
   for (;;) {
     gab_busywait(gab);
@@ -2430,7 +2420,6 @@ GAB_API inline bool gab_signal(struct gab_triple gab, enum gab_signal s,
 #if cGAB_LOG_EG
       fprintf(stderr, "[WORKER %i] SIGNAL %i TO %b\n", gab.wkid, s, sig.mask);
 #endif
-      fprintf(stderr, "WAITING FOR GC TO LOCK\n");
 
       mtx_lock(&gab.eg->gc_mtx);
       cnd_signal(&gab.eg->gc_cnd);
@@ -2442,8 +2431,6 @@ GAB_API inline bool gab_signal(struct gab_triple gab, enum gab_signal s,
         if (sig.schedule == -1)
           break;
       }
-
-      fprintf(stderr, "GC HAS LOCKED. SIGNALING.\n");
 
       return gab_signext(gab, wkid);
     }

@@ -830,8 +830,6 @@ sclay_font_t fonts[1];
 GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
   gab_value vgui = gab_arg(0);
 
-  fprintf(stderr, "TUIEVENT\n");
-
   if (gab_valtype(gab, vgui) != gab_string(gab, "gab\\gui"))
     return gab_ptypemismatch(gab, vgui, gab_string(gab, "gab\\gui"));
 
@@ -855,6 +853,7 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
       goto yield;
 
       goto put_event;
+      fprintf(stderr, "TUIEVENT PUTEVENT\n");
     case TB_OK:
       if (clay_termbox_update(gab, gui, &e, 10))
         goto fin;
@@ -903,7 +902,13 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
   }
 
 yield:
-  return gab_union_ctimeout(gab_cundefined);
+  fprintf(stderr, "TUIEVENT YIELD\n");
+  switch (gab_yield(gab)) {
+  case sGAB_TERM:
+    goto fin;
+  default:
+    return gab_union_ctimeout(gab_cundefined);
+  }
 
 fin:
   gab_chnclose(gui->appch);
@@ -914,9 +919,9 @@ fin:
 GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
   gab_value vgui = gab_arg(0);
 
-  fprintf(stderr, "TUIRENDER\n");
-
   if (!reentrant) {
+    fprintf(stderr, "TUIRENDER INIT\n");
+
     if (gab_valtype(gab, vgui) != gab_string(gab, "gab\\gui"))
       return gab_ptypemismatch(gab, vgui, gab_string(gab, "gab\\gui"));
 
@@ -961,7 +966,8 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
       goto err;
 
     if (app == gab_ctimeout)
-      return gab_union_ctimeout(gab_cundefined);
+      return fprintf(stderr, "TUIRENDER TAKETIMEOUT\n"),
+             gab_union_ctimeout(gab_cundefined);
 
     // Reset our id counter;
     gui->n = 0;
@@ -1291,7 +1297,8 @@ GAB_DYNLIB_NATIVE_FN(ui, run) {
                       gab_message(gab, "tui"), kind);
   }
 
- fprintf(stderr, "BEGINNING UI LOOP:\n%s\n%s\n", render_rec_name, event_rec_name);
+  fprintf(stderr, "BEGINNING UI LOOP:\n%s\n%s\n", render_rec_name,
+          event_rec_name);
 
   gab_value vgui = gab_gui(gab);
   struct gui *gui = gab_boxdata(vgui);
