@@ -835,6 +835,8 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
     return gab_ptypemismatch(gab, vgui, gab_string(gab, "gab\\gui"));
 
   struct gui *gui = gab_boxdata(vgui);
+  if (!gui->ready)
+    goto yield;
 
   if (reentrant && gab_fibsize(gab_thisfiber(gab)))
     goto put_event;
@@ -854,13 +856,12 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
     case TB_ERR_NO_EVENT:
       goto yield;
 
-      goto put_event;
-      fprintf(stderr, "TUIEVENT PUTEVENT\n");
     case TB_OK:
       if (clay_termbox_update(gab, gui, &e, 10))
         goto fin;
 
     put_event:
+      fprintf(stderr, "TUIEVENT PUTEVENT\n");
       // Our event did not yield a value.
       if (!gab_fibsize(gab_thisfiber(gab)))
         goto yield;
@@ -902,6 +903,8 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
 
       goto fin;
     default:
+      fprintf(stderr, "TUIEVENT ERR: %s\n", tb_strerror(tb_last_errno()));
+      goto fin;
       break;
     }
   }
@@ -923,13 +926,17 @@ fin:
 }
 
 GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
+
   gab_value vgui = gab_arg(0);
+  struct gui *gui = gab_boxdata(vgui);
 
   if (!reentrant) {
     fprintf(stderr, "TUIRENDER INIT\n");
 
     if (gab_valtype(gab, vgui) != gab_string(gab, "gab\\gui"))
       return gab_ptypemismatch(gab, vgui, gab_string(gab, "gab\\gui"));
+
+
 
     Clay_Termbox_Initialize(TB_OUTPUT_TRUECOLOR, CLAY_TB_BORDER_MODE_MINIMUM,
                             CLAY_TB_BORDER_CHARS_BLANK,
@@ -952,9 +959,8 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
     Clay_SetMeasureTextFunction(Clay_Termbox_MeasureText, nullptr);
 
     // Clay_SetDebugModeEnabled(true);
+    gui->ready = true;
   }
-
-  struct gui *gui = gab_boxdata(vgui);
 
   for (;;) {
     if (gab_chnisclosed(gui->appch))
