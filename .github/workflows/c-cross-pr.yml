@@ -218,6 +218,12 @@ jobs:
       - name: Run tests
         run: ${{ matrix.cmd }} run test
 
+      - name: Check Tests bundle
+        run: file test.exe
+
+      - name: Check Tests bundle
+        run: ls -l test.exe
+
       - name: Run tests bundle
         run: ./test.exe
 

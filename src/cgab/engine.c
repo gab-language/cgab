@@ -769,14 +769,14 @@ union gab_value_pair gab_create(struct gab_create_argt args,
   // we can have a flag that says 'detatch' or something
   // and will allow the main thread to begin contributing to the system.
   bool res = gab_jbcreate(gab, gab.eg->jobs + 1, nullptr, gab_cundefined);
-  assert(res);
+  gab_assert(res, "Job creation shall not fail for the main thread");
 
   gab_jbalive(gab, 1);
 
   gab_gccreate(gab);
 
   res = gab_jbcreate(gab, gab.eg->jobs, gc_job, gab_cundefined);
-  assert(res);
+  gab_assert(res, "Job creation shall not fail for the gc thread");
 
   gab_jbalive(gab, 0);
 
@@ -812,13 +812,13 @@ union gab_value_pair gab_create(struct gab_create_argt args,
 
   int nroots = 0;
   for (int i = 0; args.roots[i] != nullptr; i++) {
-    assert(nroots < cGAB_RESOURCE_MAX);
+    gab_assert(nroots < cGAB_RESOURCE_MAX, "number of roots shall not exceed cGAB_RESOURCE_MAX");
     gab.eg->resroots[nroots++] = args.roots[i];
   }
 
   int nres = 0;
   for (int i = 0; args.resources[i].prefix != nullptr; i++) {
-    assert(nres < cGAB_RESOURCE_MAX);
+    gab_assert(nres < cGAB_RESOURCE_MAX, "number of resources shall not exceed cGAB_RESOURCE MAX");
     gab.eg->res[nres++] = args.resources[i];
   }
 
@@ -912,7 +912,7 @@ union gab_value_pair gab_create(struct gab_create_argt args,
 }
 
 void dec_child_shapes(struct gab_triple gab, gab_value shp) {
-  assert(gab_valkind(shp) == kGAB_SHAPE || gab_valkind(shp) == kGAB_SHAPELIST);
+  gab_assert(gab_valkind(shp) == kGAB_SHAPE || gab_valkind(shp) == kGAB_SHAPELIST, "Shall only operate on shapes");
   struct gab_oshape *shape = GAB_VAL_TO_SHAPE(shp);
 
   uint64_t len = shape->transitions.len / 2;
@@ -924,10 +924,10 @@ void dec_child_shapes(struct gab_triple gab, gab_value shp) {
 }
 
 void gab_destroy(struct gab_triple gab) {
-  assert(gab.wkid == 1);
+  gab_assert(gab.wkid == 1, "Shall only be called from the main thread");
 
   bool res = gab_sigterm(gab);
-  assert(res);
+  gab_assert(res, "Sigterm shall not fail when destryoing");
 
   if (gab_jbisalive(gab, gab.wkid))
     worker_bail(gab, gab.eg->jobs + 1);
@@ -948,7 +948,7 @@ void gab_destroy(struct gab_triple gab) {
   atomic_store(&gab.eg->messages, gab_cinvalid);
   gab.eg->shapes = gab_cinvalid;
 
-  assert(gab_njobs(gab) == 1);
+  gab_assert(gab_njobs(gab) == 1, "There shall only be one thread remaining - the gc thread");
 
   /**
    * Four consececutive collections are needed here because
@@ -971,28 +971,18 @@ void gab_destroy(struct gab_triple gab) {
   while (gab_signaling(gab))
     gab_busywait(gab);
 
+  gab_assert(res, "sigcoll shall not fail");
   struct gab_sig sig = atomic_load(&gab.eg->sig);
-  assert(res);
-  assert(sig.signal == sGAB_IGN);
+  gab_assert(sig.signal == sGAB_IGN, "After collection, signal shall be sGAB_IGN");
 
   // gab_gcloglen(gab);
   res = gab_sigcoll(gab);
   while (gab_signaling(gab))
     gab_busywait(gab);
 
+  gab_assert(res, "sigcoll shall not fail");
   sig = atomic_load(&gab.eg->sig);
-  assert(res);
-  assert(sig.signal == sGAB_IGN);
-
-  // gab_gcloglen(gab);
-  res = gab_sigcoll(gab);
-
-  while (gab_signaling(gab))
-    gab_busywait(gab);
-
-  sig = atomic_load(&gab.eg->sig);
-  assert(res);
-  assert(sig.signal == sGAB_IGN);
+  gab_assert(sig.signal == sGAB_IGN, "After collection, signal shall be sGAB_IGN");
 
   // gab_gcloglen(gab);
   res = gab_sigcoll(gab);
@@ -1000,14 +990,24 @@ void gab_destroy(struct gab_triple gab) {
   while (gab_signaling(gab))
     gab_busywait(gab);
 
+  gab_assert(res, "sigcoll shall not fail");
   sig = atomic_load(&gab.eg->sig);
-  assert(res);
-  assert(sig.signal == sGAB_IGN);
+  gab_assert(sig.signal == sGAB_IGN, "After collection, signal shall be sGAB_IGN");
+
+  // gab_gcloglen(gab);
+  res = gab_sigcoll(gab);
+
+  while (gab_signaling(gab))
+    gab_busywait(gab);
+
+  gab_assert(res, "sigcoll shall not fail");
+  sig = atomic_load(&gab.eg->sig);
+  gab_assert(sig.signal == sGAB_IGN, "After collection, signal shall be sGAB_IGN");
 
   gab_gcassertdone(gab);
 
   /*assert(gab.eg->bytes_allocated == 0);*/
-  assert(gab_njobs(gab) == 1);
+  gab_assert(gab_njobs(gab) == 1, "There shall only be one worker alive - the gc thread");
 
   gab_gcdestroy(gab);
 
@@ -1042,15 +1042,17 @@ bool repl_check_res(struct gab_triple gab, union gab_value_pair res) {
 
   if (err) {
     for (gab_value *thiserr = err; *thiserr != gab_nil; thiserr++) {
-      assert(gab_valkind(*thiserr) == kGAB_RECORD);
+      gab_assert(gab_valkind(*thiserr) == kGAB_RECORD, "An error value shall be a record");
 
       if (*thiserr == res.vresult)
         continue;
 
       const char *errstr = gab_errtocs(gab, *thiserr);
-      assert(errstr != nullptr);
 
-      puts(errstr);
+      if (errstr)
+        puts(errstr);
+
+      // TODO: Do something else if errtocs fails
     };
 
     free(err);
@@ -1058,9 +1060,9 @@ bool repl_check_res(struct gab_triple gab, union gab_value_pair res) {
 
   if (res.status != gab_cvalid) {
     const char *errstr = gab_errtocs(gab, res.vresult);
-    assert(errstr != nullptr);
 
-    puts(errstr);
+    if (errstr)
+      puts(errstr);
 
     return true;
   }
@@ -1074,8 +1076,8 @@ bool repl_check_needmore(struct gab_triple gab, union gab_value_pair res) {
 
   gab_value err = res.vresult;
   gab_value status = gab_mrecat(gab, err, "status");
-  assert(status != gab_cundefined);
-  assert(gab_valkind(status) == kGAB_STRING);
+  gab_assert(status != gab_cundefined, "The error record shall have a status field");
+  gab_assert(gab_valkind(status) == kGAB_STRING, "The status field shall be a string");
 
   const char *status_name = gab_strdata(&status);
   if (!strcmp(status_name, "UNEXPECTED_EOF"))
