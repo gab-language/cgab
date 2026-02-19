@@ -830,6 +830,7 @@ sclay_font_t fonts[1];
 GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
   gab_value vgui = gab_arg(0);
 
+      fprintf(stderr, "TUIEVENT\n");
   if (gab_valtype(gab, vgui) != gab_string(gab, "gab\\gui"))
     return gab_ptypemismatch(gab, vgui, gab_string(gab, "gab\\gui"));
 

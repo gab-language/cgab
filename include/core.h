@@ -371,8 +371,15 @@ static inline void v_uint8_t_npush(v_uint8_t *self, size_t n, uint8_t *buff) {
 #define GAB_RESET "\x1b[0m"
 #define GAB_CLEAR "\x1b[2J"
 
+[[noreturn]]
+static inline void __gab_assert_fail(const char* file, const char* function, size_t line, const char* reason){
+  exit(EXIT_FAILURE);
+};
+
 /*
  * TODO: Better 'asserts' which are self-describing.
  */
+#define gab_assert(expr, reason) ((expr) ? (void)(0) : __gab_assert_fail(__FILE__, __PRETTY_FUNCTION__, __LINE__, reason))
+
 
 #endif
