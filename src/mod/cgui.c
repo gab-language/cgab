@@ -939,7 +939,7 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
 
     int res = tb_init();
     if (res != TB_OK)
-      return gab_panicf(gab,"Failed to initialize termbox: $ $.", gab_number(res), gab_string(gab, tb_strerror(res)));
+      return gab_panicf(gab,"Failed to initialize termbox: @ @.", gab_number(res), gab_string(gab, tb_strerror(res)));
 
     Clay_Termbox_Initialize(TB_OUTPUT_TRUECOLOR, CLAY_TB_BORDER_MODE_MINIMUM,
                             CLAY_TB_BORDER_CHARS_BLANK,
