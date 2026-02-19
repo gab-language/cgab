@@ -197,7 +197,7 @@ jobs:
 
       - name: Gab Build Bundle
         run: |
-          ${{ matrix.cmd }} build -m cgui,cgab,tests test
+          ${{ matrix.cmd }} build test < bundle
 
       # - name: Make the binary executable (win)
       #   if: ${{ contains(matrix.target, 'windows') }}
