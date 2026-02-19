@@ -715,7 +715,7 @@ bool gab_jbcreate(struct gab_triple gab, struct gab_job *job, int(fn)(void *),
   memcpy(gabcpy, &gab, sizeof(struct gab_triple));
   gabcpy->wkid = job - gab.eg->jobs;
 
-  gab_assert(gabcpy->wkid > 1, "The copy's worker id shall be greater than 1");
+  gab_assert(gabcpy->wkid != 1, "The copy's worker id shall not be the 'main thread' id");
 
   return thrd_create(&job->td, fn, gabcpy) == thrd_success;
 }
