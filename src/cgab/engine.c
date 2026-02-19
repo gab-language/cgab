@@ -25,6 +25,7 @@
 #include "engine.h"
 #include "core.h"
 #include "gab.h"
+#include <asm-generic/errno-base.h>
 #include <stdatomic.h>
 
 struct errdetails {
@@ -676,7 +677,7 @@ struct gab_job *next_available_job(struct gab_triple gab) {
         .mask = sig.mask | (1 << idx),
     };
 
-    assert(!(next.signal == sGAB_IGN && next.schedule == 0));
+    gab_assert(!(next.signal == sGAB_IGN && next.schedule == 0),"");
     if (atomic_compare_exchange_weak(&gab.eg->sig, &sig, next))
       return gab.eg->jobs + idx;
 
@@ -706,7 +707,7 @@ bool gab_jbcreate(struct gab_triple gab, struct gab_job *job, int(fn)(void *),
 
   if (fiber != gab_cundefined)
     if (!q_gab_value_push(&job->queue, fiber))
-      assert(false && "BAD");
+      gab_assert(false, "The queue shall always have space in this codepath");
 
   if (!fn)
     return true;
@@ -715,7 +716,7 @@ bool gab_jbcreate(struct gab_triple gab, struct gab_job *job, int(fn)(void *),
   memcpy(gabcpy, &gab, sizeof(struct gab_triple));
   gabcpy->wkid = job - gab.eg->jobs;
 
-  assert(gabcpy->wkid != 1);
+  gab_assert(gabcpy->wkid > 1, "The copy's worker id shall be greater than 1");
 
   return thrd_create(&job->td, fn, gabcpy) == thrd_success;
 }

@@ -856,6 +856,7 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
     fprintf(stderr, "TUIEVENT PEEK: %i (%s)\n", res, tb_strerror(res));
 
     switch (res) {
+    case TB_ERR_NOT_INIT:
     case TB_ERR_NO_EVENT:
       goto yield;
 
@@ -936,10 +937,6 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
   if (!reentrant) {
     if (gab_valtype(gab, vgui) != gab_string(gab, "gab\\gui"))
       return gab_ptypemismatch(gab, vgui, gab_string(gab, "gab\\gui"));
-
-    int res = tb_init();
-    if (res != TB_OK)
-      return gab_panicf(gab,"Failed to initialize termbox: @ (@).", gab_number(res),  gab_number(global.last_errno));
 
     Clay_Termbox_Initialize(TB_OUTPUT_TRUECOLOR, CLAY_TB_BORDER_MODE_MINIMUM,
                             CLAY_TB_BORDER_CHARS_BLANK,
