@@ -830,7 +830,7 @@ sclay_font_t fonts[1];
 GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
   gab_value vgui = gab_arg(0);
 
-      fprintf(stderr, "TUIEVENT\n");
+  fprintf(stderr, "TUIEVENT\n");
   if (gab_valtype(gab, vgui) != gab_string(gab, "gab\\gui"))
     return gab_ptypemismatch(gab, vgui, gab_string(gab, "gab\\gui"));
 
@@ -846,6 +846,7 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
     if (gab_chnisclosed(gui->evch))
       goto fin;
 
+    fprintf(stderr, "TUIEVENT PEEK\n");
     struct tb_event e;
     int res = tb_peek_event(&e, 0);
 
@@ -892,7 +893,10 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
       gab_fibclear(gab_thisfiber(gab));
 
       break;
+    case TB_ERR:
+    case TB_ERR_READ:
     case TB_ERR_POLL:
+      fprintf(stderr, "TUIEVENT ERR: %s\n", tb_strerror(tb_last_errno()));
       if (tb_last_errno() == EINTR)
         break;
 
@@ -912,6 +916,7 @@ yield:
   }
 
 fin:
+  fprintf(stderr, "TUIEVENT FIN\n");
   gab_chnclose(gui->appch);
   gab_chnclose(gui->evch);
   return gab_union_cvalid(gab_ok);

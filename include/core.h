@@ -77,7 +77,7 @@
 #endif
 
 #ifndef cGAB_LOG_EG
-#define cGAB_LOG_EG 1
+#define cGAB_LOG_EG 0
 #endif
 
 // Log what is happening during execution.
@@ -371,15 +371,22 @@ static inline void v_uint8_t_npush(v_uint8_t *self, size_t n, uint8_t *buff) {
 #define GAB_RESET "\x1b[0m"
 #define GAB_CLEAR "\x1b[2J"
 
+#include <stdio.h>
 [[noreturn]]
-static inline void __gab_assert_fail(const char* file, const char* function, size_t line, const char* reason){
+static inline void __gab_assert_fail(const char *expr, const char *file,
+                                     const char *function, size_t line,
+                                     const char *reason) {
+  fprintf(stderr, "[%s] assertion '%s' failed at %s:%lu", function, expr, file,
+          line);
   exit(EXIT_FAILURE);
 };
 
 /*
  * TODO: Better 'asserts' which are self-describing.
  */
-#define gab_assert(expr, reason) ((expr) ? (void)(0) : __gab_assert_fail(__FILE__, __PRETTY_FUNCTION__, __LINE__, reason))
-
+#define gab_assert(expr, reason)                                               \
+  ((expr) ? (void)(0)                                                          \
+          : __gab_assert_fail(#expr, __FILE__, __PRETTY_FUNCTION__, __LINE__,  \
+                              reason))
 
 #endif

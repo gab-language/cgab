@@ -647,7 +647,7 @@ int32_t worker_job(void *data) {
 #endif
 
   while (worker_step(gab, job))
-    gab_busywait(gab);
+    ;
 
   worker_bail(gab, job);
 
