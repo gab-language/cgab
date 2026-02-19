@@ -635,8 +635,7 @@ int32_t worker_job(void *data) {
   struct gab_triple *g = data;
   struct gab_triple gab = *g;
 
-  assert(gab.wkid != 0);
-  assert(gab.wkid != 1);
+  gab_assert(gab.wkid > 1, "A workers id shall be greater than 1 (0 and 1 are reserved)");
 
   gab_jbalive(gab, gab.wkid);
 
