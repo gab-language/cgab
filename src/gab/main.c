@@ -1173,11 +1173,19 @@ const struct option target_option = {
     .handler_f = target_handler,
 };
 
+const struct option jobs_option = {
+    "jobs",
+    "Specify the maximum number of threads which Gab may spawn in "
+    "parallel",
+    'j',
+    .handler_f = jobs_handler,
+};
+
 static struct command commands[] = {
     {
         "welcome",
-        "Print the welcome message.",
-        "Print the welcome message.",
+        "Print the welcome message",
+        "\tPrint the welcome message",
         .example =
             {
                 "gab",
@@ -1187,8 +1195,8 @@ static struct command commands[] = {
     {
         "help",
         "Print this message, or describe the subcommand given by <arg>",
-        "With no arguments, prints a general help message summarizing all "
-        "available subcommands and their flags.\n"
+        "\tWith no arguments, prints a general help message summarizing all "
+        "available subcommands and their flags.\n\t"
         "With a subcommand given by <arg>, print more specific information "
         "related to that subcommand.",
         .example =
@@ -1200,32 +1208,33 @@ static struct command commands[] = {
     {
         "get",
         "Install the package given by <arg>",
-        "<arg> should have the shape <package>@<tag>."
-        "\n\n<package> should correspond to a valid package, or the reserved "
+        "\tInstall packages from remote hosts.\n\n"
+        "\t<arg> should have the shape <package>@<tag>."
+        "\n\n\t<package> should correspond to a valid package, or the reserved "
         "'gab' package."
-        "\n\n<tag> should be a valid tag of the aforementioned package."
-        "\n\nWhen the <package> argument is the 'gab' package, gab "
+        "\n\n\t<tag> should be a valid tag of the aforementioned package."
+        "\n\n\tWhen the <package> argument is the 'gab' package, gab "
         "*itself* is installed for the version <tag>."
-        "\nThis installation includes the `github.com/gab-language/cgab` "
-        "package, among other binary and development files.\n"
-        "\nOtherwise, <package> is downloaded at <tag>, and installed "
-        "among the modules for gab@" GAB_VERSION_TAG ".\n\n"
+        "\n\tThis installation includes the `github.com/gab-language/cgab` "
+        "package, among other binary and development files.\n\t"
+        "\n\tOtherwise, <package> is downloaded at <tag>, and installed "
+        "among the modules for gab@" GAB_VERSION_TAG ".\n\n\t"
         "To download a package, gab needs:\n\n"
-        "\t1. A host for the repository. This is found in the package name "
+        "\t\t1. A host for the repository. This is found in the package name "
         "itself.\n"
-        "\t2. A tag, corresponding to a release.\n"
-        "\t3. A supported gab platform.\n"
-        "\t4. A supported gab version.\n\n"
+        "\t\t2. A tag, corresponding to a release.\n"
+        "\t\t3. A supported gab platform.\n"
+        "\t\t4. A supported gab version.\n\n\t"
         "Using the last two items, gab constructs a bundle name like so:\n\n"
-        "\tcgab-<gab version>-<gab platform>\n\tcgab-" GAB_VERSION_TAG
-        "-" GAB_TARGET_TRIPLE "\n\n"
+        "\t\tcgab-<gab version>-<gab platform>\n\t\tcgab-" GAB_VERSION_TAG
+        "-" GAB_TARGET_TRIPLE "\n\n\t"
         "Using the first two items and the bundle name, gab constructs a url "
         "like so:\n\n"
-        "\thttp://<pkg>/releases/download/<tag>/<bundle name>\n\t"
+        "\t\thttp://<pkg>/releases/download/<tag>/<bundle name>\n\t\t"
         "http://github.com/gab-language/cgab/releases/download/0.0.5/"
-        "cgab-0.0.5-x86_64-linux-gnu\n\n"
+        "cgab-0.0.5-x86_64-linux-gnu\n\n\t"
         "Gab downloads this artifact, and unzips it into the packages <install "
-        "location>.\n"
+        "location>.\n\t"
         "At this point, the package is installed.",
         .example =
             {
@@ -1247,28 +1256,29 @@ static struct command commands[] = {
     {
         "build",
         "Build a standalone executable for the module <arg>.",
-        "Bundle the module <arg> and any modules given with -m into a "
-        "single executable.\nWhen stdin is a file or a pipe, modules "
-        "will be read line-by-line from stdin.\n\n"
-        "Multiple platforms are supported:\n"
-        "\tx86_64-linux-gnu    (Linux Intel)\n"
-        "\taarch64-linux-gnu   (Linux ARM)\n"
+        "\tBundle the module <arg> and any modules given with -m into a "
+        "single executable.\n\tWhen stdin is a file or a pipe, modules "
+        "will be read line-by-line from stdin.\n\n\t"
+        "Multiple platforms are supported:\n\t"
+        "\tx86_64-linux-gnu    (Linux Intel)\n\t"
+        "\taarch64-linux-gnu   (Linux ARM)\n\t"
         // "\tx86_64-windows-gnu  (Windows Intel)\n"
         // "\taarch64-windows-gnu (Windows ARM)\n"
-        "\tx86_64-macos-none   (MacOS Intel)\n"
-        "\taarch64-macos-none  (MacOS ARM)\n\n"
+        "\tx86_64-macos-none   (MacOS Intel)\n\t"
+        "\taarch64-macos-none  (MacOS ARM)\n\n\t"
         "The executable produced will be named <arg>.exe. When invoked, will "
-        "behave as if the user typed `gab use <arg>`.\n"
+        "behave as if the user typed `gab use <arg>`.\n\t"
         "You may remove the .exe extension, but the filename is used to "
-        "determine the entrypoint.\n"
+        "determine the entrypoint.\n\t"
         "The executable itself is distributable as a stand-alone binary. "
-        "Users need not install anything, or even know anything about gab.\n\n"
+        "Users need not install anything, or even know anything about "
+        "gab.\n\n\t"
         "If no entrypoint <arg> is supplied, then gab will build the modules "
-        "into a library-bundle instead.\n"
+        "into a library-bundle instead.\n\t"
         "These bundles are named for the gab version and platform they are "
-        "built for.\n"
-        "They look like this:\n\n"
-        "\tcgab-0.0.5-x86_64-linux-gnu\n\n"
+        "built for.\n\t"
+        "They look like this:\n\n\t"
+        "\tcgab-0.0.5-x86_64-linux-gnu\n\n\t"
         "See `gab help get` for more information on these library bundles.",
         .example =
             {
@@ -1285,21 +1295,21 @@ static struct command commands[] = {
     {
         "run",
         "Compile and run the module at path <args>",
-        "Expects one argument, the name of the module to run. "
-        "The module is invoked as if by '<arg>'.use.\n\n"
+        "\tExpects one argument, the name of the module to run. "
+        "The module is invoked as if by '<arg>'.use.\n\n\t"
         "The search path begins at the first root. Roots and resources are "
-        "checked in descending order.\n"
+        "checked in descending order.\n\t"
         "Each resource is checked at each root before moving on to the next.\n"
-        "\nROOTS:"
-        "\n\t./"
-        "\n\t<install_dir>"
-        "\n\t<install_dir>/github.com/gab-language/cgab@" GAB_VERSION_TAG "\n"
-        "\nRESOURCES:"
-        "\n\t<arg>.gab"
-        "\n\tmod/<arg>.gab"
-        "\n\t<arg>/mod.gab"
-        "\n\t<arg>.[so | dylib | dll]"
-        "\n\tmod/<arg>.[so | dylib | dll]",
+        "\n\tThe roots are:"
+        "\n\t\t./"
+        "\n\t\t<install_dir>"
+        "\n\t\t<install_dir>/github.com/gab-language/cgab@" GAB_VERSION_TAG "\n"
+        "\n\tThe resources are:"
+        "\n\t\t<arg>.gab"
+        "\n\t\tmod/<arg>.gab"
+        "\n\t\t<arg>/mod.gab"
+        "\n\t\t<arg>.[so | dylib | dll]"
+        "\n\t\tmod/<arg>.[so | dylib | dll]",
         .example =
             {
                 "gab run -m Json,http -j 16 my_project",
@@ -1311,19 +1321,13 @@ static struct command commands[] = {
             structured_err_option,
             modules_option,
             busywait_option,
-            {
-                "jobs",
-                "Specify the maximum number of threads which Gab may spawn in "
-                "parallel." STR(cGAB_DEFAULT_NJOBS),
-                'j',
-                .handler_f = jobs_handler,
-            },
+            jobs_option,
         },
     },
     {
         "exec",
-        "Compile and run the string <args>",
-        "Compile the string <arg> as Gab code and execute it immediately.",
+        "Execute the string <args>",
+        "\tExecute the string <arg>",
         .example =
             {
                 "gab exec -a -d \"'hello'.println\"",
@@ -1335,19 +1339,15 @@ static struct command commands[] = {
             structured_err_option,
             modules_option,
             busywait_option,
-            {
-                "jobs",
-                "Specify the maximum number of threads which Gab may spawn in "
-                "parallel." STR(cGAB_DEFAULT_NJOBS),
-                'j',
-                .handler_f = jobs_handler,
-            },
+            jobs_option,
         },
     },
     {
         "repl",
         "Enter the REPL",
-        "A REPL is a convenient tool for experimentation.",
+        "\tA REPL is a convenient tool for experimentation.\n"
+        "\tIt is useful for developement as well - set up with editor plugins "
+        "to evaluate code in the REPL.",
         .example =
             {
                 "gab repl -m Json",
@@ -1358,6 +1358,7 @@ static struct command commands[] = {
             dumpbytecode_option,
             modules_option,
             busywait_option,
+            jobs_option,
         },
     },
 };
@@ -1487,6 +1488,85 @@ const char *install_location(const char *target, const char *tag,
   return gab_osprefix_install(locbuf);
 }
 
+struct host {
+  const char *hostname, *pattern;
+};
+
+struct host known_hosts[] = {
+    {"github", "http://<package>/releases/download/<tag>/<resource>"},
+};
+
+char *url_from_package(const char *package, const char *tag,
+                       const char *resource) {
+  char host[1024];
+
+  const char *dot = strchr(package, '.');
+
+  if (!dot)
+    return nullptr;
+
+  size_t hostlen = dot - package;
+  if (!hostlen)
+    return nullptr;
+
+  memcpy(host, package, hostlen);
+
+  for (int i = 0; i < LEN_CARRAY(known_hosts); i++) {
+    struct host *known_host = known_hosts + i;
+
+    if (strcmp(host, known_host->hostname))
+      continue;
+
+    // We have a match.
+
+    v_char url = {};
+    const char *cursor = known_host->pattern;
+
+    for (;;) {
+      char *pre_pattern = strchr(cursor, '<');
+      assert(pre_pattern > cursor);
+
+      if (!pre_pattern) {
+        v_char_spush(&url, s_char_cstr(cursor));
+        return url.data;
+      }
+
+      pre_pattern++;
+
+      size_t len = pre_pattern - cursor;
+
+      if (!len)
+        return nullptr;
+
+      assert(len);
+
+      v_char_spush(&url, s_char_create(cursor, len - 1));
+
+      const char *post_pattern = strchr(cursor, '>');
+      size_t pattern_len = post_pattern - pre_pattern;
+
+      if (!pattern_len)
+        return nullptr;
+
+      assert(pattern_len);
+
+      if (!strncmp(pre_pattern, "package", pattern_len)) {
+        v_char_spush(&url, s_char_cstr(package));
+      } else if (!strncmp(pre_pattern, "tag", pattern_len)) {
+        v_char_spush(&url, s_char_cstr(tag));
+      } else if (!strncmp(pre_pattern, "resource", pattern_len)) {
+        v_char_spush(&url, s_char_cstr(resource));
+      } else {
+        return nullptr;
+      };
+
+      cursor += (len + pattern_len + 1);
+    }
+  }
+
+  return nullptr;
+};
+
 int get_package(v_step *steps, struct command_arguments *args,
                 const char *package, const char *gab_target,
                 const char *gab_tag) {
@@ -1522,14 +1602,13 @@ int get_package(v_step *steps, struct command_arguments *args,
   v_char_spush(&bundle, s_char_cstr(gab_target));
   v_char_push(&bundle, '\0');
 
-  v_char url = {};
-  v_char_spush(&url, s_char_cstr("http://"));
-  v_char_spush(&url, s_char_cstr(pkg));
-  v_char_spush(&url, s_char_cstr("/releases/download/"));
-  v_char_spush(&url, s_char_cstr(tag));
-  v_char_push(&url, '/');
-  v_char_spush(&url, s_char_cstr(bundle.data));
-  v_char_push(&url, '\0');
+  // TODO: Split the host out of the package
+  // Format the url from the hostname
+
+  const char *url = url_from_package(pkg, tag, bundle.data);
+
+  if (!url)
+    return clierror("Unknown host for package '%s'", package), 1;
 
   const char *install_dir = install_location(gab_target, gab_tag, nullptr);
 
@@ -1552,7 +1631,7 @@ int get_package(v_step *steps, struct command_arguments *args,
 
   v_step_push(steps, (struct step){
                          kSTEP_FETCH,
-                         .as.fetch.url = url.data,
+                         .as.fetch.url = url,
                          .as.fetch.dst = bundle_dst.data,
                      });
 
@@ -1846,8 +1925,8 @@ void cmd_summary(int i) {
 
 void cmd_details(int i) {
   struct command cmd = commands[i];
-  printf("USAGE:\n\tgab %4s [opts] <args>\n\n%s\n\nEXAMPLES:", cmd.name,
-         cmd.long_desc);
+  printf("USAGE:\n\tgab %4s [opts] <args>\n\nDESCRIPTION:\n%s\n\nEXAMPLES:",
+         cmd.name, cmd.long_desc);
 
   for (const char **example = cmd.example; *example; example++) {
     printf("\n\t%s", *example);
@@ -1868,17 +1947,18 @@ void cmd_details(int i) {
 }
 
 int welcome(struct command_arguments *args) {
-  puts(welcome_message);
-  puts("\nTo get started, run `gab help` for a list of commands."
-       "\n\nIf you've just downloaded gab, welcome! Run `gab get` to complete "
-       "your installation.\n");
+  printf(
+      "%s\n%s", welcome_message,
+      "To get started, run `gab help` for a list of commands."
+      "\n\nIf you've just downloaded gab, welcome! Run `gab get` to complete "
+      "your installation.");
   return 0;
 }
 
 int help(struct command_arguments *args) {
   if (args->argc < 1) {
     printf("To see more details about each command, "
-           "run:\n\n\tgab help <cmd>\n\nCOMMANDS:");
+           "run:\n\n\tgab help <cmd>\n\nThe available commands are:\n");
 
     // Print command summaries
     for (int i = 0; i < N_COMMANDS; i++)

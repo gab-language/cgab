@@ -70,9 +70,6 @@ jobs:
           cp build-x86_64-macos-none/gab ~/gab/${{ env.version }}-x86_64-macos-none
           cp build-aarch64-macos-none/gab ~/gab/${{ env.version }}-aarch64-macos-none
 
-    - name: Check the installed files
-      run: ls -R ~/gab
-
     - name: Create bundles
       run: |
          ./build-x86_64-linux-gnu/gab build -n -t x86_64-linux-gnu   < bundle
@@ -241,12 +238,6 @@ jobs:
 
       - name: Move cross-compiled to test
         run: mv test.cgab-${{ env.version }}-${{ matrix.target }}.exe test.exe
-
-      - name: Check Tests bundle
-        run: file test.exe
-
-      - name: Check Tests bundle
-        run: ls -l test.exe
 
       - name: Run cross-compiled tests bundle
         run: ./test.exe
