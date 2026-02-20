@@ -70,6 +70,9 @@ jobs:
           cp build-x86_64-macos-none/gab ~/gab/${{ env.version }}-x86_64-macos-none
           cp build-aarch64-macos-none/gab ~/gab/${{ env.version }}-aarch64-macos-none
 
+    - name: Check the installed files
+      run: ls -R ~/gab
+
     - name: Create bundles
       run: |
          ./build-x86_64-linux-gnu/gab build -n -t x86_64-linux-gnu   < bundle

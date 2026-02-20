@@ -1913,7 +1913,7 @@ int build_exe(struct command_arguments *args, const char *module) {
 
   v_char exepath = {};
   v_char_spush(&exepath, s_char_cstr(GAB_VERSION_TAG));
-  v_char_push(&exepath, '.');
+  v_char_push(&exepath, '-');
   v_char_spush(&exepath, s_char_cstr(platform));
   v_char_push(&exepath, '/');
   v_char_push(&exepath, '\0');
