@@ -564,7 +564,8 @@ int run_file(const char *path, int flags, uint32_t wait, size_t jobs,
 
 bool add_module(mz_zip_archive *zip_o, const char **roots,
                 const struct gab_resource *resources, s_char module,
-                const char **prefix_out, const char **suffix_out, const char **path_out) {
+                const char **prefix_out, const char **suffix_out,
+                const char **path_out) {
 
   char cstr_module[module.len + 1];
   memcpy(cstr_module, module.data, module.len);
@@ -1074,8 +1075,7 @@ bool busywait_handler(struct command_arguments *args) {
   args->argv++;
   args->argc--;
 
-  const char* arg = strchr(flag, '=');
-
+  const char *arg = strchr(flag, '=');
 
   if (!(arg && strlen(arg)) && args->argc <= 0) {
     clierror("No argument to flag '%s'.\n", flag);
@@ -1977,14 +1977,16 @@ int build_exe(struct command_arguments *args, const char *module) {
 
   v_step steps = {0};
 
-  v_step_push(&steps,
-              (struct step){
-                  kSTEP_ARCHIVE_OPEN,
-                  .as.archive_open.path = bundle,
-                  .as.archive_open.zip = &zip_o,
-                  .as.archive_open.initial_data_path = exepath.data,
-                  .as.archive_open.initial_data_fallback_path = gab_osexepath(),
-              });
+  bool is_native = !strcmp(platform, GAB_TARGET_TRIPLE);
+
+  v_step_push(&steps, (struct step){
+                          kSTEP_ARCHIVE_OPEN,
+                          .as.archive_open.path = bundle,
+                          .as.archive_open.zip = &zip_o,
+                          .as.archive_open.initial_data_path = exepath.data,
+                          .as.archive_open.initial_data_fallback_path =
+                              is_native ? gab_osexepath() : nullptr,
+                      });
 
   const char *prefixes[args->modules.len];
   const char *suffixes[args->modules.len];
