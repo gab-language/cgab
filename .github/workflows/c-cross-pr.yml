@@ -82,16 +82,9 @@ jobs:
     - name: Create Cross-Compiled Test binary
       run: |
          ./build-x86_64-linux-gnu/gab build -n -t x86_64-linux-gnu test < bundle
-         mv test.exe test.cgab-${{ env.version }}-x86_64-linux-gnu.exe
-
          ./build-x86_64-linux-gnu/gab build -n -t x86_64-macos-none test < bundle
-         mv test.exe test.cgab-${{ env.version }}-x86_64-macos-none.exe
-
          ./build-x86_64-linux-gnu/gab build -n -t aarch64-linux-gnu test < bundle
-         mv test.exe test.cgab-${{ env.version }}-aarch64-linux-gnu.exe
-
          ./build-x86_64-linux-gnu/gab build -n -t aarch64-macos-none test < bundle
-         mv test.exe test.cgab-${{ env.version }}-aarch64-macos-none.exe
 
     - name: Upload x86_64-linux-gnu Binary Artifact
       uses: pyTooling/upload-artifact@v4

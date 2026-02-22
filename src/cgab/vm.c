@@ -1776,7 +1776,7 @@ CASE_CODE(SEND_PRIMITIVE_USE) {
 
     mod = gab_use(GAB(), (struct gab_use_argt){
                              .flags = should_reload ? fGAB_USE_RELOAD : 0,
-                             .vname = r,
+                             .vpackage_name = r,
                              .env = rec,
                          });
   }
