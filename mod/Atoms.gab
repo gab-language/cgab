@@ -1,0 +1,38 @@
+Atom = gab\atom:
+
+make: .def (Atom, (initial) => do
+  ch = Channels.make
+
+  loop = (state) => do
+    (reply, f) = ch.>!.unwrap
+
+    new_state = f.(state)
+
+    reply <! new_state
+    self.(new_state)
+  end
+
+  Fibers.make () => loop.(initial)
+
+  ch
+end)
+
+t: .def (Atom, Channels.t)
+
+[Atom.t] .defmodule {
+  deref: () => do
+    reply = Channels.make
+    self <! (reply, (x) => x)
+    reply >!
+  end
+
+  swap: (f) => do
+    reply = Channels.make
+    self <! (reply, f)
+    reply >!
+  end
+
+  reset: (val) => self.swap(() => val)
+}
+
+Atom

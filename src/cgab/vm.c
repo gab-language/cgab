@@ -4,25 +4,23 @@
  *  Copyright (c) 2023 Teddy Randby
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy
- *  of this software and associated documentation files (the "Software"), to deal
- *  in the Software without restriction, including without limitation the rights
- *  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- *  copies of the Software, and to permit persons to whom the Software is
+ *  of this software and associated documentation files (the "Software"), to
+ * deal in the Software without restriction, including without limitation the
+ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+ * sell copies of the Software, and to permit persons to whom the Software is
  *  furnished to do so, subject to the following conditions:
  *
- *  The above copyright notice and this permission notice shall be included in all
- *  copies or substantial portions of the Software.
+ *  The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
  *
  *  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  *  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  *  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
  *  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- *  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- *  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- *  SOFTWARE.
+ *  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+ * IN THE SOFTWARE.
  */
-
-
 
 /**
  * @file
@@ -608,20 +606,28 @@ gab_value sprint_stacktrace(struct gab_triple gab, struct gab_vm *vm,
 
   struct gab_err_argt frame =
       vm_frame_build_err(gab, frame_block(f), ip, s, fmt);
-  vframes[nframes++] = gab_vspanicf(gab, va, frame);
+
+  vframes[nframes] = gab_vspanicf(gab, va, frame);
+  if (vframes[nframes] != gab_cinvalid)
+    nframes++;
 
   ip = frame_ip(f);
   f = frame_parent(f);
 
   while (f && frame_parent(f) > vm->sb) {
     frame = vm_frame_build_err(gab, frame_block(f), ip, GAB_NONE, "");
-    vframes[nframes++] = gab_vspanicf(gab, va, frame);
+    vframes[nframes] = gab_vspanicf(gab, va, frame);
+    if (vframes[nframes] != gab_cinvalid)
+      nframes++;
 
     ip = frame_ip(f);
     f = frame_parent(f);
   }
 
-  return gab_list(gab, nframes, vframes);
+  if (nframes)
+    return gab_list(gab, nframes, vframes);
+  else
+    return gab_cinvalid;
 }
 
 gab_value gab_fibstacktrace(struct gab_triple gab, gab_value fiber) {
@@ -640,15 +646,15 @@ union gab_value_pair vvm_terminate(struct gab_triple gab, const char *fmt,
 
   struct gab_vm *vm = gab_thisvm(gab);
 
-  gab_value *f = vm->fp;
-  uint8_t *ip = vm->ip;
+  // gab_value *f = vm->fp;
+  // uint8_t *ip = vm->ip;
 
-  gab_value err = sprint_stacktrace(gab, vm, f, ip, GAB_TERM, fmt, va);
+  // gab_value err = sprint_stacktrace(gab, vm, f, ip, GAB_TERM, fmt, va);
+  //
+  // gab_iref(gab, err);
+  // gab_egkeep(gab.eg, err);
 
-  gab_iref(gab, err);
-  gab_egkeep(gab.eg, err);
-
-  union gab_value_pair res = {{gab_cinvalid, err}};
+  union gab_value_pair res = {{gab_cinvalid, gab_cinvalid}};
 
   struct gab_oblock *blk = frame_block(vm->fp);
   gab_value env;
@@ -710,6 +716,9 @@ union gab_value_pair vvm_error(struct gab_triple gab, enum gab_status s,
 
   gab_value err = sprint_stacktrace(gab, vm, f, ip, s, fmt, va);
 
+  if (err == gab_cinvalid)
+    return vvm_terminate(gab, "While executing $\n", va);
+
   gab_iref(gab, err);
   gab_egkeep(gab.eg, err);
 
@@ -723,6 +732,7 @@ union gab_value_pair vvm_error(struct gab_triple gab, enum gab_status s,
   union gab_value_pair res = {.status = gab_cvalid, .aresult = results};
 
   assert(GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERRUNNING);
+
   GAB_VAL_TO_FIBER(fiber)->res_values = res;
   if (frame_block(vm->fp)) {
     gab_value p = frame_block(vm->fp)->p;
@@ -1184,7 +1194,9 @@ union gab_value_pair do_vmexecfiber(struct gab_triple gab, gab_value f) {
 };
 
 union gab_value_pair gab_vmexec(struct gab_triple gab, gab_value f) {
-  assert(gab_valkind(f) == kGAB_FIBER);
+  gab_assert(gab_valkind(f) == kGAB_FIBER,
+             "Only gab\\fiber shall be exec'd. Not a value of type: %d",
+             gab_valkind(f));
   struct gab_ofiber *fiber = GAB_VAL_TO_FIBER(f);
 
   gab.flags |= fiber->flags;
@@ -1722,6 +1734,8 @@ CASE_CODE(SEND_PRIMITIVE_CONCAT) {
   STORE_SP();
   gab_value val_ab = gab_tstrcat(GAB(), val_a, val_b);
 
+  CHECK_SIGNAL();
+
   if (val_ab == gab_cinvalid)
     VM_TERM();
 
@@ -1774,9 +1788,12 @@ CASE_CODE(SEND_PRIMITIVE_USE) {
 
     bool should_reload = have > 1 ? PEEK_N(have - 1) == gab_true : false;
 
+    gab_value module = have > 1 ? PEEK_N(have - 1) : gab_cundefined;
+
     mod = gab_use(GAB(), (struct gab_use_argt){
                              .flags = should_reload ? fGAB_USE_RELOAD : 0,
                              .vpackage_name = r,
+                             .vmodule_name = module,
                              .env = rec,
                          });
   }
@@ -2584,6 +2601,10 @@ CASE_CODE(SEND_PRIMITIVE_FIBER) {
     goto fin;
 
   gab_value result = gab_tchnput(GAB(), EG()->work_channel, fb, 1 << 16);
+
+#if cGAB_LOG_EG
+  gab_fprintf(stderr, "[WORKER $] chnput $\n", gab_number(GAB().wkid), fb);
+#endif
 
   switch (result) {
   // Timed out

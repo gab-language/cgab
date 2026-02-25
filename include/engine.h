@@ -630,6 +630,11 @@ struct gab_err_argt {
   int wkid;
 };
 
+#define T struct gab_err_argt
+#define NAME err
+#define CONCURRENT
+#include "vector.h"
+
 /*
  * @brief Construct a panic.
  */

@@ -254,14 +254,8 @@ int sinspectval(char **dest, size_t *n, gab_value self, int depth) {
   case kGAB_FIBERRUNNING:
   case kGAB_FIBERDONE: {
     struct gab_ofiber *fiber = GAB_VAL_TO_FIBER(self);
-    gab_value msg = fiber->data[0];
-    gab_value rec = fiber->data[1];
 
-    return snprintf_through(dest, n, "<" tGAB_FIBER " ") +
-           sinspectval(dest, n, msg, depth + 1) +
-           snprintf_through(dest, n, " ") +
-           sinspectval(dest, n, rec, depth + 1) +
-           snprintf_through(dest, n, ">");
+    return snprintf_through(dest, n, "<" tGAB_FIBER " %p>", fiber);
   }
   case kGAB_RECORD: {
     if (gab_valkind(gab_recshp(self)) == kGAB_SHAPELIST)
@@ -500,6 +494,9 @@ gab_value gab_tnstring(struct gab_triple gab, uint64_t len, const char *data) {
   /*
    * TODO: Inbetween the two lock holds here, another thread
    * *could* insert the string we want into the dict.
+   * In that case, we'd stomp over the old value
+   * and leak its memory.
+   *
    * Fix this
    */
 
@@ -519,12 +516,22 @@ gab_value gab_tnstring(struct gab_triple gab, uint64_t len, const char *data) {
   return s;
 }
 
+/*
+ * TODO: Becuase of how signaling works, the gc_mtx is held by the gc worker
+ * for the entire signal.
+ *
+ * This means that strings cannot be created during a TERM signal.
+ *
+ * This doesn't have to be the case. The only signal that cares is the sGAB_COLL
+ * - other signals actually don't really care about the gc_mtx.
+ */
 gab_value gab_nstring(struct gab_triple gab, uint64_t len, const char *data) {
   for (;;) {
     switch (gab_yield(gab)) {
     case sGAB_IGN:
       break;
     case sGAB_TERM:
+      // break;
       return gab_cinvalid;
     case sGAB_COLL:
       gab_gcepochnext(gab);
@@ -2544,7 +2551,7 @@ struct gab_pprint {
   enum gab_pprint_k k; /* Kind of the token */
   int32_t width;       /* Pre-computed width of the token */
   union gab_pprint_d {
-    gab_value val; /* Gab value to be printed with this token. THis should be a
+    gab_value val; /* Gab value to be printed with this token. This should be a
                  primitive value, not a nested one. */
     char c;
     const char *s;
@@ -2679,6 +2686,8 @@ void pprint_fiber(v_gab_pprint *self, gab_value fib) {
 
   push_pprint_kd(self, kPPRINT_INDENT, (union gab_pprint_d){'<'});
   push_pprint_s(self, tGAB_FIBER);
+  push_pprint_k(self, kPPRINT_SPACE);
+  push_pprint_v(self, fib);
   push_pprint_k(self, kPPRINT_SPACE);
   pprint_tokify(self, msg);
   push_pprint_k(self, kPPRINT_SPACE);

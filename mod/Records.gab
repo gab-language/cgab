@@ -1,4 +1,4 @@
-Records = 'crecords'.use
+Records = 'github.com/gab-language/cgab@0.0.5' .use 'crecords'
 
 make\from: .def (
   Records,

@@ -1,4 +1,4 @@
-Messages = 'cmessages'.use
+Messages = 'github.com/gab-language/cgab@0.0.5'.use 'cmessages'
 
 defm:.def(
   Messages.t

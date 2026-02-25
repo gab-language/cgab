@@ -372,21 +372,29 @@ static inline void v_uint8_t_npush(v_uint8_t *self, size_t n, uint8_t *buff) {
 #define GAB_CLEAR "\x1b[2J"
 
 #include <stdio.h>
+#include <stdarg.h>
 [[noreturn]]
 static inline void __gab_assert_fail(const char *expr, const char *file,
                                      const char *function, size_t line,
-                                     const char *reason) {
-  fprintf(stderr, "[%s] assertion '%s' failed at %s:%lu. %s", function, expr,
-          file, line, reason);
+                                     const char *reason, ...) {
+  va_list va;
+  va_start(va, reason);
+
+  fprintf(stderr, "[%s] assertion '%s' failed at %s:%lu.\n ", function, expr,
+          file, line);
+
+  vfprintf(stderr, reason, va);
+
   exit(EXIT_FAILURE);
+  va_end(va);
 };
 
 /*
  * TODO: Better 'asserts' which are self-describing.
  */
-#define gab_assert(expr, reason)                                               \
+#define gab_assert(expr, format, ...)                                               \
   ((expr) ? (void)(0)                                                          \
           : __gab_assert_fail(#expr, __FILE__, __FUNCTION__, __LINE__,  \
-                              reason))
+                              format __VA_OPT__(,) __VA_ARGS__))
 
 #endif

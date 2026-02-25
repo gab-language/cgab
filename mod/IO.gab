@@ -1,4 +1,4 @@
-io = 'cio'.use
+io = 'github.com/gab-language/cgab@0.0.5'.use 'cio'
 
 eprintln:.def () => io.stderr.write('$\n'.sprintf(self).to\b)
 println:.def () => io.stdout.write('$\n'.sprintf(self).to\b)

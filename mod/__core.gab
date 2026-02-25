@@ -14,7 +14,7 @@ is: .def other => self? == other
 
 truthy_values .defmodule {
   and: (alt*) => alt*
-  then: f => f . self
+  then: (args*, f) => f.(args*)
   or: _ => self
   else: _ => self
   assert: _ => self
@@ -26,7 +26,7 @@ falsey_values .defmodule {
   and: _ => self
   then: _ => self
   or: (alt*) => alt*
-  else: f => f.(self)
+  else: (args*, f) => f.(args*)
   assert: msg => 'Assertion ($) failed: $'.panicf(self, msg .or "")
   to\option: none:,
   to\result: err:,

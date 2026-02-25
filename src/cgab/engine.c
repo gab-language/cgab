@@ -26,6 +26,7 @@
 #include "core.h"
 #include "gab.h"
 #include <stdatomic.h>
+#include <threads.h>
 
 struct errdetails {
   const char *src_name, *tok_name, *msg_name;
@@ -462,6 +463,14 @@ int32_t gc_job(void *data) {
 /*
  * TODO: Implement some form of work stealing (Or preemption).
  */
+static inline bool worker_isrunning(struct gab_triple gab,
+                                    struct gab_job *job) {
+  if (q_gab_value_is_empty(&job->queue))
+    return false;
+
+  gab_value fiber = q_gab_value_peek(&job->queue);
+  return gab_valkind(fiber) == kGAB_FIBERRUNNING;
+}
 
 static inline bool worker_step(struct gab_triple gab, struct gab_job *job) {
   // If there is room in our local queue to take jobs off the global channel,
@@ -479,8 +488,8 @@ static inline bool worker_step(struct gab_triple gab, struct gab_job *job) {
         gab_tchntake(gab, gab.eg->work_channel, cGAB_WORKER_IDLE_TRIES);
 
 #if cGAB_LOG_EG
-    gab_fprintf(stderr, "[WORKER $] chntake succeeded: $\n",
-                gab_number(gab.wkid), fiber);
+    gab_fprintf(stderr, "[WORKER $] chntake result: $\n", gab_number(gab.wkid),
+                fiber);
 #endif
 
     // Terminate if requested.
@@ -511,11 +520,20 @@ static inline bool worker_step(struct gab_triple gab, struct gab_job *job) {
       size_t i = 0;
       for (size_t h = job->queue.head; h < job->queue.tail; h++, i++) {
         gab_value d = job->queue.data[h & (job->queue.size - 1)];
+        gab_assert(gab_valkind(d) == kGAB_FIBER,
+                   "[WORKER %i] Fibers in queue shall only have kind "
+                   "kGAB_FIBER, not %d.",
+                   gab.wkid, gab_valkind(d));
         gab_fprintf(stderr, "[WORKER $] $ is waiting at $\n",
                     gab_number(gab.wkid), d, gab_number(i));
       }
 #endif
+
     } else {
+      gab_assert(gab_valkind(fiber) == kGAB_FIBER,
+                 "Fibers in the queue shall only have type kGAB_FIBER, not %d.",
+                 gab_valkind(fiber));
+
       // Our global take succeeded - append to our local queue.
       if (!q_gab_value_push(&job->queue, fiber))
         gab_assert(false, "In this codepath, the queue is guaranteed to have "
@@ -526,21 +544,26 @@ static inline bool worker_step(struct gab_triple gab, struct gab_job *job) {
   // Peek at job to do on the queue.
   gab_value fiber = q_gab_value_peek(&job->queue);
 
-#if cGAB_LOG_EG
-  gab_fprintf(stderr, "[WORKER $] EXECUTING $\n", gab_number(gab.wkid), fiber);
-#endif
   gab_assert(gab_valkind(fiber) != kGAB_FIBERDONE,
              "Fibers about to be run shall not be kGAB_FIBERDONE.");
 
-  // Run our fiber.
-  union gab_value_pair res = gab_vmexec(gab, fiber);
+  gab_assert(gab_valkind(fiber) == kGAB_FIBER,
+             "Fibers in the queue shall only have type kGAB_FIBER, not %d.",
+             gab_valkind(fiber));
 
   gab_assert(q_gab_value_peek(&job->queue) == fiber,
              "The fiber about to be run shall be at the front of the queue.");
 
 #if cGAB_LOG_EG
-  gab_fprintf(stderr, "[WORKER $] ran: $ -> $\n", gab_number(gab.wkid), fiber,
-              res.status);
+  gab_fprintf(stderr, "[WORKER $] EXECUTING $\n", gab_number(gab.wkid), fiber);
+#endif
+
+  // Run our fiber.
+  union gab_value_pair res = gab_vmexec(gab, fiber);
+
+#if cGAB_LOG_EG
+  gab_fprintf(stderr, "[WORKER $] EXECUTED: $ -> $\n", gab_number(gab.wkid),
+              fiber, res.status);
 #endif
 
   // We did work - pop it off the queue now.
@@ -553,6 +576,13 @@ static inline bool worker_step(struct gab_triple gab, struct gab_job *job) {
     gab_assert(!gab_fibisrunning(popped),
                "A popped fiber shall not be running");
     gab_assert(!gab_fibisdone(popped), "A timedout fiber shall not be done");
+
+    gab_assert(gab_valkind(fiber) == kGAB_FIBER,
+               "Fibers in the queue shall only have type kGAB_FIBER, not %d.",
+               gab_valkind(fiber));
+#if cGAB_LOG_EG
+#endif
+
     // We did not complete the work. Push back onto our queue.
     if (!q_gab_value_push(&job->queue, fiber))
       gab_assert(
@@ -565,11 +595,14 @@ static inline bool worker_step(struct gab_triple gab, struct gab_job *job) {
     // We panicked. Crash the system.
     if (res.aresult->data[0] != gab_ok) {
       gab_value err = res.aresult->data[1];
-      gab_iref(gab, err);
-      gab_egkeep(gab.eg, err);
+      if (err != gab_cinvalid) {
+        gab_iref(gab, err);
+        gab_egkeep(gab.eg, err);
 
-      v_gab_value_thrd_push(&gab.eg->err, err);
-      gab_sigterm(gab);
+        v_gab_value_thrd_push(&gab.eg->err, err);
+
+        gab_sigterm(gab);
+      }
     }
     break;
 
@@ -583,6 +616,13 @@ static inline bool worker_step(struct gab_triple gab, struct gab_job *job) {
 
   return true;
 }
+
+static const char *gab_opcode_names[] = {
+#define OP_CODE(name) #name,
+#include "bytecode.h"
+#undef OP_CODE
+#undef GAB_OPCODE_NAMES_IMPL
+};
 
 static inline void worker_bail(struct gab_triple gab, struct gab_job *job) {
 #if cGAB_LOG_EG
@@ -608,6 +648,11 @@ bail:
 
     gab_assert(gab_sigwaiting(gab), "While bailing, there shall be a sGAB_TERM "
                                     "signal waiting for this worker");
+
+    gab_assert(gab_valkind(fiber) == kGAB_FIBER,
+               "Fibers in the queue should only have type kGAB_FIBER, not %d",
+               gab_valkind(fiber));
+
     // Run each queued fiber. Since there is a TERM signal waiting on this
     // worker, each fiber will terminate itself here, in one instruction.
     union gab_value_pair res = gab_vmexec(gab, fiber);
@@ -618,15 +663,17 @@ bail:
 #endif
     // Ensure that the termination occurred.
     gab_assert(res.status != gab_ctimeout,
-               "One step of execution shall 'bail' the fiber");
+               "One step of execution shall 'bail' the fiber. %s did not bail.",
+               gab_opcode_names[*gab_fibvm(fiber)->ip]);
+
     gab_assert(gab_fibisdone(fiber), "A terminated fiber shall be done");
 
-    gab_value err = gab_fibstacktrace(gab, fiber);
-
-    gab_iref(gab, err);
-    gab_egkeep(gab.eg, err);
-
-    v_gab_value_thrd_push(&gab.eg->err, err);
+    // gab_value err = gab_fibstacktrace(gab, fiber);
+    //
+    // gab_iref(gab, err);
+    // gab_egkeep(gab.eg, err);
+    //
+    // v_gab_value_thrd_push(&gab.eg->err, err);
 
     // Truly pop off the fiber now.
     q_gab_value_pop(&job->queue);
@@ -1068,6 +1115,19 @@ void gab_destroy(struct gab_triple gab) {
 bool repl_check_res(struct gab_triple gab, union gab_value_pair res) {
   gab_value *err = gab_egerrs(gab.eg);
 
+  while (gab_signaling(gab))
+    switch (gab_yield(gab)) {
+    case sGAB_TERM:
+      gab_sigpropagate(gab);
+      break;
+    case sGAB_COLL:
+      gab_gcepochnext(gab);
+      gab_sigpropagate(gab);
+      break;
+    default:
+      continue;
+    }
+
   if (err) {
     for (gab_value *thiserr = err; *thiserr != gab_nil; thiserr++) {
       gab_assert(gab_valkind(*thiserr) == kGAB_RECORD,
@@ -1324,8 +1384,12 @@ union gab_value_pair gab_exec(struct gab_triple gab,
   if (gab.wkid != 1)
     return gab_fibawait(gab, fib.vresult);
 
+  // Prevent running the below loop recursively.
+  if (worker_isrunning(gab, gab.eg->jobs + gab.wkid))
+    return gab_fibawait(gab, fib.vresult);
+
   // If we are on the main thread, we
-  // can do some work while we block.
+  // can do some work while we block (If we aren't already).
   for (;;) {
     union gab_value_pair res = gab_tfibawait(gab, fib.vresult, 1);
 
@@ -1849,18 +1913,61 @@ gab_value gab_vspanicf(struct gab_triple gab, va_list va,
     // assert(false);
   }
 
+  // Signaling here causes the record to have no keys.
+  gab_value vstatus = gab_message(gab, "status");
+  if (vstatus == gab_cinvalid)
+    return gab_gcunlock(gab), gab_cinvalid;
+
+  gab_value vsrc = gab_message(gab, "src");
+  if (vsrc == gab_cinvalid)
+    return gab_gcunlock(gab), gab_cinvalid;
+
+  gab_value vtok_offset = gab_message(gab, "tok\\offset");
+  if (vtok_offset == gab_cinvalid)
+    return gab_gcunlock(gab), gab_cinvalid;
+
+  gab_value vtok_t = gab_message(gab, "tok\\t");
+  if (vtok_t == gab_cinvalid)
+    return gab_gcunlock(gab), gab_cinvalid;
+
+  gab_value vhint = gab_message(gab, "hint");
+  if (vhint == gab_cinvalid)
+    return gab_gcunlock(gab), gab_cinvalid;
+
+  gab_value vrow = gab_message(gab, "row");
+  if (vrow == gab_cinvalid)
+    return gab_gcunlock(gab), gab_cinvalid;
+
+  gab_value vcol_begin = gab_message(gab, "col\\begin");
+  if (vcol_begin == gab_cinvalid)
+    return gab_gcunlock(gab), gab_cinvalid;
+
+  gab_value vcol_end = gab_message(gab, "col\\end");
+  if (vcol_end == gab_cinvalid)
+    return gab_gcunlock(gab), gab_cinvalid;
+
+  gab_value vbyte_begin = gab_message(gab, "byte\\begin");
+  if (vbyte_begin == gab_cinvalid)
+    return gab_gcunlock(gab), gab_cinvalid;
+
+  gab_value vbyte_end = gab_message(gab, "byte\\end");
+  if (vbyte_end == gab_cinvalid)
+    return gab_gcunlock(gab), gab_cinvalid;
+
+  gab_value vthrd = gab_message(gab, "thread");
+  if (vthrd == gab_cinvalid)
+    return gab_gcunlock(gab), gab_cinvalid;
+
   gab_value rec = gab_recordof(
-      gab, gab_message(gab, "status"),
-      gab_string(gab, gab_status_names[err.status]), gab_message(gab, "src"),
-      gab_string(gab, err.src_name), gab_message(gab, "tok\\offset"),
-      gab_number(args.tok), gab_message(gab, "tok\\t"),
-      gab_string(gab, err.tok_name), gab_message(gab, "hint"),
-      gab_string(gab, hint), gab_message(gab, "row"), gab_number(err.row),
-      gab_message(gab, "col\\begin"), gab_number(err.col_begin),
-      gab_message(gab, "col\\end"), gab_number(err.col_end),
-      gab_message(gab, "byte\\begin"), gab_number(err.byte_begin),
-      gab_message(gab, "byte\\end"), gab_number(err.byte_end),
-      gab_message(gab, "thread"), gab_number(args.wkid), );
+      gab, vstatus, gab_string(gab, gab_status_names[err.status]), vsrc,
+      gab_string(gab, err.src_name), vtok_offset, gab_number(args.tok), vtok_t,
+      gab_string(gab, err.tok_name), vhint, gab_string(gab, hint), vrow,
+      gab_number(err.row), vcol_begin, gab_number(err.col_begin), vcol_end,
+      gab_number(err.col_end), vbyte_begin, gab_number(err.byte_begin),
+      vbyte_end, gab_number(err.byte_end), vthrd, gab_number(args.wkid), );
+
+  gab_assert(gab_reclen(rec) == 11,
+             "Error record shall be constructed correctly");
 
   gab_gcunlock(gab);
 
@@ -1869,18 +1976,74 @@ gab_value gab_vspanicf(struct gab_triple gab, va_list va,
 
 gab_value single_errtos(struct gab_triple gab, gab_value err) {
   gab_value token_type = gab_mrecat(gab, err, "tok\\t");
+  if (token_type == gab_cinvalid)
+    return gab_cinvalid;
+
   gab_value srcname = gab_mrecat(gab, err, "src");
+  if (srcname == gab_cinvalid)
+    return gab_cinvalid;
+
   gab_value status = gab_mrecat(gab, err, "status");
+  if (status == gab_cinvalid)
+    return gab_cinvalid;
+
   gab_value hint = gab_mrecat(gab, err, "hint");
+  if (hint == gab_cinvalid)
+    return gab_cinvalid;
 
-  gab_value token = gab_valtou(gab_mrecat(gab, err, "tok\\offset"));
-  uint64_t row = gab_valtou(gab_mrecat(gab, err, "row"));
-  uint64_t col_begin = gab_valtou(gab_mrecat(gab, err, "col\\begin"));
-  uint64_t col_end = gab_valtou(gab_mrecat(gab, err, "col\\end"));
-  uint64_t byte_begin = gab_valtou(gab_mrecat(gab, err, "byte\\begin"));
-  uint64_t byte_end = gab_valtou(gab_mrecat(gab, err, "byte\\end"));
+  gab_value vtoken = gab_mrecat(gab, err, "tok\\offset");
+  if (vtoken == gab_cinvalid)
+    return gab_cinvalid;
 
-  gab_value wkid = gab_valtou(gab_mrecat(gab, err, "thread"));
+  gab_value vrow = gab_mrecat(gab, err, "row");
+  if (vrow == gab_cinvalid)
+    return gab_cinvalid;
+
+  gab_value vcol_begin = gab_mrecat(gab, err, "col\\begin");
+  if (vcol_begin == gab_cinvalid)
+    return gab_cinvalid;
+
+  gab_value vcol_end = gab_mrecat(gab, err, "col\\end");
+  if (vcol_end == gab_cinvalid)
+    return gab_cinvalid;
+
+  gab_value vbyte_begin = gab_mrecat(gab, err, "byte\\begin");
+  if (vbyte_begin == gab_cinvalid)
+    return gab_cinvalid;
+
+  gab_value vbyte_end = gab_mrecat(gab, err, "byte\\end");
+  if (vbyte_end == gab_cinvalid)
+    return gab_cinvalid;
+
+  gab_value vwkid = gab_mrecat(gab, err, "thread");
+  if (vwkid == gab_cinvalid)
+    return gab_cinvalid;
+
+  gab_assert(gab_valkind(vtoken) == kGAB_NUMBER,
+             "tok\\offset shall be a number");
+  uint64_t token = gab_valtou(vtoken);
+
+  gab_assert(gab_valkind(vrow) == kGAB_NUMBER, "row shall be a number");
+  uint64_t row = gab_valtou(vrow);
+
+  gab_assert(gab_valkind(vcol_begin) == kGAB_NUMBER,
+             "col\\begin shall be a number");
+  uint64_t col_begin = gab_valtou(vcol_begin);
+
+  gab_assert(gab_valkind(vcol_end) == kGAB_NUMBER,
+             "col\\end shall be a number");
+  uint64_t col_end = gab_valtou(vcol_end);
+
+  gab_assert(gab_valkind(vbyte_begin) == kGAB_NUMBER,
+             "byte\\begin shall be a number");
+  uint64_t byte_begin = gab_valtou(vbyte_begin);
+
+  gab_assert(gab_valkind(vbyte_end) == kGAB_NUMBER,
+             "byte\\end shall be a number");
+  uint64_t byte_end = gab_valtou(vbyte_end);
+
+  gab_assert(gab_valkind(vwkid) == kGAB_NUMBER, "wkid shall be a number");
+  uint64_t wkid = gab_valtou(vwkid);
 
   enum gab_status status_enum = GAB_OK;
   const char *statusname = gab_strdata(&status);
@@ -1933,9 +2096,25 @@ const char *gab_errtocs(struct gab_triple gab, gab_value err) {
     return nullptr;
 
   if (!gab_recisl(err)) {
-    gab_value str = single_errtos(gab, err);
+    gab_value str;
+
+    do {
+      str = single_errtos(gab, err);
+
+      switch (gab_yield(gab)) {
+      case sGAB_TERM:
+        gab_sigpropagate(gab);
+        break;
+      case sGAB_COLL:
+        gab_gcepochnext(gab);
+        gab_sigpropagate(gab);
+        break;
+      default:
+        continue;
+      }
+    } while (str == gab_cinvalid);
+
     assert(str != gab_nil);
-    assert(str != gab_cinvalid);
     assert(gab_strlen(str) > 5);
     // Only works because this will never be a shortstr.
     // This is *not* an appropriate way to use
@@ -1945,25 +2124,67 @@ const char *gab_errtocs(struct gab_triple gab, gab_value err) {
     return gab_strdata(&str);
   }
 
-  gab_value total_str = gab_string(gab, "");
+  int len = gab_reclen(err);
+
+  if (!len)
+    return nullptr;
+
+  gab_value total_str = gab_cinvalid;
+  do {
+    total_str = gab_string(gab, "");
+  } while (total_str == gab_cinvalid);
+
   assert(total_str != gab_cinvalid);
   if (total_str == gab_cinvalid)
     return nullptr;
 
-  int len = gab_reclen(err);
   for (int i = len - 1; i >= 0; --i) {
     gab_value next_err = gab_uvrecat(err, i);
+    gab_assert(gab_reclen(next_err) > 1, "WRONG RECLEN");
     assert(next_err != gab_nil);
 
-    gab_value next_str = single_errtos(gab, next_err);
-    assert(next_str != gab_cinvalid);
+    gab_value next_str;
 
-    total_str = gab_strcat(gab, total_str, next_str);
-    if (total_str == gab_cinvalid)
-      return nullptr;
+    do {
+      next_str = single_errtos(gab, next_err);
+
+      switch (gab_yield(gab)) {
+      case sGAB_TERM:
+        gab_sigpropagate(gab);
+        break;
+      case sGAB_COLL:
+        gab_gcepochnext(gab);
+        gab_sigpropagate(gab);
+        break;
+      default:
+        continue;
+      }
+    } while (next_str == gab_cinvalid);
+
+    assert(next_str != gab_nil);
+
+    do {
+      total_str = gab_strcat(gab, total_str, next_str);
+
+      switch (gab_yield(gab)) {
+      case sGAB_TERM:
+        gab_sigpropagate(gab);
+        break;
+      case sGAB_COLL:
+        gab_gcepochnext(gab);
+        gab_sigpropagate(gab);
+        break;
+      default:
+        continue;
+      }
+    } while (total_str == gab_cinvalid);
+    // if (total_str == gab_cinvalid)
+    //   return nullptr;
   }
 
-  assert(gab_strlen(total_str) > 5);
+  gab_assert(gab_strlen(total_str) > 5,
+             "Returned Str Length shall be greater than 5, so as not to "
+             "invalidate pointer.");
   return gab_strdata(&total_str);
 }
 
@@ -2381,17 +2602,18 @@ GAB_API inline bool gab_signext(struct gab_triple gab, int wkid) {
     // and begin the gc last.
     if (wkid >= gab.eg->len) {
       struct gab_sig next = {
-          .mask = sig.mask, .schedule = 0, .signal = sig.signal};
-      assert(next.signal != sGAB_IGN);
-      if (atomic_compare_exchange_weak(&gab.eg->sig, &sig, next)) {
-#if cGAB_LOG_EG
-        fprintf(stderr, "[WORKER %i] WRAP NEXT %i\n", gab.wkid, 0);
-#endif
-        // Wake up the gc thrd to recv this if it isn't awake.
-        cnd_signal(&gab.eg->gc_cnd);
+          .mask = sig.mask,
+          .schedule = 0,
+          .signal = sig.signal,
+      };
 
+      assert(next.signal != sGAB_IGN);
+
+      // cnd_signal(&gab.eg->gc_cnd);
+
+      if (atomic_compare_exchange_weak(&gab.eg->sig, &sig, next))
         return true;
-      } else
+      else
         continue;
     }
 
@@ -2405,30 +2627,30 @@ GAB_API inline bool gab_signext(struct gab_triple gab, int wkid) {
       assert(sig.mask & (1 << n));
 
       struct gab_sig next = {
-          .mask = sig.mask, .schedule = n, .signal = sig.signal};
+          .mask = sig.mask,
+          .schedule = n,
+          .signal = sig.signal,
+      };
 
       assert(next.signal != sGAB_IGN);
 
-      if (atomic_compare_exchange_weak(&gab.eg->sig, &sig, next)) {
-#if cGAB_LOG_EG
-        fprintf(stderr, "[WORKER %i] SKIP NEXT %i => %i\n", gab.wkid, wkid, n);
-#endif
+      if (atomic_compare_exchange_weak(&gab.eg->sig, &sig, next))
         return true;
-      } else
+      else
         continue;
     }
 
     if (sig.schedule < (int8_t)wkid) {
-
       struct gab_sig next = {
-          .mask = sig.mask, .schedule = wkid, .signal = sig.signal};
+          .mask = sig.mask,
+          .schedule = wkid,
+          .signal = sig.signal,
+      };
+
       assert(next.signal != sGAB_IGN);
-      if (atomic_compare_exchange_weak(&gab.eg->sig, &sig, next)) {
-#if cGAB_LOG_EG
-        fprintf(stderr, "[WORKER %i] DO NEXT %i\n", gab.wkid, wkid);
-#endif
+      if (atomic_compare_exchange_weak(&gab.eg->sig, &sig, next))
         return true;
-      } else
+      else
         continue;
     }
 
@@ -2471,18 +2693,34 @@ GAB_API inline bool gab_signal(struct gab_triple gab, enum gab_signal s,
       fprintf(stderr, "[WORKER %i] SIGNAL %i TO %b\n", gab.wkid, s, sig.mask);
 #endif
 
+      /*
+       * Depending on the signal we have successfully begun,
+       * we may need to do some different work.
+       *
+       * For collections, we need to signal a wakeup (and therefore lock)
+       * of the gc worker and gc_mtx. Then we wait for an ack from that thread.
+       *
+       * For other signals, we can just begin signalling - no setup work is
+       * required.
+       */
+      // switch (s) {
+      // case sGAB_COLL:
       mtx_lock(&gab.eg->gc_mtx);
       cnd_signal(&gab.eg->gc_cnd);
       mtx_unlock(&gab.eg->gc_mtx);
 
-      // Wait for gc thread to ack
       for (;;) {
         struct gab_sig sig = atomic_load(&gab.eg->sig);
+
+        /* acknowledgment received */
         if (sig.schedule == -1)
           break;
       }
-
       return gab_signext(gab, wkid);
+      // default:
+      //   atomic_store(&gab.eg->sig, ((struct gab_sig){sig.mask, -1, s}));
+      //   return gab_signext(gab, wkid);
+      // }
     }
   }
 };

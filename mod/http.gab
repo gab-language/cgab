@@ -1,4 +1,4 @@
-'chttp'.use
+Http = 'github.com/gab-language/cgab@0.0.5'.use'chttp'
 
 http\req: .defclass(
   http\method: http\endpoint: http\headers: http\body:
