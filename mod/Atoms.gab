@@ -23,13 +23,13 @@ t: .def (Atom, Channels.t)
   deref: () => do
     reply = Channels.make
     self <! (reply, (x) => x)
-    reply >!
+    reply.>!.unwrap
   end
 
   swap: (f) => do
     reply = Channels.make
     self <! (reply, f)
-    reply >!
+    reply.>!.unwrap
   end
 
   reset: (val) => self.swap(() => val)

@@ -166,7 +166,7 @@ static const char *gab_opcode_names[] = {
 #define NEXT_CHECKED()                                                         \
   ({                                                                           \
     CHECK_SIGNAL();                                                            \
-    DISPATCH(*(IP()++));                                                       \
+    NEXT();                                                                    \
   })
 
 #define NEXT() ({ DISPATCH(*(IP()++)); })
@@ -644,6 +644,23 @@ union gab_value_pair vvm_terminate(struct gab_triple gab, const char *fmt,
                                    va_list va) {
   gab_value fiber = gab_thisfiber(gab);
 
+  /*
+   * It is possible that a fiber is *done* here, if gab_panic was called in a
+   * native fn.
+   */
+  if (gab_valkind(fiber) == kGAB_FIBERDONE)
+    return GAB_VAL_TO_FIBER(fiber)->res_values;
+
+  gab_assert(gab_valkind(fiber) == kGAB_FIBERRUNNING,
+             "Terminating fiber must be running or done, not: %d",
+             gab_valkind(fiber));
+
+  gab_assert(GAB_VAL_TO_FIBER(fiber)->res_env == gab_cinvalid,
+             "Terminating fiber res_env shall be uninitialized.");
+
+  gab_assert(GAB_VAL_TO_FIBER(fiber)->res_values.status == 0,
+             "Terminating fiber res shall be uninitialized.");
+
   struct gab_vm *vm = gab_thisvm(gab);
 
   // gab_value *f = vm->fp;
@@ -669,28 +686,38 @@ union gab_value_pair vvm_terminate(struct gab_triple gab, const char *fmt,
 
   gab_egkeep(gab.eg, gab_iref(gab, env));
 
-  assert(GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERRUNNING);
   GAB_VAL_TO_FIBER(fiber)->res_values = res;
   GAB_VAL_TO_FIBER(fiber)->res_env = env;
   GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERDONE;
 
   return res;
 }
+
 union gab_value_pair vm_givenerr(struct gab_triple gab,
                                  union gab_value_pair given) {
   gab_value fiber = gab_thisfiber(gab);
 
+  /*
+   * It is possible that a fiber is *done* here, if gab_panic was called in a
+   * native fn.
+   */
+  if (gab_valkind(fiber) == kGAB_FIBERDONE)
+    return GAB_VAL_TO_FIBER(fiber)->res_values;
+
+  gab_assert(gab_valkind(fiber) == kGAB_FIBERRUNNING,
+             "Terminating fiber must be running or done, not: %d",
+             gab_valkind(fiber));
+
+  gab_assert(GAB_VAL_TO_FIBER(fiber)->res_env == gab_cinvalid,
+             "Terminating fiber res_env shall be uninitialized.");
+
+  gab_assert(GAB_VAL_TO_FIBER(fiber)->res_values.status == 0,
+             "Terminating fiber res shall be uninitialized.");
+
   struct gab_vm *vm = gab_thisvm(gab);
 
-  gab_value p = frame_block(vm->fp)->p;
-  gab_value shape = gab_prtshp(p);
-  gab_value env =
-      gab_recordfrom(gab, shape, 1, gab_shplen(shape), vm->fp, nullptr);
-
-  gab_egkeep(gab.eg, gab_iref(gab, env));
-
-  assert(GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERRUNNING);
   GAB_VAL_TO_FIBER(fiber)->res_values = given;
+
   if (frame_block(vm->fp)) {
     gab_value p = frame_block(vm->fp)->p;
     gab_value shape = gab_prtshp(p);
@@ -698,8 +725,10 @@ union gab_value_pair vm_givenerr(struct gab_triple gab,
     gab_value env =
         gab_recordfrom(gab, shape, 1, gab_shplen(shape), vm->fp, nullptr);
     gab_egkeep(gab.eg, gab_iref(gab, env));
+
     GAB_VAL_TO_FIBER(fiber)->res_env = env;
   }
+
   GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERDONE;
 
   return given;
@@ -708,6 +737,16 @@ union gab_value_pair vm_givenerr(struct gab_triple gab,
 union gab_value_pair vvm_error(struct gab_triple gab, enum gab_status s,
                                const char *fmt, va_list va) {
   gab_value fiber = gab_thisfiber(gab);
+
+  gab_assert(gab_valkind(fiber) == kGAB_FIBERRUNNING,
+             "Terminating fiber must be running or done, not: %d",
+             gab_valkind(fiber));
+
+  gab_assert(GAB_VAL_TO_FIBER(fiber)->res_env == gab_cinvalid,
+             "Terminating fiber res_env shall be uninitialized.");
+
+  gab_assert(GAB_VAL_TO_FIBER(fiber)->res_values.status == 0,
+             "Terminating fiber res shall be uninitialized.");
 
   struct gab_vm *vm = gab_thisvm(gab);
 
@@ -741,6 +780,7 @@ union gab_value_pair vvm_error(struct gab_triple gab, enum gab_status s,
     gab_value env =
         gab_recordfrom(gab, shape, 1, gab_shplen(shape), vm->fp, nullptr);
     gab_egkeep(gab.eg, gab_iref(gab, env));
+    assert(GAB_VAL_TO_FIBER(fiber)->res_env == gab_cinvalid);
     GAB_VAL_TO_FIBER(fiber)->res_env = env;
   }
   GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERDONE;
@@ -1148,9 +1188,19 @@ union gab_value_pair vm_ok(OP_HANDLER_ARGS) {
 
   VM()->sp = VM()->sb;
 
-  assert(FIBER()->header.kind = kGAB_FIBERRUNNING);
+  struct gab_ofiber *fiber = FIBER();
 
-  FIBER()->res_values = res;
+  gab_assert(fiber->header.kind == kGAB_FIBERRUNNING,
+             "Terminating fiber must be running or done, not: %d",
+             fiber->header.kind);
+
+  gab_assert(fiber->res_env == gab_cinvalid,
+             "Terminating fiber res_env shall be uninitialized.");
+
+  gab_assert(fiber->res_values.status == 0,
+             "Terminating fiber res shall be uninitialized.");
+
+  fiber->res_values = res;
 
   if (frame_block(VM()->fp)) {
     gab_value p = frame_block(VM()->fp)->p;
@@ -1158,11 +1208,13 @@ union gab_value_pair vm_ok(OP_HANDLER_ARGS) {
 
     gab_value env =
         gab_recordfrom(GAB(), shape, 1, gab_shplen(shape), VM()->fp, nullptr);
+
     gab_egkeep(EG(), gab_iref(GAB(), env));
-    FIBER()->res_env = env;
+
+    fiber->res_env = env;
   }
 
-  FIBER()->header.kind = kGAB_FIBERDONE;
+  fiber->header.kind = kGAB_FIBERDONE;
 
   return res;
 }

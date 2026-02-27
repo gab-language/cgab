@@ -4,22 +4,22 @@
  *  Copyright (c) 2023 Teddy Randby
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy
- *  of this software and associated documentation files (the "Software"), to deal
- *  in the Software without restriction, including without limitation the rights
- *  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- *  copies of the Software, and to permit persons to whom the Software is
+ *  of this software and associated documentation files (the "Software"), to
+ * deal in the Software without restriction, including without limitation the
+ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+ * sell copies of the Software, and to permit persons to whom the Software is
  *  furnished to do so, subject to the following conditions:
  *
- *  The above copyright notice and this permission notice shall be included in all
- *  copies or substantial portions of the Software.
+ *  The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
  *
  *  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  *  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  *  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
  *  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- *  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- *  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- *  SOFTWARE.
+ *  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+ * IN THE SOFTWARE.
  */
 
 #include "core.h"
@@ -36,7 +36,7 @@ static inline int32_t epochgetlast(struct gab_triple gab) {
 
 static inline void epochinc(struct gab_triple gab) {
 #if cGAB_LOG_GC
-  printf("EPOCHINC\t%i\t%i\n", epochget(gab), gab.wkid);
+  fprintf(stderr, "[WORKER %i] EPOCHINC\t%i\n", gab.wkid, epochget(gab));
 #endif
   gab.eg->jobs[gab.wkid].epoch++;
 }
@@ -63,7 +63,7 @@ void gab_gcloglen(struct gab_triple gab) {
       for (int k = 0; k < GAB_GCNEPOCHS; k++) {
         uint64_t len = buflen(gab, j, i, k);
         if (len)
-          printf("WKID %i BUF %i(%i) [%lu]\n", i, j, k, len);
+          fprintf(stderr, "[WORKER %i] BUF %i(%i) [%lu]\n", i, j, k, len);
       }
     }
   }
@@ -125,7 +125,9 @@ static inline uint64_t do_decrement(struct gab_gc *gc, struct gab_obj *obj) {
     return rc - 1;
   }
 
-  assert(obj->references != 0);
+  gab_assert(obj->references != 0,
+             "Shall not underflow reference count of object with kind %d.",
+             obj->kind);
   return obj->references--;
 }
 
@@ -166,8 +168,8 @@ void queue_decrement(struct gab_triple gab, struct gab_obj *obj) {
   bufpush(gab, kGAB_BUF_DEC, gab.wkid, e, obj);
 
 #if cGAB_LOG_GC
-  printf("QDEC\t%i\t%p\t%i\t%s:%i\n", epochget(gab), obj, obj->references, func,
-         line);
+  fprintf(stderr, "[WORKER %i] QDEC\t%i\t%p\t%i\t%s:%i\n", gab.wkid,
+          epochget(gab), obj, obj->references, func, line);
 #endif
 }
 
@@ -202,7 +204,8 @@ void queue_increment(struct gab_triple gab, struct gab_obj *obj) {
   bufpush(gab, kGAB_BUF_INC, gab.wkid, e, obj);
 
 #if cGAB_LOG_GC
-  printf("QINC\t%i\t%p\t%d\n", epochget(gab), obj, obj->references);
+  fprintf(stderr, "[WORKER %i] QINC\t%i\t%p\t%d\n", gab.wkid, epochget(gab),
+          obj, obj->references);
 #endif
 }
 
@@ -217,8 +220,8 @@ void queue_destroy(struct gab_triple gab, struct gab_obj *obj) {
   assert(obj->references == 0);
 
 #if cGAB_LOG_GC
-  printf("QDEAD\t%i\t%i\t%p\t%d\n", epochget(gab), gab.wkid, obj,
-         obj->references);
+  fprintf(stderr, "[WORKER %i] QDEAD\t%i\t%p\t%d\n", gab.wkid, epochget(gab),
+          obj, obj->references);
 #endif
 }
 
@@ -229,7 +232,8 @@ static inline void for_buf_do(uint8_t b, uint8_t wkid, uint8_t epoch,
   assert(len <= cGAB_GC_MOD_BUFF_MAX);
 
 #if cGAB_LOG_GC
-  printf("FORDO\t%i\t%i\t(%lu / %i)\n", epoch, wkid, len, cGAB_GC_MOD_BUFF_MAX);
+  fprintf(stderr, "[WORKER %i] FORDO\t%i\t(%lu / %i)\n", wkid, epoch, len,
+          cGAB_GC_MOD_BUFF_MAX);
 #endif
 
   for (uint64_t i = 0; i < len; i++) {
@@ -237,7 +241,7 @@ static inline void for_buf_do(uint8_t b, uint8_t wkid, uint8_t epoch,
 
 #if cGAB_LOG_GC
     if (GAB_OBJ_IS_FREED(obj)) {
-      printf("UAF\t%p\n", obj);
+      fprintf(stderr, "UAF\t%p\n", obj);
       exit(1);
     }
 #endif
@@ -248,8 +252,8 @@ static inline void for_buf_do(uint8_t b, uint8_t wkid, uint8_t epoch,
   // Sanity check that buffer hasn't been modified while operating over buffer
 #if cGAB_LOG_GC
   if (len != buflen(gab, b, wkid, epoch)) {
-    printf("INVALID BUFMOD: %d, %i, %i, %lu vs %li\n", b, wkid, epoch, len,
-           buflen(gab, b, wkid, epoch));
+    fprintf(stderr, "INVALID BUFMOD: %d, %i, %i, %lu vs %li\n", b, wkid, epoch,
+            len, buflen(gab, b, wkid, epoch));
     exit(1);
   }
 #endif
@@ -259,7 +263,7 @@ static inline void for_buf_do(uint8_t b, uint8_t wkid, uint8_t epoch,
 static inline void for_child_do(struct gab_obj *obj, gab_gc_visitor fnc,
                                 struct gab_triple gab) {
 #if cGAB_LOG_GC
-  printf("RECURSE\t%i\t%p\t%i\n", epochget(gab), obj, obj->references);
+  fprintf(stderr, "RECURSE\t%i\t%p\t%i\n", epochget(gab), obj, obj->references);
 #endif
   switch (obj->kind) {
   default:
@@ -268,7 +272,7 @@ static inline void for_child_do(struct gab_obj *obj, gab_gc_visitor fnc,
   case kGAB_NATIVE: {
     struct gab_onative *ntv = (struct gab_onative *)obj;
 
-    if(gab_valiso(ntv->name))
+    if (gab_valiso(ntv->name))
       fnc(gab, gab_valtoo(ntv->name));
 
     break;
@@ -376,17 +380,20 @@ static inline void destroy(struct gab_triple gab, struct gab_obj *obj) {
 
 #if cGAB_LOG_GC
   if (GAB_OBJ_IS_FREED(obj)) {
-    printf("DFREE\t%p\t%s:%i\n", obj, func, line);
+    fprintf(stderr, "[WORKER %i] DFREE\t%p\t%s:%i\n", gab.wkid, obj, func,
+            line);
     exit(1);
   } else {
-    printf("FREE\t%i\t%p\t%i\t%s:%d\n", epochget(gab), obj, obj->references,
-           func, line);
+    fprintf(stderr, "[WORKER %i] FREE\t%i\t%p\t%i\t%s:%d\n", gab.wkid,
+            epochget(gab), obj, obj->references, func, line);
   }
+  GAB_OBJ_FREED(obj);
   gab_objdestroy(gab, obj);
-  /*GAB_OBJ_FREED(obj);*/
   gab_egalloc(gab, obj, 0);
 #else
-  assert(obj->references == 0);
+  gab_assert(obj->references == 0,
+             "Shall only destroy objects with 0 references, not %i on kind %d",
+             obj->references, obj->kind);
   gab_objdestroy(gab, obj);
   gab_egalloc(gab, obj, 0);
 
@@ -395,7 +402,8 @@ static inline void destroy(struct gab_triple gab, struct gab_obj *obj) {
 
 static inline void dec_obj_ref(struct gab_triple gab, struct gab_obj *obj) {
 #if cGAB_LOG_GC
-  printf("DEC\t%i\t%p\t%d\n", epochget(gab), obj, obj->references - 1);
+  fprintf(stderr, "[WORKER %i] DEC\t%i\t%p\t%d\n", gab.wkid, epochget(gab), obj,
+          obj->references - 1);
 #endif
 
   do_decrement(&gab.eg->gc, obj);
@@ -410,14 +418,14 @@ static inline void dec_obj_ref(struct gab_triple gab, struct gab_obj *obj) {
 
 static inline void inc_obj_ref(struct gab_triple gab, struct gab_obj *obj) {
 #if cGAB_LOG_GC
-  printf("INC\t%i\t%p\t%d\n", epochget(gab), obj, obj->references + 1);
+  fprintf(stderr, "INC\t%i\t%p\t%d\n", epochget(gab), obj, obj->references + 1);
 #endif
 
   do_increment(&gab.eg->gc, obj);
 
   if (GAB_OBJ_IS_NEW(obj)) {
 #if cGAB_LOG_GC
-    printf("NEW\t%i\t%p\n", epochget(gab), obj);
+    fprintf(stderr, "NEW\t%i\t%p\n", epochget(gab), obj);
 #endif
     GAB_OBJ_NOT_NEW(obj);
     for_child_do(obj, inc_obj_ref, gab);
@@ -476,14 +484,14 @@ gab_value gab_iref(struct gab_triple gab, gab_value value) {
   struct gab_obj *obj = gab_valtoo(value);
 
 #if cGAB_LOG_GC
-  printf("IREF\t%i\t%p\t%d\t%s:%i\n", epochget(gab), obj, obj->references, func,
-         line);
+  fprintf(stderr, "[WORKER %i] IREF\t%i\t%p\t%d\t%s:%i\n", gab.wkid,
+          epochget(gab), obj, obj->references, func, line);
 #endif
 
   queue_increment(gab, obj);
 
 #if cGAB_DEBUG_GC
-  gab_collect(gab);
+  gab_sigcoll(gab);
 #endif
 
   return value;
@@ -504,16 +512,16 @@ gab_value gab_dref(struct gab_triple gab, gab_value value) {
   struct gab_obj *obj = gab_valtoo(value);
 
 #if cGAB_DEBUG_GC
-  gab_collect(gab);
+  gab_sigcoll(gab);
 #endif
 
 #if cGAB_LOG_GC
   if (GAB_OBJ_IS_NEW(obj)) {
-    printf("NEWDREF\t%i\t%p\t%d\t%s:%i\n", epochget(gab), obj, obj->references,
-           func, line);
+    fprintf(stderr, "[WORKER %i] NEWDREF\t%i\t%p\t%d\t%s:%i\n", gab.wkid,
+            epochget(gab), obj, obj->references, func, line);
   } else {
-    printf("DREF\t%i\t%p\t%d\t%s:%i\n", epochget(gab), obj, obj->references,
-           func, line);
+    fprintf(stderr, "[WORKER %i] DREF\t%i\t%p\t%d\t%s:%i\n", gab.wkid,
+            epochget(gab), obj, obj->references, func, line);
   }
 #endif
 
@@ -578,7 +586,7 @@ void gab_gcunlock(struct gab_triple gab) {
 
 void processincrements(struct gab_triple gab, int32_t epoch) {
 #if cGAB_LOG_GC
-  printf("IEPOCH\t%i\n", epoch);
+  fprintf(stderr, "IEPOCH\t%i\n", epoch);
 #endif
 
   for (uint8_t wkid = 0; wkid < gab.eg->len; wkid++) {
@@ -590,13 +598,13 @@ void processincrements(struct gab_triple gab, int32_t epoch) {
     bufclear(gab, kGAB_BUF_INC, wkid, epoch);
   }
 #if cGAB_LOG_GC
-  printf("IEPOCH!\t%i\n", epoch);
+  fprintf(stderr, "IEPOCH!\t%i\n", epoch);
 #endif
 }
 
 void processdecrements(struct gab_triple gab, int32_t epoch) {
 #if cGAB_LOG_GC
-  printf("DEPOCH\t%i\n", epoch);
+  fprintf(stderr, "DEPOCH\t%i\n", epoch);
 #endif
 
   for (uint8_t wkid = 0; wkid < gab.eg->len; wkid++) {
@@ -609,7 +617,7 @@ void processdecrements(struct gab_triple gab, int32_t epoch) {
   }
 
 #if cGAB_LOG_GC
-  printf("DEPOCH!\t%i\n", epoch);
+  fprintf(stderr, "DEPOCH!\t%i\n", epoch);
 #endif
 }
 
@@ -617,22 +625,22 @@ void processepoch(struct gab_triple gab, int32_t e) {
   struct gab_job *wk = &gab.eg->jobs[gab.wkid];
 
 #if cGAB_LOG_GC
-  printf("PEPOCH\t%i\t%i\n", e, gab.wkid);
+  fprintf(stderr, "[WORKER %i] PEPOCH\t%i\n", gab.wkid, e);
 #endif
 
   if (q_gab_value_is_empty(&wk->queue))
     goto fin;
 
 #if cGAB_LOG_GC
-  printf("QUEUENOTEMPTY\t%lu\t%lu\t%lu\n", wk->queue.head, wk->queue.tail,
-         wk->queue.size);
+  fprintf(stderr, "QUEUENOTEMPTY\t%lu\t%lu\t%lu\n", wk->queue.head,
+          wk->queue.tail, wk->queue.size);
 #endif
 
   for (size_t idx = wk->queue.head; idx != wk->queue.tail; idx++) {
     gab_value fiber = wk->queue.data[idx & (wk->queue.size - 1)];
 
 #if cGAB_LOG_GC
-    printf("PFIBER\t%i\t%i\t%lu\n", e, gab.wkid, idx);
+    fprintf(stderr, "PFIBER\t%i\t%i\t%lu\n", e, gab.wkid, idx);
 #endif
 
     assert(gab_valkind(fiber) == kGAB_FIBER ||
@@ -654,7 +662,8 @@ void processepoch(struct gab_triple gab, int32_t e) {
       if (gab_valiso(vm->sb[i])) {
         struct gab_obj *o = gab_valtoo(vm->sb[i]);
 #if cGAB_LOG_GC
-        printf("SAVESTK\t%i\t%p\t%d\n", epochget(gab), (void *)o, o->kind);
+        fprintf(stderr, "SAVESTK\t%i\t%p\t%d\n", epochget(gab), (void *)o,
+                o->kind);
 #endif
         bufpush(gab, kGAB_BUF_STK, gab.wkid, e, o);
       }
@@ -664,24 +673,23 @@ void processepoch(struct gab_triple gab, int32_t e) {
 fin:
   epochinc(gab);
 #if cGAB_LOG_GC
-  printf("PEPOCH!\t%i\t%i\n", epochget(gab), gab.wkid);
+  fprintf(stderr, "[WORKER %i] PEPOCH!\t%i\n", gab.wkid, epochget(gab));
 #endif
 }
 
 void assert_workers_have_epoch(struct gab_triple gab, int32_t e) {
-  printf("EXPECTING EPOCH %i BASED ON %i\n", e, gab.wkid);
-
   for (uint64_t i = 1; i < gab.eg->len; i++) {
     int32_t this_e = epochget((struct gab_triple){gab.eg, .wkid = i});
-    printf("WORKER %lu IN EPOCH %i (%i)\n", i, this_e, gab.eg->jobs[i].epoch);
-    assert(this_e == e);
+    gab_assert(this_e == e, "Expected worker %i to have epoch %i. Saw: %i.\n",
+               i, e, this_e);
   }
 }
 
 #if cGAB_LOG_GC
 void __gab_gcepochnext(struct gab_triple gab, const char *func, int line) {
 
-  printf("EPOCH\t%i\t%i\t%s:%i\n", epochget(gab), gab.wkid, func, line);
+  fprintf(stderr, "EPOCH\t%i\t%i\t%s:%i\n", epochget(gab), gab.wkid, func,
+          line);
 #else
 void gab_gcepochnext(struct gab_triple gab) {
 #endif
@@ -712,11 +720,12 @@ void gab_gcdocollect(struct gab_triple gab) {
   gab_value last_messages = gab.eg->gc.msg[last];
 
 #if cGAB_LOG_GC
-  printf("CEPOCH %i (last: %i, raw: %i)\n", epoch, last,
-         gab.eg->jobs[gab.wkid].epoch);
+  fprintf(stderr, "CEPOCH %i (last: %i, raw: %i)\n", epoch, last,
+          gab.eg->jobs[gab.wkid].epoch);
+#endif
+
   int32_t expected_e = (gab.eg->jobs[gab.wkid].epoch) % 3;
   assert_workers_have_epoch(gab, expected_e);
-#endif
 
   if (gab_valiso(messages))
     inc_obj_ref(gab, gab_valtoo(messages));
@@ -731,8 +740,9 @@ void gab_gcdocollect(struct gab_triple gab) {
   collect_dead(gab);
 
 #if cGAB_LOG_GC
-  printf("CEPOCH! %i\n", epoch);
+  fprintf(stderr, "CEPOCH! %i\n", epoch);
+#endif
+
   expected_e = (gab.eg->jobs[gab.wkid].epoch) % 3;
   assert_workers_have_epoch(gab, expected_e);
-#endif
 }

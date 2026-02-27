@@ -43,7 +43,8 @@ struct gab_obj *gab_obj_create(struct gab_triple gab, uint64_t sz,
   self->flags = fGAB_OBJ_NEW;
 
 #if cGAB_LOG_GC
-  printf("CREATE\t%p\t%lu\t%d\n", (void *)self, sz, k);
+  fprintf(stderr, "[WORKER %i] CREATE\t%p\t%lu\t%d\n", gab.wkid, (void *)self,
+          sz, k);
 #endif
 
   struct gab_job *wk = gab.eg->jobs + gab.wkid;
@@ -51,7 +52,7 @@ struct gab_obj *gab_obj_create(struct gab_triple gab, uint64_t sz,
     v_gab_value_push(&wk->lock_keep, __gab_obj(self));
     GAB_OBJ_BUFFERED(self);
 #if cGAB_LOG_GC
-    printf("QLOCK\t%p\n", (void *)self);
+    fprintf(stderr, "[WORKER %i] QLOCK\t%p\n", gab.wkid, (void *)self);
 #endif
   } else {
     gab_dref(gab, __gab_obj(self));
@@ -297,10 +298,10 @@ int sinspectval(char **dest, size_t *n, gab_value self, int depth) {
            snprintf_through(dest, n, ":%lu>", line);
   }
   default:
-    break;
+    gab_assert(false, "Inspecting unrecognized object kind %d in %p\n",
+               gab_valkind(self), gab_valtoo(self));
+    return 0;
   }
-  assert(false && "NOT AN OBJECT");
-  return 0;
 }
 
 int gab_svalinspect(char **dest, size_t *n, gab_value value, int depth) {
@@ -1447,10 +1448,11 @@ gab_value gab_nlstcat(struct gab_triple gab, uint64_t len,
 }
 
 gab_value gab_nreccat(struct gab_triple gab, uint64_t len, gab_value *records) {
-  gab_gclock(gab);
 
   if (len == 0)
     return gab_recordof(gab);
+
+  gab_gclock(gab);
 
   gab_value shapes[len];
   for (uint64_t i = 0; i < len; i++)

@@ -391,10 +391,8 @@ GAB_API_INLINE gab_uint __gab_valtou(gab_value v) {
     struct gab_obj *__o =                                                      \
         (struct gab_obj *)(uintptr_t)((val) & ~(__GAB_SIGN_BIT | __GAB_QNAN |  \
                                                 __GAB_TAGBITS));               \
-    if (GAB_OBJ_IS_FREED(__o)) {                                               \
-      printf("UAF\t%p\t%s:%i", __o, __FUNCTION__, __LINE__);                   \
-      exit(1);                                                                 \
-    }                                                                          \
+    gab_assert(!GAB_OBJ_IS_FREED(__o),                                         \
+               "Shall not use an object after its been freed.");               \
     __o;                                                                       \
   })
 #else
@@ -422,6 +420,9 @@ GAB_API_INLINE gab_uint __gab_valtou(gab_value v) {
 #define fGAB_OBJ_BUFFERED (1 << 6)
 #define fGAB_OBJ_NEW (1 << 7)
 
+// DEBUG purposes only
+#define fGAB_OBJ_FREED (1 << 8)
+
 #define GAB_OBJ_IS_BUFFERED(obj) ((obj)->flags & fGAB_OBJ_BUFFERED)
 #define GAB_OBJ_IS_NEW(obj) ((obj)->flags & fGAB_OBJ_NEW)
 
@@ -431,8 +432,6 @@ GAB_API_INLINE gab_uint __gab_valtou(gab_value v) {
 #define GAB_OBJ_NOT_BUFFERED(obj) ((obj)->flags &= ~fGAB_OBJ_BUFFERED)
 #define GAB_OBJ_NOT_NEW(obj) ((obj)->flags &= ~fGAB_OBJ_NEW)
 
-// DEBUG purposes only
-#define fGAB_OBJ_FREED (1 << 8)
 #define GAB_OBJ_IS_FREED(obj) ((obj)->flags & fGAB_OBJ_FREED)
 #define GAB_OBJ_FREED(obj) ((obj)->flags |= fGAB_OBJ_FREED)
 

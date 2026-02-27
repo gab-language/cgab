@@ -67,6 +67,7 @@
 #define GAB_YIELD_SLEEPTIME_NS (0)
 
 // Collect as frequently as possible (on every RC push)
+// This is kinda broken fundamentally
 #ifndef cGAB_DEBUG_GC
 #define cGAB_DEBUG_GC 0
 #endif

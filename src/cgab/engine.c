@@ -473,6 +473,17 @@ static inline bool worker_isrunning(struct gab_triple gab,
 }
 
 static inline bool worker_step(struct gab_triple gab, struct gab_job *job) {
+  switch (gab_yield(gab)) {
+  case sGAB_COLL:
+    gab_gcepochnext(gab);
+    gab_sigpropagate(gab);
+    break;
+  case sGAB_TERM:
+    return false;
+  default:
+    break;
+  }
+
   // If there is room in our local queue to take jobs off the global channel,
   // we should do that.
   if (!q_gab_value_is_full(&job->queue)) {
@@ -764,9 +775,9 @@ bool gab_jbcreate(struct gab_triple gab, struct gab_job *job, int(fn)(void *),
   v_gab_value_create(&job->lock_keep, 8);
   q_gab_value_create(&job->queue);
 
-  job->work_channel = gab_channel(gab);
-  gab_iref(gab, job->work_channel);
-  gab_egkeep(gab.eg, job->work_channel);
+  // job->work_channel = gab_channel(gab);
+  // gab_iref(gab, job->work_channel);
+  // gab_egkeep(gab.eg, job->work_channel);
 
   if (fiber != gab_cundefined)
     if (!q_gab_value_push(&job->queue, fiber))
@@ -1319,14 +1330,15 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
      *  an env from a ~different~ block. This is because
      *  we always tailcall, so the bottom frame can change the block
      *  it belongs to throughout execution.
-     * */
+     **/
 
     if (env == gab_cinvalid || new_env == gab_cinvalid)
       env = new_env;
     // If the block's environment is equal to the fiber's final environment
     // then we know we *didn't* tailcall out of the block.
+    // TODO: Don't leak this reccat below
     else if (before_env == gab_recshp(new_env))
-      env = gab_reccat(gab, env, new_env);
+      env = gab_iref(gab, gab_reccat(gab, env, new_env));
 
     assert(env != gab_cinvalid);
 
@@ -2249,13 +2261,6 @@ union gab_value_pair gab_use(struct gab_triple gab, struct gab_use_argt args) {
   gab_value module = args.smodule_name ? gab_string(gab, args.smodule_name)
                                        : args.vmodule_name;
 
-  if (gab_valkind(module) == kGAB_STRING) {
-    module = gab_strcat(gab, gab_string(gab, "/mod/"), module);
-    assert(gab_valkind(module) == kGAB_STRING);
-
-    package = gab_strcat(gab, package, module);
-  }
-
   assert(gab_valkind(package) == kGAB_STRING);
 
   if (gab_valkind(args.env) == kGAB_RECORD) {
@@ -2277,7 +2282,20 @@ union gab_value_pair gab_use(struct gab_triple gab, struct gab_use_argt args) {
     args.argv = env_vargv;
   }
 
-  const char *name = gab_strdata(&package);
+  size_t plen = gab_strlen(package);
+  size_t mlen = gab_valkind(module) == kGAB_STRING ? gab_strlen(module) : 0;
+
+  char name[plen + mlen + 6];
+
+  memcpy(name, gab_strdata(&package), plen);
+
+  if (mlen) {
+    memcpy(name + plen, "/mod/", 5);
+    memcpy(name + plen + 5, gab_strdata(&module), mlen);
+    mlen += 5;
+  }
+
+  name[plen + mlen] = '\0';
 
   for (int i = 0; gab.eg->res[i].prefix != nullptr; i++) {
     struct gab_resource *res = gab.eg->res + i;
@@ -2314,7 +2332,7 @@ union gab_value_pair gab_use(struct gab_triple gab, struct gab_use_argt args) {
     }
   }
 
-  return gab_panicf(gab, "Module $ could not be found", package);
+  return gab_panicf(gab, "Module @ could not be found", gab_string(gab, name));
 }
 
 union gab_value_pair gab_run(struct gab_triple gab, struct gab_run_argt args) {
@@ -2632,6 +2650,24 @@ GAB_API inline bool gab_signext(struct gab_triple gab, int wkid) {
           .signal = sig.signal,
       };
 
+      uint32_t last_job = n ? n : gab.eg->len;
+
+#if cGAB_LOG_GC
+      fprintf(stderr, "[WORKER %i] (%b) SKIPPING %u to %u\n", gab.wkid,
+              sig.mask, wkid, last_job);
+#endif
+
+      // Ugly way of incrementing epoch for not-alive jobs.
+      if (sig.signal == sGAB_COLL)
+        for (uint32_t i = wkid; i < last_job; i++) {
+          gab_assert(!(sig.mask & (1 << i)),
+                     "Shall not skip a worker which is alive.");
+#if cGAB_LOG_GC
+          fprintf(stderr, "[WORKER %i] EPOCHINC via SKIP\n", i);
+#endif
+          gab.eg->jobs[i].epoch++;
+        }
+
       assert(next.signal != sGAB_IGN);
 
       if (atomic_compare_exchange_weak(&gab.eg->sig, &sig, next))
@@ -2684,8 +2720,22 @@ GAB_API inline bool gab_signal(struct gab_triple gab, enum gab_signal s,
   for (;;) {
     struct gab_sig sig = atomic_load(&gab.eg->sig);
     struct gab_sig none = {sig.mask, -1, sGAB_IGN};
+
     if (sig.signal == s)
       return true;
+
+    if (sig.schedule == gab.wkid) {
+      switch (sig.signal) {
+      case sGAB_COLL:
+        gab_gcepochnext(gab);
+        gab_sigpropagate(gab);
+        break;
+      case sGAB_TERM:
+        return false;
+      default:
+        break;
+      }
+    }
 
     if (atomic_compare_exchange_weak(&gab.eg->sig, &none,
                                      ((struct gab_sig){sig.mask, -2, s}))) {

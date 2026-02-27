@@ -1,9 +1,7 @@
-dc = 'carrow'.use
+Atoms = 'Atoms'.use
 
-nums = dc.Arrays.make(i8: 1 2 3)
-other_nums = dc.Arrays.make(i8: 3 2 1)
+a = Atoms.make 0
 
-nums.to\s.println
-other_nums.to\s.println
+Ranges.make(0 100000).each () => a.swap(x => x + 1)
 
-(nums + other_nums ).to\s.println
+a.deref.println
