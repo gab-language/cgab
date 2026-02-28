@@ -687,7 +687,12 @@ bail:
     // v_gab_value_thrd_push(&gab.eg->err, err);
 
     // Truly pop off the fiber now.
-    q_gab_value_pop(&job->queue);
+    gab_value popped = q_gab_value_pop(&job->queue);
+
+    gab_assert(job->locked == 0,
+               "The worker shall have a balanced 'lock' value of 0 when "
+               "bailed. Saw %d. Last ran: %s.",
+               job->locked, gab_opcode_names[*gab_fibvm(popped)->ip]);
   }
 
   gab_assert(q_gab_value_is_empty(&job->queue),
@@ -696,7 +701,9 @@ bail:
   gab_jbunalive(gab, gab.wkid);
 
   gab_assert(job->locked == 0,
-             "The worker shall have a balanced 'lock' value of 0 when bailed.");
+             "The worker shall have a balanced 'lock' value of 0 when bailed. "
+             "Saw %d.",
+             job->locked);
   v_gab_value_destroy(&job->lock_keep);
 }
 
