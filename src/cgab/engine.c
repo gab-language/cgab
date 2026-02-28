@@ -978,6 +978,7 @@ union gab_value_pair gab_create(struct gab_create_argt args,
     if (res.status == gab_ctimeout)
       res = gab_fibawait(gab, res.vresult);
 
+
     // If any of these uses fail, return the failure.
     if (res.status != gab_cvalid)
       return gab_gcunlock(gab), res;

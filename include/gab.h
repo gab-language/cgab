@@ -1821,7 +1821,7 @@ GAB_API_INLINE gab_value gab_strtomsg(gab_value str) {
   if (str == gab_cinvalid)
     return gab_cinvalid;
 
-  assert(gab_valkind(str) == kGAB_STRING);
+  gab_assert(gab_valkind(str) == kGAB_STRING, "User shall supply a string value");
   return str | (uint64_t)kGAB_MESSAGE << __GAB_TAGOFFSET;
 }
 

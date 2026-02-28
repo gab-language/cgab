@@ -137,7 +137,8 @@ bool check_and_printerr(union gab_value_pair *res) {
   pop_and_printerr(gab);
 
   if (res->status != gab_cvalid) {
-    if (res->status == gab_cinvalid && res->vresult && res->vresult != gab_cinvalid) {
+    if (res->status == gab_cinvalid && res->vresult &&
+        res->vresult != gab_cinvalid) {
       assert(gab_valkind(res->vresult) == kGAB_RECORD);
       const char *errstr = gab_errtocs(gab, res->vresult);
       assert(errstr != nullptr);
@@ -151,13 +152,13 @@ bool check_and_printerr(union gab_value_pair *res) {
     return false;
   }
 
-  // if (res->aresult->data[0] != gab_ok) {
-  //   const char *errstr = gab_errtocs(gab, res->aresult->data[1]);
-  //   assert(errstr != nullptr);
-  //   fputs(errstr, stderr);
-  //   fflush(stderr);
-  //   return a_gab_value_destroy(res->aresult), false;
-  // }
+  if (res->aresult->data[0] != gab_ok) {
+    const char *errstr = gab_errtocs(gab, res->aresult->data[1]);
+    assert(errstr != nullptr);
+    fputs(errstr, stderr);
+    fflush(stderr);
+    return a_gab_value_destroy(res->aresult), false;
+  }
 
   return true;
 }
@@ -180,13 +181,17 @@ int copy_file(FILE *in, FILE *out) {
 }
 
 /*
- * TODO: Think about how module requiring works, and try to make it consistent to bundles, importing libraries, etc.
+ * TODO: Think about how module requiring works, and try to make it consistent
+ * to bundles, importing libraries, etc.
  *
- * Instead of having one root for ".", we might need to add some sort of notion for the package you're in.
- * - Its possible we should try and detect that inmain here, and add a root for the cwd as a package
+ * Instead of having one root for ".", we might need to add some sort of notion
+ * for the package you're in.
+ * - Its possible we should try and detect that inmain here, and add a root for
+ * the cwd as a package
  *
  * - Import files like 'github.com/gab-language/cgab@0.0.5/mod/cstrings'.use
- *   -> This is kind of ugly. Maybe 'cstrings' .use (from: 'github.com/gab-language/cgab@0.0.5)
+ *   -> This is kind of ugly. Maybe 'cstrings' .use (from:
+ * 'github.com/gab-language/cgab@0.0.5)
  *   -> Or Maybe: 'github.com/gab-language/cgab@0.0.5' .use 'cstrings'
  */
 
