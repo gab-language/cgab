@@ -835,8 +835,10 @@ union gab_value_pair gab_vpanicf(struct gab_triple gab, const char *fmt,
                                      .wkid = gab.wkid,
                                  });
 
-    gab_iref(gab, err);
-    gab_egkeep(gab.eg, err);
+    if (err != gab_cinvalid) {
+      gab_iref(gab, err);
+      gab_egkeep(gab.eg, err);
+    }
 
     gab_value res[] = {gab_err, err};
     a_gab_value *results =

@@ -840,7 +840,6 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
   if (reentrant && gab_fibsize(gab_thisfiber(gab)))
     goto put_event;
 
-
   for (;;) {
     if (gab_chnisclosed(gui->appch))
       goto fin;
@@ -854,7 +853,11 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
     switch (res) {
     case TB_ERR_NOT_INIT:
     case TB_ERR_NO_EVENT:
-      goto yield;
+      if (putevent(gab, gui, "tick", "tick", gab_number(0), gab_false,
+                   clayGetTopmostId(gab)))
+        goto fin;
+
+      goto put_event;
 
     case TB_OK:
       if (clay_termbox_update(gab, gui, &e, 10))
@@ -953,6 +956,8 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
     gui->ready = true;
   }
 
+  union gab_value_pair res;
+
   for (;;) {
     if (gab_chnisclosed(gui->appch))
       goto fin;
@@ -965,8 +970,10 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
     if (app == gab_cundefined)
       goto fin;
 
-    if (app == gab_cinvalid)
+    if (app == gab_cinvalid) {
+      res = gab_panicf(gab, "Crashed UI thrd due to some error");
       goto err;
+    }
 
     if (app == gab_ctimeout)
       return gab_union_ctimeout(gab_cundefined);
@@ -990,8 +997,7 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
 
     Clay_BeginLayout();
 
-    union gab_value_pair res =
-        render_componentlist(gab, gui, app, CLAY_TOP_TO_BOTTOM);
+    res = render_componentlist(gab, gui, app, CLAY_TOP_TO_BOTTOM);
 
     if (res.status != gab_cundefined)
       goto err;
@@ -1011,7 +1017,7 @@ err:
   gab_chnclose(gui->appch);
   gab_chnclose(gui->evch);
   Clay_Termbox_Close();
-  return gab_panicf(gab, "Crashed UI Thread due to some error");
+  return res;
 
 fin:
   gab_chnclose(gui->appch);
@@ -1098,6 +1104,8 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_render) {
     gui->ready = true;
   }
 
+  union gab_value_pair res;
+
   for (;;) {
     if (gab_chnisclosed(gui->appch))
       goto fin;
@@ -1110,8 +1118,10 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_render) {
     if (app == gab_cundefined)
       goto fin;
 
-    if (app == gab_cinvalid)
+    if (app == gab_cinvalid) {
+      res = gab_panicf(gab, "Crashed UI thrd due to some error");
       goto err;
+    }
 
     if (app == gab_ctimeout)
       return gab_union_ctimeout(gab_cundefined);
@@ -1132,8 +1142,7 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_render) {
 
     Clay_BeginLayout();
 
-    union gab_value_pair res =
-        render_componentlist(gab, gui, app, CLAY_TOP_TO_BOTTOM);
+    res = render_componentlist(gab, gui, app, CLAY_TOP_TO_BOTTOM);
 
     if (res.status != gab_cundefined)
       goto err;
@@ -1177,7 +1186,7 @@ err:
   gab_chnclose(gui->evch);
   sclay_shutdown();
   RGFW_window_closePtr(&gui->win);
-  return gab_panicf(gab, "Crashed UI Thread due to some error");
+  return res;
 
 fin:
   gab_chnclose(gui->appch);
@@ -1212,7 +1221,7 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_event) {
   RGFW_pollEvents();
 
   RGFW_event ev;
-  while (RGFW_window_checkQueuedEvent(&gui->win, &ev)) {
+  if (RGFW_window_checkQueuedEvent(&gui->win, &ev)) {
     if (gab_chnisclosed(gui->appch))
       goto fin;
 
@@ -1256,6 +1265,12 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_event) {
 
     // Clear the event we put
     gab_fibclear(gab_thisfiber(gab));
+  } else {
+    if (putevent(gab, gui, "tick", "tick", gab_number(0), gab_false,
+                 clayGetTopmostId(gab)))
+      goto fin;
+
+    goto put_event;
   }
 
 yield:

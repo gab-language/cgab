@@ -1,7 +1,11 @@
 'cgab'.use
 ui = 'cgui'.use
 
+Atoms = 'Atoms'.use
+
 (events, app) = (Channels.make, Channels.make)
+
+Suites = Atoms.make {}
 
 Colors = {
   bg: 0xff161821
@@ -62,17 +66,6 @@ test\compare: .defcase {
 
 test\result\t = { test\path: nil: test\receiver: nil: }?
 
-[test\result\t] .defmodule {
-  expect: (lhs cmp rhs) => do
-    # Run the comparison of the expect
-    assertion\outcome = cmp .test\compare (lhs, rhs)
-    # Get the suite we're executing
-    suite = self.test\path .at 0 .unwrap
-    # Queue up the outcome of the comparison
-    events <! (resolve: assertion\outcome, self.test\path, { lhs: lhs, cmp: cmp, rhs: rhs })
-  end,
-}
-
 Suite = test\suite:.defclass(
   suite\behaviors: suite\name:
   default:
@@ -87,6 +80,49 @@ Behavior = test\behavior:.defclass(
   behavior\show: behavior\path: behavior\assertions:
   default:
   {})
+
+[test\result\t] .defmodule {
+  expect: (lhs cmp rhs) => do
+    # Run the comparison of the expect
+    assertion\outcome = cmp .test\compare (lhs, rhs)
+
+    path = self.test\path
+
+    meta = { lhs: lhs, cmp: cmp, rhs: rhs }
+
+    Suites.swap (suites) => do
+      suite = path.at 0 .unwrap
+      bhv = path.at 1 .unwrap
+
+      ok = suites.at_via(suite)
+
+      suites = ok
+        .and suites
+        .else ()
+          => suites
+            .put_via(suite Suite.make([] suite))
+
+      ok = suites.at_via(suite suite\behaviors: bhv)
+
+      suites = ok
+        .and suites
+        .else ()
+          => suites
+            .put_via(suite suite\behaviors: bhv Behavior.make(false: path []))
+      
+      suites
+        .put_via_by(
+          suite
+          suite\behaviors:
+          bhv
+          behavior\assertions:
+          (xs) => xs.cons(Assertion.make(meta assertion\outcome)))
+    end
+
+    #Queue up the outcome of the comparison
+    #events <! (resolve: assertion\outcome, path, meta)
+  end,
+}
 
 queue_tests = (filter_by_suite) => do
   Fibers.make () => do
@@ -125,8 +161,8 @@ queue_tests = (filter_by_suite) => do
     fibers.map f => f.await
 
     #TODO: Make this configurable from the cmdline
-    events.close
-    app.close
+    #events.close
+    #app.close
   end
 end
 
@@ -172,7 +208,7 @@ select\down: .defcase {
 handle\keydown: .defcase {
   r: (ev model) => do
     queue_tests.()
-    model.app\reset
+    Suites.reset {}
   end
   k: (ev model) => do
     model.focus.select\up(model)
@@ -229,9 +265,6 @@ handle\type: .defcase {
     down = ev.at 2 .unwrap
     down.handle\key(keymsg ev model)
   end
-  resolve: (ev model) => do
-    model.app\resolve_behavior(ev*)
-  end
 }
 
 App = test\app:.defclass(
@@ -240,50 +273,6 @@ App = test\app:.defclass(
   {
     app\controller: (type ev*) => do
       type.handle\type(ev self)
-    end
-    app\reset: () => do
-      self
-        .put(test\suites: {})
-    end
-    app\push_suite: (suite) => do
-      self
-        .put_via(test\suites:, suite.suite\name, suite)
-    end
-    app\push_behavior: (behavior) => do
-      suite = behavior.behavior\path.at 0 .unwrap
-      bhv = behavior.behavior\path.at 1 .unwrap
-
-      self
-        .put_via(test\suites: suite suite\behaviors: bhv behavior)
-    end
-    app\resolve_behavior: (outcome path meta) => do
-      suite = path.at 0 .unwrap
-      bhv = path.at 1 .unwrap
-
-      ok = self.at_via(test\suites: suite)
-
-      app = self
-      self = ok.and self .else () => do
-        app
-          .app\push_suite(Suite.make([] suite))
-      end
-
-      ok = self.at_via(test\suites: suite suite\behaviors: bhv)
-
-      app = self
-      self = ok.and self .else () => do
-        app
-          .app\push_behavior(Behavior.make(false: path []))
-      end
-
-      self
-        .put_via_by(
-          test\suites:
-          suite
-          suite\behaviors:
-          bhv
-          behavior\assertions:
-          (xs) => xs.cons(Assertion.make(meta outcome)))
     end
     app\get_selected: () => do
       app = self
@@ -324,7 +313,7 @@ App = test\app:.defclass(
                 border: { w: 1 fg: (app.focus == suite:).and(Colors.fg\hl).or(Colors.bg\hl)}
                 bg: Colors.bg
               }
-              self.test\suites.map (suite, name) => do
+              app.test\suites.map (suite, name) => do
                 assertions = suite
                   .suite\behaviors
                   .join(
@@ -486,7 +475,12 @@ events
     Streams.take_until((e, key) => do
       (e == key:) & ((key == escape:) | (key == q:))
     end)
-    |> Streams.reduce(model (model, args*) => model.app\controller (args*))
+    |> Streams.reduce(
+      model
+      (model, args*)
+        => model
+            .put(test\suites: Suites.deref)
+            .app\controller (args*))
     |> Streams.map(app => app.app\view)
   )
 
