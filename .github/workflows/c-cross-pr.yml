@@ -200,9 +200,10 @@ jobs:
         with:
           name: test.cgab-${{ env.version }}-${{ matrix.target }}.exe
 
-      - name: Unzip Modules
-        run: unzip -o cgab-${{ env.version }}-${{ matrix.target }}
-
+      - name: Unzip & Install Modules
+        run: |
+          mkdir -p ~/gab/${{ env.version }}-${{ matrix.target }}/github.com/gab-language/cgab@${{ env.version }}/mod
+          unzip -o cgab-${{ env.version }}-${{ matrix.target }} -d ~/gab/${{ env.version }}-${{ matrix.target }}/github.com/gab-language/cgab@${{ env.version }}/mod
       # - name: Make the binary executable (win)
       #   if: ${{ contains(matrix.target, 'windows') }}
       #   run: |
