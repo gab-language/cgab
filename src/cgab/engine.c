@@ -307,10 +307,6 @@ struct native {
   gab_native_f native;
 };
 
-#if GAB_YIELD_SLEEPTIME_NS != 0
-static const struct timespec t = {.tv_nsec = GAB_YIELD_SLEEPTIME_NS};
-#endif
-
 enum gab_signal gab_yield(struct gab_triple gab) {
   if (gab_sigwaiting(gab)) {
     struct gab_sig sig = atomic_load(&gab.eg->sig);

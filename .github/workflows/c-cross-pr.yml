@@ -211,6 +211,9 @@ jobs:
       #     where.exe "gab"
       #     Get-Command ".\gab"
 
+      - name: What we got
+        run: ls -al
+
       - name: Welcome
         run: ${{ matrix.cmd }}
 

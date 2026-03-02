@@ -1454,7 +1454,7 @@ struct command_arguments parse_options(int argc, const char **argv,
       .argc = argc,
       .argv = argv,
       .njobs = cGAB_DEFAULT_NJOBS,
-      .wait = 300,
+      .wait = cGAB_DEFAULT_WAIT_NS,
   };
 
   v_s_char_create(&args.modules, 32);

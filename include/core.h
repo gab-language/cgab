@@ -57,15 +57,6 @@
 #define cGAB_VM_CHANNEL_TAKE_TRIES (0)
 #endif
 
-// A worker (os thread) may need to yield at an arbitrary point.
-// This is done using the gab_yield function, which handles
-// sleeping, context switching, and checking if the worker needs
-// to participate in a garbage collection.
-// A sleeptime of 0ms will result in *a lot* of context switching,
-// which is undesirable for the OS Scheduler. To help this, a small
-// amount of sleeping in the yield function is useful
-#define GAB_YIELD_SLEEPTIME_NS (0)
-
 // Collect as frequently as possible (on every RC push)
 // This is kinda broken fundamentally
 #ifndef cGAB_DEBUG_GC
@@ -77,6 +68,7 @@
 #define cGAB_LOG_GC 0
 #endif
 
+// Log what is happening to workers as the gab engine spins.
 #ifndef cGAB_LOG_EG
 #define cGAB_LOG_EG 0
 #endif
@@ -91,13 +83,14 @@
 #define cGAB_DEBUG_VM 0
 #endif
 
-#ifndef cGAB_DEBUG_BC
-#define cGAB_DEBUG_BC 0
-#endif
-
 // Define how many jobs should be used, default to 8.
 #ifndef cGAB_DEFAULT_NJOBS
 #define cGAB_DEFAULT_NJOBS 8
+#endif
+
+// Define how long the default busy-wait sleep should be.
+#ifndef cGAB_DEFAULT_WAIT_NS
+#define cGAB_DEFAULT_WAIT_NS 300
 #endif
 
 // Capacity at which point dictionaries are resized
