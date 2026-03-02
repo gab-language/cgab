@@ -637,7 +637,7 @@ void processepoch(struct gab_triple gab, int32_t e) {
 #endif
 
   for (size_t idx = wk->queue.head; idx != wk->queue.tail; idx++) {
-    gab_value fiber = wk->queue.data[idx & (wk->queue.size - 1)];
+    gab_value fiber = wk->queue.data[idx & (wk->queue.cap - 1)];
 
 #if cGAB_LOG_GC
     fprintf(stderr, "PFIBER\t%i\t%i\t%lu\n", e, gab.wkid, idx);

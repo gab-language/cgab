@@ -1,0 +1,36 @@
+# dispatch.gab
+# Polymorphic message dispatch - tests the shape-lookup hot path.
+# Defines the same message on several distinct shapes, then dispatches
+# to each in a loop. Measures how shape resolution scales with
+# specialization count.
+
+A = Shapes.make(a:)
+B = Shapes.make(b:)
+C = Shapes.make(c:)
+D = Shapes.make(d:)
+
+describe: .def (A, () => 'a')
+describe: .def (B, () => 'b')
+describe: .def (C, () => 'c')
+describe: .def (D, () => 'd')
+
+a = { a: 0 }
+b = { b: 0 }
+c = { c: 0 }
+d = { d: 0 }
+
+do_loop: .defcase {
+  true:  n => n
+  false: n => do
+    a.describe
+    b.describe
+    c.describe
+    d.describe
+    n = n - 1
+    (n == 0) .do_loop n
+  end
+}
+
+loop: .def (Numbers.t, () => (self == 0) .do_loop self)
+
+1000000.loop

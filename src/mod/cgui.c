@@ -1328,6 +1328,7 @@ GAB_DYNLIB_NATIVE_FN(ui, run) {
                .receiver = gab_snative(gab, render_rec_name, render_rec_target),
                .len = 1,
                .argv = (gab_value[]){vgui},
+               .pin = 1,
            });
 
   if (res.status != gab_cvalid) {
@@ -1340,6 +1341,7 @@ GAB_DYNLIB_NATIVE_FN(ui, run) {
                .receiver = gab_snative(gab, event_rec_name, event_rec_target),
                .len = 1,
                .argv = (gab_value[]){vgui},
+               .pin = 1,
            });
 
   if (res.status != gab_cvalid) {

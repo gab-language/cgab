@@ -2590,7 +2590,7 @@ CASE_CODE(SEND_PRIMITIVE_PUT) {
     //    can never overlap with another's. (If stacks become resizeable, this
     //    changes)
     //  - Fiber's stacks never resize
-    if (gab_chnmatches(c, SP() - (have - 1)))
+    if (!gab_chnisclosed(c) && gab_chnmatches(c, SP() - (have - 1)))
       VM_YIELD(c);
 
     RESET_REENTRANT();

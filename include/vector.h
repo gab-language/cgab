@@ -39,8 +39,7 @@
 typedef struct TYPENAME TYPENAME;
 struct TYPENAME {
   T *data;
-  uint64_t len;
-  uint64_t cap;
+  uint64_t len, cap;
 #ifdef V_CONCURRENT
   mtx_t mtx;
 #endif
@@ -49,7 +48,7 @@ struct TYPENAME {
 LINKAGE void METHOD(create)(TYPENAME *self, uint64_t cap) {
   self->cap = cap;
   self->len = 0;
-  self->data = (T*)malloc(sizeof(T) * cap);
+  self->data = malloc(sizeof(T) * cap);
   INIT_LOCK(self);
 }
 

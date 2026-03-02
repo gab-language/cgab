@@ -1243,6 +1243,11 @@ struct gab_send_argt {
    * The arguments passed to the send.
    */
   gab_value *argv;
+
+  /**
+   * An optional worker id, to which gab will pin this fiber.
+   */
+  int pin;
   /**
    * Optional flags for the vm.
    */

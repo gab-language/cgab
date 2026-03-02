@@ -256,7 +256,11 @@ int sinspectval(char **dest, size_t *n, gab_value self, int depth) {
   case kGAB_FIBERDONE: {
     struct gab_ofiber *fiber = GAB_VAL_TO_FIBER(self);
 
-    return snprintf_through(dest, n, "<" tGAB_FIBER " %p>", fiber);
+    return snprintf_through(dest, n, "<" tGAB_FIBER " %p ", fiber) +
+           sinspectval(dest, n, fiber->data[0], 0) +
+           snprintf_through(dest, n, " ") +
+           sinspectval(dest, n, fiber->data[1], 0) +
+           snprintf_through(dest, n, ">");
   }
   case kGAB_RECORD: {
     if (gab_valkind(gab_recshp(self)) == kGAB_SHAPELIST)

@@ -1,0 +1,14 @@
+# record_update.gab
+# Record update throughput - tests put: performance and structural sharing.
+# Repeatedly updates keys across a large record, exercising the HAMT
+# implementation. A slow result here indicates GC pressure or poor
+# structural sharing.
+
+# Build an initial record with 100 keys
+initial = Ranges.make(0, 100).reduce({ }, (rec, i) => rec.put(i, i))
+
+# Repeatedly update a single key one million times, threading the result
+result = Ranges.make(0, 1000000).reduce(initial, (rec, i) => rec.put(0, i))
+
+[result.at(0)].println
+# => (ok: 999999)

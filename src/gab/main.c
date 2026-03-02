@@ -117,6 +117,9 @@ bool check_and_printerr(union gab_value_pair *res) {
   if (res->status == gab_ctimeout)
     *res = gab_fibawait(gab, res->vresult);
 
+  if (!gab.eg)
+    return false;
+
   while (gab_signaling(gab))
     switch (gab_yield(gab)) {
     case sGAB_TERM:
@@ -1451,7 +1454,7 @@ struct command_arguments parse_options(int argc, const char **argv,
       .argc = argc,
       .argv = argv,
       .njobs = cGAB_DEFAULT_NJOBS,
-      .wait = 1000,
+      .wait = 300,
   };
 
   v_s_char_create(&args.modules, 32);

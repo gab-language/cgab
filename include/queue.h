@@ -20,7 +20,7 @@
 #define SIZE 128
 #endif
 
-#define MASK (SIZE - 1)
+#define MASK(q) (q->cap - 1)
 
 #ifndef DEF_T
 #define DEF_T 0
@@ -32,14 +32,33 @@
 
 typedef struct TYPENAME TYPENAME;
 struct TYPENAME {
-  T data[SIZE];
-  uint64_t head, tail, size;
+  T *data;
+  uint32_t head, tail, cap;
 };
 
-LINKAGE void METHOD(create)(TYPENAME *self) {
+LINKAGE uint64_t METHOD(len)(TYPENAME *self) { return self->tail - self->head; }
+
+LINKAGE void METHOD(cap)(TYPENAME *self, uint32_t cap) {
+  assert((cap > 0) && ((cap & (cap - 1)) == 0));
+
+  T *newdata = malloc(sizeof(T) * cap);
+
+  uint32_t len = METHOD(len)(self);
+
+  for (int i = 0; i < len; i++)
+    newdata[i] = self->data[(self->head + i) & MASK(self)];
+
+  if (self->data)
+    free(self->data);
+  self->data = newdata;
+  self->cap = cap;
   self->head = 0;
-  self->tail = 0;
-  self->size = SIZE;
+  self->tail = len;
+}
+
+LINKAGE void METHOD(create)(TYPENAME *self, uint32_t cap) {
+  memset(self, 0, sizeof(*self));
+  METHOD(cap)(self, cap);
 }
 
 LINKAGE bool METHOD(is_empty)(TYPENAME *self) {
@@ -47,18 +66,14 @@ LINKAGE bool METHOD(is_empty)(TYPENAME *self) {
 }
 
 LINKAGE bool METHOD(is_full)(TYPENAME *self) {
-  return self->tail - self->head >= SIZE;
-}
-
-LINKAGE uint64_t METHOD(len)(TYPENAME *self) {
-  return self->tail - self->head;
+  return METHOD(len)(self) == self->cap;
 }
 
 LINKAGE bool METHOD(push)(TYPENAME *self, T value) {
   if (METHOD(is_full)(self))
-    return false;
+    METHOD(cap)(self, self->cap * 2);
 
-  self->data[self->tail++ & MASK] = value;
+  self->data[self->tail++ & MASK(self)] = value;
 
   return true;
 }
@@ -67,7 +82,7 @@ LINKAGE T METHOD(peek)(TYPENAME *self) {
   if (METHOD(is_empty)(self))
     return DEF_T;
 
-  T value = self->data[self->head & MASK];
+  T value = self->data[self->head & MASK(self)];
 
   return value;
 }
@@ -76,7 +91,7 @@ LINKAGE T METHOD(pop)(TYPENAME *self) {
   if (METHOD(is_empty)(self))
     return DEF_T;
 
-  T value = self->data[self->head++ & MASK];
+  T value = self->data[self->head++ & MASK(self)];
 
   return value;
 }

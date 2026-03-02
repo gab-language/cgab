@@ -472,6 +472,14 @@ static inline bool worker_isrunning(struct gab_triple gab,
   return gab_valkind(fiber) == kGAB_FIBERRUNNING;
 }
 
+static const char *gab_opcode_names[] = {
+#define OP_CODE(name) #name,
+#include "bytecode.h"
+#undef OP_CODE
+#undef GAB_OPCODE_NAMES_IMPL
+};
+
+
 static inline bool worker_step(struct gab_triple gab, struct gab_job *job) {
   switch (gab_yield(gab)) {
   case sGAB_COLL:
@@ -484,76 +492,76 @@ static inline bool worker_step(struct gab_triple gab, struct gab_job *job) {
     break;
   }
 
-  // If there is room in our local queue to take jobs off the global channel,
-  // we should do that.
-  if (!q_gab_value_is_full(&job->queue)) {
 #if cGAB_LOG_EG
-    gab_fprintf(stderr, "[WORKER $] TAKING WITH $ tries\n",
-                gab_number(gab.wkid), gab_number(cGAB_WORKER_IDLE_TRIES));
+  gab_fprintf(stderr, "[WORKER $] TAKING WITH $ tries\n", gab_number(gab.wkid),
+              gab_number(cGAB_WORKER_IDLE_TRIES));
 #endif
 
-    /*
-     * Pull a value form the global work queue.
-     */
-    gab_value fiber =
-        gab_tchntake(gab, gab.eg->work_channel, cGAB_WORKER_IDLE_TRIES);
+  /*
+   * Pull a value form the global work queue.
+   */
+  gab_value fiber =
+      gab_tchntake(gab, gab.eg->work_channel, cGAB_WORKER_IDLE_TRIES);
 
 #if cGAB_LOG_EG
-    gab_fprintf(stderr, "[WORKER $] chntake result: $\n", gab_number(gab.wkid),
-                fiber);
+  gab_fprintf(stderr, "[WORKER $] chntake result: $\n", gab_number(gab.wkid),
+              fiber);
 #endif
 
-    // Terminate if requested.
-    if (fiber == gab_cinvalid)
-      return false;
+  // Terminate if requested.
+  if (fiber == gab_cinvalid)
+    return false;
 
-    // If we timed out or closed, pull from our specific work_channel.
-    // if (fiber == gab_ctimeout || fiber == gab_cundefined)
-    //   fiber = gab_tchntake(gab, job->work_channel, cGAB_WORKER_IDLE_TRIES);
+  // If the channel closed, terminate
+  if (fiber == gab_cundefined)
+    return false;
 
-    // Terminate if requested.
-    // if (fiber == gab_cinvalid)
-    //   return false;
+  // If we timed out or closed, pull from our specific work_channel.
+  if (fiber == gab_ctimeout)
+    fiber = gab_tchntake(gab, job->work_channel, cGAB_WORKER_IDLE_TRIES);
 
-    if (fiber == gab_cundefined)
-      return false;
+  // Terminate if requested.
+  if (fiber == gab_cinvalid)
+    return false;
 
-    if (fiber == gab_ctimeout) {
-      // We have no work from our specific channel, or global channel.
-      // If our local queue is empty, then we have no work to do.
-      if (q_gab_value_is_empty(&job->queue))
-        return gab_busywait(gab), true;
+  // If the channel closed, terminate
+  if (fiber == gab_cundefined)
+    return false;
+
+  if (fiber == gab_ctimeout) {
+    // We have no work from our specific channel, or global channel.
+    // If our local queue is empty, then we have no work to do.
+    if (q_gab_value_is_empty(&job->queue))
+      return gab_busywait(gab), true;
 
 #if cGAB_LOG_EG
-      gab_fprintf(stderr, "[WORKER $] RESORTING TO LOCALQUEUE $\n",
-                  gab_number(gab.wkid), fiber);
+    gab_fprintf(stderr, "[WORKER $] RESORTING TO LOCALQUEUE $\n",
+                gab_number(gab.wkid), fiber);
 
-      size_t i = 0;
-      for (size_t h = job->queue.head; h < job->queue.tail; h++, i++) {
-        gab_value d = job->queue.data[h & (job->queue.size - 1)];
-        gab_assert(gab_valkind(d) == kGAB_FIBER,
-                   "[WORKER %i] Fibers in queue shall only have kind "
-                   "kGAB_FIBER, not %d.",
-                   gab.wkid, gab_valkind(d));
-        gab_fprintf(stderr, "[WORKER $] $ is waiting at $\n",
-                    gab_number(gab.wkid), d, gab_number(i));
-      }
-#endif
-
-    } else {
-      gab_assert(gab_valkind(fiber) == kGAB_FIBER,
-                 "Fibers in the queue shall only have type kGAB_FIBER, not %d.",
-                 gab_valkind(fiber));
-
-      // Our global take succeeded - append to our local queue.
-      if (!q_gab_value_push(&job->queue, fiber))
-        gab_assert(false, "In this codepath, the queue is guaranteed to have "
-                          "room for the fiber.");
+    size_t i = 0;
+    for (size_t h = job->queue.head; h < job->queue.tail; h++, i++) {
+      gab_value d = job->queue.data[h & (job->queue.cap - 1)];
+      gab_assert(gab_valkind(d) == kGAB_FIBER,
+                 "[WORKER %i] Fibers in queue shall only have kind "
+                 "kGAB_FIBER, not %d.",
+                 gab.wkid, gab_valkind(d));
+      gab_fprintf(stderr, "[WORKER $] $ is waiting at $\n",
+                  gab_number(gab.wkid), d, gab_number(i));
     }
+#endif
+
+  } else {
+    gab_assert(gab_valkind(fiber) == kGAB_FIBER,
+               "Fibers in the queue shall only have type kGAB_FIBER, not %d.",
+               gab_valkind(fiber));
+
+    // Our global take succeeded - append to our local queue.
+    if (!q_gab_value_push(&job->queue, fiber))
+      gab_assert(false, "Shall not fail to append fiber to local queue.");
   }
 
   // Peek at job to do on the queue.
-  gab_value fiber = q_gab_value_peek(&job->queue);
+  fiber = q_gab_value_peek(&job->queue);
 
   gab_assert(gab_valkind(fiber) != kGAB_FIBERDONE,
              "Fibers about to be run shall not be kGAB_FIBERDONE.");
@@ -575,6 +583,10 @@ static inline bool worker_step(struct gab_triple gab, struct gab_job *job) {
 #if cGAB_LOG_EG
   gab_fprintf(stderr, "[WORKER $] EXECUTED: $ -> $\n", gab_number(gab.wkid),
               fiber, res.status);
+
+  if (res.status == gab_ctimeout) {
+    fprintf(stderr, "[WORKER %i] TIMED OUT FROM %s\n", gab.wkid, gab_opcode_names[*GAB_VAL_TO_FIBER(fiber)->vm.ip]);
+  }
 #endif
 
   // We did work - pop it off the queue now.
@@ -627,13 +639,6 @@ static inline bool worker_step(struct gab_triple gab, struct gab_job *job) {
 
   return true;
 }
-
-static const char *gab_opcode_names[] = {
-#define OP_CODE(name) #name,
-#include "bytecode.h"
-#undef OP_CODE
-#undef GAB_OPCODE_NAMES_IMPL
-};
 
 static inline void worker_bail(struct gab_triple gab, struct gab_job *job) {
 #if cGAB_LOG_EG
@@ -780,11 +785,11 @@ bool gab_jbcreate(struct gab_triple gab, struct gab_job *job, int(fn)(void *),
 
   job->locked = 0;
   v_gab_value_create(&job->lock_keep, 8);
-  q_gab_value_create(&job->queue);
+  q_gab_value_create(&job->queue, 32);
 
-  // job->work_channel = gab_channel(gab);
-  // gab_iref(gab, job->work_channel);
-  // gab_egkeep(gab.eg, job->work_channel);
+  job->work_channel = gab_channel(gab);
+  gab_iref(gab, job->work_channel);
+  gab_egkeep(gab.eg, job->work_channel);
 
   if (fiber != gab_cundefined)
     if (!q_gab_value_push(&job->queue, fiber))
@@ -811,7 +816,7 @@ union gab_value_pair gab_create(struct gab_create_argt args,
                                 struct gab_triple gab_out[static 1]) {
   uint64_t njobs = args.jobs ? args.jobs : 8;
 
-  if (njobs > 30)
+  if (njobs > 29)
     return (union gab_value_pair){{gab_cinvalid}};
 
   uint64_t actual_njobs = njobs + 2;
@@ -977,7 +982,6 @@ union gab_value_pair gab_create(struct gab_create_argt args,
                                             });
     if (res.status == gab_ctimeout)
       res = gab_fibawait(gab, res.vresult);
-
 
     // If any of these uses fail, return the failure.
     if (res.status != gab_cvalid)
@@ -2450,8 +2454,24 @@ union gab_value_pair gab_asend(struct gab_triple gab,
   gab_iref(gab, fb);
   gab_egkeep(gab.eg, fb);
 
-  if (!gab_wkspawn(gab, fb))
+  // TODO: These chnputs block, which is problematic.
+  // I should really maybe have a queue for this.
+  // These potentially block callers annoyingly long
+  if (args.pin) {
+    if (args.pin > gab.eg->len)
+      return (union gab_value_pair){{gab_cinvalid}};
+
+    if (!gab_jbisalive(gab, args.pin))
+      return (union gab_value_pair){{gab_cinvalid}};
+
+    if (gab.wkid == args.pin)
+      q_gab_value_push(&gab.eg->jobs[args.pin].queue, fb);
+    else
+      gab_chnput(gab, gab.eg->jobs[args.pin].work_channel, fb);
+
+  } else if (!gab_wkspawn(gab, fb)) {
     gab_chnput(gab, gab.eg->work_channel, fb);
+  }
 
   return (union gab_value_pair){{gab_cvalid, fb}};
 };
