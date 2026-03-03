@@ -642,18 +642,24 @@ struct gab_create_argt {
 GAB_API union gab_value_pair gab_create(struct gab_create_argt args,
                                         struct gab_triple *gab_out);
 
+struct gab_module_res {
+  a_char *path;
+  const char *root;
+  const struct gab_resource *resource;
+};
+
 /**
  * @brief resolve a module with the engine's given loaders and roots.
  * The prefix and suffix that matched are written to prefix and suffix, if
  * provided.
  */
-GAB_API const char *gab_resolve(struct gab_triple gab, const char *mod,
-                                const char **prefix, const char **suffix);
+GAB_API struct gab_module_res
+gab_resolve(struct gab_triple gab, const char *package, const char *module);
 
-GAB_API const char *gab_mresolve(const char **roots,
-                                 const struct gab_resource *resources,
-                                 const char *mod, const char **prefix,
-                                 const char **suffix);
+GAB_API struct gab_module_res gab_mresolve(const char **roots,
+                                           const struct gab_resource *resources,
+                                           const char *package,
+                                           const char *module);
 
 /**
  * @brief Free the memory owned by this triple.
@@ -1826,7 +1832,8 @@ GAB_API_INLINE gab_value gab_strtomsg(gab_value str) {
   if (str == gab_cinvalid)
     return gab_cinvalid;
 
-  gab_assert(gab_valkind(str) == kGAB_STRING, "User shall supply a string value");
+  gab_assert(gab_valkind(str) == kGAB_STRING,
+             "User shall supply a string value");
   return str | (uint64_t)kGAB_MESSAGE << __GAB_TAGOFFSET;
 }
 

@@ -1842,7 +1842,7 @@ CASE_CODE(SEND_PRIMITIVE_USE) {
 
     bool should_reload = have > 1 ? PEEK_N(have - 1) == gab_true : false;
 
-    gab_value module = have > 1 ? PEEK_N(have - 1) : gab_cundefined;
+    gab_value module = have > 1 ? PEEK_N(have - 1) : 0;
 
     mod = gab_use(GAB(), (struct gab_use_argt){
                              .flags = should_reload ? fGAB_USE_RELOAD : 0,

@@ -475,7 +475,6 @@ static const char *gab_opcode_names[] = {
 #undef GAB_OPCODE_NAMES_IMPL
 };
 
-
 static inline bool worker_step(struct gab_triple gab, struct gab_job *job) {
   switch (gab_yield(gab)) {
   case sGAB_COLL:
@@ -581,7 +580,8 @@ static inline bool worker_step(struct gab_triple gab, struct gab_job *job) {
               fiber, res.status);
 
   if (res.status == gab_ctimeout) {
-    fprintf(stderr, "[WORKER %i] TIMED OUT FROM %s\n", gab.wkid, gab_opcode_names[*GAB_VAL_TO_FIBER(fiber)->vm.ip]);
+    fprintf(stderr, "[WORKER %i] TIMED OUT FROM %s\n", gab.wkid,
+            gab_opcode_names[*GAB_VAL_TO_FIBER(fiber)->vm.ip]);
   }
 #endif
 
@@ -2211,7 +2211,7 @@ const char *gab_errtocs(struct gab_triple gab, gab_value err) {
 #define MODULE_SYMBOL "gab_lib"
 
 a_char *match_resource(const char **roots, const struct gab_resource *res,
-                       const char *name, uint64_t len) {
+                       const char *name, uint64_t len, const char **root) {
   for (int i = 0; roots[i] != nullptr; i++) {
     const uint64_t r_len = strlen(roots[i]);
     const uint64_t p_len = strlen(res->prefix);
@@ -2226,50 +2226,71 @@ a_char *match_resource(const char **roots, const struct gab_resource *res,
     memcpy(buffer + r_len + p_len + len, res->suffix, s_len + 1);
 
     assert(res->exister != nullptr);
-    if (res->exister(buffer))
+    if (res->exister(buffer)) {
+
+      if (root)
+        *root = roots[i];
+
       return a_char_create(buffer, total_len);
-  }
-
-  return nullptr;
-}
-
-GAB_API const char *gab_mresolve(const char **roots,
-                                 const struct gab_resource *resources,
-                                 const char *mod, const char **prefix,
-                                 const char **suffix) {
-  for (int i = 0; resources[i].prefix != nullptr; i++) {
-    const struct gab_resource *res = resources + i;
-    a_char *module_path = match_resource(roots, res, mod, strlen(mod));
-    if (module_path) {
-      if (prefix)
-        *prefix = res->prefix;
-
-      if (suffix)
-        *suffix = res->suffix;
-
-      return module_path->data;
     }
   }
 
   return nullptr;
 }
 
-const char *gab_resolve(struct gab_triple gab, const char *mod,
-                        const char **prefix, const char **suffix) {
-  return gab_mresolve(gab.eg->resroots, gab.eg->res, mod, prefix, suffix);
+struct gab_module_res gab_mresolve(const char **roots,
+                                   const struct gab_resource *resources,
+                                   const char *package, const char *module) {
+
+  size_t plen = strlen(package);
+  size_t mlen = module ? strlen(module) : 0;
+  char name[plen + mlen + 6];
+
+  memcpy(name, package, plen);
+
+  if (mlen) {
+    memcpy(name + plen, "/mod/", 5);
+    memcpy(name + plen + 5, module, mlen);
+    mlen += 5;
+  }
+
+  name[plen + mlen] = '\0';
+
+  for (int i = 0; resources[i].prefix != nullptr; i++) {
+    const struct gab_resource *res = resources + i;
+    const char *root;
+
+    a_char *module_path = match_resource(roots, res, name, strlen(name), &root);
+
+    if (module_path) {
+      return (struct gab_module_res){
+          .path = module_path,
+          .resource = res,
+          .root = root,
+      };
+    }
+  }
+
+  return (struct gab_module_res){0};
+}
+
+struct gab_module_res gab_resolve(struct gab_triple gab, const char *package,
+                                  const char *module) {
+  return gab_mresolve(gab.eg->resroots, gab.eg->res, package, module);
 }
 
 union gab_value_pair gab_use(struct gab_triple gab, struct gab_use_argt args) {
   gab.flags |= args.flags;
 
-  gab_value package = args.spackage_name ? gab_string(gab, args.spackage_name)
-                                         : args.vpackage_name;
-  assert(gab_valkind(package) == kGAB_STRING);
+  const char *package = args.spackage_name;
+  if (args.vpackage_name) {
+    package = gab_strdata(&args.vpackage_name);
+  }
 
-  gab_value module = args.smodule_name ? gab_string(gab, args.smodule_name)
-                                       : args.vmodule_name;
-
-  assert(gab_valkind(package) == kGAB_STRING);
+  const char *module = args.smodule_name;
+  if (args.vmodule_name) {
+    module = gab_strdata(&args.vmodule_name);
+  }
 
   if (gab_valkind(args.env) == kGAB_RECORD) {
     args.len = gab_reclen(args.env);
@@ -2290,57 +2311,44 @@ union gab_value_pair gab_use(struct gab_triple gab, struct gab_use_argt args) {
     args.argv = env_vargv;
   }
 
-  size_t plen = gab_strlen(package);
-  size_t mlen = gab_valkind(module) == kGAB_STRING ? gab_strlen(module) : 0;
+  struct gab_module_res mod = gab_resolve(gab, package, module);
 
-  char name[plen + mlen + 6];
+  // Try to resolve the module *as* the package, if we couldn't resolve the module within the package.
+  if (!mod.resource && module)
+    mod = gab_resolve(gab, module, nullptr);
 
-  memcpy(name, gab_strdata(&package), plen);
+  if (mod.resource) {
+    if (!(gab.flags & fGAB_USE_RELOAD)) {
+      a_gab_value *cached = gab_segmodat(gab.eg, mod.path->data);
 
-  if (mlen) {
-    memcpy(name + plen, "/mod/", 5);
-    memcpy(name + plen + 5, gab_strdata(&module), mlen);
-    mlen += 5;
-  }
+      if (cached != nullptr) {
+        /* Skip the first argument, which is the module's data */
 
-  name[plen + mlen] = '\0';
-
-  for (int i = 0; gab.eg->res[i].prefix != nullptr; i++) {
-    struct gab_resource *res = gab.eg->res + i;
-    a_char *module_path =
-        match_resource(gab.eg->resroots, res, name, strlen(name));
-
-    if (module_path) {
-      if (!(gab.flags & fGAB_USE_RELOAD)) {
-        a_gab_value *cached = gab_segmodat(gab.eg, (char *)module_path->data);
-
-        if (cached != nullptr) {
-          /* Skip the first argument, which is the module's data */
-          a_char_destroy(module_path);
-          return (union gab_value_pair){
-              .status = gab_cvalid,
-              .aresult = cached,
-          };
-        }
+        return (union gab_value_pair){
+            .status = gab_cvalid,
+            .aresult = cached,
+        };
       }
-
-      assert(res->loader != nullptr);
-      union gab_value_pair result =
-          res->loader(gab, module_path->data, args.len, args.sargv, args.argv);
-
-      if (result.status != gab_cvalid)
-        return result;
-
-      if (result.aresult->data[0] != gab_ok)
-        return result;
-
-      gab_segmodput(gab.eg, module_path->data, result.aresult);
-
-      return a_char_destroy(module_path), result;
     }
+
+    assert(mod.resource->loader != nullptr);
+    union gab_value_pair result = mod.resource->loader(
+        gab, mod.path->data, args.len, args.sargv, args.argv);
+
+    if (result.status != gab_cvalid)
+      return result;
+
+    if (result.aresult->data[0] != gab_ok)
+      return result;
+
+    gab_segmodput(gab.eg, mod.path->data, result.aresult);
+
+    return a_char_destroy(mod.path), result;
   }
 
-  return gab_panicf(gab, "Module @ could not be found", gab_string(gab, name));
+
+  return gab_panicf(gab, "Module @ could not be found",
+                    gab_string(gab, package));
 }
 
 union gab_value_pair gab_run(struct gab_triple gab, struct gab_run_argt args) {

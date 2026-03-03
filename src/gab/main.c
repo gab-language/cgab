@@ -581,12 +581,12 @@ int run_bundle(const char *mod) {
                        .argv = res.aresult->data + 1,
                    });
 
+  if (!check_and_printerr(&run_res))
+    return gab_destroy(gab), 1;
+
   gab_sigterm(gab);
 
   a_gab_value_destroy(res.aresult);
-
-  if (!check_and_printerr(&run_res))
-    return gab_destroy(gab), 1;
 
   return gab_destroy(gab), 0;
 }
@@ -624,43 +624,44 @@ int run_file(const char *path, int flags, uint32_t wait, size_t jobs,
   return a_gab_value_destroy(run_res.aresult), gab_destroy(gab), 0;
 }
 
-bool add_module(mz_zip_archive *zip_o, const char **roots,
-                const struct gab_resource *resources, s_char module,
-                const char **prefix_out, const char **suffix_out,
-                const char **path_out) {
+bool add_package(mz_zip_archive *zip_o, const char **roots,
+                 const struct gab_resource *resources, s_char package,
+                 struct gab_module_res *mod) {
 
-  char cstr_module[module.len + 1];
-  memcpy(cstr_module, module.data, module.len);
-  cstr_module[module.len] = '\0';
+  char cstr_package[package.len + 1];
+  memcpy(cstr_package, package.data, package.len);
+  cstr_package[package.len] = '\0';
 
-  const char *path =
-      gab_mresolve(roots, resources, cstr_module, prefix_out, suffix_out);
+  *mod = gab_mresolve(roots, resources, cstr_package, nullptr);
 
-  if (!path)
+  if (!mod->path)
     return false;
 
-  const char *prefix = *prefix_out;
-  const char *suffix = *suffix_out;
-
-  if (path_out)
-    *path_out = path;
+  const char *prefix = mod->resource->prefix;
+  const char *suffix = mod->resource->suffix;
+  const char *root = mod->root;
 
   size_t lenprefix = strlen(prefix);
   size_t lensuffix = strlen(suffix);
-  size_t lenpath = strlen(cstr_module);
-  char modulename[lenprefix + lenpath + lensuffix + 1];
+  size_t lenpath = strlen(cstr_package);
 
-  memcpy(modulename, prefix, lenprefix);
-  memcpy(modulename + lenprefix, cstr_module, lenpath);
-  memcpy(modulename + lenprefix + lenpath, suffix, lensuffix);
-  modulename[lenprefix + lenpath + lensuffix] = '\0';
+  //size_t lenroot = strlen(root);
+  size_t lenroot = 0;
+
+  char modulename[lenroot + lenprefix + lenpath + lensuffix + 1];
+
+  memcpy(modulename, root, lenroot);
+  memcpy(modulename + lenroot, prefix, lenprefix);
+  memcpy(modulename + lenroot + lenprefix, cstr_package, lenpath);
+  memcpy(modulename + lenroot + lenprefix + lenpath, suffix, lensuffix);
+  modulename[lenroot + lenprefix + lenpath + lensuffix] = '\0';
 
   /*
    * Detect if the module we've found is already a bundle.
    * If it is, flatten it into this bundle.
    */
   mz_zip_archive zip_r = {0};
-  if (mz_zip_reader_init_file(&zip_r, path, 0)) {
+  if (mz_zip_reader_init_file(&zip_r, mod->path->data, 0)) {
     size_t files = mz_zip_reader_get_num_files(&zip_r);
 
     if (files) {
@@ -680,7 +681,7 @@ bool add_module(mz_zip_archive *zip_o, const char **roots,
    *
    * Perhaps leave this up to the user?
    */
-  return mz_zip_writer_add_file(zip_o, modulename, path, nullptr, 0,
+  return mz_zip_writer_add_file(zip_o, modulename, mod->path->data, nullptr, 0,
                                 MZ_BEST_SPEED);
 }
 
@@ -693,7 +694,7 @@ struct step {
     kSTEP_UNZIP,
     kSTEP_RM,
     kSTEP_ARCHIVE_OPEN,
-    kSTEP_ARCHIVE_ADD_MODULE,
+    kSTEP_ARCHIVE_ADD_PACKAGE,
     kSTEP_ARCHIVE_FINALIZE,
   } k;
 
@@ -709,11 +710,9 @@ struct step {
       mz_zip_archive *zip;
       const char **roots;
       const struct gab_resource *resources;
-      s_char module;
-      const char **prefix_out;
-      const char **suffix_out;
-      const char *path_out;
-    } archive_add_module;
+      s_char package;
+      struct gab_module_res mod_out;
+    } archive_add_package;
 
     struct {
       mz_zip_archive *zip;
@@ -824,14 +823,12 @@ int step(struct step *step) {
 
     return !mz_zip_writer_init_cfile(step->as.archive_open.zip, archive, 0);
   }
-  case kSTEP_ARCHIVE_ADD_MODULE:
-    return !add_module(step->as.archive_add_module.zip,
-                       step->as.archive_add_module.roots,
-                       step->as.archive_add_module.resources,
-                       step->as.archive_add_module.module,
-                       step->as.archive_add_module.prefix_out,
-                       step->as.archive_add_module.suffix_out,
-                       &step->as.archive_add_module.path_out);
+  case kSTEP_ARCHIVE_ADD_PACKAGE:
+    return !add_package(step->as.archive_add_package.zip,
+                        step->as.archive_add_package.roots,
+                        step->as.archive_add_package.resources,
+                        step->as.archive_add_package.package,
+                        &step->as.archive_add_package.mod_out);
   case kSTEP_ARCHIVE_FINALIZE: {
     mz_zip_archive *zip = step->as.archive_finalize.zip;
     FILE *bundle_f = zip->m_pState->m_pFile;
@@ -887,7 +884,7 @@ int unstep(struct step *step) {
 
     return 0;
   }
-  case kSTEP_ARCHIVE_ADD_MODULE:
+  case kSTEP_ARCHIVE_ADD_PACKAGE:
     return 0;
   case kSTEP_ARCHIVE_FINALIZE:
     return 0;
@@ -915,12 +912,11 @@ void elogstep(struct step *step, int i, int res) {
     return clierror("Step %i failed: %i\n", i, res);
   case kSTEP_ARCHIVE_OPEN:
     return clierror("Step %i failed: %i\n", i, res);
-  case kSTEP_ARCHIVE_ADD_MODULE:
-    if (!*step->as.archive_add_module.prefix_out ||
-        !*step->as.archive_add_module.suffix_out)
+  case kSTEP_ARCHIVE_ADD_PACKAGE:
+    if (!step->as.archive_add_package.mod_out.path)
       return clierror("Step %i failed: Failed to resolve module %.*s\n", i,
-                      step->as.archive_add_module.module.len,
-                      step->as.archive_add_module.module.data);
+                      step->as.archive_add_package.package.len,
+                      step->as.archive_add_package.package.data);
 
     return clierror("Step %i failed: %i\n", i, res);
   case kSTEP_ARCHIVE_FINALIZE:
@@ -945,10 +941,11 @@ void slogstep(struct step *step, int i) {
     return clisuccess(" %2i Removed %s\n", i, step->as.rm.path);
   case kSTEP_ARCHIVE_OPEN:
     return clisuccess(" %2i Opened bundle %s\n", i, step->as.archive_open.path);
-  case kSTEP_ARCHIVE_ADD_MODULE:
-    return clisuccess(" %2i Added module %.*s\n", i,
-                      step->as.archive_add_module.module.len,
-                      step->as.archive_add_module.module.data);
+  case kSTEP_ARCHIVE_ADD_PACKAGE:
+    return clisuccess(" %2i Added module %.*s (%s)\n", i,
+                      step->as.archive_add_package.package.len,
+                      step->as.archive_add_package.package.data,
+                      step->as.archive_add_package.mod_out.path->data);
   case kSTEP_ARCHIVE_FINALIZE:
     return clisuccess(" %2i Finalized bundle.\n", i);
   }
@@ -977,10 +974,10 @@ void logstep(struct step *step, int i) {
   case kSTEP_ARCHIVE_OPEN:
     return cliinfo(" %2i Open " GAB_MAGENTA "%s" GAB_RESET "\n", i,
                    step->as.archive_open.path);
-  case kSTEP_ARCHIVE_ADD_MODULE:
+  case kSTEP_ARCHIVE_ADD_PACKAGE:
     return cliinfo(" %2i Resolve and embed " GAB_MAGENTA "%.*s" GAB_RESET "\n",
-                   i, step->as.archive_add_module.module.len,
-                   step->as.archive_add_module.module.data);
+                   i, step->as.archive_add_package.package.len,
+                   step->as.archive_add_package.package.data);
   case kSTEP_ARCHIVE_FINALIZE:
     return cliinfo(" %2i Finalize bundle\n", i);
   }
@@ -2145,22 +2142,17 @@ int build_exe(struct command_arguments *args, const char *module) {
                               is_native ? gab_osexepath() : nullptr,
                       });
 
-  const char *prefixes[args->modules.len];
-  const char *suffixes[args->modules.len];
-
   for (int i = 0; i < args->modules.len; i++)
-    v_step_push(
-        &steps,
-        (struct step){
-            kSTEP_ARCHIVE_ADD_MODULE,
-            .as.archive_add_module.zip = &zip_o,
-            .as.archive_add_module.roots = platform_roots,
-            .as.archive_add_module.resources = platform_file_resources,
-            .as.archive_add_module.module = v_s_char_val_at(&args->modules, i),
-            .as.archive_add_module.prefix_out = prefixes + i,
-            .as.archive_add_module.suffix_out = suffixes + i,
+    v_step_push(&steps,
+                (struct step){
+                    kSTEP_ARCHIVE_ADD_PACKAGE,
+                    .as.archive_add_package.zip = &zip_o,
+                    .as.archive_add_package.roots = platform_roots,
+                    .as.archive_add_package.resources = platform_file_resources,
+                    .as.archive_add_package.package =
+                        v_s_char_val_at(&args->modules, i),
 
-        });
+                });
 
   long size = 0;
 
@@ -2264,21 +2256,16 @@ int build_lib(struct command_arguments *args) {
                           .as.archive_open.zip = &zip_o,
                       });
 
-  const char *prefixes[args->modules.len];
-  const char *suffixes[args->modules.len];
-
   for (int i = 0; i < args->modules.len; i++)
-    v_step_push(
-        &steps,
-        (struct step){
-            kSTEP_ARCHIVE_ADD_MODULE,
-            .as.archive_add_module.zip = &zip_o,
-            .as.archive_add_module.roots = platform_roots,
-            .as.archive_add_module.resources = platform_file_resources,
-            .as.archive_add_module.module = v_s_char_val_at(&args->modules, i),
-            .as.archive_add_module.prefix_out = prefixes + i,
-            .as.archive_add_module.suffix_out = suffixes + i,
-        });
+    v_step_push(&steps,
+                (struct step){
+                    kSTEP_ARCHIVE_ADD_PACKAGE,
+                    .as.archive_add_package.zip = &zip_o,
+                    .as.archive_add_package.roots = platform_roots,
+                    .as.archive_add_package.resources = platform_file_resources,
+                    .as.archive_add_package.package =
+                        v_s_char_val_at(&args->modules, i),
+                });
 
   long size = 0;
 
