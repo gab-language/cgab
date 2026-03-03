@@ -235,6 +235,3 @@ jobs:
 
       - name: Run tests bundle
         run: ./test.cgab-${{ env.version }}-${{ matrix.target }}.exe
-
-      - name: Run cross-compiled tests bundle
-        run: ./test.exe
