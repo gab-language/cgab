@@ -4,8 +4,13 @@ Socket = IO.Sockets
 cert = IO.Files.make("MyCertificate.crt" "r").unwrap
 pkey = IO.Files.make("MyKey.key" "r").unwrap
 
-cert = cert.read(cert.len).unwrap
-pkey = pkey.read(pkey.len).unwrap
+(ok, cert) = cert.read(cert.len)
+
+ok.else () => 'Invalid cert: $ ($)'.panicf(cert, cert.len)
+
+(ok, pkey) = pkey.read(pkey.len)
+
+ok.else () => 'Invalid pkey: $ ($)'.panicf(cert, cert.len)
 
 server_fiber = Fibers.make () => do
 

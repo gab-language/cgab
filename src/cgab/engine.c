@@ -1186,8 +1186,10 @@ bool repl_check_needmore(struct gab_triple gab, union gab_value_pair res) {
   gab_value status = gab_mrecat(gab, err, "status");
   gab_assert(status != gab_cundefined,
              "The error record shall have a status field");
+
   gab_assert(gab_valkind(status) == kGAB_STRING,
-             "The status field shall be a string");
+             "The status field shall be a string, not %d.",
+             gab_valkind(status));
 
   const char *status_name = gab_strdata(&status);
   if (!strcmp(status_name, "UNEXPECTED_EOF"))
@@ -2313,7 +2315,8 @@ union gab_value_pair gab_use(struct gab_triple gab, struct gab_use_argt args) {
 
   struct gab_module_res mod = gab_resolve(gab, package, module);
 
-  // Try to resolve the module *as* the package, if we couldn't resolve the module within the package.
+  // Try to resolve the module *as* the package, if we couldn't resolve the
+  // module within the package.
   if (!mod.resource && module)
     mod = gab_resolve(gab, module, nullptr);
 
@@ -2345,7 +2348,6 @@ union gab_value_pair gab_use(struct gab_triple gab, struct gab_use_argt args) {
 
     return a_char_destroy(mod.path), result;
   }
-
 
   return gab_panicf(gab, "Module @ could not be found",
                     gab_string(gab, package));

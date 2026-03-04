@@ -90,7 +90,7 @@
 
 // Define how long the default busy-wait sleep should be.
 #ifndef cGAB_DEFAULT_WAIT_NS
-#define cGAB_DEFAULT_WAIT_NS 300
+#define cGAB_DEFAULT_WAIT_NS 800
 #endif
 
 // Capacity at which point dictionaries are resized

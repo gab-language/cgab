@@ -4,28 +4,29 @@
  *  Copyright (c) 2023 Teddy Randby
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy
- *  of this software and associated documentation files (the "Software"), to deal
- *  in the Software without restriction, including without limitation the rights
- *  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- *  copies of the Software, and to permit persons to whom the Software is
+ *  of this software and associated documentation files (the "Software"), to
+ * deal in the Software without restriction, including without limitation the
+ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+ * sell copies of the Software, and to permit persons to whom the Software is
  *  furnished to do so, subject to the following conditions:
  *
- *  The above copyright notice and this permission notice shall be included in all
- *  copies or substantial portions of the Software.
+ *  The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
  *
  *  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  *  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  *  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
  *  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- *  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- *  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- *  SOFTWARE.
+ *  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+ * IN THE SOFTWARE.
  */
 
 #include "BearSSL/inc/bearssl.h"
 
 #include "gab.h"
 #include "platform.h"
+#include <stdio.h>
 
 #define QIO_LOOP_INTERVAL_NS 50000
 #define QIO_INTERNAL_QUEUE_INITIAL_LEN 2056
@@ -168,7 +169,7 @@ struct iobuf {
 static inline int64_t iobuf_recv(struct iobuf *io, gab_value fib, qfd_t fd,
                                  uint64_t len, s_char *out,
                                  uintptr_t *reentrant) {
-  uint64_t sofar = gab_fibsize(fib);
+  assert(len <= BUFFER_SIZE);
 
   if (*reentrant) {
     if (!qd_status(*reentrant - 1))
@@ -180,8 +181,11 @@ static inline int64_t iobuf_recv(struct iobuf *io, gab_value fib, qfd_t fd,
     if (result < 0)
       return result;
 
-    if (result == 0)
-      return eGAB_EOF;
+    if (result == 0) {
+      out->data = nullptr;
+      out->len = 0;
+      return 1;
+    }
 
     io->bback += result;
     // Recurse with the data we now have in the buffer.
@@ -202,13 +206,20 @@ static inline int64_t iobuf_recv(struct iobuf *io, gab_value fib, qfd_t fd,
    *
    * Otherwise, just consume the 'len' requested.
    */
-  gab_uint consumed = len < available ? len : available;
+  gab_uint to_consume = len < available ? len : available;
 
-  gab_uint total = sofar ? sofar + consumed : consumed;
-
-  // If we need more data, and we have room for it, request it.
-  if ((!available || total < len) && (io->bback - io->bfront < BUFFER_SIZE)) {
+  if (!available) {
     // Yield while we queue up a read
+    qd_t qd = qread(fd, buffer_avail(io), buffer_space(io));
+    *reentrant = qd + 1;
+    return 0;
+  }
+
+  /*
+   * If we want more bytes and have room for more bytes,
+   * request more.
+   */
+  if (to_consume < len && (io->bback - io->bfront < BUFFER_SIZE)) {
     qd_t qd = qread(fd, buffer_avail(io), buffer_space(io));
     *reentrant = qd + 1;
     return 0;
@@ -219,42 +230,14 @@ static inline int64_t iobuf_recv(struct iobuf *io, gab_value fib, qfd_t fd,
    * and then mark it as consumed.
    */
   const uint8_t *data = buffer_data(io);
-  io->bfront += consumed;
+  io->bfront += to_consume;
 
   /*
-   * We may already be accumulating data into the arena.
-   * Continue if that is the case.
-   *
-   * Otherwise, if the data we consumed isn't enough,
-   * begin accumulating into the arena. This usually
-   * happens when the amount of data requested is bigger than BUFFER_SIZE.
+   * Setup the output
    */
-  if (sofar || consumed < len)
-    for (uint64_t i = 0; i < consumed; i++)
-      gab_fibpush(fib, data[i]);
-
-  /*
-   * If we didn't read len bytes yet, recurse.
-   */
-  if (total < len)
-    return iobuf_recv(io, fib, fd, len - consumed, out, reentrant);
-
-  /*
-   * At this point, we've consumed len bytes.
-   *
-   * If we were accumulating into arena, use that.
-   *
-   * Otherwise, use the iobuf.
-   */
-  if (sofar) {
-    out->len = gab_fibsize(fib);
-    out->data = gab_fibat(fib, 0);
-    return len;
-  }
-
-  out->len = len;
+  out->len = to_consume;
   out->data = (const char *)data;
-  return len;
+  return to_consume;
 }
 
 /*
@@ -1105,10 +1088,7 @@ union gab_value_pair resume_sslsockrecv(struct gab_triple gab,
     // Else, the connection just closed.
 
     if (err)
-      return gab_vmpush(gab_thisvm(gab), gab_err,
-                        gab_string(gab, "Error during SSL Read"),
-                        gab_number(err)),
-             gab_union_cvalid(gab_nil);
+      return (out->len = err), gab_union_cvalid(gab_nil);
   }
 
   if (result.status > 0)
@@ -1136,10 +1116,7 @@ union gab_value_pair resume_sslserversockrecv(struct gab_triple gab,
     // Else, the connection just closed.
 
     if (err)
-      return gab_vmpush(gab_thisvm(gab), gab_err,
-                        gab_string(gab, "SSL Server Sock Recv"),
-                        gab_number(err)),
-             gab_union_cvalid(gab_nil);
+      return (out->len = err), gab_union_cvalid(gab_nil);
   }
 
   if (result.status > 0)
@@ -1665,14 +1642,7 @@ union gab_value_pair gab_io_read(struct gab_triple gab, struct gab_io *io,
       return gab_union_ctimeout(*reentrant);
 
     if (result < 0) {
-      if (result == eGAB_EOF)
-        return gab_vmpush(gab_thisvm(gab), gab_err,
-                          gab_string(gab, "Reached End of File")),
-               gab_union_cvalid(gab_nil);
-      else
-        return gab_vmpush(gab_thisvm(gab), gab_err,
-                          gab_string(gab, strerror(-result))),
-               gab_union_cvalid(gab_nil);
+      return (out->len = result), gab_union_cvalid(gab_nil);
     }
 
     return gab_union_cvalid(gab_nil);
@@ -1687,14 +1657,7 @@ union gab_value_pair gab_io_read(struct gab_triple gab, struct gab_io *io,
       return gab_union_ctimeout(*reentrant);
 
     if (result < 0) {
-      if (result == eGAB_EOF)
-        return gab_vmpush(gab_thisvm(gab), gab_err,
-                          gab_string(gab, "Connection Closed")),
-               gab_union_cvalid(gab_nil);
-      else
-        return gab_vmpush(gab_thisvm(gab), gab_err,
-                          gab_string(gab, strerror(-result))),
-               gab_union_cvalid(gab_nil);
+      return (out->len = result), gab_union_cvalid(gab_nil);
     }
 
     return gab_union_cvalid(gab_nil);
@@ -1732,27 +1695,58 @@ GAB_DYNLIB_NATIVE_FN(io, recv) {
   struct gab_io *io = gab_boxdata(vsock);
   s_char data = {0};
 
+readmore:
+  uint64_t fibsize = gab_fibsize(gab_thisfiber(gab));
+
+  uint64_t need = fibsize ? len - fibsize : len;
+  need = need > BUFFER_SIZE ? BUFFER_SIZE : need;
+
   mtx_lock(&io->mtx);
 
-  union gab_value_pair res = gab_io_read(gab, io, &reentrant, len, &data);
+  union gab_value_pair res = gab_io_read(gab, io, &reentrant, need, &data);
 
   mtx_unlock(&io->mtx);
 
   /*
    * We may have panicked or yielded, in which case we should return.
-   *
-   * We may also have encountered an error which we should return -
-   * indicated by the data.len < 0;
    */
-  if (res.status != gab_cundefined || !data.data)
+  if (res.status != gab_cundefined)
     return res;
 
-  assert(data.data);
+  /*
+   * The cases are:
+   *  data && len => valid
+   *  no data, but we have len => error in len
+   *  no data, no len => EOF
+   */
 
-  return gab_vmpush(gab_thisvm(gab), gab_ok,
-                    gab_nbinary(gab, data.len, (uint8_t *)data.data)),
+  if (!data.data && data.len)
+    return gab_vmpush(gab_thisvm(gab), gab_err,
+                      gab_string(gab, "Error reading"), gab_number(data.len)),
+           gab_union_cvalid(gab_nil);
 
-         res;
+  if (data.len && data.len < len) {
+    assert(data.data);
+    for (uint64_t i = 0; i < data.len; i++)
+      gab_fibpush(gab_thisfiber(gab), data.data[i]);
+
+    goto readmore;
+  }
+
+  if (fibsize)
+    for (uint64_t i = 0; i < data.len; i++)
+      gab_fibpush(gab_thisfiber(gab), data.data[i]);
+
+  if (fibsize)
+    return gab_vmpush(gab_thisvm(gab), gab_ok,
+                      gab_nbinary(gab, gab_fibsize(gab_thisfiber(gab)),
+                                  gab_fibat(gab_thisfiber(gab), 0))),
+           res;
+
+  else
+    return gab_vmpush(gab_thisvm(gab), gab_ok,
+                      gab_nbinary(gab, data.len, (uint8_t *)data.data)),
+           res;
 }
 
 GAB_DYNLIB_NATIVE_FN(io, len) {
@@ -1805,17 +1799,19 @@ GAB_DYNLIB_NATIVE_FN(io, until) {
   };
 
   struct gab_io *io = gab_boxdata(vio);
+  s_char out = {0};
 
   for (;;) {
-    s_char out = {0};
     union gab_value_pair res = gab_io_read(gab, io, &reentrant, 1, &out);
 
     // If we saw an error or yielded, return it.
-    if (res.status == gab_ctimeout)
+    if (res.status != gab_cundefined)
       return res;
 
-    if (res.status == gab_cinvalid)
-      return res;
+    if (!out.data && out.len)
+      return gab_vmpush(gab_thisvm(gab), gab_err,
+                        gab_string(gab, "Error reading"), gab_number(out.len)),
+             gab_union_cvalid(gab_nil);
 
     assert(res.status == gab_cundefined);
 
@@ -1824,13 +1820,7 @@ GAB_DYNLIB_NATIVE_FN(io, until) {
      */
     reentrant = 0;
 
-    if (out.len == (uint64_t)-1)
-      return res;
-
-    if (!out.len)
-      break;
-
-    if (delim.len && out.data[0] == delim.data[delim.len - 1]) {
+    if (out.len && delim.len && out.data[0] == delim.data[delim.len - 1]) {
       s_char acc = {
           .data = gab_fibat(gab_thisfiber(gab), 0),
           .len = gab_fibsize(gab_thisfiber(gab)),
@@ -1844,12 +1834,21 @@ GAB_DYNLIB_NATIVE_FN(io, until) {
       }
     }
 
+    if (!out.len)
+      break;
+
     gab_fibpush(gab_thisfiber(gab), out.data[0]);
   }
 
-  gab_vmpush(gab_thisvm(gab), gab_ok,
-             gab_nbinary(gab, gab_fibsize(gab_thisfiber(gab)),
-                         gab_fibat(gab_thisfiber(gab), 0)));
+  if (gab_fibsize(gab_thisfiber(gab))) // Have data and read a byte
+    gab_vmpush(gab_thisvm(gab), gab_ok,
+               gab_nbinary(gab, gab_fibsize(gab_thisfiber(gab)),
+                           gab_fibat(gab_thisfiber(gab), 0)));
+  else if (out.len) // Read a byte, but have no data
+    gab_vmpush(gab_thisvm(gab), gab_ok, gab_binary(gab, ""));
+  else // Read EOF
+    gab_vmpush(gab_thisvm(gab), gab_none);
+
   return gab_union_cvalid(gab_nil);
 }
 
