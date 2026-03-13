@@ -431,7 +431,7 @@ static const size_t ndefault_modules = LEN_CARRAY(default_modules) - 1;
 static const struct gab_resource native_file_resources[] = {
     {"mod/", GAB_NATIVE_MODULE_SUFFIX, gab_use_dynlib, file_exister},
     {"", GAB_NATIVE_MODULE_SUFFIX, gab_use_dynlib, file_exister},
-    {"", "/mod.gab", gab_use_source, file_exister},
+    {"", "mod.gab", gab_use_source, file_exister},
     {"mod/", ".gab", gab_use_source, file_exister},
     {"", ".gab", gab_use_source, file_exister},
     {}, // List terminator.
@@ -443,7 +443,7 @@ static const size_t nnative_file_resources =
 static const struct gab_resource native_zip_resources[] = {
     {"mod/", GAB_NATIVE_MODULE_SUFFIX, gab_use_zip_dynlib, zip_exister},
     {"", GAB_NATIVE_MODULE_SUFFIX, gab_use_zip_dynlib, zip_exister},
-    {"", "/mod.gab", gab_use_zip_source, zip_exister},
+    {"", "mod.gab", gab_use_zip_source, zip_exister},
     {"mod/", ".gab", gab_use_zip_source, zip_exister},
     {"", ".gab", gab_use_zip_source, zip_exister},
     {}, // List terminator.
@@ -2171,7 +2171,7 @@ int build_exe(struct command_arguments *args, const char *module) {
   platform_file_resources[1].suffix = platform_dynlib_suffix.data;
 
   v_char platform_bundle_suffix = {0};
-  v_char_spush(&platform_bundle_suffix, s_char_cstr("/cgab-"));
+  v_char_spush(&platform_bundle_suffix, s_char_cstr("cgab-"));
   v_char_spush(&platform_bundle_suffix, s_char_cstr(GAB_VERSION_TAG));
   v_char_push(&platform_bundle_suffix, '-');
   v_char_spush(&platform_bundle_suffix, s_char_cstr(platform));
@@ -2192,8 +2192,6 @@ int build_exe(struct command_arguments *args, const char *module) {
   const char *platform_roots[] = {
       "./",
       install_location(platform, GAB_VERSION_TAG, nullptr),
-      install_location(platform, GAB_VERSION_TAG,
-                       "github.com/gab-language/cgab@" GAB_VERSION_TAG),
       nullptr,
   };
 

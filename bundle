@@ -27,6 +27,6 @@ github.com/gab-language/cgab@0.0.5:Atoms
 github.com/gab-language/cgab@0.0.5:Records
 github.com/gab-language/cgab@0.0.5:Shapes
 github.com/gab-language/cgab@0.0.5:Specs
-github.com/gab-language/cgab@0.0.5:Streams
+github.com/gab-language/cgab@0.0.5:Transducers
 github.com/gab-language/cgab@0.0.5:Strings
 github.com/gab-language/cgab@0.0.5:Tests
