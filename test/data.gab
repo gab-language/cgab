@@ -91,14 +91,10 @@ serve_client: .def (IO.Sockets.t, (store) => do
   loop = () => do
     recurse = self
 
-    'reading line for $'.sprintf(sock).println
-
     sock
       .until('\n'.to\b)
       .then(line => do
         (cmd, args*) = line.as\s.unwrap.trim.split(' ')
-
-        'read $'.sprintf(line).println
 
         response = cmd.to\m.run_command(sock, store, args*)
 
@@ -107,7 +103,7 @@ serve_client: .def (IO.Sockets.t, (store) => do
         recurse.()
       end)
       .else(() => do
-        'disconnected $'.sprintf(sock).println
+        'Disconnected $'.sprintf(sock).println
       end)
   end
 
@@ -119,9 +115,7 @@ accept_loop: .def (IO.Sockets.t, (store) => do
 
   self.accept
     .then((client) => do
-      'Accepted client: $\n'.sprintf(client).println
       Fibers.make () => client.serve_client(store)
-      'Store: $\n'.sprintf(store).println
       server.accept_loop(store)
     end)
     .else(() => 'server closed'.println)

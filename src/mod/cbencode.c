@@ -45,7 +45,7 @@ int push_value(struct gab_triple gab, struct bencode *bncd,
   case BENCODE_LIST_BEGIN: {
     size_t i = 0, save = stack->len;
 
-    // TODO: Handle errors here.
+    // TODO @cgab @api: Handle errors here.
     while (push_value(gab, bncd, stack) != BENCODE_LIST_END)
       i++;
 
@@ -57,7 +57,7 @@ int push_value(struct gab_triple gab, struct bencode *bncd,
   case BENCODE_DICT_BEGIN: {
     size_t i = 0, save = stack->len, res = 0;
 
-    // TODO: Handle errors here.
+    // TODO @cgab @api: Handle errors here.
     for (;;)
       switch ((res = push_value(gab, bncd, stack))) {
       case BENCODE_DICT_END:

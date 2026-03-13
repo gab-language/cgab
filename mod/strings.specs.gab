@@ -1,0 +1,169 @@
+s = 'github.com/gab-language/cgab@0.0.5'.use 'Specs'
+
+string\spec = string: .defspec {
+  help:"
+  A valid UTF-8 encoded sequence of bytes.
+  "
+  spec: s.string
+}
+
+string\is\blank: .defspec {
+  help: "
+  Returns `true:` if the string contains only blank characters. Returns `false:` otherwise.
+  "
+  spec: s.message {
+    receiver: string\spec
+    message:  is\blank:
+    input:    s.cat
+    output:   s.boolean
+  }
+}
+
+string\split: .defspec {
+  help: "
+  Split the receiving string on the given delimitier.
+  "
+  spec: s.message {
+    receiver: string\spec
+    message:  split:
+    input:    s.cat('delimiter' s.string)
+    output:   s.cat('tokens' s*s.string())
+  }
+}
+
+string\has\sub: .defspec {
+  help:
+  "
+  Returns `true:` if the receiver contains the argument string. 
+  "
+  spec: s.message {
+    receiver: string\spec
+    message:  has\sub:
+    input:    s.cat('substring' s.string)
+    output:   s.boolean
+  }
+}
+
+string\has\ending: .defspec {
+  help:
+  "
+  Returns `true:` if the receiver ends with the argument string.
+  "
+  spec: s.message {
+    receiver: string\spec
+    message:  has\ending:
+    input:    s.cat('substring' s.string)
+    output:   s.boolean
+  }
+}
+
+string\has\beginning: .defspec {
+  help: "
+  Returns `true` if the receiver string begins with the argument string.
+  "
+  spec: s.message {
+    receiver: string\spec
+    message:  has\beginning:
+    input:    s.cat('substring' s.string)
+    output:   s.boolean
+  }
+}
+
+string\to\message: .defspec {
+  help: "
+  Convert a string into a message.
+  "
+  spec: s.message {
+    receiver: string\spec
+    message:  to\message:
+    input:    s.cat()
+    output:   s.message
+  }
+}
+
+string\to\binary: .defspec {
+  help: "
+  Convert a string into a binary.
+  "
+  spec: s.message {
+    receiver: string\spec
+    message:  to\binary:
+    input:    s.cat()
+    output:   s.binary()
+  }
+}
+
+string\as\number: .defspec {
+  help: "
+  Try to convert a string into a number. If successful, return `ok:` and the number. Otherwise, return `err:`.
+  "
+  spec: s.message {
+    receiver: string\spec
+    message:  as\number:
+    input:    s.cat
+    output:   s.result(s.float)
+  }
+}
+
+string\len: .defspec {
+  help: "
+  Return the length of the string. This does not count the bytes of the string - it returns the number of graphemes.
+  "
+  spec: s.message {
+    receiver: string\spec
+    message:  len:
+    input:    s.cat
+    output:   s.int
+  }
+}
+
+string\at: .defspec {
+  help: "
+  Return `ok:` and the grapheme at the given index. If none exists, return `none:`.
+  "
+  spec: s.message {
+    receiver: string\spec
+    message:  at:
+    input:    s.cat('index' s.int)
+    output:   s.option(s.string)
+  }
+}
+
+string\slice: .defspec {
+  help: "
+  Return a substring of graphemes at the given indices. Will panic if indices are out of bounds.
+  "
+  spec: s.message {
+    receiver: string\spec
+    message:  slice:
+    input:    s.cat('begin' s.option(s.int), 'end' s.option(s.int))
+    output:   s.string
+  }
+}
+
+string\pop: .defspec {
+  help: "
+  Similar behavior to `pop:` on the records.
+  "
+  spec: s.message {
+    receiver: string\spec
+    message:  pop:
+    input:    s.cat
+    output:   s.option(s.cat(
+      'rest' s.string
+      'last' s.string
+    ))
+  }
+}
+
+string\trim: .defspec {
+  help: "
+  Trim graphemes from the front and back of the string if they are within the arg 'trimset'.
+  "
+  spec: s.message {
+    receiver: string\spec
+    message:  trim:
+    input:    s.cat('trimset' s.string)
+    output:   s.string
+  }
+}

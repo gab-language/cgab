@@ -245,6 +245,7 @@ gab_value build_query(struct gab_triple gab, furi_sv query) {
 gab_value build_url(struct gab_triple gab, const char *ptr, size_t len) {
   furi_uri_split split = furi_split_uri(furi_make_sv(ptr, ptr + len));
 
+  // TODO @cgab @perf: Use the fiber arena instead.
   v_gab_value kvps = {0};
 
   if (furi_sv_is_null(split.path))
@@ -253,7 +254,7 @@ gab_value build_url(struct gab_triple gab, const char *ptr, size_t len) {
   v_gab_value_push(&kvps, gab_message(gab, M_URL_SCHEME));
   v_gab_value_push(&kvps, furi_sv_to_value(gab, split.scheme));
 
-  // TODO: Pull this out appropriately
+  // TODO @chttp @api: Pull this out appropriately
   v_gab_value_push(&kvps, gab_message(gab, M_URL_AUTHORITY));
   v_gab_value_push(&kvps, furi_sv_to_value(gab, split.authority));
 

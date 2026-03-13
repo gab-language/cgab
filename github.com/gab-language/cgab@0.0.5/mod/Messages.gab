@@ -1,13 +1,5 @@
 Messages = 'github.com/gab-language/cgab@0.0.5'.use 'cmessages'
 
-defm:.def(
-  Messages.t
-  (meta**, type, impl)
-    => do
-      self.def(type impl)
-      _meta:.def(self, meta)
-    end)
-
 to\class_cxtor: .defcase {
   default:
   () => (t) => (args*) => t.make(args*)

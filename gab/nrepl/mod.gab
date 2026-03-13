@@ -1,5 +1,7 @@
-'Bencode'.use
-'cgab'.use
+'core' .use 'Bencode'
+'core' .use 'cgab'
+Streams = 'core' .use 'Transducers'
+IO      = 'core' .use 'Io'
 
 Session = nrepl\session: .defclass (default: {})
 

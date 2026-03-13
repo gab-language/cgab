@@ -2043,11 +2043,6 @@ gab_value compile_assign(struct gab_triple gab, struct bc *bc, gab_value node,
   if (env == gab_cinvalid)
     return gab_cinvalid;
 
-  // TODO: This emits a *trim node* in certain situations.
-  // The trim node sets the tuple to 0 currently, which creates inconsistent
-  // behavior with assignment expressions. EG: a = 1 => 1 EG: a = 1 + 1 => ()
-  // The trim node *should* instead leave the tuple on the stack with want
-  // length. This causes another bug somewhere else
   env = unpack_bindings_into_env(gab, bc, lhs_node, env, rhs_node);
 
   if (env == gab_cinvalid)

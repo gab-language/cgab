@@ -497,12 +497,10 @@ gab_value gab_tnstring(struct gab_triple gab, uint64_t len, const char *data) {
   gab_value s = nstring(gab, hash, len, data);
 
   /*
-   * TODO: Inbetween the two lock holds here, another thread
+   * TODO @cgab @bug: Inbetween the two lock holds here, another thread
    * *could* insert the string we want into the dict.
    * In that case, we'd stomp over the old value
    * and leak its memory.
-   *
-   * Fix this
    */
 
   switch (mtx_trylock(&gab.eg->gc_mtx)) {
@@ -522,7 +520,7 @@ gab_value gab_tnstring(struct gab_triple gab, uint64_t len, const char *data) {
 }
 
 /*
- * TODO: Becuase of how signaling works, the gc_mtx is held by the gc worker
+ * TODO @cgab @runtime @bug: Becuase of how signaling works, the gc_mtx is held by the gc worker
  * for the entire signal.
  *
  * This means that strings cannot be created during a TERM signal.
@@ -620,7 +618,7 @@ GAB_API inline uint64_t gab_strhash(gab_value str) {
   if (gab_valiso(str))
     return GAB_VAL_TO_STRING(str)->hash;
 
-  // TODO: Propertly hash the contents of short strings.
+  // TODO @cgab @bug: Propertly hash the contents of short strings.
   return str;
 }
 
@@ -1073,7 +1071,7 @@ gab_value dissoc(struct gab_triple gab, gab_value rec, uint64_t i) {
     assert(rightmost_idx < reclen(rightmost_node));
 
     // Improve this to trim this copy with negative space when necessary
-    // TODO: Account for popping out empty nodes
+    // TODO @cgab @bug: Account for popping out empty nodes
     rightmost_node = reccpy(gab, recnth(rightmost_node, rightmost_idx), 0);
 
     recassoc(rightmost_path, rightmost_node, rightmost_idx);
@@ -1204,7 +1202,7 @@ gab_value gab_recput(struct gab_triple gab, gab_value rec, gab_value key,
 gab_value gab_rectake(struct gab_triple gab, gab_value rec, gab_value key,
                       gab_value *out_val) {
   /*
-   * TODO: This can be optimized.
+   * TODO @cgab @perf: This can be optimized.
    *
    * There is no need to allocate a new record here, we can reuse the original
    * record with a *new shape*.
@@ -2043,7 +2041,6 @@ gab_value channel_blocking_put(struct gab_triple gab,
                                uint64_t len, gab_value *vs, size_t tries) {
   uint64_t sofar = 0;
 
-  // TODO: Check result of following
   gab_value res =
       unsafe_channel_blocking_put(gab, channel, c, len, vs, tries, &sofar);
 

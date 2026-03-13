@@ -1,12 +1,12 @@
 io = 'github.com/gab-language/cgab@0.0.5'.use 'cio'
 
-eprintln:.def () => io.stderr.write('$\n'.sprintf(self).to\b)
-println:.def () => io.stdout.write('$\n'.sprintf(self).to\b)
+eprintln:.def () => io.stderr.stream\send('$\n'.sprintf(self).to\binary)
+println:.def () => io.stdout.stream\send('$\n'.sprintf(self).to\binary)
 
 printf:.def(
   Strings.t
   (args*) => do
-    io.stdout.write(self.psprintf(args*).to\b)
+    io.stdout.stream\send(self.psprintf(args*).to\binary)
   end)
 
 #Socket = io.Sock
@@ -30,7 +30,7 @@ _doconnect: .defcase {
 
 [io.Sockets.t, io.Files.t] .defmodule {
   <!: (arg) => do 
-    self.write(arg.to\s.to\b)
+    self.stream\send(arg.to\string.to\binary)
 
     self
   end

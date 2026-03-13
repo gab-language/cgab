@@ -26,7 +26,7 @@ There are several sub-projects within this repository.
 - The third is a collection of builtin c-modules, the source files for which are found in `src/mod`. Each of these files is a unique Gab c-module, and are compiled independantly from one another.
 - The fourth is a collection of builtin Gab modules, the source files for which are found in `mod/`. These files are installed alongside the dynamic c-modules above when installing a version of Gab with `gab get`
 - There are two other Gab modules `repl` and `lsp`, which are likely to be broken out into their own repos in the future.
-#### TODO:
+#### Items:
 - [ ] Instead of malloc/free, write a custom per-job allocator. This can function like a bump allocator, and can enable further optimizations:
     - allocate-as-dead. Objects that *survive* their first collection are *moved* out of the bump allocator, and into long term storage.
         This can work because we are __guaranteed__ to visit all the roots that kept this object alive in that first collection.

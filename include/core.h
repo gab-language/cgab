@@ -383,9 +383,7 @@ static inline void __gab_assert_fail(const char *expr, const char *file,
   va_end(va);
 };
 
-/*
- * TODO: Better 'asserts' which are self-describing.
- */
+// TODO @cgab: Better 'asserts' which are self-describing.
 #define gab_assert(expr, format, ...)                                               \
   ((expr) ? (void)(0)                                                          \
           : __gab_assert_fail(#expr, __FILE__, __FUNCTION__, __LINE__,  \

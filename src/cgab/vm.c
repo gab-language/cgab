@@ -599,7 +599,7 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value) {
 gab_value sprint_stacktrace(struct gab_triple gab, struct gab_vm *vm,
                             gab_value *f, uint8_t *ip, int s, const char *fmt,
                             va_list va) {
-  // TODO: Place reasonable limit on number of frames to sprint.
+  // TODO @cgab: Place reasonable limit on number of frames to sprint.
   // Also, skip middle ones sometimes.
   int nframes = 0;
   gab_value vframes[1024] = {0};
@@ -1354,7 +1354,7 @@ CASE_CODE(MATCHTAILSEND_BLOCK) {
 
   uint8_t idx = GAB_SEND_HASH(t) * GAB_SEND_CACHE_SIZE;
 
-  // TODO: Handle undefined and record case
+  // TODO @cgab @vm @perf: Handle undefined and record case
   if (__gab_unlikely(ks[GAB_SEND_KTYPE + idx] != t))
     MISS_CACHED_SEND("Unexpected type");
 
@@ -1388,7 +1388,7 @@ CASE_CODE(MATCHSEND_BLOCK) {
 
   uint8_t idx = GAB_SEND_HASH(t) * GAB_SEND_CACHE_SIZE;
 
-  // TODO: Handle undefined and record case
+  // TODO @cgab @vm @perf: Handle undefined and record case
   if (__gab_unlikely(ks[GAB_SEND_KTYPE + idx] != t))
     MISS_CACHED_SEND("Unexpected type");
 
@@ -1831,7 +1831,7 @@ CASE_CODE(SEND_PRIMITIVE_USE) {
     RESET_REENTRANT();
   } else {
     /*
-     * TODO: Really fix this, Its rough in a lot of ways chief.
+     * TODO @cgab @api: Really fix this, Its rough in a lot of ways chief.
      * This pulling in of args/values to pass on to use'd module
      * is a little scuffed. I'd rather do it a different way.
      */

@@ -295,9 +295,9 @@ GAB_DYNLIB_MAIN_FN {
               gab_snative(gab, "defmodule", gab_mod_message_module),
           },
           {
-              gab_message(gab, "to\\s"),
+              gab_message(gab, "to\\string"),
               t,
-              gab_snative(gab, "to\\s", gab_mod_message_tos),
+              gab_snative(gab, "to\\string", gab_mod_message_tos),
           },
           {
               gab_message(gab, "has"),

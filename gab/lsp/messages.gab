@@ -118,7 +118,7 @@ end
 end
 
 "textDocument/didClose" .def\lsp\handler server => do
-  # TODO: Delete documents from the server data on load
+  # TODO @lsp: Delete documents from the server data on load
   server
 end
 
@@ -135,7 +135,7 @@ end
 
       updated_server.diagnostics\queue(text uri)
 
-      # TODO: Handle incremental changes in documents
+      # TODO @lsp: Handle incremental changes in documents
       updated_server
     end
     .or server

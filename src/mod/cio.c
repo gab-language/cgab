@@ -35,8 +35,7 @@
 #include "ta.h"
 
 /*
- * MASSIVE TODO:
- * Formal connection implementation.
+ * TODO @cio @api: Formalize connection implementation.
  * Instead of a little hard-coding of socket/connect/bind, lets do something a
  * little neater.
  *
@@ -96,8 +95,7 @@
  */
 
 /*
- * MASSIVE TODO:
- * Is it unsafe to directly send pointers into gab strings to the io syscalls?
+ * TODO @cio @bug: Is it unsafe to directly send pointers into gab strings to the io syscalls?
  *
  * I ask because all the IO is happening asynchronously,
  * it may be that the engine is freed and exiting while IO operations are still
@@ -241,7 +239,7 @@ static inline int64_t iobuf_recv(struct iobuf *io, gab_value fib, qfd_t fd,
 }
 
 /*
- * TODO: Reimplement with atomic buffer impl.
+ * TODO @cio @bug: Reimplement with atomic buffer impl.
  * Wrap a file on disk, or std in/out/err.
  * Reads are buffered.
  *
@@ -646,8 +644,6 @@ union gab_value_pair resume_sslsockaccept(struct gab_triple gab,
       wrap_qfdsockssl(gab, result, IO_SOCK_SSLSERVERCLIENT, true);
 
   struct gab_ssl_sock *client = gab_boxdata(vclient);
-
-  // TODO: Include decoding TAs from a PEM
 
   assert(sock->server.nobj_bytes > 0);
   assert(sock->server.ncerts > 0);
@@ -1081,7 +1077,6 @@ union gab_value_pair resume_sslsockrecv(struct gab_triple gab,
   io_op_res result = sslio_read_available(gab, sock, out, len);
 
   if (result.status < 0) {
-    // TODO: Handle an SSL error gracefully
     int err = br_ssl_engine_last_error(&sock->client.cc.eng);
 
     // If we had an ssl engine error, then this was a real error.
@@ -1109,7 +1104,6 @@ union gab_value_pair resume_sslserversockrecv(struct gab_triple gab,
   io_op_res result = sslio_read_available(gab, sock, out, len);
 
   if (result.status < 0) {
-    // TODO: Handle an SSL error gracefully
     int err = br_ssl_engine_last_error(&sock->serverclient.sc.eng);
 
     // If we had an ssl engine error, then this was a real error.
@@ -1780,78 +1774,6 @@ GAB_DYNLIB_NATIVE_FN(io, len) {
   return gab_union_ctimeout(qd + 1);
 }
 
-GAB_DYNLIB_NATIVE_FN(io, until) {
-  gab_value vio = gab_arg(0);
-  gab_value vdelim = gab_arg(1);
-
-  if (gab_valkind(vio) != kGAB_BOX)
-    return gab_ptypemismatch(gab, vio, gab_string(gab, tGAB_IOFILE));
-
-  if (vdelim == gab_nil)
-    vdelim = gab_binary(gab, "\n");
-
-  if (gab_valkind(vdelim) != kGAB_BINARY)
-    return gab_pktypemismatch(gab, vdelim, kGAB_BINARY);
-
-  s_char delim = {
-      .data = gab_strdata(&vdelim),
-      .len = gab_strlen(vdelim),
-  };
-
-  struct gab_io *io = gab_boxdata(vio);
-  s_char out = {0};
-
-  for (;;) {
-    union gab_value_pair res = gab_io_read(gab, io, &reentrant, 1, &out);
-
-    // If we saw an error or yielded, return it.
-    if (res.status != gab_cundefined)
-      return res;
-
-    if (!out.data && out.len)
-      return gab_vmpush(gab_thisvm(gab), gab_err,
-                        gab_string(gab, "Error reading"), gab_number(out.len)),
-             gab_union_cvalid(gab_nil);
-
-    assert(res.status == gab_cundefined);
-
-    /**
-     * This clears up the reentrant if we made it past the io_read above.
-     */
-    reentrant = 0;
-
-    if (out.len && delim.len && out.data[0] == delim.data[delim.len - 1]) {
-      s_char acc = {
-          .data = gab_fibat(gab_thisfiber(gab), 0),
-          .len = gab_fibsize(gab_thisfiber(gab)),
-      };
-
-      if (acc.len >= delim.len) {
-        uint64_t back = acc.len - (delim.len - 1);
-
-        if (!memcmp(acc.data + back, delim.data, delim.len - 1))
-          break;
-      }
-    }
-
-    if (!out.len)
-      break;
-
-    gab_fibpush(gab_thisfiber(gab), out.data[0]);
-  }
-
-  if (gab_fibsize(gab_thisfiber(gab))) // Have data and read a byte
-    gab_vmpush(gab_thisvm(gab), gab_ok,
-               gab_nbinary(gab, gab_fibsize(gab_thisfiber(gab)),
-                           gab_fibat(gab_thisfiber(gab), 0)));
-  else if (out.len) // Read a byte, but have no data
-    gab_vmpush(gab_thisvm(gab), gab_ok, gab_binary(gab, ""));
-  else // Read EOF
-    gab_vmpush(gab_thisvm(gab), gab_none);
-
-  return gab_union_cvalid(gab_nil);
-}
-
 GAB_DYNLIB_NATIVE_FN(io, connect) {
   gab_value vsock = gab_arg(0);
   gab_value ip = gab_arg(1);
@@ -2129,36 +2051,6 @@ GAB_DYNLIB_MAIN_FN {
               gab_snative(gab, "len", gab_mod_io_len),
           },
           {
-              gab_message(gab, "until"),
-              file_t,
-              gab_snative(gab, "until", gab_mod_io_until),
-          },
-          {
-              gab_message(gab, "until"),
-              sock_t,
-              gab_snative(gab, "until", gab_mod_io_until),
-          },
-          {
-              gab_message(gab, "read"),
-              file_t,
-              gab_snative(gab, "read", gab_mod_io_recv),
-          },
-          {
-              gab_message(gab, "write"),
-              file_t,
-              gab_snative(gab, "write", gab_mod_io_send),
-          },
-          {
-              gab_message(gab, "write"),
-              sock_t,
-              gab_snative(gab, "write", gab_mod_io_send),
-          },
-          {
-              gab_message(gab, "read"),
-              sock_t,
-              gab_snative(gab, "read", gab_mod_io_recv),
-          },
-          {
               gab_message(gab, "accept"),
               sock_t,
               gab_snative(gab, "accept", gab_mod_io_accept),
@@ -2177,7 +2069,27 @@ GAB_DYNLIB_MAIN_FN {
               gab_message(gab, "connect"),
               sock_t,
               gab_snative(gab, "connect", gab_mod_io_connect),
-          });
+          },
+          {
+              gab_message(gab, "stream\\recv"),
+              file_t,
+              gab_snative(gab, "stream\\recv", gab_mod_io_recv),
+          },
+          {
+              gab_message(gab, "stream\\recv"),
+              sock_t,
+              gab_snative(gab, "stream\\recv", gab_mod_io_recv),
+          },
+          {
+              gab_message(gab, "stream\\send"),
+              file_t,
+              gab_snative(gab, "stream\\send", gab_mod_io_send),
+          },
+          {
+              gab_message(gab, "stream\\send"),
+              sock_t,
+              gab_snative(gab, "stream\\send", gab_mod_io_send),
+          }, );
 
   gab_value res[] = {gab_ok, mod};
 

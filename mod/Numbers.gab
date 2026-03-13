@@ -1,6 +1,0 @@
-Numbers = 'github.com/gab-language/cgab@0.0.5' .use'cnumbers'
-
-is\n:.def(Numbers.t, true:)
-is\n: .def false:
-
-Numbers

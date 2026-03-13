@@ -65,7 +65,7 @@
 #define FONTSTASH_IMPLEMENTATION
 #include "fontstash/src/fontstash.h"
 
-// TODO: This font isn't great, replace it
+// TODO @cgui @qol: This font isn't great, replace it
 unsigned char fontData[] = {
 #embed "resources/JetBrainsMonoNLNerdFontMono-Regular.ttf"
 };
@@ -104,12 +104,6 @@ void HandleClayErrors(Clay_ErrorData errorData) {
   fprintf(stderr, "%s\n", errorData.errorText.chars);
 }
 
-/*
- * TODO: The channel put/take on the event and app channels don't yield here.
- * This blocks two threads on these channels, and if the user queues up a lot
- * of other fibers, the UI can appear to lock-up, as the user-fiber operating on
- * these channels *does* yield.
- */
 bool putevent(struct gab_triple gab, struct gui *gui, const char *type,
               const char *event, gab_value data1, gab_value data2,
               gab_value data3) {
@@ -585,18 +579,18 @@ union gab_value_pair render_rect(struct gab_triple gab, struct gui *gui,
 }
 
 /*
- * TODO: Provide an API for loading images into some gab_box,
+ * TODO @cgui @api @qol: Provide an API for loading images into some gab_box,
  * and then expect that as an argument here.
  *
- * More needs for this API:
- *  - Allow user to pin fibers to a certain thread. This is required
- *  for some OS apis which have to run on the main thread
- *  - Allow arguments to be passed to use:, and therefore to GAB_DYNLIB_MAIN_FN
+ * TODO @cgab @api: Allow user to pin fibers to a certain thread.
+ * This is required for some OS apis which have to run on the main thread.
+ *
+ * TODO @cgab @api: Allow arguments to be passed to use:, and therefore to GAB_DYNLIB_MAIN_FN
  *  This would allow 'ui'.use gui: or 'ui'.use tui:, which would let us know at
  *  load time which implementation to instantiate
- *  - Also - I want all the numbers that are "pixels" to translate to "cells" in
- * the TUI api.
- *  - This means we need to wrap them up with some conversions.
+ *
+ * TODO @cgab @api: Also - I want all the numbers that are "pixels" to translate to "cells" in
+ * the TUI api.  This means we need to wrap them up with some conversions.
  */
 [[nodiscard]]
 union gab_value_pair render_image(struct gab_triple gab, struct gui *gui,

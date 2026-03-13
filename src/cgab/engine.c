@@ -332,7 +332,6 @@ int32_t gab_njobs(struct gab_triple gab) {
   return __builtin_popcountl(sig.mask);
 }
 
-// TODO: DROP THIS
 void gab_jbalive(struct gab_triple gab, int32_t wkid) {
   for (;;) {
     struct gab_sig sig = atomic_load(&gab.eg->sig);
@@ -437,9 +436,7 @@ int32_t gc_job(void *data) {
     }
 
     /*
-     * TODO:
-     * Coordinate work stealing here, where we are guaranteed to *not*
-     * be collecting
+     * TODO @cgab @runtime: Coordinate work stealing here, where we are guaranteed to *not* be collecting.
      *
      * if we have spare jobs:
      *  look for the first worker
@@ -457,7 +454,7 @@ int32_t gc_job(void *data) {
 }
 
 /*
- * TODO: Implement some form of work stealing (Or preemption).
+ * TODO @cgab @runtime: Implement some form of work stealing (Or preemption).
  */
 static inline bool worker_isrunning(struct gab_triple gab,
                                     struct gab_job *job) {
@@ -699,12 +696,14 @@ bail:
   gab_assert(q_gab_value_is_empty(&job->queue),
              "The queue shall be empty once all fibers have bailed");
 
+  gab_assert(
+      job->locked == 0,
+      "The worker (%i) shall have a balanced 'lock' value of 0 when bailed. "
+      "Saw %d.",
+      gab.wkid, job->locked);
+
   gab_jbunalive(gab, gab.wkid);
 
-  gab_assert(job->locked == 0,
-             "The worker shall have a balanced 'lock' value of 0 when bailed. "
-             "Saw %d.",
-             job->locked);
   v_gab_value_destroy(&job->lock_keep);
 }
 
@@ -953,9 +952,11 @@ union gab_value_pair gab_create(struct gab_create_argt args,
     }
   }
 
+  gab_gcunlock(gab);
+
   size_t len = 0;
-  const char **cursor = args.modules;
-  while (*cursor)
+  struct gab_package *cursor = args.packages;
+  while (cursor->package)
     len++, cursor++;
 
   size_t nargs = 0;
@@ -969,9 +970,10 @@ union gab_value_pair gab_create(struct gab_create_argt args,
   // Use each module that's asked for, in order.
   // Build up an array of names and values.
   for (int i = 0; i < len; i++) {
-    const char *module = args.modules[i];
+    struct gab_package *pkg = args.packages + i;
     union gab_value_pair res = gab_use(gab, (struct gab_use_argt){
-                                                .spackage_name = module,
+                                                .spackage_name = pkg->package,
+                                                .smodule_name = pkg->module,
                                                 .len = nargs,
                                                 .sargv = sargs,
                                                 .argv = vargs,
@@ -981,20 +983,22 @@ union gab_value_pair gab_create(struct gab_create_argt args,
 
     // If any of these uses fail, return the failure.
     if (res.status != gab_cvalid)
-      return gab_gcunlock(gab), res;
+      return res;
 
     if (res.aresult->data[0] != gab_ok)
-      return gab_gcunlock(gab), res;
+      return res;
 
     vargs[nargs] = res.aresult->data[1];
-    sargs[nargs] = module;
+    sargs[nargs] = pkg->alias    ? pkg->alias
+                   : pkg->module ? pkg->module
+                                 : pkg->package;
     nargs++;
   }
 
-  return gab_gcunlock(gab), (union gab_value_pair){
-                                .status = gab_cvalid,
-                                .aresult = a_gab_value_create(vargs, nargs),
-                            };
+  return (union gab_value_pair){
+      .status = gab_cvalid,
+      .aresult = a_gab_value_create(vargs, nargs),
+  };
 }
 
 void dec_child_shapes(struct gab_triple gab, gab_value shp) {
@@ -1160,7 +1164,7 @@ bool repl_check_res(struct gab_triple gab, union gab_value_pair res) {
       if (errstr)
         puts(errstr);
 
-      // TODO: Do something else if errtocs fails
+      // TODO @cgab @bug: Do something else if errtocs fails
     };
 
     free(err);
@@ -1346,7 +1350,7 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
       env = new_env;
     // If the block's environment is equal to the fiber's final environment
     // then we know we *didn't* tailcall out of the block.
-    // TODO: Don't leak this reccat below
+    // TODO @cgab @bug: Don't leak this reccat below
     else if (before_env == gab_recshp(new_env))
       env = gab_iref(gab, gab_reccat(gab, env, new_env));
 
@@ -2213,19 +2217,35 @@ const char *gab_errtocs(struct gab_triple gab, gab_value err) {
 #define MODULE_SYMBOL "gab_lib"
 
 a_char *match_resource(const char **roots, const struct gab_resource *res,
-                       const char *name, uint64_t len, const char **root) {
+                       const char *package, const char *module,
+                       const char **root) {
   for (int i = 0; roots[i] != nullptr; i++) {
-    const uint64_t r_len = strlen(roots[i]);
-    const uint64_t p_len = strlen(res->prefix);
-    const uint64_t s_len = strlen(res->suffix);
-    const uint64_t total_len = r_len + p_len + len + s_len + 1;
+    uint64_t r_len = strlen(roots[i]);
+    uint64_t p_len = strlen(res->prefix);
+    uint64_t s_len = strlen(res->suffix);
+    uint64_t pkg_len = strlen(package);
+
+    uint64_t mod_len = module ? strlen(module) : 0;
+
+    /*
+     * What is the best/most correct way to combine the package and module here?
+     */
+    uint64_t total_len = r_len + p_len + pkg_len + 1 + mod_len + s_len + 1;
 
     char buffer[total_len];
 
     memcpy(buffer, roots[i], r_len);
-    memcpy(buffer + r_len, res->prefix, p_len);
-    memcpy(buffer + r_len + p_len, name, len);
-    memcpy(buffer + r_len + p_len + len, res->suffix, s_len + 1);
+
+    memcpy(buffer + r_len, package, pkg_len);
+    buffer[r_len + pkg_len++] = '/';
+
+    memcpy(buffer + r_len + pkg_len, res->prefix, p_len);
+
+    if (module) {
+      memcpy(buffer + r_len + pkg_len + p_len, module, mod_len);
+    }
+
+    memcpy(buffer + r_len + pkg_len + p_len + mod_len, res->suffix, s_len + 1);
 
     assert(res->exister != nullptr);
     if (res->exister(buffer)) {
@@ -2240,35 +2260,50 @@ a_char *match_resource(const char **roots, const struct gab_resource *res,
   return nullptr;
 }
 
+/*
+ *
+ * Resolve MODULE within the given PACKAGE, starting at ROOTS and using
+ * RESOURCES.
+ *
+ * For each of the roots, check if PACKAGE exists.
+ *  - A package is folder or file, which exists *in* the root.
+ *  - If MODULE is requested, try to resolve MODULE within PACKAGE via
+ * resources.
+ *  - If MODULE isn't requested, just try to resolve PACKAGE.
+ *
+ */
+
 struct gab_module_res gab_mresolve(const char **roots,
                                    const struct gab_resource *resources,
                                    const char *package, const char *module) {
 
-  size_t plen = strlen(package);
-  size_t mlen = module ? strlen(module) : 0;
-  char name[plen + mlen + 6];
+  char *colon = strchr(package, ':');
+  if (colon) {
+    // In this case, the package name implies a module.
+    if (module) {
+      return (struct gab_module_res){0};
+    }
 
-  memcpy(name, package, plen);
+    module = colon + 1;
 
-  if (mlen) {
-    memcpy(name + plen, "/mod/", 5);
-    memcpy(name + plen + 5, module, mlen);
-    mlen += 5;
+    *colon = '\0';
   }
-
-  name[plen + mlen] = '\0';
 
   for (int i = 0; resources[i].prefix != nullptr; i++) {
     const struct gab_resource *res = resources + i;
-    const char *root;
+    const char *root = nullptr;
 
-    a_char *module_path = match_resource(roots, res, name, strlen(name), &root);
+    a_char *module_path = match_resource(roots, res, package, module, &root);
 
     if (module_path) {
       return (struct gab_module_res){
           .path = module_path,
           .resource = res,
-          .root = root,
+          .root_path = root,
+          // Skip the root. This should resolve to the full package + module path.
+          .package_path = module_path->data + strlen(root),
+          // Skip the root and package. This should resolve to the module path, relative to the package.
+          .module_path = module_path->data + strlen(root) + strlen(package) + 1,
       };
     }
   }
@@ -2309,16 +2344,12 @@ union gab_value_pair gab_use(struct gab_triple gab, struct gab_use_argt args) {
       env_sargv[i] = gab_strdata(env_vsargv + i);
       env_vargv[i] = gab_uvrecat(args.env, i);
     }
+
     args.sargv = env_sargv;
     args.argv = env_vargv;
   }
 
   struct gab_module_res mod = gab_resolve(gab, package, module);
-
-  // Try to resolve the module *as* the package, if we couldn't resolve the
-  // module within the package.
-  if (!mod.resource && module)
-    mod = gab_resolve(gab, module, nullptr);
 
   if (mod.resource) {
     if (!(gab.flags & fGAB_USE_RELOAD)) {
@@ -2349,8 +2380,12 @@ union gab_value_pair gab_use(struct gab_triple gab, struct gab_use_argt args) {
     return a_char_destroy(mod.path), result;
   }
 
-  return gab_panicf(gab, "Module @ could not be found",
-                    gab_string(gab, package));
+  if (module)
+    return gab_panicf(gab, "Module @:@ could not be found",
+                      gab_string(gab, package), gab_string(gab, module));
+  else
+    return gab_panicf(gab, "Package @ could not be found",
+                      gab_string(gab, package));
 }
 
 union gab_value_pair gab_run(struct gab_triple gab, struct gab_run_argt args) {
@@ -2405,9 +2440,8 @@ union gab_value_pair gab_tarun(struct gab_triple gab, size_t tries,
   // Somehow check if the put will block, and create a job in that case.
   // Should check to see if the channel has takers waiting already.
 
-  // TODO:
-  // When spawning a worker thread, try to donate all queued fibers which have
-  // *never* been run. This is safe with our GC strategy Fibers should not
+  // TODO @cgab @runtime: When spawning a worker thread, try to donate all queued fibers which have *never* been run.
+  // This is safe with our GC strategy Fibers should not
   // change type *back* to kGAB_FIBER after yielding. They should remain
   // kGAB_FIBERRUNNING, so that we know if a fiber has *ever* been run on a
   // thread. In order for our GC to be sound, VM Stacks *cannot* migrate from
@@ -2460,7 +2494,7 @@ union gab_value_pair gab_asend(struct gab_triple gab,
   gab_iref(gab, fb);
   gab_egkeep(gab.eg, fb);
 
-  // TODO: These chnputs block, which is problematic.
+  // TODO @cgab @bug: These chnputs block, which is problematic.
   // I should really maybe have a queue for this.
   // These potentially block callers annoyingly long
   if (args.pin) {

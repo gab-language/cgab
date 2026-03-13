@@ -1,0 +1,103 @@
+s = 'github.com/gab-language/cgab@0.0.5'.use 'Specs'
+
+file\spec = io\file: .defspec {
+  help:
+  "
+  A native file handle. This is a gab\box which wraps an operating-system native structure.
+  "
+  spec: s.box "io\file"
+}
+
+io\file\len: .defspec {
+  help:
+  "
+  Returns the length of a file.
+  "
+  spec: s.message {
+    receiver:   file\spec
+    message:    len:
+    input:      s.cat
+    output:     s.int
+  }
+}
+
+socket\spec = io\socket: .defspec {
+  help:
+  "
+  A native socket handle.
+  "
+  spec: s.box "io\socket"
+}
+
+io\socket\accept: .defspec {
+  help:
+  "
+  Accept a client connection on a listening server socket.
+  "
+  spec: s.message {
+    receiver: socket\spec
+    message:  accept:
+    input:    s.cat
+    output:   s.result(socket\spec, s.string)
+  }
+}
+
+io\socket\listen: .defspec {
+  help:
+  "
+  Begin listening for connections on a server socket.
+  "
+  spec: s.message {
+    receiver: socket\spec
+    message:  listen:
+    input:    s.cat('max_connections' s.int)
+    output:   s.alt('ok' ok: 'err' err:)
+  }
+}
+
+io\socket\bind: .defspec {
+  help:
+  "
+  Bind a socket to a local address. This turns a socket into a server socket.
+  "
+  spec: s.message {
+    receiver: socket\spec
+    message:  bind:
+    input:    s.alt(
+      'default' s.cat(
+        'address' s.string
+        'port'    s.int
+        )
+      'tls'    s.cat(
+        'address' s.string
+        'port'    s.int
+        'certificate' s.binary
+        'private_key' s.binary
+      )
+    )
+    output:   s.result(nil:, s.string)
+  }
+}
+
+io\socket\connect: .defspec {
+  help:
+  "
+  Connect to an address. This turns a socket into a client socket.
+  "
+  spec: s.message {
+    receiver: socket\spec
+    message:  bind:
+    input:    s.alt(
+      'default' s.cat(
+        'address' s.string
+        'port'    s.int
+        )
+      'tls'    s.cat(
+        'address' s.string
+        'port'    s.int
+        'certificate' s.binary
+      )
+    )
+    output:   s.cat()
+  }
+}

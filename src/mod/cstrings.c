@@ -4,26 +4,26 @@
  *  Copyright (c) 2023 Teddy Randby
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy
- *  of this software and associated documentation files (the "Software"), to deal
- *  in the Software without restriction, including without limitation the rights
- *  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- *  copies of the Software, and to permit persons to whom the Software is
+ *  of this software and associated documentation files (the "Software"), to
+ * deal in the Software without restriction, including without limitation the
+ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+ * sell copies of the Software, and to permit persons to whom the Software is
  *  furnished to do so, subject to the following conditions:
  *
- *  The above copyright notice and this permission notice shall be included in all
- *  copies or substantial portions of the Software.
+ *  The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
  *
  *  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  *  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  *  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
  *  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- *  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- *  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- *  SOFTWARE.
+ *  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+ * IN THE SOFTWARE.
  */
 
-#include "libgrapheme/grapheme.h"
 #include "gab.h"
+#include "libgrapheme/grapheme.h"
 #include <ctype.h>
 
 static inline bool instr(char c, const char *set) {
@@ -496,9 +496,10 @@ GAB_DYNLIB_NATIVE_FN(string, slice) {
 }
 
 GAB_DYNLIB_NATIVE_FN(string, has) {
-  if (argc < 2) {
-    return gab_panicf(gab, "&:has? expects one argument");
-  }
+  gab_value vpat = gab_arg(1);
+
+  if (gab_valkind(vpat) != kGAB_STRING)
+    return gab_pktypemismatch(gab, vpat, kGAB_STRING);
 
   const char *str = gab_strdata(argv + 0);
   const char *pat = gab_strdata(argv + 1);
@@ -548,7 +549,7 @@ GAB_DYNLIB_NATIVE_FN(string, pop) {
   uint64_t len = gab_strlen(gab_arg(0));
 
   if (len == 0) {
-    gab_vmpush(gab_thisvm(gab), gab_string(gab, ""));
+    gab_vmpush(gab_thisvm(gab), gab_none, gab_string(gab, ""));
     return gab_union_cvalid(gab_nil);
   }
 
@@ -556,10 +557,10 @@ GAB_DYNLIB_NATIVE_FN(string, pop) {
   gab_value strchar = gab_nstring(gab, 1, &ch);
   gab_value leftover = gab_nstring(gab, len - 1, str);
 
-  // TODO: Fix this to respect unicode
+  // TODO @cstrings @bug: Fix this to respect unicode
   // ie: Can't assume that the *last byte* of the str
   // is a valid char.
-  gab_vmpush(gab_thisvm(gab), leftover, strchar);
+  gab_vmpush(gab_thisvm(gab), gab_ok, leftover, strchar);
   return gab_union_cvalid(gab_nil);
 };
 
@@ -567,8 +568,14 @@ GAB_DYNLIB_NATIVE_FN(fmt, panicf) {
   gab_value fmtstr = gab_arg(0);
   const char *fmt = gab_strdata(&fmtstr);
 
+  // TODO @cstrings @bug: Fix this with a reasonable cap before breaking malloc.
+  // TODO @cstrings @qol: Change to use fiber's arena
   for (size_t n = 2048;; n *= 2) {
     char *buf = malloc(n);
+
+    if (!buf)
+      return gab_panicf(gab, "FMT TOO BIG");
+
     int len = gab_nsprintf(buf, n, fmt, argc - 1, argv + 1);
 
     if (len < 0) {
@@ -587,6 +594,8 @@ GAB_DYNLIB_NATIVE_FN(fmt, sprintf) {
 
   const char *fmt = gab_strdata(&fmtstr);
 
+  // TODO @cstrings @bug: Fix this with a reasonable cap before breaking malloc.
+  // TODO @cstrings @qol: Change to use fiber's arena
   for (size_t n = 2048;; n *= 2) {
     char *buf = malloc(n);
 
@@ -611,8 +620,13 @@ GAB_DYNLIB_NATIVE_FN(fmt, psprintf) {
 
   const char *fmt = gab_strdata(&fmtstr);
 
+  // TODO @cstrings @bug: Fix this with a reasonable cap before breaking malloc.
+  // TODO @cstrings @qol: Change to use fiber's arena
   for (size_t n = 2048;; n *= 2) {
     char *buf = malloc(n);
+    if (!buf)
+      return gab_panicf(gab, "FMT TOO BIG");
+
     int len = gab_npsprintf(buf, n, "", fmt, argc - 1, argv + 1);
 
     if (len < 0) {
@@ -671,29 +685,29 @@ GAB_DYNLIB_MAIN_FN {
               gab_snative(gab, "seq\\next", gab_mod_string_seq_next),
           },
           {
-              gab_message(gab, "to\\s"),
+              gab_message(gab, "to\\string"),
               gab_cundefined,
-              gab_snative(gab, "to\\s", gab_mod_string_tos),
+              gab_snative(gab, "to\\string", gab_mod_string_tos),
           },
           {
-              gab_message(gab, "to\\m"),
+              gab_message(gab, "to\\message"),
               t,
-              gab_snative(gab, "to\\m", gab_mod_string_tom),
+              gab_snative(gab, "to\\message", gab_mod_string_tom),
           },
           {
-              gab_message(gab, "to\\b"),
+              gab_message(gab, "to\\binary"),
               t,
-              gab_snative(gab, "to\\b", gab_mod_string_tob),
+              gab_snative(gab, "to\\binary", gab_mod_string_tob),
           },
           {
-              gab_message(gab, "as\\n"),
+              gab_message(gab, "as\\number"),
               t,
-              gab_snative(gab, "as\\n", gab_mod_string_ton),
+              gab_snative(gab, "as\\number", gab_mod_string_ton),
           },
           {
-              gab_message(gab, "as\\s"),
+              gab_message(gab, "as\\string"),
               gab_type(gab, kGAB_BINARY),
-              gab_snative(gab, "as\\s", gab_mod_binary_tos),
+              gab_snative(gab, "as\\string", gab_mod_binary_tos),
           },
           {
               gab_message(gab, "len"),

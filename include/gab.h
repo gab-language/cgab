@@ -629,7 +629,9 @@ struct gab_create_argt {
    *
    *  This list should be terminated with a nullptr.
    * */
-  const char **modules;
+  struct gab_package {
+    const char *package, *module, *alias;
+  } *packages;
 };
 
 /**
@@ -644,7 +646,7 @@ GAB_API union gab_value_pair gab_create(struct gab_create_argt args,
 
 struct gab_module_res {
   a_char *path;
-  const char *root;
+  const char *root_path, *package_path, *module_path;
   const struct gab_resource *resource;
 };
 
@@ -2046,7 +2048,7 @@ GAB_API_INLINE uint64_t gab_shpfind(gab_value shp, gab_value key) {
     uint64_t len = gab_shplen(shp);
     gab_value *keys = gab_shpdata(shp);
 
-    // TODO: SIMDIFY ME (or use trees, sure)
+    // TODO @cgab @perf: SIMDIFY ME (or use trees, sure)
     for (uint64_t i = 0; i < len; i++) {
       if (gab_valeq(key, keys[i]))
         return i;
@@ -2384,6 +2386,7 @@ GAB_API gab_value gab_nlstpush(struct gab_triple gab, gab_value list,
  */
 GAB_API_INLINE gab_value gab_recpop(struct gab_triple gab, gab_value rec,
                                     gab_value *out_val, gab_value *out_key) {
+  assert(gab_reclen(rec) > 0);
   gab_value lastkey = gab_ushpat(gab_recshp(rec), gab_reclen(rec) - 1);
 
   if (out_key)

@@ -4,8 +4,8 @@ explain_specs = (specs separator)
   => specs
       .transduce(
         ''
-        +:
-        Streams.map s => s.spec\name
+        (l r) => l + r
+        Streams.map(s => s.spec\name)
         |> Streams.interpose separator)
 
 explain_values = (strings separator)
@@ -13,7 +13,7 @@ explain_values = (strings separator)
       .transduce(
         ''
         (l r) => l + r
-        Streams.map (v => "\$".sprintf v)
+        Streams.map (v => "$".sprintf v)
         |> Streams.interpose separator)
 
 defspec: .def (
@@ -80,6 +80,8 @@ unknown_values = [ nil: 0 1 'test' true: ]
   end
 
   spec\explain: 'unknown'
+
+  spec\type: 'Unknown'
 }
 
 # INT PREDICATE
@@ -87,13 +89,15 @@ int\predicate = predicate\int:
 
 spec\fits:.def(
   int\predicate
-  value => (value.is\n, self, value))
+  value => (value.is\number, self, value))
 
 spec\gen:.def(
   int\predicate
   () => Numbers.int\between(-10000 10000))
 
 spec\explain:.def(int\predicate 'int')
+
+spec\type:.def(int\predicate, 'Int')
 
 #
 # FLOAT PREDICATE
@@ -103,7 +107,7 @@ float\predicate = predicate\float:
 
 spec\fits:.def(
   float\predicate
-  (value) => (value.is\n, self, value))
+  (value) => (value.is\number, self, value))
 
 spec\gen:.def(
   float\predicate
@@ -111,17 +115,19 @@ spec\gen:.def(
 
 spec\explain:.def(float\predicate 'float')
 
+spec\type:.def(float\predicate, 'Float')
+
 #
 # STRING PREDICATE
 #
 string\predicate = predicate\string:
 
-is\s:.def(Strings.t, true:)
-is\s:.def false:
+is\string:.def(Strings.t, true:)
+is\string:.def false:
 
 spec\fits:.def(
   string\predicate
-  (value) => (value.is\s, self, value))
+  (value) => (value.is\string, self, value))
 
 random\strings = [
   'vim-users'
@@ -140,6 +146,39 @@ spec\gen:.def(
 
 spec\explain:.def(string\predicate 'string')
 
+spec\type:.def(string\predicate, 'String')
+
+#
+# binary PREDICATE
+#
+binary\predicate = predicate\binary:
+
+is\binary:.def(Binaries.t, true:)
+is\binary:.def false:
+
+spec\fits:.def(
+  binary\predicate
+  (value) => (value.is\binary, self, value))
+
+random\binarys = [
+  'vim-users'.to\binary
+  'emacs-users'.to\binary
+  'a'.to\binary
+  'b'.to\binary
+  'c'.to\binary
+]
+
+spec\gen:.def(
+  binary\predicate
+  () => do
+    idx  = Numbers.int\between(0 ,random\binarys.len)
+    random\binarys .at idx .unwrap
+  end)
+
+spec\explain:.def(binary\predicate 'binary')
+
+spec\type:.def(binary\predicate, 'binary')
+
 #
 # SHAPE PREDICATE
 #
@@ -147,13 +186,32 @@ shape\predicate = predicate\shape:
 
 spec\fits:.def(
   shape\predicate
-  (value) => (value.is\shp, self, value))
+  (value) => (value.is\shape, self, value))
 
 spec\gen:.def(
   shape\predicate
   () => Shapes.make)
 
 spec\explain:.def(shape\predicate 'shape')
+
+spec\type:.def(shape\predicate, 'Shape')
+
+#
+# RECORD PREDICATE
+#
+record\predicate = predicate\record:
+
+spec\fits:.def(
+  record\predicate
+  (value) => (value.is\record, self, value))
+
+spec\gen:.def(
+  record\predicate
+  () => Records.make)
+
+spec\explain:.def(record\predicate 'record')
+
+spec\type:.def(record\predicate, 'Record')
 
 #
 # BOOL PREDICATE
@@ -162,7 +220,7 @@ boolean\predicate = predicate\boolean:
 
 spec\fits:.def(
   boolean\predicate
- (value) =>(value.is\b, self, value))
+ (value) =>((value == true:).or(value == false:), self, value))
 
 spec\gen:.def(
   boolean\predicate
@@ -170,13 +228,29 @@ spec\gen:.def(
 
 spec\explain:.def(boolean\predicate 'boolean')
 
+spec\type:.def(boolean\predicate, 'Boolean')
+#
+# BOX PREDICATE
+#
+box\predicate = (type) => do
+  pred = Strings.make('predicate:box:' type).to\message
+
+  [pred].defmodule {
+    spec\fits: (value) => (value? == type, self, value)
+
+    spec\explain: Strings.make('Box[' type ']')
+
+    spec\type: type
+  }
+end
+
 #
 # COMPOSING SPECS
 #
 and\predicate = (specs*) => do
   (specs.len > 0).assert! 'Must have at least one spec for the and predicate'
 
-  pred = Strings.make('predicate:and:' specs).to\m
+  pred = Strings.make('predicate:and:' specs).to\message
 
   [pred] .defmodule {
     spec\explain: () => explain_specs.(specs ' & ')
@@ -206,6 +280,8 @@ and\predicate = (specs*) => do
           .transduce(0 (a => a) xf)
           .assert!(Strings.make('Failed to generate a value for ' specs))
       end
+
+    spec\type: 'And'
   }
 
   # Return a predicate which returns true iff the given value
@@ -217,7 +293,7 @@ end
 or\predicate = (specs*) => do
   (specs.len > 0).assert "The or predicate expects more than zero specs"
   
-  pred = Strings.make('predicate:any:' specs).to\m
+  pred = Strings.make('predicate:any:' specs).to\message
 
   [pred] .defmodule {
     spec\fits: value => do
@@ -231,6 +307,8 @@ or\predicate = (specs*) => do
     spec\gen: () => specs.at(Numbers.int\between(0 specs.len - 1)).unwrap.spec\gen
 
     spec\explain: () => explain_specs.(specs ' | ')
+
+    spec\type: 'Or'
   }
   # Return a predicate which returns true if the given value
   # fits any of the given specs
@@ -382,7 +460,7 @@ make: .defcase {
       () => nonnull
         .at 0
         .unwrap
-        .put_by(path: x => path + x)
+        .put_by(path: x => path .cons x)
 
       else:                       
       () => do
@@ -431,20 +509,36 @@ re\debug: .defcase {
   re\null\t "re.internal.null"
 
   RE\Atom.t
-  () => self.re\name.unwrap
+  () => '$ $'.sprintf(self.re\name.unwrap, self.forms.spec\name)
 
   RE\Seq.t
-  () => stringify_forms.(self.forms, " , ")
+  () => do
+    (ok, name) = self.re\name
+
+    forms = stringify_forms.(self.forms, ", ")
+
+    ok
+      .and ('$ $'.sprintf(name, forms))
+      .or forms
+  end
 
   RE\Alt.t
-  () => stringify_forms.(self.forms, " | ")
+  () => do
+    (ok, name) = self.re\name
+
+    forms = stringify_forms.(self.forms, " | ")
+
+    ok
+      .and ('$ $'.sprintf(name, forms))
+      .or forms
+  end
 
   RE\Rep.t
   () => do
-    (ok, name) = self.forms.re\name
+    (ok, name) = self.re\name
 
     ok
-      .and('*$'.sprintf name)
+      .and('$ *$'.sprintf(name, self.forms.re\name.unwrap))
       .or ""
   end
 }
@@ -694,7 +788,7 @@ to\spec\re: .def () => RE\Atom.make(
 pat: .def(
   spec\t
   (specs**) => do
-    pred = Strings.make('predicate:pat:' specs).to\m
+    pred = Strings.make('predicate:pat:' specs).to\message
 
     forms = specs
       .map (v k) => do
@@ -717,6 +811,8 @@ pat: .def(
       pred
       () => specs.collect([] generator).join "")
 
+    spec\type:.def(pred 'Pattern')
+
     to\spec\re: .def(pred re)
 
     pred
@@ -725,7 +821,7 @@ pat: .def(
 cat: .def(
   spec\t
   (specs**) => do
-    pred = Strings.make('predicate:cat:' specs).to\m
+    pred = Strings.make('predicate:cat:' specs).to\message
 
     forms = specs.map (v k)
       => v
@@ -754,6 +850,8 @@ cat: .def(
 
     to\spec\re: .def(pred re)
 
+    spec\type:.def(pred 'Concatenation')
+
     pred
   end)
 
@@ -761,7 +859,7 @@ alt: .def(
   spec\t
   (specs**) => do
     (first rest*) = specs*
-    pred = Strings.make('predicate:alt:' specs).to\m
+    pred = Strings.make('predicate:alt:' specs).to\message
 
     forms = specs.map (v k)
       => (v.to\spec.to\spec\re.put_via(meta: name: k))
@@ -779,6 +877,8 @@ alt: .def(
         => re.re\debug
 
       to\spec\re: re
+
+      spec\type: 'Alternation'
     }
 
 
@@ -788,7 +888,7 @@ alt: .def(
 *: .def(
   spec\t
   (spec) => do
-    pred = Strings.make('predicate:*:' {} ':' spec).to\m
+    pred = Strings.make('predicate:*:' {} ':' spec).to\message
 
     re = RE\Rep.make(spec.to\spec.to\spec\re, {})
 
@@ -808,6 +908,8 @@ alt: .def(
         => re.re\debug
 
       to\spec\re: re
+
+      spec\type: 'Repeat'
     }
 
     pred
@@ -816,7 +918,7 @@ alt: .def(
 +: .def(
   spec\t
   (spec) => do
-    pred = Strings.make('predicate:+:' {} ':' spec).to\m
+    pred = Strings.make('predicate:+:' {} ':' spec).to\message
 
     re = spec.to\spec.to\spec\re
 
@@ -843,6 +945,8 @@ alt: .def(
         => re.re\debug
 
       to\spec\re: re
+
+      spec\type: 'At-least-one'
     }
 
 
@@ -853,7 +957,7 @@ slice\predicate = (slice) => do
   protocol = self
   keys = protocol.spec\protocol\keys
 
-  pred = Strings.make('predicate:protocol:slice:' keys ':' slice).to\m
+  pred = Strings.make('predicate:protocol:slice:' keys ':' slice).to\message
 
   [pred].defmodule {
       spec\explain: ()
@@ -864,24 +968,22 @@ slice\predicate = (slice) => do
 end
 
 
-protocol\predicate = (protocol**) => do
-  pred = Strings.make('predicate:protocol:' protocol).to\m
-
-  keys = protocol.keys
+protocol\predicate = (protocol*) => do
+  pred = Strings.make('predicate:protocol:' protocol).to\message
 
   genit = Streams.map (k) => do
-    found = k.to\m.to\spec
+    found = k.to\message.to\spec
     (k found.spec\gen)
   end
 
   [pred] .defmodule {
       spec\fits: value
         => do
-          keys.reduce([true: self value] (acc m) => do
+          protocol.reduce([true: self value] (acc m) => do
 # Check for a spec which corresponds to this message in the protocol
             acc.at 0 .unwrap.and acc .else () => do
               m.at value .then () => do
-                m.to\m.to\spec.ok.then s => do
+                m.to\message.to\spec.ok.then s => do
                   s.spec\fits(value .at m .unwrap)
                 end
               end .or [false:, self, value, m]
@@ -890,22 +992,24 @@ protocol\predicate = (protocol**) => do
         end
 
     spec\gen: ()
-      => keys.collect([] genit)
+      => protocol.collect([] genit)
 
     spec\explain: () => (protocol.len == 0)
         .and "[]"
         .or ("[ " + explain_values.(protocol, ', ') + " ]")
 
-    spec\protocol\keys: [protocol*]
+    spec\protocol\keys: protocol
 
     spec\slice: slice\predicate
+
+    spec\type: 'Protocol'
   }
 
   pred
 end
 
 list\predicate = spec => do
-  pred = Strings.make('predicate:list:' spec).to\m
+  pred = Strings.make('predicate:list:' spec).to\message
 
   [pred] .defmodule {
     spec\fits: value => value.spec\fits_each values:
@@ -913,13 +1017,15 @@ list\predicate = spec => do
     spec\gen: () => [spec.spec\gen]
 
     spec\explain: () => 'List[$]'.sprintf(spec.spec\explain)
+
+    spec\type: 'List'
   }
 
   pred
 end
 
-record\predicate = (k_spec v_spec) => do
-  pred = Strings.make('predicate:map:' k_spec ':' v_spec).to\m
+dict\predicate = (k_spec v_spec) => do
+  pred = Strings.make('predicate:dict:' k_spec ':' v_spec).to\message
 
   [pred].defmodule {
     spec\fits: value => do
@@ -940,7 +1046,9 @@ record\predicate = (k_spec v_spec) => do
       => { k_spec.spec\gen,  v_spec.spec\gen }
 
     spec\explain: ()
-      => 'Map[$, $]'.sprintf( k_spec.spec\explain, v_spec.spec\explain)
+      => 'Dict[$, $]'.sprintf( k_spec.spec\explain, v_spec.spec\explain)
+
+    spec\type: 'Dict'
   }
 
   pred
@@ -992,7 +1100,7 @@ spec\semantics_fits:.def(
 block\predicate = (args semantics) => do
   args.assert\is spec\block\Args
 
-  pred = Strings.make('predicate:block:' args ':' semantics).to\m
+  pred = Strings.make('predicate:block:' args ':' semantics).to\message
 
   spec\fits:.def(
     pred
@@ -1050,15 +1158,17 @@ block\predicate = (args semantics) => do
         end
       end)
     end)
+
+  spec\type: .def(pred 'Block')
   
   pred
 end
 
-general_message\predicate = 'predicate:message' .to\m
+general_message\predicate = 'predicate:message' .to\message
 
 spec\fits:.def(
   general_message\predicate
-  (value) => (value.is\m, self, value))
+  (value) => (value.is\message, self, value))
 
 spec\gen:.def(
   general_message\predicate
@@ -1103,7 +1213,7 @@ spec\message\define:.defcase {
   nil: general_message\predicate
   "gab\record" () => do
     args = self
-    pred = Strings.make('predicate:message:' args).to\m
+    pred = Strings.make('predicate:message:' args).to\message
 
     spec\fits:.def(
       pred
@@ -1117,7 +1227,7 @@ spec\message\define:.defcase {
               (s => s.spec\message\receiver_fits)
               (s => s.spec\message\input_fits)
               (s => s.spec\message\output_fits)
-              # TODO: Maybe have semantic fitting here?
+              # TODO @spec: Maybe have semantic fitting here?
             )
         end)
 
@@ -1210,6 +1320,8 @@ spec\message\define:.defcase {
         args.input.spec\name
         args.output.spec\name))
 
+    spec\type:.def(pred 'Message')
+
     pred
   end
 }
@@ -1239,10 +1351,13 @@ spec\labeled: .def label => {
   spec\fits: () => self.spec\spec.spec\fits
 
   spec\check: () => self.spec\spec.spec\check
+
+  spec\type: () => self.spec\spec.spec\type
 }
 
-spec\name: .def () => self.spec\explain.to\s
+spec\name: .def () => '$'.sprintf(self.spec\explain)
 spec\explain: .def () => self
+spec\help: .def () => self
 spec\gen: .def () => self
 spec\fits: .def value => (self == value self value)
 
@@ -1278,22 +1393,28 @@ end
   int:      int\predicate,
   float:    float\predicate,
   string:   string\predicate,
+  binary:   binary\predicate,
+  box:      box\predicate,
   shape:    shape\predicate,
+  record:   record\predicate,
   boolean:  boolean\predicate,
   block:    block\predicate,
   message:  message\predicate,
   list:     list\predicate,
-  record:   record\predicate,
+  dict:     dict\predicate,
   protocol: protocol\predicate,
   all:      and\predicate,
   any:      or\predicate,
   option:   value => spec\t.alt(
-                      'some' spec\t.cat('ok' ok: 'value' value)
-                      'none' none:
+                      'some' spec\t.cat('status' ok: 'value' value)
+                      'none' spec\t.cat('status' none:)
                     )
-  result:  (value err) => value.to\spec\option err
+  result:  (value err) => spec\t.alt(
+                      'success' spec\t.cat('status' ok: 'value' value)
+                      'failure' spec\t.cat('status' err: 'message' err)
+                    )
   gt: (min) => do
-    gt\predicate = Strings.make('predicate:gt:' min).to\m
+    gt\predicate = Strings.make('predicate:gt:' min).to\message
 
     spec\fits:.def(
       gt\predicate
@@ -1304,7 +1425,7 @@ end
     gt\predicate
   end
   lt: max => do
-    lt\predicate = Strings.make('predicate:lt:' max).to\m
+    lt\predicate = Strings.make('predicate:lt:' max).to\message
 
     spec\fits:.def(
       lt\predicate
@@ -1320,7 +1441,7 @@ end
           v
           k .to\s
             .split '\\'
-            .to\m,
+            .to\message,
           k))
       |> Streams.filter ((_ m) => m == mod)
       |> Streams.map ((v m k) => do
@@ -1329,7 +1450,17 @@ end
         (ok, h) = k.to\spec.spec\help
         h = ok.and(h).or ''
 
-        '$\n$\n\t$'.sprintf(k h e)
+        name = (k == mod)
+          .and mod
+          .else(() => do
+            (_, rest*) = k.to\s.split '\\'
+
+            rest
+              .join('' Streams.interpose('\\'))
+              .to\message
+          end)
+
+        '## `$`\n```gab\n$\n```\n$'.sprintf(name e h)
       end)
       |> Streams.interpose '\n\n'
 

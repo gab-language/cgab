@@ -29,7 +29,7 @@ position:.def(
     line
   end)
 
-# TODO: Some code for computing Position -> Byte Offset.
+# TODO @lsp: Some code for computing Position -> Byte Offset.
 [lsp\server\t].defmodule {
   document\sync\full: (uri text) => do
     lines = [text.split '\n']

@@ -60,7 +60,7 @@ bool unescape_into(char *buf, const char *str, size_t len) {
         buf[buflen++] = '/';
         break;
         /**
-         * TODO: Handle unicode escaping as described in JSON spec json.org.
+         * TODO @cjson @bug: Handle unicode escaping as described in JSON spec json.org.
          */
       // case 'u':
       //   i += 2;

@@ -1,7 +1,6 @@
-'cgab'.use
-ui = 'cgui'.use
-
-Atoms = 'Atoms'.use
+ui      = 'github.com/gab-language/cgab@0.0.5' .use 'cgui'
+Atoms   = 'github.com/gab-language/cgab@0.0.5' .use 'Atoms'
+Streams = 'github.com/gab-language/cgab@0.0.5' .use 'Transducers'
 
 (events, app) = (Channels.make, Channels.make)
 
@@ -29,13 +28,13 @@ ui
 
 is\unittest:.def(
   Messages.t
-  () => self.to\s.has\ending "\test")
+  () => self.to\string.has\ending "\test")
 
 implementations = Messages.specializations
 
 xf = Streams.filter((_ m) => m.is\unittest)
   |> Streams.map((impls m) => do
-      (path*, _) = m.to\s.split "\"
+      (path*, _) = m.to\string.split "\"
 
       (path { path: path, impls: impls })
   end)
@@ -160,7 +159,7 @@ queue_tests = (filter_by_suite) => do
 
     fibers.map f => f.await
 
-    #TODO: Make this configurable from the cmdline
+    #TODO @Tests @api: Make this configurable from the cmdline
     events.close
     app.close
   end
@@ -219,7 +218,7 @@ handle\keydown: .defcase {
   l: (ev model) => model.put(focus: test:)
   h: (ev model) => model.put(focus: suite:)
   # For some reason, space: isn't working properly here.
-  (' '.to\m) (ev model) => do
+  (' '.to\message) (ev model) => do
     (has_suite, suite, has_bhv, bhv) = model.app\get_selected
 
     (has_suite & has_bhv)

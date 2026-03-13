@@ -1,4 +1,5 @@
 mod = 'github.com/gab-language/cgab@0.0.5' .use 'cbencode'
+Streams = 'github.com/gab-language/cgab@0.0.5' .use 'Transducers'
 
 array_xf = Streams.map (a => a.to\bencode)
 

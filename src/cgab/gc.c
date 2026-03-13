@@ -25,6 +25,7 @@
 #include "core.h"
 #include "engine.h"
 #include "gab.h"
+#include <stdatomic.h>
 
 static inline int32_t epochget(struct gab_triple gab) {
   return gab.eg->jobs[gab.wkid].epoch % GAB_GCNEPOCHS;
@@ -560,7 +561,7 @@ static inline void collect_dead(struct gab_triple gab) {
 
 void gab_gclock(struct gab_triple gab) {
   struct gab_job *wk = gab.eg->jobs + gab.wkid;
-  assert(wk->locked < UINT8_MAX);
+  assert(wk->locked < UINT32_MAX);
   wk->locked += 1;
 }
 

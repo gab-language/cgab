@@ -14,8 +14,8 @@ make\from: .def (
   : key => self.at key .unwrap
 
   put_by: (k f) => do
-    v = self.at k .unwrap
-    self.put(k, f.(v))
+    (ok, v) = self.at k
+    self.put(k, f.(ok .and v .or nil:))
   end
 
   put_via_by: (path*, f) => do

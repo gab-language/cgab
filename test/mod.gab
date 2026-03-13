@@ -1,3 +1,5 @@
+Ranges = 'github.com/gab-language/cgab@0.0.5' .use 'Ranges'
+
 variables\new_variables\test: .def (t => do
   a = 2
   t.expect(a ==: 2)
@@ -242,17 +244,17 @@ strings\length\test: .def t => do
 end
 
 binaries\convert_from_strings\test: .def t => do
-  bin = "abc".to\b
+  bin = "abc".to\binary
   t.expect(bin?, ==:, Binaries.t)
 end
 
 binaries\work_with_len\test: .def t => do
-  bin = "Hello 😀!".to\b
+  bin = "Hello 😀!".to\binary
   t.expect(bin.len, ==: 11)
 end
 
 binaries\work_with_at\test: .def t => do
-  bin = "abc".to\b
+  bin = "abc".to\binary
 
   t.expect(bin.at 0 .unwrap, ==:, 97)
   t.expect(bin.at 1 .unwrap, ==:, 98)
@@ -267,7 +269,7 @@ binaries\work_with_at\test: .def t => do
   t.expect(bin.at 42, ==:, none:)
   t.expect(bin.at(1, 2), ==:, none:)
 
-  bin = "Hello 😀!".to\b
+  bin = "Hello 😀!".to\binary
 
   t.expect(bin.at 5 .unwrap, ==: 32)
   t.expect(bin.at 6 .unwrap, ==: 240)
@@ -662,4 +664,4 @@ end
 #  t.expect(ok ==: ok:)
 #end
 
-'tests'.use
+'github.com/gab-language/cgab@0.0.5' .use 'Tests'
