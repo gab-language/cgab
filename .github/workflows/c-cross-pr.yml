@@ -55,7 +55,9 @@ jobs:
       run: clide build
 
     - name: Move native modules
-      run: cp build-*/mod/* mod
+      run: |
+        mkdir -p github.com/gab-language/cgab@${{ env.version }}/mod
+        cp build-*/mod/* github.com/gab-language/cgab@${{ env.version }}/mod
 
     - name: Move built gab binaries into install directory
       run: |
