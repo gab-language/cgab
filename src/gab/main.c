@@ -188,8 +188,8 @@ int copy_file(FILE *in, FILE *out) {
 }
 
 /*
- * TODO @cgab @api: Think about how module requiring works, and try to make it consistent
- * to bundles, importing libraries, etc.
+ * TODO @cgab @api: Think about how module requiring works, and try to make it
+ * consistent to bundles, importing libraries, etc.
  *
  * Instead of having one root for ".", we might need to add some sort of notion
  * for the package you're in.
@@ -314,9 +314,10 @@ union gab_value_pair gab_use_zip_dynlib(struct gab_triple gab, const char *path,
    * extraction. Maybe we should just extract in memory, and then compare the
    * two byte-for-byte to ensure they are the same.
    *
-   * TODO @cgab @cli: This should really be organized per-process, as multiple gab-apps
-   * can be opened at the same time, and we don't want them to stomp over each
-   * other. *maybe* this is fixed by checking if the file exists first.
+   * TODO @cgab @cli: This should really be organized per-process, as multiple
+   * gab-apps can be opened at the same time, and we don't want them to stomp
+   * over each other. *maybe* this is fixed by checking if the file exists
+   * first.
    */
 
   if (!mz_zip_reader_extract_file_to_file(&zip, stat.m_filename, dst, 0)) {
@@ -654,7 +655,7 @@ int run_file(const char *path, int flags, uint32_t wait, size_t jobs,
 
 bool add_package(mz_zip_archive *zip_o, const char **roots,
                  const struct gab_resource *resources, s_char package,
-                 s_char *package_aliases, struct gab_module_res *mod) {
+                 struct gab_module_res *mod) {
 
   char cstr_package[package.len + 1];
   memcpy(cstr_package, package.data, package.len);
@@ -682,39 +683,8 @@ bool add_package(mz_zip_archive *zip_o, const char **roots,
     }
   }
 
-  /*
-   * It is unclear whether it is more important to prioritize speed
-   * (which affects startup/load time)
-   * or compression
-   * (which affects bundle size).
-   *
-   * Perhaps leave this up to the user?
-   *
-   * When building, the user should be able to specify a package name
-   * for local modules. Maybe this can serve as an alias for the "." root?
-   */
-  for (s_char *cursor = package_aliases; cursor->len > 0; cursor += 2) {
-    // If this alias is longer than the whole package+module path, we miss.
-    if (cursor->len >= strlen(mod->package_path))
-      continue;
-
-    // If the package+module path begins with the cursor, we hit.
-    if (memcmp(cursor->data, mod->package_path, cursor->len))
-      continue;
-
-    v_char name = {0};
-    v_char_spush(&name, cursor[1]);
-    v_char_push(&name, '/');
-    v_char_spush(&name, s_char_cstr(mod->module_path));
-    v_char_push(&name, '\0');
-
-    bool result = mz_zip_writer_add_file(zip_o, name.data, mod->path->data,
-                                         nullptr, 0, MZ_BEST_SPEED);
-
-    v_char_destroy(&name);
-    return result;
-  }
-
+  // TODO @cli @qol: Allow the user to configure the SPEED/COMPRESSION tradeoff
+  // here.
   return mz_zip_writer_add_file(zip_o, mod->package_path, mod->path->data,
                                 nullptr, 0, MZ_BEST_SPEED);
 }
@@ -744,7 +714,7 @@ struct step {
       mz_zip_archive *zip;
       const char **roots;
       const struct gab_resource *resources;
-      s_char package, *package_aliases;
+      s_char package;
       struct gab_module_res mod_out;
     } archive_add_package;
 
@@ -888,7 +858,6 @@ int step(struct step *step) {
                         step->as.archive_add_package.roots,
                         step->as.archive_add_package.resources,
                         step->as.archive_add_package.package,
-                        step->as.archive_add_package.package_aliases,
                         &step->as.archive_add_package.mod_out);
   case kSTEP_ARCHIVE_FINALIZE: {
     mz_zip_archive *zip = step->as.archive_finalize.zip;
@@ -2219,8 +2188,6 @@ int build_exe(struct command_arguments *args, const char *module) {
                     .as.archive_add_package.resources = platform_file_resources,
                     .as.archive_add_package.package =
                         v_s_char_val_at(&args->packages, i),
-                    .as.archive_add_package.package_aliases =
-                        args->package_aliases.data,
 
                 });
 
@@ -2333,8 +2300,6 @@ int build_lib(struct command_arguments *args) {
                     .as.archive_add_package.resources = platform_file_resources,
                     .as.archive_add_package.package =
                         v_s_char_val_at(&args->packages, i),
-                    .as.archive_add_package.package_aliases =
-                        args->package_aliases.data,
                 });
 
   long size = 0;
