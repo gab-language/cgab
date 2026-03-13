@@ -213,7 +213,7 @@ jobs:
       #     where.exe "gab"
       #     Get-Command ".\gab"
 
-      - name: What we got
+      - name: DEBUG - List files
         run: ls -al
 
       - name: Welcome
@@ -223,7 +223,7 @@ jobs:
         run: ${{ matrix.cmd }} exec "'hello world!'"
 
       - name: Run Hello World
-        run: ${{ matrix.cmd }} exec "'hello world!' .println"
+        run: ${{ matrix.cmd }} exec -m github.com/gab-language/cgab@0.0.5:Io "'hello world!' .println"
 
       - name: Run tests
         run: ${{ matrix.cmd }} run test
