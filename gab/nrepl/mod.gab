@@ -1,7 +1,7 @@
 'core' .use 'Bencode'
 'core' .use 'cgab'
-Streams = 'core' .use 'Transducers'
-IO      = 'core' .use 'Io'
+Streams = 'github.com/gab-language/cgab@0.0.5' .use 'Transducers'
+IO      = 'github.com/gab-language/cgab@0.0.5' .use 'Io'
 
 Session = nrepl\session: .defclass (default: {})
 

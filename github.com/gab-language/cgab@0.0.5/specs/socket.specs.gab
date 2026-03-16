@@ -1,35 +1,45 @@
 s = 'github.com/gab-language/cgab@0.0.5'.use 'Specs'
 
-file\spec = io\file: .defspec {
-  help:
-  "
-  A native file handle. This is a gab\box which wraps an operating-system native structure.
-  "
-  spec: s.box "io\file"
-}
-
-io\file\len: .defspec {
-  help:
-  "
-  Returns the length of a file.
-  "
-  spec: s.message {
-    receiver:   file\spec
-    message:    len:
-    input:      s.cat
-    output:     s.int
-  }
-}
-
-socket\spec = io\socket: .defspec {
+socket\spec = socket: .defspec {
   help:
   "
   A native socket handle.
+
+  Implements the `streamable` protocol.
+
+  When creating a socket, the user must choose a `protocol`. The options are:
+  - `tcp:`
+  - `udp:`
+  - `tcp\tls:`
+  - `udp\tls:`
+
+  The latter two include transport-layer-security. Sockets with and without `tls:` require different
+  arguments to messages such as `connect:` or `bind:`. See their definitions for details.
   "
   spec: s.box "io\socket"
 }
 
-io\socket\accept: .defspec {
+socket\make: .defspec {
+  help:
+  "
+  Create a socket with the given protocol.
+  "
+  spec: s.message {
+    receiver: io\socket:
+    message: make:
+    input: s.cat(
+      'protocol' s.alt(
+        'TCP' tcp:
+        'UDP' udp:
+        'TCP with TLS' tcp\tls:
+        'UDP with TLS' udp\tls:
+      )
+    )
+    output: s.cat('socket' socket\spec)
+  }
+}
+
+socket\accept: .defspec {
   help:
   "
   Accept a client connection on a listening server socket.
@@ -42,7 +52,7 @@ io\socket\accept: .defspec {
   }
 }
 
-io\socket\listen: .defspec {
+socket\listen: .defspec {
   help:
   "
   Begin listening for connections on a server socket.
@@ -55,7 +65,7 @@ io\socket\listen: .defspec {
   }
 }
 
-io\socket\bind: .defspec {
+socket\bind: .defspec {
   help:
   "
   Bind a socket to a local address. This turns a socket into a server socket.
@@ -79,14 +89,17 @@ io\socket\bind: .defspec {
   }
 }
 
-io\socket\connect: .defspec {
+socket\connect: .defspec {
   help:
   "
   Connect to an address. This turns a socket into a client socket.
+
+  For ssl clients, Gab bundles a public mozilla client certificate chain, so the 'certificate'
+  argument is optional.
   "
   spec: s.message {
     receiver: socket\spec
-    message:  bind:
+    message:  connect:
     input:    s.alt(
       'default' s.cat(
         'address' s.string
@@ -98,6 +111,6 @@ io\socket\connect: .defspec {
         'certificate' s.binary
       )
     )
-    output:   s.cat()
+    output:   s.result(nil:, s.string())
   }
 }

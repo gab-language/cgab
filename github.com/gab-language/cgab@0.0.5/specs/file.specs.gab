@@ -1,0 +1,39 @@
+s = 'github.com/gab-language/cgab@0.0.5'.use 'Specs'
+
+file\spec = file: .defspec {
+  help:
+  "
+  A native file handle.
+
+  Implements the `streamable` protocol.
+  "
+  spec: s.box "io\file"
+}
+
+file\make: .defspec {
+  help:
+  "
+  Create a file.
+  "
+  spec: s.message {
+    receiver: io\file:
+    message: make:
+    input: s.cat(
+      'path' s.string
+      'permissions' s.string)
+    output: s.cat('file' file\spec)
+  }
+}
+
+file\len: .defspec {
+  help:
+  "
+  Returns the length of a file.
+  "
+  spec: s.message {
+    receiver:   file\spec
+    message:    len:
+    input:      s.cat
+    output:     s.int
+  }
+}

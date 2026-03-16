@@ -4,26 +4,25 @@
  *  Copyright (c) 2023 Teddy Randby
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy
- *  of this software and associated documentation files (the "Software"), to deal
- *  in the Software without restriction, including without limitation the rights
- *  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- *  copies of the Software, and to permit persons to whom the Software is
+ *  of this software and associated documentation files (the "Software"), to
+ * deal in the Software without restriction, including without limitation the
+ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+ * sell copies of the Software, and to permit persons to whom the Software is
  *  furnished to do so, subject to the following conditions:
  *
- *  The above copyright notice and this permission notice shall be included in all
- *  copies or substantial portions of the Software.
+ *  The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
  *
  *  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  *  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  *  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
  *  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- *  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- *  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- *  SOFTWARE.
+ *  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+ * IN THE SOFTWARE.
  */
 
 #include "gab.h"
-#include "platform.h"
 #include <math.h>
 
 typedef struct {
@@ -121,41 +120,38 @@ GAB_DYNLIB_NATIVE_FN(number, between) {
   return gab_union_cvalid(gab_nil);
 }
 
-GAB_DYNLIB_NATIVE_FN(number, floor) {
-  gab_value num = gab_arg(0);
+#define DEFINE_SINGLE_ARG_MATH_FN(name, f, to_val)                             \
+  GAB_DYNLIB_NATIVE_FN(number, name) {                                         \
+    gab_value num = gab_arg(0);                                                \
+                                                                               \
+    if (gab_valkind(num) != kGAB_NUMBER)                                       \
+      return gab_pktypemismatch(gab, num, kGAB_NUMBER);                        \
+                                                                               \
+    gab_value res = to_val(f(gab_valtof(num)));                                \
+                                                                               \
+    gab_vmpush(gab_thisvm(gab), res);                                          \
+    return gab_union_cvalid(gab_nil);                                          \
+  }
 
-  if (gab_valkind(num) != kGAB_NUMBER)
-    return gab_pktypemismatch(gab, num, kGAB_NUMBER);
+DEFINE_SINGLE_ARG_MATH_FN(ceil, ceil, gab_number);
+DEFINE_SINGLE_ARG_MATH_FN(floor, floor, gab_number);
+DEFINE_SINGLE_ARG_MATH_FN(round, round, gab_number);
+DEFINE_SINGLE_ARG_MATH_FN(acos, acos, gab_number);
+DEFINE_SINGLE_ARG_MATH_FN(asin, asin, gab_number);
+DEFINE_SINGLE_ARG_MATH_FN(atan, atan, gab_number);
+DEFINE_SINGLE_ARG_MATH_FN(cos, cos, gab_number);
+DEFINE_SINGLE_ARG_MATH_FN(sin, sin, gab_number);
+DEFINE_SINGLE_ARG_MATH_FN(tan, tan, gab_number);
+DEFINE_SINGLE_ARG_MATH_FN(abs, fabs, gab_number);
+DEFINE_SINGLE_ARG_MATH_FN(isnan, isnan, gab_bool);
+DEFINE_SINGLE_ARG_MATH_FN(isinf, isinf, gab_bool);
 
-  gab_value res = gab_number(floor(gab_valtof(num)));
-
-  gab_vmpush(gab_thisvm(gab), res);
-  return gab_union_cvalid(gab_nil);
-}
-
-GAB_DYNLIB_NATIVE_FN(number, isnan) {
-  gab_value num = gab_arg(0);
-
-  if (gab_valkind(num) != kGAB_NUMBER)
-    return gab_pktypemismatch(gab, num, kGAB_NUMBER);
-
-  gab_value res = gab_bool(isnan(gab_valtof(num)));
-
-  gab_vmpush(gab_thisvm(gab), res);
-  return gab_union_cvalid(gab_nil);
-}
-
-GAB_DYNLIB_NATIVE_FN(number, isinf) {
-  gab_value num = gab_arg(0);
-
-  if (gab_valkind(num) != kGAB_NUMBER)
-    return gab_pktypemismatch(gab, num, kGAB_NUMBER);
-
-  gab_value res = gab_bool(isinf(gab_valtof(num)));
-
-  gab_vmpush(gab_thisvm(gab), res);
-  return gab_union_cvalid(gab_nil);
-}
+#define GAB_DEF_SINGLE_ARG_MATH_FN(name)                                       \
+  {                                                                            \
+      gab_message(gab, #name),                                                 \
+      t,                                                                       \
+      gab_snative(gab, #name, gab_mod_number_##name),                          \
+  }
 
 GAB_DYNLIB_MAIN_FN {
   gab_value t = gab_type(gab, kGAB_NUMBER);
@@ -168,20 +164,31 @@ GAB_DYNLIB_MAIN_FN {
               t,
           },
           {
-              gab_message(gab, "floor"),
-              t,
-              gab_snative(gab, "floor", gab_mod_number_floor),
+              gab_message(gab, "Infinity"),
+              gab_strtomsg(t),
+              gab_number(INFINITY),
           },
           {
-              gab_message(gab, "is\\nan"),
-              t,
-              gab_snative(gab, "is\\nan", gab_mod_number_isnan),
+              gab_message(gab, "Pi"),
+              gab_strtomsg(t),
+              gab_number(M_PI),
           },
           {
-              gab_message(gab, "is\\inf"),
-              t,
-              gab_snative(gab, "is\\inf", gab_mod_number_isinf),
+              gab_message(gab, "E"),
+              gab_strtomsg(t),
+              gab_number(M_E),
           },
+          {
+              gab_message(gab, "MaxInt"),
+              gab_strtomsg(t),
+              gab_number(GAB_INTMAX),
+          },
+          GAB_DEF_SINGLE_ARG_MATH_FN(ceil), GAB_DEF_SINGLE_ARG_MATH_FN(floor),
+          GAB_DEF_SINGLE_ARG_MATH_FN(round), GAB_DEF_SINGLE_ARG_MATH_FN(acos),
+          GAB_DEF_SINGLE_ARG_MATH_FN(asin), GAB_DEF_SINGLE_ARG_MATH_FN(atan),
+          GAB_DEF_SINGLE_ARG_MATH_FN(cos), GAB_DEF_SINGLE_ARG_MATH_FN(sin),
+          GAB_DEF_SINGLE_ARG_MATH_FN(tan), GAB_DEF_SINGLE_ARG_MATH_FN(abs),
+          GAB_DEF_SINGLE_ARG_MATH_FN(isnan), GAB_DEF_SINGLE_ARG_MATH_FN(isinf),
           {
               gab_message(gab, "float\\between"),
               mod,

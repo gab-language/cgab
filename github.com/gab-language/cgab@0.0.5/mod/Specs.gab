@@ -1,4 +1,7 @@
 spec\t = spec:
+Streams = 'github.com/gab-language/cgab@0.0.5' .use 'Transducers'
+Ranges  = 'github.com/gab-language/cgab@0.0.5' .use 'Ranges'
+IO      = 'github.com/gab-language/cgab@0.0.5' .use 'Io'
 
 explain_specs = (specs separator)
   => specs
@@ -30,7 +33,7 @@ defspec: .def (
 
     spec\name:.def(
       opts.spec
-      self.to\s)
+      self.to\string)
 
     to\spec:.def(
       self
@@ -63,6 +66,7 @@ spec\fits:.def(
 spec\gen:.def(
   nil\predicate
   nil:)
+
 
 spec\explain:.def(nil\predicate 'nil')
 
@@ -197,6 +201,23 @@ spec\explain:.def(shape\predicate 'shape')
 spec\type:.def(shape\predicate, 'Shape')
 
 #
+# FIBER PREDICATE
+#
+fiber\predicate = predicate\fiber:
+
+spec\fits:.def(
+  fiber\predicate
+  (value) => (value.is\fiber, self, value))
+
+spec\gen:.def(
+  fiber\predicate
+  () => Fibers.make () => 1)
+
+spec\explain:.def(fiber\predicate 'fiber')
+
+spec\type:.def(fiber\predicate, 'Fiber')
+
+#
 # RECORD PREDICATE
 #
 record\predicate = predicate\record:
@@ -241,7 +262,32 @@ box\predicate = (type) => do
     spec\explain: Strings.make('Box[' type ']')
 
     spec\type: type
+
+    spec\name: type
   }
+
+  pred
+end
+
+#
+# CHANNEL PREDICATE
+#
+channel\predicate = (type) => do
+  pred = Strings.make('predicate:channel:' type).to\message
+
+  [pred].defmodule {
+    spec\fits: (value) => (value.is\channel, self, value)
+
+    spec\gen: () => (Channels.make)
+
+    spec\explain: Strings.make('Channel[' type ']')
+
+    spec\type: 'Channel'
+
+    spec\name: 'Channel'
+  }
+
+  pred
 end
 
 #
@@ -292,7 +338,7 @@ end
 
 or\predicate = (specs*) => do
   (specs.len > 0).assert "The or predicate expects more than zero specs"
-  
+ 
   pred = Strings.make('predicate:any:' specs).to\message
 
   [pred] .defmodule {
@@ -1395,6 +1441,8 @@ end
   string:   string\predicate,
   binary:   binary\predicate,
   box:      box\predicate,
+  channel:  channel\predicate,
+  fiber:    fiber\predicate,
   shape:    shape\predicate,
   record:   record\predicate,
   boolean:  boolean\predicate,
@@ -1439,7 +1487,7 @@ end
   doc: (mod) => do
     xf = Streams.map ((v k) => (
           v
-          k .to\s
+          k .to\string
             .split '\\'
             .to\message,
           k))
@@ -1453,14 +1501,16 @@ end
         name = (k == mod)
           .and mod
           .else(() => do
-            (_, rest*) = k.to\s.split '\\'
+            (_, rest*) = k.to\string.split '\\'
 
             rest
               .join('' Streams.interpose('\\'))
-              .to\message
           end)
+          .to\string
 
-        '## `$`\n```gab\n$\n```\n$'.sprintf(name e h)
+        kind = k.to\spec.spec\type
+
+        '## $\n```gab\n$\n```\n$'.sprintf(name e h)
       end)
       |> Streams.interpose '\n\n'
 
