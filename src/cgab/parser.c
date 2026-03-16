@@ -344,7 +344,7 @@ static int vparser_error(struct gab_triple gab, struct parser *parser,
                              (struct gab_err_argt){
                                  .src = parser->src,
                                  .status = e,
-                                 .tok = parser->offset - 1,
+                                 .tok = parser->offset ? parser->offset - 1 : 0,
                                  .note_fmt = fmt,
                              });
 

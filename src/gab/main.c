@@ -430,11 +430,15 @@ static const size_t ndefault_modules = LEN_CARRAY(default_modules) - 1;
   ".cgab-" GAB_VERSION_TAG "-" GAB_TARGET_TRIPLE GAB_DYNLIB_FILEENDING
 
 static const struct gab_resource native_file_resources[] = {
-    {"mod/", GAB_NATIVE_MODULE_SUFFIX, gab_use_dynlib, file_exister},
     {"", GAB_NATIVE_MODULE_SUFFIX, gab_use_dynlib, file_exister},
-    {"", "mod.gab", gab_use_source, file_exister},
-    {"mod/", ".gab", gab_use_source, file_exister},
+    {"mod/", GAB_NATIVE_MODULE_SUFFIX, gab_use_dynlib, file_exister},
+
+    {"", "/mod.gab", gab_use_source, file_exister},
     {"", ".gab", gab_use_source, file_exister},
+
+    {"mod/", "/mod.gab", gab_use_source, file_exister},
+    {"mod/", ".gab", gab_use_source, file_exister},
+
     {}, // List terminator.
 };
 
@@ -442,11 +446,15 @@ static const size_t nnative_file_resources =
     LEN_CARRAY(native_file_resources) - 1;
 
 static const struct gab_resource native_zip_resources[] = {
-    {"mod/", GAB_NATIVE_MODULE_SUFFIX, gab_use_zip_dynlib, zip_exister},
     {"", GAB_NATIVE_MODULE_SUFFIX, gab_use_zip_dynlib, zip_exister},
-    {"", "mod.gab", gab_use_zip_source, zip_exister},
-    {"mod/", ".gab", gab_use_zip_source, zip_exister},
+    {"mod/", GAB_NATIVE_MODULE_SUFFIX, gab_use_zip_dynlib, zip_exister},
+
+    {"", "/mod.gab", gab_use_zip_source, zip_exister},
     {"", ".gab", gab_use_zip_source, zip_exister},
+
+    {"mod/", "/mod.gab", gab_use_zip_source, zip_exister},
+    {"mod/", ".gab", gab_use_zip_source, zip_exister},
+
     {}, // List terminator.
 };
 
@@ -1081,6 +1089,7 @@ int repl(struct command_arguments *args);
 int help(struct command_arguments *args);
 int welcome(struct command_arguments *args);
 int build(struct command_arguments *args);
+int init(struct command_arguments *args);
 
 #define DEFAULT_COMMAND commands[0]
 
@@ -1113,35 +1122,6 @@ const struct option structured_err_option = {
     's',
     .flag = FLAG_STRUCT_ERR,
 };
-
-bool alias_handler(struct command_arguments *args) {
-  const char *flag = *args->argv;
-  args->argv++;
-  args->argc--;
-
-  if (args->argc <= 0) {
-    clierror("No argument to flag '%s'.\n", flag);
-    return false;
-  }
-
-  const char *alias = *args->argv;
-  args->argv++;
-  args->argc--;
-
-  char *colon = strchr(alias, ':');
-
-  if (!alias) {
-    clierror("%s contains no alias.", alias);
-    return false;
-  }
-
-  *colon = '\0';
-
-  v_s_char_push(&args->package_aliases, s_char_cstr(alias));
-  v_s_char_push(&args->package_aliases, s_char_cstr(colon + 1));
-
-  return true;
-}
 
 bool target_handler(struct command_arguments *args) {
   const char *flag = *args->argv;
@@ -1372,6 +1352,17 @@ static struct command commands[] = {
             },
         },
     },
+    // TODO @cli: Determine if this is how we want packages to work.
+    // {
+    //     "init",
+    //     "Initialize a package and/or module within a project.",
+    //     "",
+    //     .example =
+    //         {
+    //             "gab init",
+    //         },
+    //     .handler = init,
+    // },
     {
         "build",
         "Build a standalone executable for the module <arg>.",
@@ -1409,13 +1400,6 @@ static struct command commands[] = {
             modules_option,
             step_verbose_option,
             target_option,
-            {
-                "alias",
-                "Set an alias for a package when building. Useful for aliasing "
-                "the local package '.' as a remote package.",
-                'a',
-                .handler_f = alias_handler,
-            },
         },
     },
     {
@@ -2135,7 +2119,7 @@ int build_exe(struct command_arguments *args, const char *module) {
   v_char_push(&platform_dynlib_suffix, '\0');
 
   // Replace the native DYNLIBFILEENDING witht the platform-specific one.
-  // This is kinda manual and bug prone if we change resources.
+  // TODO @cli @bug: This is kinda manual and bug prone if we change resources.
   platform_file_resources[0].suffix = platform_dynlib_suffix.data;
   platform_file_resources[1].suffix = platform_dynlib_suffix.data;
 
@@ -2325,6 +2309,84 @@ int build_lib(struct command_arguments *args) {
 
   return 0;
 };
+
+int touch(const char *path) {
+  FILE *f = fopen(path, "w");
+
+  if (f)
+    fclose(f);
+
+  return f != nullptr;
+}
+
+int init(struct command_arguments *args) {
+  const char *package = nullptr, *module = nullptr;
+
+  if (args->argc) {
+    package = args->argv[0];
+    args->argv++;
+    args->argc--;
+
+    char *colon = strchr(package, ':');
+    if (colon) {
+      *colon = '\0';
+      module = colon + 1;
+    }
+  }
+
+  if (args->argc) {
+    if (module)
+      return clierror("Module already specified: %s\n", module), 1;
+
+    module = args->argv[0];
+    args->argv++;
+    args->argc--;
+  }
+
+  if (!package) {
+    return clierror("No package specified\n"), 1;
+  }
+
+  // We may not have a module at this point.
+  // In that case, just initialize the package.
+  if (!module) {
+    v_char path = {0};
+    v_char_spush(&path, s_char_cstr(package));
+    v_char_spush(&path, s_char_cstr("/mod/"));
+
+    v_char_push(&path, '\0');
+    gab_osmkdirp(path.data);
+
+    v_char_pop(&path);
+    v_char_spush(&path, s_char_cstr("/mod.gab"));
+
+    if (!touch(path.data))
+      return clierror("Failed to create file %s.", path.data), 1;
+
+    clisuccess("Created package %s.", package);
+    return 0;
+  }
+
+  v_char path = {0};
+  v_char_spush(&path, s_char_cstr(package));
+  v_char_spush(&path, s_char_cstr("/mod/"));
+  v_char_spush(&path, s_char_cstr(module));
+
+  v_char_push(&path, '\0');
+  gab_osmkdirp(path.data);
+
+  v_char_pop(&path);
+
+  v_char_spush(&path, s_char_cstr("/mod.gab"));
+  v_char_push(&path, '\0');
+
+  if (!touch(path.data))
+    return clierror("Failed to create file %s.", path.data), 1;
+
+  clisuccess("Created package %s.", package);
+  clisuccess("Created module %s.", module);
+  return 0;
+}
 
 int build(struct command_arguments *args) {
   // If we detect that our stdin isn't a terminal (ie its a pipe or a file)
