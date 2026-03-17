@@ -1700,23 +1700,21 @@ gab_value gab_fiber(struct gab_triple gab, struct gab_fiber_argt args) {
   self->data[0] = args.message;
   self->data[1] = args.receiver;
 
-  // self->vm.sb = self->vm.stk;
-  self->vm.fp = self->vm.sb + 3;
-  self->vm.sp = self->vm.sb + 3;
   self->flags = gab.flags | args.flags;
 
+  self->vm.sp = self->vm.sb;
+
+  self->vm.sp += 3; // Return frame data
+  self->vm.fp = self->vm.sp; // Frame pointer
+
   // Setup main and args
-  *self->vm.sp++ = 0; // A Below-Have
-  *self->vm.sp++ = args.receiver;
+  *self->vm.sp++ = args.receiver; // self
   for (uint8_t i = 0; i < args.argc; i++)
-    *self->vm.sp++ = args.argv[i];
+    *self->vm.sp++ = args.argv[i]; // i'th argument
 
-  *self->vm.sp = args.argc + 1;
-
-  // Setup the return frame
-  self->vm.fp[-1] = 0;
-  self->vm.fp[-2] = 0;
-  self->vm.fp[-3] = 0;
+  *self->vm.sp = args.argc + 1; // have
+  
+  assert(*self->vm.sb == 0);
 
   self->vm.ip = nullptr;
   self->res_env = gab_cinvalid;

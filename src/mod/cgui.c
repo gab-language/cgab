@@ -585,12 +585,13 @@ union gab_value_pair render_rect(struct gab_triple gab, struct gui *gui,
  * TODO @cgab @api: Allow user to pin fibers to a certain thread.
  * This is required for some OS apis which have to run on the main thread.
  *
- * TODO @cgab @api: Allow arguments to be passed to use:, and therefore to GAB_DYNLIB_MAIN_FN
- *  This would allow 'ui'.use gui: or 'ui'.use tui:, which would let us know at
- *  load time which implementation to instantiate
+ * TODO @cgab @api: Allow arguments to be passed to use:, and therefore to
+ * GAB_DYNLIB_MAIN_FN This would allow 'ui'.use gui: or 'ui'.use tui:, which
+ * would let us know at load time which implementation to instantiate
  *
- * TODO @cgab @api: Also - I want all the numbers that are "pixels" to translate to "cells" in
- * the TUI api.  This means we need to wrap them up with some conversions.
+ * TODO @cgab @api: Also - I want all the numbers that are "pixels" to translate
+ * to "cells" in the TUI api.  This means we need to wrap them up with some
+ * conversions.
  */
 [[nodiscard]]
 union gab_value_pair render_image(struct gab_triple gab, struct gui *gui,
@@ -869,8 +870,13 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
       size_t len = gab_fibsize(gab_thisfiber(gab)) / sizeof(gab_value);
       // Get the ptr
       gab_value *ev = gab_fibat(gab_thisfiber(gab), 0);
+
+      // If we're already putting, and we match this event, then yield.
+      if (reentrant && gab_chnmatches(gui->evch, ev))
+        goto yield;
+
       // Try the put
-      gab_value res = gab_ntchnput(gab, gui->evch, len, ev, 1000);
+      gab_value res = gab_untchnput(gab, gui->evch, len, ev, 1000);
 
       // Check for error and timeout
       if (res == gab_cundefined)

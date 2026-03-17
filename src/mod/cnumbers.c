@@ -160,27 +160,27 @@ GAB_DYNLIB_MAIN_FN {
   gab_def(gab,
           {
               gab_message(gab, "t"),
-              gab_strtomsg(t),
+              mod,
               t,
           },
           {
               gab_message(gab, "Infinity"),
-              gab_strtomsg(t),
+              mod,
               gab_number(INFINITY),
           },
           {
               gab_message(gab, "Pi"),
-              gab_strtomsg(t),
+              mod,
               gab_number(M_PI),
           },
           {
               gab_message(gab, "E"),
-              gab_strtomsg(t),
+              mod,
               gab_number(M_E),
           },
           {
               gab_message(gab, "MaxInt"),
-              gab_strtomsg(t),
+              mod,
               gab_number(GAB_INTMAX),
           },
           GAB_DEF_SINGLE_ARG_MATH_FN(ceil), GAB_DEF_SINGLE_ARG_MATH_FN(floor),
@@ -188,7 +188,16 @@ GAB_DYNLIB_MAIN_FN {
           GAB_DEF_SINGLE_ARG_MATH_FN(asin), GAB_DEF_SINGLE_ARG_MATH_FN(atan),
           GAB_DEF_SINGLE_ARG_MATH_FN(cos), GAB_DEF_SINGLE_ARG_MATH_FN(sin),
           GAB_DEF_SINGLE_ARG_MATH_FN(tan), GAB_DEF_SINGLE_ARG_MATH_FN(abs),
-          GAB_DEF_SINGLE_ARG_MATH_FN(isnan), GAB_DEF_SINGLE_ARG_MATH_FN(isinf),
+          {
+              gab_message(gab, "is\\nan"),
+              t,
+              gab_snative(gab, "is\\nan", gab_mod_number_isnan),
+          },
+          {
+              gab_message(gab, "is\\inf"),
+              t,
+              gab_snative(gab, "is\\inf", gab_mod_number_isinf),
+          },
           {
               gab_message(gab, "float\\between"),
               mod,

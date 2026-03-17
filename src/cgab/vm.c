@@ -5,21 +5,21 @@
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy
  *  of this software and associated documentation files (the "Software"), to
- * deal in the Software without restriction, including without limitation the
- * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
- * sell copies of the Software, and to permit persons to whom the Software is
+ *  deal in the Software without restriction, including without limitation the
+ *  rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+ *  sell copies of the Software, and to permit persons to whom the Software is
  *  furnished to do so, subject to the following conditions:
  *
  *  The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
+ *  all copies or substantial portions of the Software.
  *
  *  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  *  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  *  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
  *  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
  *  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
- * IN THE SOFTWARE.
+ *  FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+ *  IN THE SOFTWARE.
  */
 
 /**
@@ -98,6 +98,14 @@
 #include "engine.h"
 #include "gab.h"
 
+/*
+ * In x86, the maximum number of ponter arguments that are passed
+ * in registers is 6.
+ *
+ * On arm, it is 8.
+ *
+ * we *cannot* go above this limit and pass args on the stack here.
+ */
 #define OP_HANDLER_ARGS                                                        \
   struct gab_triple *__gab, struct gab_vm *__vm, uint8_t *__ip,                \
       gab_value *__kb, gab_value *__fb, gab_value *__sp
@@ -195,8 +203,8 @@ static const char *gab_opcode_names[] = {
 #define RESET_BUMP() (FIBER()->allocator.len = 0)
 #define GC() (GAB().eg->gc)
 #define VM() (__vm)
-#define SET_BLOCK(b) (FB()[-3] = (uintptr_t)(b));
-#define BLOCK() ((struct gab_oblock *)(uintptr_t)FB()[-3])
+#define SET_BLOCK(b) (FB()[-FRAME_BK] = (uintptr_t)(b));
+#define BLOCK() ((struct gab_oblock *)(uintptr_t)FB()[-FRAME_BK])
 #define BLOCK_PROTO() (GAB_VAL_TO_PROTOTYPE(BLOCK()->p))
 #define IP() (__ip)
 #define SP() (__sp)
@@ -366,9 +374,6 @@ static const char *gab_opcode_names[] = {
     NEXT();                                                                    \
   }
 
-// FIXME: This doesn't work
-// These boolean sends don't work because there is no longer a boolean type.
-// There are just sigils
 #define IMPL_SEND_UNARY_BOOLEAN(CODE, value_type, operation_type, operation)   \
   CASE_CODE(SEND_##CODE) {                                                     \
     gab_value *ks = READ_SENDCONSTANTS;                                        \
@@ -492,13 +497,59 @@ uint64_t encode_fb(struct gab_vm *vm, gab_value *fb, uint64_t have) {
   return offset << 32 | have;
 }
 
+// The *below_have* is 64 bits of space. It already exists on stack when
+// The send is *sent*. Is there a way to convert this value into
+// a stack frame? Can we jam everything we need into 64 bits?
+//
+// Store:
+// - Return frame base
+// - Return ip
+// - Return block
+// - Return have
+//
+// - Return frame base can be 8 bits of delta, from new fb to old.
+// - Return ip is a pointer, which is 48 bits of data.
+// - Return block is also a pointer, which is 48 bits of data.
+// - Return have should really be 32, but we can make it 8
+//
+// - A send is always followed by a trim or a pack, so storing anything further
+// - up on the stack doesn't really work either.
+// - Maybe I can store the block @ the IP somehow?
+//
+// - If I am returning from a frame, I am returning to an IP which should have
+// - send with a block in ks[GAB_SEND_KSPEC].
+// - Problem - without knowing what the block is, we can't actually know *where*
+// - the ks are. So its a chicken and egg situation.
+//
+// - Also, that returning send block in ks[GAB_SEND_KSPEC] is also the frame
+// that
+// - *is returning*, not the frame *to return to*.
+//
+// It also isn't known at compile time how big a stack frame can get, so
+// putting it underneath is really the only option.
+//
+// A FB() Delta is stored in the same machine word as the below have. This
+// saves 8 bytes of space on the stack.
+//
+// The upper 4 bytes are the frame delta, and the lower 4 bytes are the have.
+
+#define FRAME_SIZE 2
+#define FRAME_IP 1
+#define FRAME_BK 2
+
 #define PUSH_FRAME(b, have)                                                    \
   ({                                                                           \
-    memmove(SP() - have + 3, SP() - have, have * sizeof(gab_value));           \
-    SP() += 3;                                                                 \
-    SP()[-(int64_t)have - 1] = (uintptr_t)FB();                                \
-    SP()[-(int64_t)have - 2] = (uintptr_t)IP();                                \
-    SP()[-(int64_t)have - 3] = (uintptr_t)b;                                   \
+    assert(have < UINT32_MAX);                                                 \
+    int64_t delta = (SP() - have + FRAME_SIZE) - FB();                         \
+    assert((SP() - have + FRAME_SIZE) > FB());                                 \
+    assert(delta > 0);                                                         \
+    assert(delta < UINT32_MAX);                                                \
+    SP()[-(int64_t)(have + 1)] |= ((uint64_t)delta << 32);                     \
+    memmove(SP() - have + FRAME_SIZE, SP() - have, have * sizeof(gab_value));  \
+    SP() += FRAME_SIZE;                                                        \
+    SP()[-(int64_t)have - FRAME_IP] = (uintptr_t)IP();                         \
+    SP()[-(int64_t)have - FRAME_BK] = (uintptr_t)b;                            \
+    assert(*GAB_VAL_TO_FIBER(gab_thisfiber(GAB()))->vm.sb == 0);               \
   })
 
 #define PUSH_VM_PANIC_FRAME(have) ({})
@@ -509,14 +560,19 @@ uint64_t encode_fb(struct gab_vm *vm, gab_value *fb, uint64_t have) {
     PUSH_VM_PANIC_FRAME(have);                                                 \
   })
 
-#define RETURN_FB() ((gab_value *)(void *)FB()[-1])
-#define RETURN_IP() ((uint8_t *)(void *)FB()[-2])
+#define RETURN_FB_DELTA() (FB()[-(FRAME_SIZE + 1)] >> 32)
+#define RETURN_FB() ((FB() - RETURN_FB_DELTA()))
+
+#define RETURN_IP() ((uint8_t *)(void *)FB()[-FRAME_IP])
+#define RETURN_BK() ((struct gab_oblock *)(void *)FB()[-FRAME_BK])
+#define RETURN_HAVE() (FB()[-(FRAME_SIZE + 1)] & 0xffffffff)
 
 #define LOAD_FRAME()                                                           \
   ({                                                                           \
     IP() = RETURN_IP();                                                        \
     FB() = RETURN_FB();                                                        \
     KB() = proto_ks(GAB(), BLOCK_PROTO());                                     \
+    assert(*GAB_VAL_TO_FIBER(gab_thisfiber(GAB()))->vm.sb == 0);               \
   })
 
 #define SEND_CACHE_DIST 3
@@ -536,13 +592,16 @@ static inline uint8_t *proto_ip(struct gab_triple gab,
   return proto_srcbegin(gab, p) + p->offset;
 }
 
-static inline gab_value *frame_parent(gab_value *f) { return (void *)f[-1]; }
-
-static inline struct gab_oblock *frame_block(gab_value *f) {
-  return (void *)f[-3];
+static inline gab_value *frame_parent(gab_value *f) {
+  int64_t delta = f[-(FRAME_SIZE + 1)] >> 32;
+  return delta ? f - delta : nullptr;
 }
 
-static inline uint8_t *frame_ip(gab_value *f) { return (void *)f[-2]; }
+static inline struct gab_oblock *frame_block(gab_value *f) {
+  return (void *)f[-FRAME_BK];
+}
+
+static inline uint8_t *frame_ip(gab_value *f) { return (void *)f[-FRAME_IP]; }
 
 static inline uint64_t compute_token_from_ip(struct gab_triple gab,
                                              struct gab_oblock *b,
@@ -1106,7 +1165,7 @@ uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc, gab_value argv[argc]) {
     NEXT();                                                                    \
   })
 
-#define CALL_NATIVE(native, have, below_have, message, dyn)                    \
+#define CALL_NATIVE(native, have, below_have, message)                         \
   ({                                                                           \
     STORE();                                                                   \
                                                                                \
@@ -1114,12 +1173,14 @@ uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc, gab_value argv[argc]) {
                                                                                \
     gab_value *returnptr = RETURN_FB();                                        \
                                                                                \
-    gab_value *to = SP() - (have + 1);                                         \
-    assert(to >= FB());                                                        \
+    gab_value *to = SP() - (have + message);                                         \
+    gab_assert(to >= FB(),                                                     \
+               "EXPECTED DEST TO BE GREATER THAN FRAME BASE. DIST: %li\n",     \
+               to - FB());                                                     \
                                                                                \
     gab_value *before = SP();                                                  \
                                                                                \
-    uint64_t pass = (message ? have - dyn : have - 1);                         \
+    uint64_t pass = (have - !message);                               \
                                                                                \
     union gab_value_pair res =                                                 \
         (*native->function)(GAB(), pass, SP() - pass, REENTRANT());            \
@@ -1227,6 +1288,7 @@ union gab_value_pair do_vmexecfiber(struct gab_triple gab, gab_value f) {
 
   assert(fiber->header.kind != kGAB_FIBERDONE);
 
+  assert(*fiber->vm.sb == 0);
   assert(fiber->vm.kb);
   assert(fiber->vm.ip);
 
@@ -1563,7 +1625,7 @@ CASE_CODE(SEND_NATIVE) {
 
   struct gab_onative *n = GAB_VAL_TO_NATIVE(ks[GAB_SEND_KSPEC]);
 
-  CALL_NATIVE(n, have, below_have, true, false);
+  CALL_NATIVE(n, have, below_have, true);
 }
 
 CASE_CODE(SEND_BLOCK) {
@@ -1684,7 +1746,7 @@ CASE_CODE(SEND_PRIMITIVE_CALL_NATIVE) {
 
   struct gab_onative *n = GAB_VAL_TO_NATIVE(r);
 
-  CALL_NATIVE(n, have, below_have, false, false);
+  CALL_NATIVE(n, have, below_have, false);
 }
 
 IMPL_SEND_BINARY_NUMERIC(PRIMITIVE_ADD, gab_number, gab_float, gab_valtof, +);
@@ -2035,16 +2097,21 @@ CASE_CODE(SEND_PROPERTY) {
 
 CASE_CODE(RETURN) {
   uint64_t have = COMPUTE_TUPLE();
-  uint64_t below_have = FB()[-4];
+  uint64_t below_have = RETURN_HAVE();
+  uint64_t *sb = GAB_VAL_TO_FIBER(gab_thisfiber(GAB()))->vm.sb;
+  assert(FB() - (FRAME_SIZE + 1) >= sb);
+  gab_assert(*sb == 0, "The stack base should always be 0, not %lb.", *sb);
 
   // Maybe we would need to trim have up to at least one here?
 
   gab_value *from = SP() - have;
-  gab_value *to = FB() - 4;
+  gab_value *to = FB() - (FRAME_SIZE + 1);
   // The target 'to' ptr should be the len of our consing tuple (below_have)
-  assert(*to == below_have);
+  gab_assert((*to & 0xffffffff) == below_have, "TO: %lu, BELOW HAVE: %lu\n",
+             *to, below_have);
 
-  if (__gab_unlikely(RETURN_FB() == nullptr))
+  // If there is no delta, then we are done.
+  if (__gab_unlikely(RETURN_FB_DELTA() == 0))
     return STORE(), SET_VAR(have), vm_ok(DISPATCH_ARGS());
 
   assert(RETURN_IP() != nullptr);
@@ -2054,7 +2121,7 @@ CASE_CODE(RETURN) {
   SP() = to + have;
   SET_VAR(have + below_have);
 
-  assert(FB() >= VM()->sb + 3);
+  assert(FB() >= VM()->sb + FRAME_SIZE);
   assert(BLOCK()->header.kind == kGAB_BLOCK);
   assert(BLOCK_PROTO()->header.kind == kGAB_PROTOTYPE);
 
