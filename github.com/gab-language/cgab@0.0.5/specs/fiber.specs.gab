@@ -1,0 +1,37 @@
+s = 'github.com/gab-language/cgab@0.0.5'.use 'Specs'
+
+fiber\spec = fiber: .defspec {
+  help:
+  "
+  Fibers execute gab code.
+  "
+  spec: s.fiber
+}
+
+fiber\await: .defspec {
+  help:
+  "
+  Blocks the running fiber while self is not done.
+
+  Returns the result of self.
+  "
+  spec: s.message {
+    receiver: fiber\spec
+    message:  await:
+    input:    s.cat
+    output:   s.cat(s*s.unknown)
+  }
+}
+
+fiber\is\done: .defspec {
+  help:
+  "
+  Returns `true:` if self has completed execution.
+  "
+  spec: s.message {
+    receiver: fiber\spec
+    message:  is\done:
+    input:    s.cat
+    output:   s.boolean
+  }
+}
