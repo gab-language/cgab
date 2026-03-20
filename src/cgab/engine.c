@@ -782,6 +782,8 @@ bool gab_jbcreate(struct gab_triple gab, struct gab_job *job, int(fn)(void *),
   v_gab_value_create(&job->lock_keep, 8);
   q_gab_value_create(&job->queue, 32);
 
+  gab_jtcreate(&job->jt);
+
   job->work_channel = gab_channel(gab);
   gab_iref(gab, job->work_channel);
   gab_egkeep(gab.eg, job->work_channel);

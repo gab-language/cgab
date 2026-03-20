@@ -2518,7 +2518,6 @@ int gab_fmodinspect(FILE *stream, gab_value module) {
 
   uint64_t end = proto->offset + proto->len;
 
-  printf("     ");
   gab_fvalinspect(stream, proto->src->name, 0);
   printf("\n");
 

@@ -14,11 +14,11 @@ static const char *ANSI_COLORS[] = {
 
 #define GAB_COLORS_LEN (sizeof(ANSI_COLORS) / sizeof(ANSI_COLORS[0]))
 
-typedef enum gab_opcode {
+enum gab_bcop_kind {
 #define OP_CODE(name) OP_##name,
 #include "bytecode.h"
 #undef OP_CODE
-} gab_opcode;
+};
 
 /**
  * Structure used to actually execute bytecode
@@ -30,6 +30,8 @@ typedef enum gab_opcode {
  * It might be a nice optimization to store a small number of frames
  * on the fiber itself, and then migrate the stack to a larger
  * one if this small stack overflows.
+ *
+ * TODO @cgab @runtime: Optimize fibers to begin with a small internal stack.
  * */
 struct gab_vm {
   uint8_t *ip;
@@ -57,8 +59,8 @@ struct gab_obj {
   /**
    * @brief Flags used by garbage collection and for debug information.
    *
-   * These *don't* have to be atomic, even though theoretically they are consumed
-   * by the worker *and* gc threads.
+   * These *don't* have to be atomic, even though theoretically they are
+   * consumed by the worker *and* gc threads.
    *
    * This because the worker threads only touch this field on object *creation*,
    * before the GC knows that the object exists. From that point on though,
@@ -69,7 +71,8 @@ struct gab_obj {
    * @brief a flag denoting the kind of object referenced by this pointer -
    * defines how to interpret the remaining bytes of this allocation.
    *
-   * Some objects do modify this field - Fibers notably change their running/done state here.
+   * Some objects do modify this field - Fibers notably change their
+   * running/done state here.
    */
   uint8_t kind;
 };
@@ -151,8 +154,9 @@ struct gab_onative {
  *
  *   Maybe I can introduce *shortcut edges* somehow?
  *
- *   Most code doesn't traverse down the whole tree, it puts from one shape to another.
- *   That does still require traversing up the tree and copying nodes in O(n)
+ *   Most code doesn't traverse down the whole tree, it puts from one shape to
+ * another. That does still require traversing up the tree and copying nodes in
+ * O(n)
  *
  *   gab_value data[]
  *
@@ -509,6 +513,129 @@ static inline void gab_srccomplete(struct gab_triple gab,
 
 void gab_srcdestroy(struct gab_src *self);
 
+// Max locals per prototype - from gab_prototype_argt nslots field
+#define GAB_JIT_MAX_LOCALS 255
+
+enum gab_irtype_kind {
+  kGAB_IRTYPE_STRING = kGAB_STRING,
+  kGAB_IRTYPE_BINARY = kGAB_BINARY,
+  kGAB_IRTYPE_MESSAGE = kGAB_MESSAGE,
+  kGAB_IRTYPE_PRIMITIVE = kGAB_PRIMITIVE,
+  kGAB_IRTYPE_NUMBER = kGAB_NUMBER,
+  kGAB_IRTYPE_NATIVE = kGAB_NATIVE,
+  kGAB_IRTYPE_PROTOTYPE = kGAB_PROTOTYPE,
+  kGAB_IRTYPE_BLOCK = kGAB_BLOCK,
+  kGAB_IRTYPE_BOX = kGAB_BOX,
+  kGAB_IRTYPE_RECORD = kGAB_RECORD,
+  kGAB_IRTYPE_RECORDNODE = kGAB_RECORDNODE,
+  kGAB_IRTYPE_SHAPE = kGAB_SHAPE,
+  kGAB_IRTYPE_SHAPELIST = kGAB_SHAPELIST,
+  kGAB_IRTYPE_FIBER = kGAB_FIBER,
+  kGAB_IRTYPE_FIBERDONE = kGAB_FIBERDONE,
+  kGAB_IRTYPE_FIBERRUNNING = kGAB_FIBERRUNNING,
+  kGAB_IRTYPE_CHANNEL = kGAB_CHANNEL,
+  kGAB_IRTYPE_CHANNELCLOSED = kGAB_CHANNELCLOSED,
+  kGAB_IRTYPE_UNKNOWN,
+  kGAB_IRTYPE_MESSAGE_BOOL,
+  kGAB_IRTYPE_UNBOXF,
+  kGAB_IRTYPE_UNBOXI,
+  kGAB_IRTYPE_UNBOXU,
+  kGAB_IRTYPE_UNBOXB,
+  kGAB_IRTYPE_UNBOXS,
+};
+
+struct gab_type_state {
+  // The canonical gab_type for the local values.
+  enum gab_irtype_kind slots[GAB_JIT_MAX_LOCALS];
+  uint8_t nlocals, nupvalues;
+};
+
+struct gab_jtbb {
+  // Identity
+  struct gab_jtbbid {
+    struct gab_oprototype *proto; // the prototype this block belongs to
+    uint16_t block_offset;        // bytecode offset of first instruction
+    struct gab_type_state
+        entry_state; // the type state this version was compiled for
+  } id;
+
+  // Generated code
+  void *native_code; // pointer into executable code buffer
+  uint32_t code_size;
+
+  // Lazily-computed result block.
+  struct gab_blkver *successor;
+
+  // For version chaining: multiple versions of same (proto, offset)
+  struct gab_blkver *next_version;
+};
+
+static inline uint64_t hash_id(struct gab_jtbbid *id) {
+  return (uintptr_t)id->proto;
+}
+
+static inline bool eq_id(struct gab_jtbbid *a, struct gab_jtbbid *b) {
+  assert(a->proto->header.kind == kGAB_PROTOTYPE);
+  assert(b->proto->header.kind == kGAB_PROTOTYPE);
+
+  if (a->proto != b->proto)
+    return false;
+
+  if (a->block_offset != b->block_offset)
+    return false;
+
+  if (a->entry_state.nlocals != b->entry_state.nlocals)
+    return false;
+  if (a->entry_state.nupvalues != b->entry_state.nupvalues)
+    return false;
+
+  for (int i = 0; i < a->entry_state.nlocals; i++) {
+    if (a->entry_state.slots[i] == kGAB_IRTYPE_UNKNOWN)
+      continue;
+    if (b->entry_state.slots[i] == kGAB_IRTYPE_UNKNOWN)
+      continue;
+    if (!gab_valeq(a->entry_state.slots[i], b->entry_state.slots[i]))
+      return false;
+  }
+
+  for (int i = 0; i < a->entry_state.nupvalues; i++) {
+    uint8_t slot = a->entry_state.nlocals + i;
+
+    if (a->entry_state.slots[slot] == kGAB_IRTYPE_UNKNOWN)
+      continue;
+    if (b->entry_state.slots[slot] == kGAB_IRTYPE_UNKNOWN)
+      continue;
+    if (!gab_valeq(a->entry_state.slots[slot], b->entry_state.slots[slot]))
+      return false;
+  }
+
+  return true;
+}
+
+#define K struct gab_jtbbid *
+#define V struct gab_jtbb *
+#define NAME bb
+#define HASH(k) (hash_id(k))
+#define EQUAL(a, b) (eq_id(a, b))
+#define DEF_V (nullptr)
+#include "dict.h"
+
+#define HOTCOUNT_SIZE 4096
+#define HOTCOUNT_MASK (HOTCOUNT_SIZE - 1)
+
+#define HOTCOUNT_WARMUP 128
+
+struct gab_jt {
+  d_bb blocks;
+
+  // Executable code buffer (mmap'd, PROT_READ|PROT_EXEC after fill)
+  // uint8_t *code_buf;
+  // uint32_t code_buf_len;
+  // uint32_t code_buf_cap;
+
+  uint8_t hotcount[HOTCOUNT_SIZE];
+};
+
 /**
  * @class The 'engine'. Stores the long-lived data
  * needed for the gab environment.
@@ -568,11 +695,57 @@ struct gab_eg {
     gab_value work_channel;
     q_gab_value queue;
 
+    struct gab_jt jt;
+
     struct gab_gcbuf {
       uint64_t len;
       struct gab_obj *data[cGAB_GC_MOD_BUFF_MAX];
     } buffers[kGAB_NBUF][GAB_GCNEPOCHS];
   } jobs[];
+};
+
+enum gab_irop_kind : uint8_t {
+
+#define IR_CODE(name) kGAB_IR_##name,
+
+#include "ir.h"
+
+#undef IR_CODE
+
+};
+
+union gab_jtir {
+  struct {
+    enum gab_irop_kind kind;
+    uint8_t type;
+    union {
+      struct {
+        uint16_t a, b;
+      };
+      uint16_t args[2];
+    };
+  } op;
+  gab_value value;
+  uint64_t bits;
+};
+
+#define IR_SIZE 2048
+#define IR_BIAS (IR_SIZE >> 1)
+
+#define IR_KBIAS (0)
+#define IR_VBIAS (IR_KBIAS + IR_BIAS)
+#define IR_OBIAS (IR_VBIAS + IR_BIAS)
+
+struct ir {
+  union gab_jtir ir[IR_SIZE];
+  uint32_t ks, os;
+
+  // Maps: local index → current SSA ref (updated during block walk)
+  uint16_t local_map[GAB_JIT_MAX_LOCALS];
+
+  // Virtual stack
+  uint16_t sb[IR_SIZE];
+  uint16_t *sp;
 };
 
 union gab_value_pair gab_vmexec(struct gab_triple gab, gab_value fiber);
@@ -714,8 +887,32 @@ static inline int gsnprintf_through(char **dst, size_t *n, const char *fmt,
 bool gab_wkspawn(struct gab_triple gab, gab_value fiber);
 
 void gab_jbalive(struct gab_triple gab, int32_t wkid);
+
 void gab_jbunalive(struct gab_triple gab, int32_t wkid);
 
 gab_value __gab_shape(struct gab_triple gab, uint64_t len);
+
+static inline uint8_t *proto_srcbegin(struct gab_triple gab,
+                                      struct gab_oprototype *p) {
+  return p->src->thread_bytecode[gab.wkid].bytecode;
+}
+
+static inline gab_value *proto_ks(struct gab_triple gab,
+                                  struct gab_oprototype *p) {
+  return p->src->thread_bytecode[gab.wkid].constants;
+}
+
+static inline uint8_t *proto_ip(struct gab_triple gab,
+                                struct gab_oprototype *p) {
+  return proto_srcbegin(gab, p) + p->offset;
+}
+
+bool gab_jttry(struct gab_triple gab, struct gab_jt *jt,
+               struct gab_oprototype *proto, uint8_t *ip, gab_value *loc,
+               gab_value *upv);
+
+bool gab_jttick(struct gab_triple gab, struct gab_jt *jt, uint8_t *ip);
+
+void gab_jtcreate(struct gab_jt *jt);
 
 #endif
