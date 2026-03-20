@@ -16,6 +16,7 @@ CFLAGS = -std=c23 \
 				 -Wall \
 				 -MMD  \
 				 -mcmodel=medium \
+				 -fomit-frame-pointer \
 				 -DGAB_TARGET_TRIPLE=\"$(GAB_TARGETS)\"\
 				 -DGAB_DYNLIB_FILEENDING=\"$(GAB_DYNLIB_FILEENDING)\" \
 				 -DGAB_BUILDTYPE=\"$(GAB_BUILDTYPE)\"\

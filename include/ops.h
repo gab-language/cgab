@@ -973,7 +973,6 @@ CASE_CODE(TRIM) {
 }
 
 CASE_CODE(PACK_RECORD) {
-  uint64_t have = COMPUTE_TUPLE();
   uint8_t below = READ_BYTE;
   uint8_t above = READ_BYTE;
 
@@ -983,7 +982,6 @@ CASE_CODE(PACK_RECORD) {
 }
 
 CASE_CODE(PACK_LIST) {
-  uint64_t have = COMPUTE_TUPLE();
   uint8_t below = READ_BYTE;
   uint8_t above = READ_BYTE;
 
