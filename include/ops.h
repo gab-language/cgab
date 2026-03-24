@@ -706,9 +706,10 @@ CASE_CODE(SEND_PROPERTY) {
   gab_value r = PEEK_N(have);
 
   SEND_GUARD_KIND(r, kGAB_RECORD);
+
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
 
-  PRIMITIVE_PROPERTY_RECORD(r, have, below_have);
+  PRIMITIVE_PROPERTY_RECORD(r, ks[GAB_SEND_KSPEC], have, below_have);
 
   NEXT_CHECKED();
 }

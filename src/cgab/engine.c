@@ -2627,12 +2627,6 @@ property:
   return (struct gab_impl_rest){.messages = messages, .status = kGAB_IMPL_NONE};
 }
 
-GAB_API enum gab_kind gab_valkind(gab_value value) {
-  if (gab_valiso(value))
-    return gab_valtoo(value)->kind + __GAB_VAL_TAG(value);
-
-  return __GAB_VAL_TAG(value);
-}
 
 GAB_API gab_value gab_type(struct gab_triple gab, enum gab_kind k) {
   assert(k < kGAB_NKINDS);

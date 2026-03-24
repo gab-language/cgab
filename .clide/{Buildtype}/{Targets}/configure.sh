@@ -54,6 +54,7 @@ function configure_target() {
   echo "#!/usr/bin/env bash" >> "$1.configuration"
   echo "mkdir -p build-$1" >> "$1.configuration"
   echo "mkdir -p build-$1/mod" >> "$1.configuration"
+  echo "mkdir -p build-$1/stencil" >> "$1.configuration"
   echo "export GAB_CCFLAGS=\""$cflags"\"" >> "$1.configuration"
   echo "export GAB_BINARYFLAGS=\""$binflags"\"" >> "$1.configuration"
   echo "export GAB_TARGETS=\""$1"\"" >> "$1.configuration"

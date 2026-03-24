@@ -435,6 +435,42 @@ GAB_API_INLINE gab_uint __gab_valtou(gab_value v) {
 #define GAB_OBJ_IS_FREED(obj) ((obj)->flags & fGAB_OBJ_FREED)
 #define GAB_OBJ_FREED(obj) ((obj)->flags |= fGAB_OBJ_FREED)
 
+/**
+ * @class gab_obj
+ * @brief This struct is the first member of all heap-allocated objects.
+ *
+ * All gab objects inherit (as far as c can do inheritance) from this struct.
+ */
+struct gab_obj {
+  /**
+   * @brief The number of live references to this object.
+   *
+   * If this number is overflowed, gab keeps track  of this object's
+   * references in a separate, slower rec<gab_obj, uint64_t>. When the
+   * reference count drops back under 255, rc returns to the fast path.
+   */
+  uint8_t references;
+  /**
+   * @brief Flags used by garbage collection and for debug information.
+   *
+   * These *don't* have to be atomic, even though theoretically they are
+   * consumed by the worker *and* gc threads.
+   *
+   * This because the worker threads only touch this field on object *creation*,
+   * before the GC knows that the object exists. From that point on though,
+   * this field is owned and modified *exclusively* by the GC thread.
+   */
+  uint8_t flags;
+  /**
+   * @brief a flag denoting the kind of object referenced by this pointer -
+   * defines how to interpret the remaining bytes of this allocation.
+   *
+   * Some objects do modify this field - Fibers notably change their
+   * running/done state here.
+   */
+  uint8_t kind;
+};
+
 /*
  * Datastructure definitions.
  *
@@ -1693,7 +1729,12 @@ GAB_API uint64_t gab_tsrcline(struct gab_src *src, uint64_t token_offset);
  * @param value The value.
  * @return The kind of the value.
  */
-GAB_API enum gab_kind gab_valkind(gab_value value);
+GAB_API_INLINE enum gab_kind gab_valkind(gab_value value) {
+  if (gab_valiso(value))
+    return gab_valtoo(value)->kind + __GAB_VAL_TAG(value);
+
+  return __GAB_VAL_TAG(value);
+}
 
 GAB_API_INLINE bool gab_valisshp(gab_value value) {
   enum gab_kind k = gab_valkind(value);

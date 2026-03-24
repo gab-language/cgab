@@ -17,6 +17,7 @@ CFLAGS = -std=c23 \
 				 -MMD  \
 				 -mcmodel=medium \
 				 -fomit-frame-pointer \
+				 -ffunction-sections \
 				 -DGAB_TARGET_TRIPLE=\"$(GAB_TARGETS)\"\
 				 -DGAB_DYNLIB_FILEENDING=\"$(GAB_DYNLIB_FILEENDING)\" \
 				 -DGAB_BUILDTYPE=\"$(GAB_BUILDTYPE)\"\
@@ -54,6 +55,57 @@ CXXMOD_INCLUDE   =
 CSHARED_FLAGS 	= -shared -undefined dynamic_lookup $(CMOD_LINK_DEPS)
 CXXSHARED_FLAGS = -shared -undefined dynamic_lookup $(CXXMOD_LINK_DEPS) $(CXXMOD_INCLUDE)
 
+CGAB_JIT_MICROOP = \
+									 LOAD_LOCAL \
+									 LOAD_UPVALUE \
+									 STORE_LOCAL \
+									 IADD \
+									 ISUB \
+									 IMUL \
+									 IDIV \
+									 IBOR \
+									 IBND \
+									 ILT \
+									 ILTE \
+									 IGT \
+									 IGTE \
+									 FADD \
+									 FSUB \
+									 FMUL \
+									 FDIV \
+									 FLT \
+									 FLTE \
+									 FGT \
+									 FGTE \
+									 STRLT \
+									 STRLTE \
+									 STRGT \
+									 STRGTE \
+									 VCONS \
+									 VCONSRECORD \
+									 VEQ \
+									 STRCONCAT \
+									 BLIN \
+									 IBIN \
+									 UNBOXF \
+									 UNBOXI \
+									 UNBOXU \
+									 TYPE \
+									 BOXN \
+									 BOXB \
+									 PACK_RECORD \
+									 PACK_LIST \
+									 SPLAT_LIST \
+									 SPLAT_RECORD \
+									 GUARD_KIND \
+									 GUARD_TYPE \
+									 GUARD_NILPAD \
+									 GUARD_TRIM_EXACTLY_N \
+									 GUARD_TRIM_UP_N \
+									 GUARD_TRIM_DOWN_N \
+									 CALL_NATIVE \
+									 LOAD_PROPERTY
+
 # Source files in src/cgab are part of libcgab.
 # Their object files are compiled and archived together into libcgab.a
 # There are corresponding *determinstic* versions, prefixed with d.
@@ -67,6 +119,8 @@ CGAB_OBJ = $(CGAB_SRC:src/cgab/%.c=$(BUILD_PREFIX)/%.o)
 GAB_SRC = $(wildcard src/gab/*.c)
 GAB_OBJ = $(GAB_SRC:src/gab/%.c=$(BUILD_PREFIX)/%.o)
 
+CGAB_JIT_MICRO_OP_BYTES = $(CGAB_JIT_MICROOP:%=$(BUILD_PREFIX)/stencil/OP_MICRO_OP_%_HANDLER)
+
 # Source files in src/mod/ are individual c-modules, importable from gab code.
 # They are compiled individually into dynamic libraries, loaded at runtime.
 CMOD_SRC 	 = $(wildcard src/mod/*.c)
@@ -75,7 +129,7 @@ CMOD_SHARED = $(CMOD_SRC:src/mod/%.c=$(BUILD_PREFIX)/mod/%.cgab-$(GAB_VERSION_TA
 CXXMOD_SRC 	 = $(wildcard src/mod/*.cc)
 CXXMOD_SHARED = $(CXXMOD_SRC:src/mod/%.cc=$(BUILD_PREFIX)/mod/%$(GAB_DYNLIB_FILEENDING))
 
-all: amalgamation gab cmodules cxxmodules
+all: stencil gab cmodules cxxmodules $(CGAB_JIT_MICRO_OP_BYTES)
 
 -include $(CGAB_OBJ:.o=.d) $(GAB_OBJ:.o=.d) $(CMOD_SHARED:$(GAB_DYNLIB_FILEENDING)=.d)
 
@@ -86,13 +140,13 @@ all: amalgamation gab cmodules cxxmodules
 $(BUILD_PREFIX)/%.o: $(SRC_PREFIX)/%.c $(VENDOR_PREFIX)/miniz/amalgamation/miniz.c
 	$(TARGETCC) $(CFLAGS) $< -c -o $@
 
+# WOOHOO! Automatically build out stencil files!
+$(BUILD_PREFIX)/stencil/%: $(CGAB_OBJ)
+	llvm-objcopy --dump-section=.text.$(notdir $@)=$@ $(BUILD_PREFIX)/stencil/stencil.o
+
 # This rule builds libcgab by archiving the cgab object files together.
 $(BUILD_PREFIX)/libcgab.a: $(CGAB_OBJ)
 	zig ar rcs $@ $^
-
-# This rule builds a gab.c *amalgamation* style cfile.
-$(BUILD_PREFIX)/gab.c: $(CGAB_SRC) 
-	cat $^ > $@
 
 # This rule builds the gab executable, linking with libcgab.a
 $(BUILD_PREFIX)/gab: $(GAB_OBJ) $(BUILD_PREFIX)/libcgab.a
@@ -192,6 +246,8 @@ $(BUILD_PREFIX)/libbearssl.a:
 # These are some convenience rules for making the cli simpler.
 
 gab: $(BUILD_PREFIX)/gab
+
+stencil: $(BUILD_PREFIX)/stencil/stencil.o
 
 lib: $(BUILD_PREFIX)/libcgab.a
 

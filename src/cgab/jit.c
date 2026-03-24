@@ -751,8 +751,9 @@ static void assemble(struct ir *ir, struct asm *asm) {
 #define PRIMITIVE_SPLATLIST(v)                                                 \
   emito(IR(), kGAB_IR_SPLAT_LIST, kGAB_IRTYPE_UNKNOWN, v, 0)
 
-#define PRIMITIVE_PROPERTY_RECORD(v, have, below_have)                         \
-  emito(IR(), kGAB_IR_LOAD_PROPERTY, 0, v, 0)
+#define PRIMITIVE_PROPERTY_RECORD(v, offset, have, below_have)                 \
+  assert(offset < IR_BIAS);                                                    \
+  emito(IR(), kGAB_IR_LOAD_PROPERTY, 0, v, offset)
 
 #define PRIMITIVE_BLOCK(v)                                                     \
   emito(IR(), kGAB_IR_LOAD_BLOCK, kGAB_IRTYPE_BLOCK, v, 0)
