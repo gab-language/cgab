@@ -2345,7 +2345,7 @@ static uint64_t dumpInstruction(FILE *stream, struct gab_oprototype *self,
   case OP_TUPLE:
   case OP_NOP:
     return dumpSimpleInstruction(stream, self, offset);
-  case OP_PACK_RECORD:
+  case OP_PACK_DICT:
   case OP_PACK_LIST:
     return dumpPackInstruction(stream, self, offset);
   case OP_TUPLE_NCONSTANT:

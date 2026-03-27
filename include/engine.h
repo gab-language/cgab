@@ -688,6 +688,7 @@ union gab_jtir {
       };
       uint16_t args[2];
     };
+    uint16_t slot;
   } op;
   gab_value value;
   uint64_t bits;
@@ -871,12 +872,21 @@ static inline uint8_t *proto_ip(struct gab_triple gab,
   return proto_srcbegin(gab, p) + p->offset;
 }
 
-bool gab_jttry(struct gab_triple gab, struct gab_jt *jt,
-               struct gab_oprototype *proto, uint8_t *ip, gab_value *loc,
-               gab_value *upv);
+struct gab_jtbb *gab_jttry(struct gab_triple gab, struct gab_jt *jt,
+                           struct gab_oprototype *proto, uint8_t *ip,
+                           gab_value *loc, gab_value *upv);
+
+struct gab_jtbb *gab_jtchk(struct gab_triple gab, struct gab_jt *jt,
+                           struct gab_oprototype *proto, uint8_t *ip,
+                           gab_value *loc, gab_value *upv);
 
 bool gab_jttick(struct gab_triple gab, struct gab_jt *jt, uint8_t *ip);
 
 void gab_jtcreate(struct gab_jt *jt);
+
+[[clang::preserve_none]]
+union gab_value_pair gab_jtexit(struct gab_triple *__gab, struct gab_vm *__vm,
+                                uint8_t *__ip, gab_value *__kb, gab_value *__fb,
+                                gab_value *__sp);
 
 #endif

@@ -134,6 +134,21 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
     VM_PANIC(GAB_PANIC, "Expected $ arguments, got $",                         \
              gab_number(gab_shplen(shape)), gab_number(len));
 
+#define PRIMITIVE_JIT_TICK(block, ip, ks)                                      \
+  ({                                                                           \
+    if (gab_jttick(GAB(), &GAB().eg->jobs[GAB().wkid].jt, IP())) {               \
+      struct gab_jtbb *bb =                                                    \
+          gab_jttry(GAB(), &GAB().eg->jobs[GAB().wkid].jt,                     \
+                    GAB_VAL_TO_PROTOTYPE(block->p), IP(), FB(), UPV());          \
+      if (bb && bb->native_code) {                                             \
+        WRITE_BYTE(SEND_CACHE_DIST, OP_SEND_PRIMITIVE_JIT_ENTER);              \
+        ks[GAB_SEND_KSPEC] = (uintptr_t)bb->native_code;                       \
+        IP() = ip - SEND_CACHE_DIST;                                           \
+        NEXT();                                                                \
+      }                                                                        \
+    }                                                                          \
+  })
+
 #define PRIMITIVE_CALL_BLOCK(blk, have)                                        \
   ({                                                                           \
     struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(blk->p);                   \
@@ -147,9 +162,6 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
     FB() = SP() - have;                                                        \
                                                                                \
     SET_VAR(have);                                                             \
-                                                                               \
-    if (gab_jttick(GAB(), &GAB().eg->jobs[GAB().wkid].jt, IP()))               \
-      gab_jttry(GAB(), &GAB().eg->jobs[GAB().wkid].jt, p, IP(), FB(), UPV());  \
   })
 
 #define PRIMITIVE_LOCALCALL_BLOCK(blk, have)                                   \
@@ -164,9 +176,6 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
     FB() = SP() - have;                                                        \
                                                                                \
     SET_VAR(have);                                                             \
-                                                                               \
-    if (gab_jttick(GAB(), &GAB().eg->jobs[GAB().wkid].jt, IP()))               \
-      gab_jttry(GAB(), &GAB().eg->jobs[GAB().wkid].jt, p, IP(), FB(), UPV());  \
   })
 
 #define PRIMITIVE_TAILCALL_BLOCK(blk, have)                                    \
@@ -186,9 +195,6 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
                                                                                \
     SET_BLOCK(blk);                                                            \
     SET_VAR(have);                                                             \
-                                                                               \
-    if (gab_jttick(GAB(), &GAB().eg->jobs[GAB().wkid].jt, IP()))               \
-      gab_jttry(GAB(), &GAB().eg->jobs[GAB().wkid].jt, p, IP(), FB(), UPV());  \
   })
 
 #define PRIMITIVE_LOCALTAILCALL_BLOCK(blk, have)                               \
@@ -207,9 +213,6 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
                                                                                \
     SET_BLOCK(blk);                                                            \
     SET_VAR(have);                                                             \
-                                                                               \
-    if (gab_jttick(GAB(), &GAB().eg->jobs[GAB().wkid].jt, IP()))               \
-      gab_jttry(GAB(), &GAB().eg->jobs[GAB().wkid].jt, p, IP(), FB(), UPV());  \
   })
 
 #define PRIMITIVE_MATCHTAILCALL_BLOCK(idx, have)                               \
@@ -228,9 +231,6 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
                                                                                \
     SET_BLOCK(b);                                                              \
     SET_VAR(have);                                                             \
-                                                                               \
-    if (gab_jttick(GAB(), &GAB().eg->jobs[GAB().wkid].jt, IP()))               \
-      gab_jttry(GAB(), &GAB().eg->jobs[GAB().wkid].jt, p, IP(), FB(), UPV());  \
   })
 
 #define PRIMITIVE_MATCHCALL_BLOCK(idx, have)                                   \
@@ -247,9 +247,6 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
     FB() = SP() - have;                                                        \
                                                                                \
     SET_VAR(have);                                                             \
-                                                                               \
-    if (gab_jttick(GAB(), &GAB().eg->jobs[GAB().wkid].jt, IP()))               \
-      gab_jttry(GAB(), &GAB().eg->jobs[GAB().wkid].jt, p, IP(), FB(), UPV());  \
   })
 
 #define PRIMITIVE_PROPERTY_RECORD(r, offset, have, below_have)                 \
@@ -307,6 +304,9 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
     assert(returnptr == RETURN_FB());                                          \
   })
 
+#define PRIMITIVE_JIT_ENTER(code)                                              \
+  ({ union gab_value_pair res = code(DISPATCH_ARGS()); })
+
 /*
  * These primitives need some sort of control-flow in order
  * to work cleanly with the JIT IR.
@@ -314,7 +314,7 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
 #define PRIMITIVE_TAKE(channel)                                                \
   ({                                                                           \
     if (!REENTRANT()) {                                                        \
-      SEND_GUARD_CACHED_MESSAGE_SPECS();                                       \
+      SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);                    \
       SEND_GUARD_ISCHN(c);                                                     \
     }                                                                          \
                                                                                \
@@ -374,7 +374,7 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
 #define PRIMITIVE_PUT(channel)                                                 \
   ({                                                                           \
     if (!REENTRANT()) {                                                        \
-      SEND_GUARD_CACHED_MESSAGE_SPECS();                                       \
+      SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);                    \
       SEND_GUARD_ISCHN(c);                                                     \
     }                                                                          \
                                                                                \
@@ -653,7 +653,6 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
     *SP() = n;                                                                 \
   })
 
-
 #define COMPUTE_TUPLE() (VAR())
 
 #define FRAME_SIZE 2
@@ -851,10 +850,9 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
  * address after a collection happens, and then some sends *think* they have it
  * cached but they havent?
  */
-#define SEND_GUARD_CACHED_MESSAGE_SPECS()                                      \
-  SEND_GUARD(                                                                  \
-      gab_valeq(atomic_load(&EG()->messages_epoch), ks[GAB_SEND_KSPECS]),      \
-      "Global message change detected.")
+#define SEND_GUARD_CACHED_MESSAGE_SPECS(epoch)                                 \
+  SEND_GUARD(gab_valeq(atomic_load(&EG()->messages_epoch), epoch),             \
+             "Global message change detected.")
 
 #define SEND_GUARD_TYPE(r, type)                                               \
   SEND_GUARD(gab_valisa(GAB(), r, type), "Type failed")
@@ -979,7 +977,25 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
     SET_VAR(want + 1);                                                         \
   })
 
-#define PRIMITIVE_BLOCK(p) (block(GAB(), p, FB(), UPV()))
+#define PRIMITIVE_BLOCK(p)                                                     \
+  ({                                                                           \
+    gab_value blk = gab_block(GAB(), p);                                       \
+                                                                               \
+    struct gab_oblock *b = GAB_VAL_TO_BLOCK(blk);                              \
+    struct gab_oprototype *proto = GAB_VAL_TO_PROTOTYPE(p);                    \
+                                                                               \
+    for (int i = 0; i < proto->nupvalues; i++) {                               \
+      uint8_t is_local = proto->data[i] & fLOCAL_LOCAL;                        \
+      uint8_t index = proto->data[i] >> 1;                                     \
+                                                                               \
+      if (is_local)                                                            \
+        b->upvalues[i] = LOCAL(index);                                         \
+      else                                                                     \
+        b->upvalues[i] = UPVALUE(index);                                       \
+    }                                                                          \
+                                                                               \
+    blk;                                                                       \
+  })
 
 #define PRIMITIVE_TYPE(v) (gab_valtype(GAB(), v))
 
@@ -1100,6 +1116,13 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
 #define PRIMITIVE_UNBOXB(v) (gab_valintob(v))
 #define PRIMITIVE_UNBOXS(v) (gab_strdata(&v))
 #define PRIMITIVE_UNBOXV(v) (v)
+
+#define PRIMITIVE_UNBOXF2(v) (PRIMITIVE_UNBOXF(v))
+#define PRIMITIVE_UNBOXI2(v) (PRIMITIVE_UNBOXI(v))
+#define PRIMITIVE_UNBOXU2(v) (PRIMITIVE_UNBOXU(v))
+#define PRIMITIVE_UNBOXB2(v) (PRIMITIVE_UNBOXB(v))
+#define PRIMITIVE_UNBOXS2(v) (PRIMITIVE_UNBOXS(v))
+#define PRIMITIVE_UNBOXV2(v) (PRIMITIVE_UNBOXV(v))
 
 #define PRIMITIVE_UNBOXF_T gab_float
 #define PRIMITIVE_UNBOXU_T gab_uint

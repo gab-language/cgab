@@ -17,5 +17,6 @@ function compile() {
 export -f compile
 
 for configuration in *.configuration; do
+  printf "Building %s\n" $configuration
   compile $configuration
 done

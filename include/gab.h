@@ -199,8 +199,24 @@ typedef int64_t gab_int;
 typedef uint64_t gab_uint;
 #else
 #define GAB_INTWIDTH 53
+
+/*
+ * When in debug mode, it is useful to define int and uint in terms
+ * of the 53 bit int width. This can help c-code catch some arithmetic
+ * errors at compile time.
+ *
+ * However, it does have a runtime cost. For example, adding two gab_ints
+ * (when they are defined as 53 bits) will emit additional shl and shr instructions
+ * to shift off the upper 11 bits.
+ */
+#if DNDEBUG
 typedef signed _BitInt(GAB_INTWIDTH) gab_int;
 typedef unsigned _BitInt(GAB_INTWIDTH) gab_uint;
+#else
+typedef int64_t gab_int;
+typedef uint64_t gab_uint;
+#endif
+
 #endif
 
 // This is the MAXIMUM SAFE INTEGER, because anything greater

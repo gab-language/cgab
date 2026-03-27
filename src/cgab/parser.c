@@ -1557,10 +1557,10 @@ static inline void push_listpack(struct gab_triple gab, struct bc *bc,
   push_byte(bc, above, node);
 }
 
-static inline void push_recordpack(struct gab_triple gab, struct bc *bc,
+static inline void push_dictpack(struct gab_triple gab, struct bc *bc,
                                    uint8_t below, uint8_t above,
                                    gab_value node) {
-  push_op(bc, OP_PACK_RECORD, node);
+  push_op(bc, OP_PACK_DICT, node);
   push_byte(bc, below, node);
   push_byte(bc, above, node);
 }
@@ -1951,7 +1951,7 @@ gab_value unpack_bindings_into_env(struct gab_triple gab, struct bc *bc,
     push_listpack(gab, bc, listpack_at_n, actual_targets - listpack_at_n - 1,
                   bindings);
   } else if (recpack_at_n >= 0) {
-    push_recordpack(gab, bc, recpack_at_n, actual_targets - recpack_at_n - 1,
+    push_dictpack(gab, bc, recpack_at_n, actual_targets - recpack_at_n - 1,
                     bindings);
   } else if (!push_trim_node(gab, bc, actual_targets, values, bindings)) {
     return v_gab_value_destroy(&targets), gab_cinvalid;

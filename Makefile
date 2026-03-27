@@ -1,37 +1,59 @@
-NATIVECC  = zig cc
-TARGETCC	= zig cc --target=$(GAB_TARGETS)
-TARGETCXX = zig c++
+NATIVECC    = zig cc
+TARGETCC	  = zig cc --target=$(GAB_TARGETS)
+TARGETCXX   = zig c++
+AR          = zig ar
+OBJCPY      = llvm-objcopy
+CLIDE       = clide
+ELF2STENCIL = elf2stencil
 
-SRC_PREFIX 	 	 	= src/**
+CGAB_SRC_PREFIX     = src/cgab
+GAB_SRC_PREFIX      = src/gab
+MOD_SRC_PREFIX      = src/mod
+STENCIL_SRC_PREFIX  = src/stencil
+ELF_SRC_PREFIX      = src/elf
+
 BUILD_PREFIX 	 	= build-$(GAB_TARGETS)
-INCLUDE_PREFIX 	= include
+INCLUDE_PREFIX 	= -Iinclude -I$(BUILD_PREFIX)
 VENDOR_PREFIX   = vendor
 
 GAB_VERSION_TAG = 0.0.5
 
-INCLUDE		= -I$(INCLUDE_PREFIX) -isystem$(VENDOR_PREFIX) -L$(BUILD_PREFIX)
+INCLUDE		= $(INCLUDE_PREFIX) -isystem$(VENDOR_PREFIX) -L$(BUILD_PREFIX)
 
 CFLAGS = -std=c23 \
 				 -fPIC \
 				 -Wall \
 				 -MMD  \
-				 -mcmodel=medium \
 				 -fomit-frame-pointer \
-				 -ffunction-sections \
 				 -DGAB_TARGET_TRIPLE=\"$(GAB_TARGETS)\"\
 				 -DGAB_DYNLIB_FILEENDING=\"$(GAB_DYNLIB_FILEENDING)\" \
 				 -DGAB_BUILDTYPE=\"$(GAB_BUILDTYPE)\"\
 				 $(INCLUDE) \
 				 $(GAB_CCFLAGS)
 
-CXXFLAGS = -std=c++23 \
-				 -fPIC \
-				 -Wall \
-				 --target=$(GAB_TARGETS) \
-				 -DGAB_TARGET_TRIPLE=\"$(GAB_TARGETS)\"\
-				 -DGAB_DYNLIB_FILEENDING=\"$(GAB_DYNLIB_FILEENDING)\" \
-				 $(INCLUDE) \
-				 $(GAB_CCFLAGS)
+
+STENCIL_CFLAGS =  -std=c23 \
+									-Wall \
+									-MMD  \
+									-mcmodel=medium \
+									-DGAB_TARGET_TRIPLE=\"$(GAB_TARGETS)\"\
+									-DGAB_DYNLIB_FILEENDING=\"$(GAB_DYNLIB_FILEENDING)\" \
+									-DGAB_BUILDTYPE=\"release\"\
+									$(INCLUDE) \
+									-fomit-frame-pointer \
+									-ffunction-sections \
+									-Os \
+									-DNDEBUG \
+									-DcGAB_THREADS_NATIVE
+
+CXXFLAGS =  -std=c++23 \
+						-fPIC \
+						-Wall \
+						--target=$(GAB_TARGETS) \
+						-DGAB_TARGET_TRIPLE=\"$(GAB_TARGETS)\"\
+						-DGAB_DYNLIB_FILEENDING=\"$(GAB_DYNLIB_FILEENDING)\" \
+						$(INCLUDE) \
+						$(GAB_CCFLAGS)
 
 # A binary executable needs to keep all cgab symbols,
 # in case they are used by a dynamically loaded c-module.
@@ -55,71 +77,25 @@ CXXMOD_INCLUDE   =
 CSHARED_FLAGS 	= -shared -undefined dynamic_lookup $(CMOD_LINK_DEPS)
 CXXSHARED_FLAGS = -shared -undefined dynamic_lookup $(CXXMOD_LINK_DEPS) $(CXXMOD_INCLUDE)
 
-CGAB_JIT_MICROOP = \
-									 LOAD_LOCAL \
-									 LOAD_UPVALUE \
-									 STORE_LOCAL \
-									 IADD \
-									 ISUB \
-									 IMUL \
-									 IDIV \
-									 IBOR \
-									 IBND \
-									 ILT \
-									 ILTE \
-									 IGT \
-									 IGTE \
-									 FADD \
-									 FSUB \
-									 FMUL \
-									 FDIV \
-									 FLT \
-									 FLTE \
-									 FGT \
-									 FGTE \
-									 STRLT \
-									 STRLTE \
-									 STRGT \
-									 STRGTE \
-									 VCONS \
-									 VCONSRECORD \
-									 VEQ \
-									 STRCONCAT \
-									 BLIN \
-									 IBIN \
-									 UNBOXF \
-									 UNBOXI \
-									 UNBOXU \
-									 TYPE \
-									 BOXN \
-									 BOXB \
-									 PACK_RECORD \
-									 PACK_LIST \
-									 SPLAT_LIST \
-									 SPLAT_RECORD \
-									 GUARD_KIND \
-									 GUARD_TYPE \
-									 GUARD_NILPAD \
-									 GUARD_TRIM_EXACTLY_N \
-									 GUARD_TRIM_UP_N \
-									 GUARD_TRIM_DOWN_N \
-									 CALL_NATIVE \
-									 LOAD_PROPERTY
-
-# Source files in src/cgab are part of libcgab.
-# Their object files are compiled and archived together into libcgab.a
-# There are corresponding *determinstic* versions, prefixed with d.
-CGAB_SRC = $(wildcard src/cgab/*.c)
-CGAB_OBJ = $(CGAB_SRC:src/cgab/%.c=$(BUILD_PREFIX)/%.o)
-
 # Source files in src/gab are part of gab's cli, which depends on libcgab
 # They are compiled into an executable and linked statically
 # with libcgab.a
 # There are corresponding *determinstic* versions, prefixed with d.
 GAB_SRC = $(wildcard src/gab/*.c)
-GAB_OBJ = $(GAB_SRC:src/gab/%.c=$(BUILD_PREFIX)/%.o)
+GAB_OBJ = $(GAB_SRC:src/gab/%.c=$(BUILD_PREFIX)/gab/%.o)
+ 
+# Source files in src/cgab are part of libcgab.
+# Their object files are compiled and archived together into libcgab.a
+# There are corresponding *determinstic* versions, prefixed with d.
+CGAB_SRC = $(wildcard src/cgab/*.c)
+CGAB_OBJ = $(CGAB_SRC:src/cgab/%.c=$(BUILD_PREFIX)/cgab/%.o)
 
-CGAB_JIT_MICRO_OP_BYTES = $(CGAB_JIT_MICROOP:%=$(BUILD_PREFIX)/stencil/OP_MICRO_OP_%_HANDLER)
+STENCIL_SRC = $(wildcard src/stencil/*.c)
+STENCIL_OBJ = $(GAB_SRC:src/gab/%.c=$(BUILD_PREFIX)/stencil/%.o)
+
+ELF_SRC = $(wildcard src/elf/*.c)
+
+CGAB_JIT_MICRO_OP_BYTES = $(CGAB_JIT_MICROOP:%=$(BUILD_PREFIX)/jit/OP_MICRO_OP_%_HANDLER)
 
 # Source files in src/mod/ are individual c-modules, importable from gab code.
 # They are compiled individually into dynamic libraries, loaded at runtime.
@@ -129,7 +105,7 @@ CMOD_SHARED = $(CMOD_SRC:src/mod/%.c=$(BUILD_PREFIX)/mod/%.cgab-$(GAB_VERSION_TA
 CXXMOD_SRC 	 = $(wildcard src/mod/*.cc)
 CXXMOD_SHARED = $(CXXMOD_SRC:src/mod/%.cc=$(BUILD_PREFIX)/mod/%$(GAB_DYNLIB_FILEENDING))
 
-all: stencil gab cmodules cxxmodules $(CGAB_JIT_MICRO_OP_BYTES)
+all: gab cmodules cxxmodules
 
 -include $(CGAB_OBJ:.o=.d) $(GAB_OBJ:.o=.d) $(CMOD_SHARED:$(GAB_DYNLIB_FILEENDING)=.d)
 
@@ -137,19 +113,29 @@ all: stencil gab cmodules cxxmodules $(CGAB_JIT_MICRO_OP_BYTES)
 # Somewhat confusing that miniz amalgamation needs to be made here,
 # but that is because the main *object file* is created before the executable,
 # and the object file cannot compile without the header and impl from this.
-$(BUILD_PREFIX)/%.o: $(SRC_PREFIX)/%.c $(VENDOR_PREFIX)/miniz/amalgamation/miniz.c
+$(BUILD_PREFIX)/gab/%.o: $(GAB_SRC_PREFIX)/%.c $(VENDOR_PREFIX)/miniz/amalgamation/miniz.c
 	$(TARGETCC) $(CFLAGS) $< -c -o $@
 
-# WOOHOO! Automatically build out stencil files!
-$(BUILD_PREFIX)/stencil/%: $(CGAB_OBJ)
-	llvm-objcopy --dump-section=.text.$(notdir $@)=$@ $(BUILD_PREFIX)/stencil/stencil.o
+$(BUILD_PREFIX)/cgab/%.o: $(CGAB_SRC_PREFIX)/%.c $(BUILD_PREFIX)/stencil.h
+	$(TARGETCC) $(CFLAGS) $< -c -o $@
+
+# This needs to build for linux, but with the *target architecture*. Tough.
+$(BUILD_PREFIX)/stencil/%.o: $(STENCIL_SRC_PREFIX)/%.c
+	$(TARGETCC) $(STENCIL_CFLAGS) $< -c -o $@
+
+$(BUILD_PREFIX)/stencil.h: $(ELF2STENCIL) $(BUILD_PREFIX)/stencil/stencil.o
+	./$(ELF2STENCIL) < $(BUILD_PREFIX)/stencil/stencil.o > $(BUILD_PREFIX)/stencil.h 
+
+# This rule builds the gab executable, linking with libcgab.a
+$(ELF2STENCIL): $(ELF_SRC)
+	$(NATIVECC) $(CFLAGS) -lelf -o $@ $^
 
 # This rule builds libcgab by archiving the cgab object files together.
 $(BUILD_PREFIX)/libcgab.a: $(CGAB_OBJ)
-	zig ar rcs $@ $^
+	$(AR) rcs $@ $^
 
 # This rule builds the gab executable, linking with libcgab.a
-$(BUILD_PREFIX)/gab: $(GAB_OBJ) $(BUILD_PREFIX)/libcgab.a
+$(BUILD_PREFIX)/gab/gab: $(GAB_OBJ) $(BUILD_PREFIX)/libcgab.a
 	$(TARGETCC) $(CFLAGS) $(BINARY_FLAGS) -o $@ $^
 
 # This rule builds each c++ module shared library.
@@ -160,7 +146,7 @@ $(BUILD_PREFIX)/mod/%$(GAB_DYNLIB_FILEENDING): $(SRC_PREFIX)/%.cc
 # per-library flags are declared in the configuration.
 # They are passed through the funky basename-notdir call.
 # Essential, the cio module receives flags through the cio_FLAGS environment variable.
-$(BUILD_PREFIX)/mod/%.cgab-$(GAB_VERSION_TAG)-$(GAB_TARGETS)$(GAB_DYNLIB_FILEENDING): $(SRC_PREFIX)/%.c \
+$(BUILD_PREFIX)/mod/%.cgab-$(GAB_VERSION_TAG)-$(GAB_TARGETS)$(GAB_DYNLIB_FILEENDING): $(MOD_SRC_PREFIX)/%.c \
 							$(BUILD_PREFIX)/libbearssl.a 	\
 							$(BUILD_PREFIX)/libllhttp.a  	\
 							$(BUILD_PREFIX)/libgrapheme.a \
@@ -245,9 +231,7 @@ $(BUILD_PREFIX)/libbearssl.a:
 
 # These are some convenience rules for making the cli simpler.
 
-gab: $(BUILD_PREFIX)/gab
-
-stencil: $(BUILD_PREFIX)/stencil/stencil.o
+gab: $(BUILD_PREFIX)/gab/gab
 
 lib: $(BUILD_PREFIX)/libcgab.a
 

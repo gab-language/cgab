@@ -122,7 +122,6 @@ static const char *gab_opcode_names[] = {
 #undef GAB_OPCODE_NAMES_IMPL
 };
 
-
 uint64_t encode_fb(struct gab_vm *vm, gab_value *fb, uint64_t have) {
   uint64_t offset = fb - vm->sb;
   assert(offset < UINT32_MAX);
@@ -645,26 +644,6 @@ uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc, gab_value argv[argc]) {
   return argc;
 }
 
-static inline gab_value block(struct gab_triple gab, gab_value p,
-                              gab_value *locals, gab_value *upvs) {
-  gab_value blk = gab_block(gab, p);
-
-  struct gab_oblock *b = GAB_VAL_TO_BLOCK(blk);
-  struct gab_oprototype *proto = GAB_VAL_TO_PROTOTYPE(p);
-
-  for (int i = 0; i < proto->nupvalues; i++) {
-    uint8_t is_local = proto->data[i] & fLOCAL_LOCAL;
-    uint8_t index = proto->data[i] >> 1;
-
-    if (is_local)
-      b->upvalues[i] = locals[index];
-    else
-      b->upvalues[i] = upvs[index];
-  }
-
-  return blk;
-}
-
 union gab_value_pair vm_ok(OP_HANDLER_ARGS) {
   uint64_t have = *VM()->sp;
   gab_value *from = VM()->sp - have;
@@ -792,6 +771,13 @@ static inline bool try_setup_localmatch(struct gab_triple gab, gab_value m,
 
   ks[GAB_SEND_KSPECS] = atomic_load(&gab.eg->messages_epoch);
   return true;
+}
+
+ATTRIBUTES
+union gab_value_pair gab_jtexit(struct gab_triple *__gab, struct gab_vm *__vm,
+                                uint8_t *__ip, gab_value *__kb, gab_value *__fb,
+                                gab_value *__sp) {
+  NEXT();
 }
 
 #include "ops.h"

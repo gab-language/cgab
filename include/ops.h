@@ -62,7 +62,7 @@
     uint64_t have = COMPUTE_TUPLE();                                           \
     uint64_t below_have = PEEK_N(have + 1);                                    \
                                                                                \
-    SEND_GUARD_CACHED_MESSAGE_SPECS();                                         \
+    SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);                      \
                                                                                \
     NILPAD_GUARD_ARGS_GTE(2);                                                  \
                                                                                \
@@ -75,7 +75,7 @@
     guard(b);                                                                  \
                                                                                \
     a_type val_a = a_unboxer(a);                                               \
-    b_type val_b = b_unboxer(b);                                               \
+    b_type val_b = b_unboxer##2(b);                                               \
                                                                                \
     c_type val_c = primitive(val_a, val_b);                                    \
                                                                                \
@@ -131,7 +131,7 @@ CASE_CODE(MATCHTAILSEND_BLOCK) {
 
   assert(istail);
 
-  SEND_GUARD_CACHED_MESSAGE_SPECS();
+  SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);
 
   gab_value r = PEEK_N(have);
 
@@ -154,7 +154,7 @@ CASE_CODE(MATCHSEND_BLOCK) {
 
   assert(!istail);
 
-  SEND_GUARD_CACHED_MESSAGE_SPECS();
+  SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);
 
   gab_value r = PEEK_N(have);
 
@@ -275,7 +275,7 @@ CASE_CODE(SEND_NATIVE) {
 
   gab_value r = PEEK_N(have);
 
-  SEND_GUARD_CACHED_MESSAGE_SPECS();
+  SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
 
   struct gab_onative *n = GAB_VAL_TO_NATIVE(ks[GAB_SEND_KSPEC]);
@@ -293,12 +293,16 @@ CASE_CODE(SEND_BLOCK) {
 
   gab_value r = PEEK_N(have);
 
-  SEND_GUARD_CACHED_MESSAGE_SPECS();
+  SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
 
   struct gab_oblock *b = GAB_VAL_TO_BLOCK(ks[GAB_SEND_KSPEC]);
 
+  uint8_t* ip = IP();
+
   PRIMITIVE_CALL_BLOCK(b, have);
+
+  // PRIMITIVE_JIT_TICK(b, ip, ks);
 
   NEXT_CHECKED();
 }
@@ -311,13 +315,17 @@ CASE_CODE(TAILSEND_BLOCK) {
 
   gab_value r = PEEK_N(have);
 
-  SEND_GUARD_CACHED_MESSAGE_SPECS();
+  SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);
 
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
 
   struct gab_oblock *b = GAB_VAL_TO_BLOCK(ks[GAB_SEND_KSPEC]);
 
+  uint8_t* ip = IP();
+
   PRIMITIVE_TAILCALL_BLOCK(b, have);
+
+  // PRIMITIVE_JIT_TICK(b, ip, ks);
 
   NEXT_CHECKED();
 }
@@ -331,12 +339,16 @@ CASE_CODE(LOCALSEND_BLOCK) {
 
   gab_value r = PEEK_N(have);
 
-  SEND_GUARD_CACHED_MESSAGE_SPECS();
+  SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
 
   struct gab_oblock *b = GAB_VAL_TO_BLOCK(ks[GAB_SEND_KSPEC]);
 
+  uint8_t* ip = IP();
+
   PRIMITIVE_LOCALCALL_BLOCK(b, have);
+
+  //PRIMITIVE_JIT_TICK(b, ip, ks);
 
   NEXT_CHECKED();
 }
@@ -350,12 +362,16 @@ CASE_CODE(LOCALTAILSEND_BLOCK) {
 
   gab_value r = PEEK_N(have);
 
-  SEND_GUARD_CACHED_MESSAGE_SPECS();
+  SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
 
   struct gab_oblock *b = GAB_VAL_TO_BLOCK(ks[GAB_SEND_KSPEC]);
 
+  uint8_t* ip = IP();
+
   PRIMITIVE_LOCALTAILCALL_BLOCK(b, have);
+
+  // PRIMITIVE_JIT_TICK(b, ip, ks);
 
   NEXT_CHECKED();
 }
@@ -373,9 +389,13 @@ CASE_CODE(SEND_PRIMITIVE_CALL_BLOCK) {
 
   PANIC_GUARD_KIND(r, kGAB_BLOCK);
 
-  struct gab_oblock *blk = GAB_VAL_TO_BLOCK(r);
+  struct gab_oblock *b = GAB_VAL_TO_BLOCK(r);
 
-  PRIMITIVE_CALL_BLOCK(blk, have);
+  uint8_t* ip = IP();
+
+  PRIMITIVE_CALL_BLOCK(b, have);
+
+  // PRIMITIVE_JIT_TICK(b, ip, ks);
 
   NEXT_CHECKED();
 }
@@ -393,9 +413,13 @@ CASE_CODE(TAILSEND_PRIMITIVE_CALL_BLOCK) {
 
   PANIC_GUARD_KIND(r, kGAB_BLOCK);
 
-  struct gab_oblock *blk = GAB_VAL_TO_BLOCK(r);
+  struct gab_oblock *b = GAB_VAL_TO_BLOCK(r);
 
-  PRIMITIVE_TAILCALL_BLOCK(blk, have);
+  uint8_t* ip = IP();
+
+  PRIMITIVE_TAILCALL_BLOCK(b, have);
+
+  // PRIMITIVE_JIT_TICK(b, ip, ks);
 
   NEXT_CHECKED();
 }
@@ -561,7 +585,7 @@ CASE_CODE(SEND_PRIMITIVE_CONS) {
 
   gab_value r = PEEK_N(have);
 
-  SEND_GUARD_CACHED_MESSAGE_SPECS();
+  SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);
 
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
 
@@ -589,7 +613,7 @@ CASE_CODE(SEND_PRIMITIVE_CONS_RECORD) {
   uint64_t have = COMPUTE_TUPLE();
   uint64_t below_have = PEEK_N(have + 1);
 
-  SEND_GUARD_CACHED_MESSAGE_SPECS();
+  SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);
 
   gab_value r = PEEK_N(have);
 
@@ -619,7 +643,7 @@ CASE_CODE(SEND_PRIMITIVE_SPLATSHAPE) {
 
   gab_value s = PEEK_N(have);
 
-  SEND_GUARD_CACHED_MESSAGE_SPECS();
+  SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);
 
   SEND_GUARD_ISSHP(s);
 
@@ -641,7 +665,7 @@ CASE_CODE(SEND_PRIMITIVE_SPLATLIST) {
 
   gab_value r = PEEK_N(have);
 
-  SEND_GUARD_CACHED_MESSAGE_SPECS();
+  SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);
 
   SEND_GUARD_ISREC(r);
 
@@ -663,7 +687,7 @@ CASE_CODE(SEND_PRIMITIVE_SPLATDICT) {
 
   gab_value r = PEEK_N(have);
 
-  SEND_GUARD_CACHED_MESSAGE_SPECS();
+  SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);
 
   SEND_GUARD_ISREC(r);
 
@@ -685,7 +709,7 @@ CASE_CODE(SEND_CONSTANT) {
 
   gab_value r = PEEK_N(have);
 
-  SEND_GUARD_CACHED_MESSAGE_SPECS();
+  SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
 
   gab_value spec = ks[GAB_SEND_KSPEC];
@@ -973,7 +997,7 @@ CASE_CODE(TRIM) {
   NEXT();
 }
 
-CASE_CODE(PACK_RECORD) {
+CASE_CODE(PACK_DICT) {
   uint8_t below = READ_BYTE;
   uint8_t above = READ_BYTE;
 
@@ -1132,6 +1156,16 @@ CASE_CODE(SEND_PRIMITIVE_LIST) {
   PUSH(rec);
 
   SET_VAR(below_have + 1);
+
+  NEXT();
+}
+
+CASE_CODE(SEND_PRIMITIVE_JIT_ENTER) {
+  gab_value *ks = READ_SENDCONSTANTS;
+
+  handler code = (void *)(uintptr_t)ks[GAB_SEND_KSPEC];
+
+  PRIMITIVE_JIT_ENTER(code);
 
   NEXT();
 }
