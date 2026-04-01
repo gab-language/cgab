@@ -294,6 +294,7 @@ CASE_CODE(SEND_BLOCK) {
   gab_value r = PEEK_N(have);
 
   SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);
+
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
 
   struct gab_oblock *b = GAB_VAL_TO_BLOCK(ks[GAB_SEND_KSPEC]);
@@ -302,7 +303,7 @@ CASE_CODE(SEND_BLOCK) {
 
   PRIMITIVE_CALL_BLOCK(b, have);
 
-  // PRIMITIVE_JIT_TICK(b, ip, ks);
+  PRIMITIVE_JIT_TICK(b, ip, ks);
 
   NEXT_CHECKED();
 }
@@ -325,7 +326,7 @@ CASE_CODE(TAILSEND_BLOCK) {
 
   PRIMITIVE_TAILCALL_BLOCK(b, have);
 
-  // PRIMITIVE_JIT_TICK(b, ip, ks);
+  PRIMITIVE_JIT_TICK(b, ip, ks);
 
   NEXT_CHECKED();
 }
@@ -348,7 +349,7 @@ CASE_CODE(LOCALSEND_BLOCK) {
 
   PRIMITIVE_LOCALCALL_BLOCK(b, have);
 
-  //PRIMITIVE_JIT_TICK(b, ip, ks);
+  PRIMITIVE_JIT_TICK(b, ip, ks);
 
   NEXT_CHECKED();
 }
@@ -371,7 +372,7 @@ CASE_CODE(LOCALTAILSEND_BLOCK) {
 
   PRIMITIVE_LOCALTAILCALL_BLOCK(b, have);
 
-  // PRIMITIVE_JIT_TICK(b, ip, ks);
+  PRIMITIVE_JIT_TICK(b, ip, ks);
 
   NEXT_CHECKED();
 }
@@ -395,7 +396,7 @@ CASE_CODE(SEND_PRIMITIVE_CALL_BLOCK) {
 
   PRIMITIVE_CALL_BLOCK(b, have);
 
-  // PRIMITIVE_JIT_TICK(b, ip, ks);
+  PRIMITIVE_JIT_TICK(b, ip, ks);
 
   NEXT_CHECKED();
 }
@@ -419,7 +420,7 @@ CASE_CODE(TAILSEND_PRIMITIVE_CALL_BLOCK) {
 
   PRIMITIVE_TAILCALL_BLOCK(b, have);
 
-  // PRIMITIVE_JIT_TICK(b, ip, ks);
+  PRIMITIVE_JIT_TICK(b, ip, ks);
 
   NEXT_CHECKED();
 }
@@ -712,7 +713,7 @@ CASE_CODE(SEND_CONSTANT) {
   SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
 
-  gab_value spec = ks[GAB_SEND_KSPEC];
+  gab_value spec = PRIMITIVE_SENDK();
 
   DROP_N(have + 1);
   PUSH(spec);
@@ -1153,6 +1154,7 @@ CASE_CODE(SEND_PRIMITIVE_LIST) {
   gab_value rec = PRIMITIVE_LIST(len);
 
   DROP_N(have + 1);
+
   PUSH(rec);
 
   SET_VAR(below_have + 1);
@@ -1160,12 +1162,81 @@ CASE_CODE(SEND_PRIMITIVE_LIST) {
   NEXT();
 }
 
-CASE_CODE(SEND_PRIMITIVE_JIT_ENTER) {
+CASE_CODE(JIT_SEND_BLOCK) {
   gab_value *ks = READ_SENDCONSTANTS;
 
-  handler code = (void *)(uintptr_t)ks[GAB_SEND_KSPEC];
+  uint64_t have = COMPUTE_TUPLE();
+
+  gab_value r = PEEK_N(have);
+
+  SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);
+
+  SEND_GUARD_CACHED_RECEIVER_TYPE(r);
+
+  struct gab_oblock *b = GAB_VAL_TO_BLOCK(ks[GAB_SEND_KSPEC]);
+
+  handler code = (void *)(uintptr_t)ks[GAB_SEND_KJIT];
+
+  PRIMITIVE_CALL_BLOCK(b, have);
 
   PRIMITIVE_JIT_ENTER(code);
+}
 
-  NEXT();
+CASE_CODE(JIT_LOCALSEND_BLOCK) {
+  gab_value *ks = READ_SENDCONSTANTS;
+
+  uint64_t have = COMPUTE_TUPLE();
+
+  gab_value r = PEEK_N(have);
+
+  SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);
+
+  SEND_GUARD_CACHED_RECEIVER_TYPE(r);
+
+  struct gab_oblock *b = GAB_VAL_TO_BLOCK(ks[GAB_SEND_KSPEC]);
+
+  handler code = (void *)(uintptr_t)ks[GAB_SEND_KJIT];
+
+  PRIMITIVE_LOCALCALL_BLOCK(b, have);
+
+  PRIMITIVE_JIT_ENTER(code);
+}
+
+CASE_CODE(JIT_TAILSEND_BLOCK) {
+  gab_value *ks = READ_SENDCONSTANTS;
+
+  uint64_t have = COMPUTE_TUPLE();
+
+  gab_value r = PEEK_N(have);
+
+  SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);
+
+  SEND_GUARD_CACHED_RECEIVER_TYPE(r);
+
+  struct gab_oblock *b = GAB_VAL_TO_BLOCK(ks[GAB_SEND_KSPEC]);
+
+  handler code = (void *)(uintptr_t)ks[GAB_SEND_KJIT];
+
+  PRIMITIVE_TAILCALL_BLOCK(b, have);
+
+  PRIMITIVE_JIT_ENTER(code);
+}
+
+CASE_CODE(JIT_LOCALTAILSEND_BLOCK) {
+  gab_value *ks = READ_SENDCONSTANTS;
+
+  uint64_t have = COMPUTE_TUPLE();
+  gab_value r = PEEK_N(have);
+
+  SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);
+
+  SEND_GUARD_CACHED_RECEIVER_TYPE(r);
+
+  struct gab_oblock *b = GAB_VAL_TO_BLOCK(ks[GAB_SEND_KSPEC]);
+
+  handler code = (void *)(uintptr_t)ks[GAB_SEND_KJIT];
+
+  PRIMITIVE_LOCALTAILCALL_BLOCK(b, have);
+
+  PRIMITIVE_JIT_ENTER(code);
 }

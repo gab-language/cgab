@@ -518,7 +518,6 @@ struct gab_jtbb {
   // Identity
   struct gab_jtbbid {
     struct gab_oprototype *proto; // the prototype this block belongs to
-    uint16_t block_offset;        // bytecode offset of first instruction
     struct gab_type_state
         entry_state; // the type state this version was compiled for
   } id;
@@ -543,9 +542,6 @@ static inline bool eq_id(struct gab_jtbbid *a, struct gab_jtbbid *b) {
   assert(b->proto->header.kind == kGAB_PROTOTYPE);
 
   if (a->proto != b->proto)
-    return false;
-
-  if (a->block_offset != b->block_offset)
     return false;
 
   if (a->entry_state.nlocals != b->entry_state.nlocals)
@@ -682,16 +678,19 @@ union gab_jtir {
   struct {
     enum gab_irop_kind kind;
     uint8_t type;
+
     union {
       struct {
         uint16_t a, b;
       };
       uint16_t args[2];
     };
+
     uint16_t slot;
   } op;
   gab_value value;
-  uint64_t bits;
+  int64_t bits;
+  uint8_t bitarray[8];
 };
 
 #define IR_SIZE 2048
@@ -705,10 +704,12 @@ struct ir {
   union gab_jtir ir[IR_SIZE];
   uint32_t ks, os;
 
-  // Maps: local index → current SSA ref (updated during block walk)
+  // Tracks side-exit points for guards.
+  uint8_t* ip[IR_SIZE >> 1];
+  uint64_t hv[IR_SIZE >> 1];
+
   uint16_t local_map[GAB_JIT_MAX_LOCALS];
 
-  // Virtual stack
   uint16_t sb[IR_SIZE];
   uint16_t *sp;
 };
@@ -884,9 +885,18 @@ bool gab_jttick(struct gab_triple gab, struct gab_jt *jt, uint8_t *ip);
 
 void gab_jtcreate(struct gab_jt *jt);
 
-[[clang::preserve_none]]
 union gab_value_pair gab_jtexit(struct gab_triple *__gab, struct gab_vm *__vm,
                                 uint8_t *__ip, gab_value *__kb, gab_value *__fb,
                                 gab_value *__sp);
 
+union gab_value_pair gab_jtbail(struct gab_triple *__gab, struct gab_vm *__vm,
+                                uint8_t *__ip, gab_value *__kb, gab_value *__fb,
+                                gab_value *__sp);
+
+union gab_value_pair vm_terminate(struct gab_triple gab, const char *fmt, ...);
+
+union gab_value_pair vm_error(struct gab_triple gab, enum gab_status s,
+                              const char *fmt, ...);
+
+union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
 #endif

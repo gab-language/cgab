@@ -505,14 +505,14 @@ union gab_value_pair gab_panicf(struct gab_triple gab, const char *fmt, ...) {
 //
 // So we add one instead and all lines up.
 gab_value gab_vmmsg(struct gab_vm *vm) {
-  uint8_t *__ip = vm->ip - SEND_CACHE_DIST + 1;
+  uint8_t *__ip = vm->ip - GAB_SEND_CACHE_SIZE + 1;
   gab_value *__kb = vm->kb;
   gab_value *ks = READ_SENDCONSTANTS;
   return ks[GAB_SEND_KMESSAGE];
 }
 
 gab_value gab_vmspec(struct gab_vm *vm) {
-  uint8_t *__ip = vm->ip - SEND_CACHE_DIST + 1;
+  uint8_t *__ip = vm->ip - GAB_SEND_CACHE_SIZE + 1;
   gab_value *__kb = vm->kb;
   gab_value *ks = READ_SENDCONSTANTS;
   return ks[GAB_SEND_KSPEC];
@@ -732,6 +732,8 @@ union gab_value_pair gab_vmexec(struct gab_triple gab, gab_value f) {
 static inline bool try_setup_localmatch(struct gab_triple gab, gab_value m,
                                         gab_value *ks,
                                         struct gab_oprototype *p) {
+  return false;
+
   gab_value specs = gab_thisfibmsgrec(gab, m);
 
   if (specs == gab_cundefined)
@@ -773,10 +775,28 @@ static inline bool try_setup_localmatch(struct gab_triple gab, gab_value m,
   return true;
 }
 
+// TODO @jit: Get rid of this trampoline in IR_JIT_EXIT. Just patch and jump in
+// the opcode table itself.
 ATTRIBUTES
-union gab_value_pair gab_jtexit(struct gab_triple *__gab, struct gab_vm *__vm,
-                                uint8_t *__ip, gab_value *__kb, gab_value *__fb,
-                                gab_value *__sp) {
+union gab_value_pair gab_jtexit(OP_HANDLER_ARGS) {
+  // uint64_t have = *__sp;
+  // printf("EXIT TO %s: \n", gab_opcode_names[*IP()]);
+  // for (int i = 1; i < have + 1; i++) {
+  //   gab_fprintf(stdout, "$: $\n", gab_number(i), PEEK_N(i));
+  // }
+
+  NEXT();
+}
+
+ATTRIBUTES
+union gab_value_pair gab_jtbail(OP_HANDLER_ARGS) {
+// uint64_t have = *__sp;
+//   printf("BAIL TO %s: ", gab_opcode_names[*IP()]);
+//   printf("HAVE %lu\n", have);
+//   for (int i = 1; i < have + 1; i++) {
+//     gab_fprintf(stdout, "$: $\n", gab_number(i), PEEK_N(i));
+//   }
+
   NEXT();
 }
 

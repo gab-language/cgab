@@ -31,9 +31,12 @@ CFLAGS = -std=c23 \
 				 $(INCLUDE) \
 				 $(GAB_CCFLAGS)
 
-
+# Stencils need to be compiled with musl, as gnu abi enforces PIC.
+# But this means using two abi's. Mega Ew.
 STENCIL_CFLAGS =  -std=c23 \
 									-Wall \
+									--target=x86_64-linux-musl \
+									-fno-pic \
 									-MMD  \
 									-mcmodel=medium \
 									-DGAB_TARGET_TRIPLE=\"$(GAB_TARGETS)\"\
@@ -42,7 +45,7 @@ STENCIL_CFLAGS =  -std=c23 \
 									$(INCLUDE) \
 									-fomit-frame-pointer \
 									-ffunction-sections \
-									-Os \
+									-O3 \
 									-DNDEBUG \
 									-DcGAB_THREADS_NATIVE
 
@@ -121,7 +124,7 @@ $(BUILD_PREFIX)/cgab/%.o: $(CGAB_SRC_PREFIX)/%.c $(BUILD_PREFIX)/stencil.h
 
 # This needs to build for linux, but with the *target architecture*. Tough.
 $(BUILD_PREFIX)/stencil/%.o: $(STENCIL_SRC_PREFIX)/%.c
-	$(TARGETCC) $(STENCIL_CFLAGS) $< -c -o $@
+	$(NATIVECC) $(STENCIL_CFLAGS) $< -c -o $@
 
 $(BUILD_PREFIX)/stencil.h: $(ELF2STENCIL) $(BUILD_PREFIX)/stencil/stencil.o
 	./$(ELF2STENCIL) < $(BUILD_PREFIX)/stencil/stencil.o > $(BUILD_PREFIX)/stencil.h 

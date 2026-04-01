@@ -163,6 +163,7 @@
 //  - The type of the value
 //  - The specialization
 //  - The offset of the spec in the record/message
+//  This should be removed yo
 #define GAB_SEND_CACHE_SIZE 3
 
 // These ks are always the first two elements, and are
@@ -174,6 +175,7 @@
 #define GAB_SEND_KTYPE 2
 #define GAB_SEND_KSPEC 3
 #define GAB_SEND_KOFFSET 4
+#define GAB_SEND_KJIT 4
 
 #define GAB_SEND_KGENERIC_CALL_MESSAGE 5
 

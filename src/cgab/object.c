@@ -2251,6 +2251,17 @@ static uint64_t dumpSendInstruction(FILE *stream, struct gab_oprototype *self,
   return offset + 3;
 }
 
+static uint64_t dumpTwoByteInstruction(FILE *stream, struct gab_oprototype *self,
+                                    uint64_t offset) {
+  const char *name =
+      gab_opcode_names[v_uint8_t_val_at(&self->src->bytecode, offset)];
+
+  uint8_t operand_a = v_uint8_t_val_at(&self->src->bytecode, offset + 1);
+  uint8_t operand_b = v_uint8_t_val_at(&self->src->bytecode, offset + 2);
+  fprintf(stream, "%-25s%hhx %hhx\n", name, operand_a, operand_b);
+  return offset + 3;
+}
+
 static uint64_t dumpByteInstruction(FILE *stream, struct gab_oprototype *self,
                                     uint64_t offset, bool extra) {
   const char *name =
@@ -2381,6 +2392,10 @@ static uint64_t dumpInstruction(FILE *stream, struct gab_oprototype *self,
   case OP_TAILSEND_PRIMITIVE_CALL_BLOCK:
   case OP_LOCALSEND_BLOCK:
   case OP_LOCALTAILSEND_BLOCK:
+  case OP_JIT_SEND_BLOCK:
+  case OP_JIT_TAILSEND_BLOCK:
+  case OP_JIT_LOCALSEND_BLOCK:
+  case OP_JIT_LOCALTAILSEND_BLOCK:
   case OP_MATCHSEND_BLOCK:
   case OP_MATCHTAILSEND_BLOCK:
     return dumpSendInstruction(stream, self, offset);
@@ -2393,7 +2408,7 @@ static uint64_t dumpInstruction(FILE *stream, struct gab_oprototype *self,
   case OP_TUPLE_LOAD_LOCAL:
     return dumpByteInstruction(stream, self, offset, false);
   case OP_NTUPLE_LOAD_LOCAL:
-    return dumpByteInstruction(stream, self, offset, true);
+    return dumpTwoByteInstruction(stream, self, offset);
   case OP_NTUPLE_NLOAD_LOCAL: {
     const char *name =
         gab_opcode_names[v_uint8_t_val_at(&self->src->bytecode, offset)];

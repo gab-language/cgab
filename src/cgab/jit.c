@@ -7,12 +7,16 @@
 struct gab_jit_reloc {
   enum gab_jit_reloc_k {
     kGAB_JIT_RELOC_CONST,
-    kGAB_JIT_RELOC_ARG1,
-    kGAB_JIT_RELOC_ARG2,
+    kGAB_JIT_RELOC_32ARG1,
+    kGAB_JIT_RELOC_32ARG2,
+    kGAB_JIT_RELOC_64ARG1,
+    kGAB_JIT_RELOC_64ARG2,
     kGAB_JIT_RELOC_TRMP,
     kGAB_JIT_RELOC_NEXT,
     kGAB_JIT_RELOC_EXIT,
     kGAB_JIT_RELOC_BAIL,
+    kGAB_JIT_RELOC_IP,
+    kGAB_JIT_RELOC_HV,
   } k;
   uint64_t offset;
   int64_t addend;
@@ -38,7 +42,8 @@ static const struct gab_jit_reloc *stencil_relocas[] = {
 
 static const uint64_t stencil_nrelocas[] = {
 #define IR_CODE(ir)                                                            \
-  sizeof(OP_MICRO_OP_##ir##_HANDLER_RELAS) / sizeof(struct gab_jit_reloc),
+  sizeof(OP_MICRO_OP_##ir##_HANDLER_RELAS) /                                   \
+      sizeof(OP_MICRO_OP_##ir##_HANDLER_RELAS[0]),
 #include "ir.h"
 #undef IR_CODE
 };
@@ -59,10 +64,10 @@ static const uint64_t stencil_bytesizes[] = {
   struct gab_triple *__gab, struct gab_jtbb *__bb, uint8_t *__ip,              \
       gab_value *__kb, struct ir *__ir
 
-typedef bool (*handler)(OP_HANDLER_ARGS);
+typedef uint8_t *(*handler)(OP_HANDLER_ARGS);
 
 // Forward declare all our opcode handlers
-#define OP_CODE(name) bool OP_GAB_IR_##name##_HANDLER(OP_HANDLER_ARGS);
+#define OP_CODE(name) uint8_t *OP_GAB_IR_##name##_HANDLER(OP_HANDLER_ARGS);
 
 #include "bytecode.h"
 
@@ -104,15 +109,25 @@ bool ir_isk(uint16_t ssa) { return ssa < IR_VBIAS; }
 bool ir_isv(uint16_t ssa) { return ssa > IR_VBIAS && ssa < IR_OBIAS; }
 bool ir_iso(uint16_t ssa) { return ssa > IR_OBIAS; }
 
-uint16_t emito(struct ir *ir, enum gab_irop_kind op, uint8_t type, uint16_t a,
-               uint16_t b) {
+uint16_t emito(struct ir *ir, uint8_t *ip, uint64_t have, enum gab_irop_kind op,
+               uint8_t type, uint16_t a, uint16_t b) {
   uint16_t ssa = ir->os++ + IR_BIAS;
   gab_assert(ssa < IR_SIZE, "Too many instructions in ir");
+
+  uint64_t slot = ir->sp - ir->sb;
+  gab_assert(slot < UINT16_MAX, "Slot too big");
 
   ir->ir[ssa].op.kind = op;
   ir->ir[ssa].op.type = type;
   ir->ir[ssa].op.a = a;
   ir->ir[ssa].op.b = b;
+  ir->ir[ssa].op.slot = slot;
+
+  if (ip)
+    ip -= 3;
+
+  ir->ip[ssa - IR_BIAS] = ip;
+  ir->hv[ssa - IR_BIAS] = have;
 
   return ssa + IR_BIAS;
 }
@@ -143,14 +158,14 @@ void ir_push(struct ir *ir, uint16_t ssa) {
 
   if (ir_iso(ssa)) {
     uint64_t slot = ir->sp - ir->sb;
+    // gab_assert((ssa - IR_BIAS) < IR_SIZE, "Index %lu out of bounds (ssa: %u,
+    // size: %u)", slot, ssa, IR_SIZE);
     gab_assert(slot < UINT16_MAX, "Slot too big");
-    ir->ir[ssa - IR_BIAS].op.slot = slot;
+    ir->ir[ssa - IR_OBIAS].op.slot = slot;
+    // ir->hv[ssa - IR_OBIAS]++;
   }
 
-  uint16_t have = *ir->sp;
   *ir->sp++ = ssa;
-  *ir->sp = have + 1;
-  // fprintf(stderr, "PUSH %i, %i -> %i\n", ssa, have, *ir->sp);
 }
 
 void ir_dropn(struct ir *ir, int64_t n) {
@@ -248,22 +263,19 @@ void irdumpa(struct ir *ir, uint16_t a) {
 }
 
 void irdump_(struct ir *ir, uint16_t i, union gab_jtir inst) {
-  fprintf(stderr, " %s | " GAB_GREEN "%%%04i" GAB_RESET " | %-20s\n",
+  fprintf(stderr, " %s | " GAB_GREEN "%%%04i" GAB_RESET " | %-20s | ",
           irtypenames[inst.op.type], i, irnames[inst.op.kind]);
-  if (inst.op.slot)
-    fprintf(stderr, "%02u | ", inst.op.slot);
-  else
-    fprintf(stderr, "   | ");
+
+  fprintf(stderr, "%02u | %02lu | ", inst.op.slot, ir->hv[i]);
+
+  fprintf(stderr, "\n");
 }
 
 void irdump_1(struct ir *ir, uint16_t i, union gab_jtir inst) {
   fprintf(stderr, " %s | " GAB_GREEN "%%%04i" GAB_RESET " | %-20s | ",
           irtypenames[inst.op.type], i, irnames[inst.op.kind]);
 
-  if (inst.op.slot)
-    fprintf(stderr, "%02u | ", inst.op.slot);
-  else
-    fprintf(stderr, "   | ");
+  fprintf(stderr, "%02u | %02lu | ", inst.op.slot, ir->hv[i]);
 
   irdumpa(ir, inst.op.a);
 
@@ -274,10 +286,7 @@ void irdump_2(struct ir *ir, uint16_t i, union gab_jtir inst) {
   fprintf(stderr, " %s | " GAB_GREEN "%%%04i" GAB_RESET " | %-20s | ",
           irtypenames[inst.op.type], i, irnames[inst.op.kind]);
 
-  if (inst.op.slot)
-    fprintf(stderr, "%02u | ", inst.op.slot);
-  else
-    fprintf(stderr, "   | ");
+  fprintf(stderr, "%02u | %02lu | ", inst.op.slot, ir->hv[i]);
 
   irdumpa(ir, inst.op.a);
 
@@ -290,11 +299,12 @@ void irdump_2(struct ir *ir, uint16_t i, union gab_jtir inst) {
 
 uint8_t ir_nargs(union gab_jtir inst) {
   switch (inst.op.kind) {
-  case kGAB_IR_JIT_EXIT:
   case kGAB_IR_LOAD_CHANNEL:
+  case kGAB_IR_TUPLE:
     return 0;
   case kGAB_IR_LOAD_LOCAL:
   case kGAB_IR_LOAD_UPVALUE:
+  case kGAB_IR_LOAD_CONSTANT:
   case kGAB_IR_STORE_LOCAL:
   case kGAB_IR_TYPE:
   case kGAB_IR_MATCH_HASHT:
@@ -328,6 +338,7 @@ uint8_t ir_nargs(union gab_jtir inst) {
   case kGAB_IR_LOAD_SHAPE:
   case kGAB_IR_LOAD_LIST:
     return 1;
+  case kGAB_IR_JIT_EXIT:
   case kGAB_IR_FADD:
   case kGAB_IR_FSUB:
   case kGAB_IR_FMUL:
@@ -423,9 +434,22 @@ static const uint8_t trampoline[] = {
 
 #define GAB_JIT_TRMPSIZE sizeof(trampoline);
 
+void putl(long arg) { printf("%lu\n", arg); }
+void putf(double arg) { printf("%lf\n", arg); }
+void putg(gab_value arg) { gab_fprintf(stdout, "$\n", arg); }
+
 void *address_for_symbol(const char *symbol) {
   if (!strcmp(symbol, "memmove"))
     return memmove;
+
+  if (!strcmp(symbol, "putl"))
+    return putl;
+
+  if (!strcmp(symbol, "putg"))
+    return putg;
+
+  if (!strcmp(symbol, "putf"))
+    return putf;
 
   if (!strcmp(symbol, "gab_boxtype"))
     return gab_boxtype;
@@ -436,8 +460,35 @@ void *address_for_symbol(const char *symbol) {
   if (!strcmp(symbol, "gab_recshp"))
     return gab_recshp;
 
+  if (!strcmp(symbol, "gab_sigwaiting"))
+    return gab_sigwaiting;
+
+  if (!strcmp(symbol, "gab_yield"))
+    return gab_yield;
+
+  if (!strcmp(symbol, "gab_gcepochnext"))
+    return gab_gcepochnext;
+
+  if (!strcmp(symbol, "gab_signext"))
+    return gab_signext;
+
+  if (!strcmp(symbol, "gab_thisfiber"))
+    return gab_thisfiber;
+
+  if (!strcmp(symbol, "vm_terminate"))
+    return vm_terminate;
+
+  if (!strcmp(symbol, "vm_error"))
+    return vm_error;
+
+  if (!strcmp(symbol, "vm_yield"))
+    return vm_yield;
+
   if (!strcmp(symbol, "_jit_exit"))
     return gab_jtexit;
+
+  if (!strcmp(symbol, "_jit_bail"))
+    return gab_jtbail;
 
   return nullptr;
 };
@@ -449,10 +500,13 @@ size_t relasize(const struct gab_jit_reloc *rela) {
      *
      * They require no space in the symbol table.
      */
-  case kGAB_JIT_RELOC_ARG1:
-  case kGAB_JIT_RELOC_ARG2:
+  case kGAB_JIT_RELOC_32ARG1:
+  case kGAB_JIT_RELOC_32ARG2:
+  case kGAB_JIT_RELOC_64ARG1:
+  case kGAB_JIT_RELOC_64ARG2:
   case kGAB_JIT_RELOC_NEXT:
-  case kGAB_JIT_RELOC_BAIL:
+  case kGAB_JIT_RELOC_IP:
+  case kGAB_JIT_RELOC_HV:
     return 0;
 
     /*
@@ -465,6 +519,7 @@ size_t relasize(const struct gab_jit_reloc *rela) {
      * A trampoline's size is statically known, but depends on the architecture.
      */
   case kGAB_JIT_RELOC_EXIT:
+  case kGAB_JIT_RELOC_BAIL:
   case kGAB_JIT_RELOC_TRMP:
     return GAB_JIT_TRMPSIZE;
   }
@@ -475,8 +530,10 @@ size_t inst_datasize(union gab_jtir inst) {
 
   int nrelas = stencil_nrelocas[inst.op.kind];
 
-  for (int i = 0; i < nrelas; i++)
+  for (int i = 0; i < nrelas; i++) {
     sum += relasize(stencil_relocas[inst.op.kind] + i);
+    sum = (sum + 15) & ~15;
+  }
 
   return sum;
 }
@@ -505,10 +562,13 @@ struct bb_off {
 /*
  * Append an instruction to a basic block.
  */
-struct bb_off bbappend(void *data, struct ir *ir, struct bb_off begin,
-                       union gab_jtir inst) {
-  uint64_t len = stencil_bytesizes[inst.op.kind];
+struct bb_off bbappend(uint8_t *data, struct ir *ir, struct bb_off begin,
+                       uint16_t ssa) {
+  union gab_jtir inst = ir->ir[ssa];
+  int64_t len = stencil_bytesizes[inst.op.kind];
 
+  // printf("ASSEMBLE %s (nreloc %lu)\n", irnames[inst.op.kind],
+  //        stencil_nrelocas[inst.op.kind]);
   gab_assert(begin.code - len >= 0, "Ran out of code");
 
   /* Copy the instruction, and increment code offset */
@@ -516,6 +576,7 @@ struct bb_off bbappend(void *data, struct ir *ir, struct bb_off begin,
   memcpy(data + begin.code, stencil_bytes[inst.op.kind], len);
 
   const struct gab_jit_reloc *relocas = stencil_relocas[inst.op.kind];
+
   for (uint64_t i = 0; i < stencil_nrelocas[inst.op.kind]; i++) {
     const struct gab_jit_reloc *reloca = relocas + i;
 
@@ -523,57 +584,106 @@ struct bb_off bbappend(void *data, struct ir *ir, struct bb_off begin,
     uint64_t patch_off = begin.code + reloca->offset;
 
     switch (reloca->k) {
-    case kGAB_JIT_RELOC_ARG1:
-    case kGAB_JIT_RELOC_ARG2: {
+    case kGAB_JIT_RELOC_32ARG1:
+    case kGAB_JIT_RELOC_32ARG2: {
       /* If the reloca type is arg 2, will be 1. Otherwise 0. */
-      uint32_t arg = reloca->k == kGAB_JIT_RELOC_ARG2;
+      uint32_t arg = reloca->k == kGAB_JIT_RELOC_32ARG2;
 
       /* In this case, the argument is a constant, uint16_t value */
       if (ir_isk(inst.op.args[arg])) {
-        int64_t patch_val = inst.op.args[arg];
+        int64_t patch_val = inst.op.args[arg] + reloca->addend;
+        gab_assert(patch_val >= INT32_MIN && patch_val <= INT32_MAX,
+                   "Patch value must fit within 32 bits.",
+                   irnames[inst.op.kind]);
         /* Write the 32 bit value to data + patch_off */
         int32_t patch_val32 = patch_val;
         memcpy(data + patch_off, &patch_val32, sizeof(patch_val32));
         break;
       }
 
-      // TODO @jit: Handle register allocation
       if (ir_iso(inst.op.args[arg])) {
-        int64_t patch_val = ir->ir[inst.op.args[arg] - IR_BIAS].op.slot;
-        /* Write the 32 bit value to data + patch_off */
+        uint16_t arg_slot = ir->ir[inst.op.args[arg] - IR_OBIAS].op.slot;
 
-        int32_t patch_val32 = patch_val;
-        memcpy(data + patch_off, &patch_val32, sizeof(patch_val32));
+        gab_assert(inst.op.slot > arg_slot,
+                   "Argument slot should be below inst slot");
+
+        gab_assert(reloca->addend == 0,
+                   "No addend allowed for this arg patch type");
+
+        uint16_t patch_val = inst.op.slot - arg_slot;
+        memcpy(data + patch_off, &patch_val, sizeof(patch_val));
         break;
       }
 
-      /* TODO @jit: 64-bit gab_value constants don't fit. */
       if (ir_isv(inst.op.args[arg])) {
-        // assert(false && "TODO");
+        gab_assert(false, "[%u] 64 bit constant in 32 bit relocation in %s.",
+                   arg, irnames[inst.op.kind]);
         break;
       }
 
       assert(false && "Unhandled arg type");
       break;
     };
+    case kGAB_JIT_RELOC_64ARG1:
+    case kGAB_JIT_RELOC_64ARG2: {
+      /* If the reloca type is arg 2, will be 1. Otherwise 0. */
+      uint64_t arg = reloca->k == kGAB_JIT_RELOC_64ARG2;
+
+      /* In this case, the argument is a constant, uint16_t value */
+      if (ir_isk(inst.op.args[arg])) {
+        int64_t patch_val = inst.op.args[arg] + reloca->addend;
+        /* Write the 64 bit value to data + patch_off */
+        memcpy(data + patch_off, &patch_val, sizeof(patch_val));
+        break;
+      }
+
+      if (ir_isv(inst.op.args[arg])) {
+        uint64_t patch_val =
+            ir->ir[IR_BIAS - (inst.op.args[arg] - IR_BIAS)].bits +
+            reloca->addend;
+
+        /* Write the 64 bit value to data + patch_off */
+        memcpy(data + patch_off, &patch_val, sizeof(patch_val));
+
+        break;
+      }
+
+      if (ir_iso(inst.op.args[arg])) {
+        gab_assert(reloca->addend == 0,
+                   "No addend allowed for this arg patch type");
+        int64_t patch_val = ir->ir[inst.op.args[arg] - IR_BIAS].op.slot;
+        /* Write the 64 bit value to data + patch_off */
+        memcpy(data + patch_off, &patch_val, sizeof(patch_val));
+        break;
+      }
+
+      assert(false && "Unhandled arg type");
+      break;
+    }
     case kGAB_JIT_RELOC_CONST: {
       begin.data -= reloca->as.constant.len;
 
+      /* Each data slot must be aligned to 16 bytes. */
+      begin.data &= ~0xF;
+
       /* Compute value, next data address + addend - patch_offset; */
       int64_t patch_val = begin.data + reloca->addend - patch_off;
-
-      /* Copy the constant, and increment the data offset */
-      memcpy(data + begin.data, reloca->as.constant.data,
-             reloca->as.constant.len);
 
       gab_assert(patch_val >= INT32_MIN && patch_val < INT32_MAX,
                  "A patched constant relocation must have offset within 32 bit "
                  "range.");
 
+      gab_assert(begin.data > ir_codesize(ir), "Too many constants");
+
+      gab_assert(patch_val < ir_size(ir), "Nonsensical patch");
+
+      /* Copy the constant, and increment the data offset */
+      memcpy(data + begin.data, reloca->as.constant.data,
+             reloca->as.constant.len);
+
       /* Write the 32 bit value to data + patch_off */
       int32_t patch_val32 = patch_val;
       memcpy(data + patch_off, &patch_val32, sizeof(patch_val32));
-
       break;
     };
     /*
@@ -599,21 +709,26 @@ struct bb_off bbappend(void *data, struct ir *ir, struct bb_off begin,
       memcpy(data + patch_off, &patch_val32, sizeof(patch_val32));
       break;
     };
-    case kGAB_JIT_RELOC_BAIL: {
-      // TODO @jit: Implement an actual bail mode.
-      int64_t patch_val = begin.code + len + reloca->addend - patch_off;
-
-      gab_assert(patch_val >= INT32_MIN && patch_val < INT32_MAX,
-                 "A patched bail relocation must have offset within 32 bits.");
-
-      /* Write the 32 bit value to data + patch_off */
-      int32_t patch_val32 = patch_val;
-      memcpy(data + patch_off, &patch_val32, sizeof(patch_val32));
+    case kGAB_JIT_RELOC_IP: {
+      /* Compute value, code after stencil + addend - patch_offset; */
+      int64_t patch_val = (uintptr_t)ir->ip[ssa - IR_BIAS] + reloca->addend;
+      /* Write the 64 bit value to data + patch_off */
+      memcpy(data + patch_off, &patch_val, sizeof(patch_val));
       break;
-    };
+    }
+    case kGAB_JIT_RELOC_HV: {
+      /* Compute value, code after stencil + addend - patch_offset; */
+      int64_t patch_val = (uintptr_t)ir->hv[ssa - IR_BIAS] + reloca->addend;
+      /* Write the 64 bit value to data + patch_off */
+      memcpy(data + patch_off, &patch_val, sizeof(patch_val));
+      break;
+    }
+    case kGAB_JIT_RELOC_BAIL:
     case kGAB_JIT_RELOC_EXIT:
     case kGAB_JIT_RELOC_TRMP: {
       begin.data -= sizeof(trampoline);
+
+      gab_assert(begin.data > ir_codesize(ir), "Too many trampoline");
 
       /* Compute value, next data address + addend - patch_offset; */
       int64_t patch_val = begin.data + reloca->addend - patch_off;
@@ -643,8 +758,9 @@ struct bb_off bbappend(void *data, struct ir *ir, struct bb_off begin,
 
   // printf("\nCOPY AND PATCH %s:\n", irnames[inst.op.kind]);
   // for (uint64_t i = 0; i < len; i++) {
-  //   printf("%02x ", ((uint8_t *)data)[begin.code + i]);
+  //   printf("%li: %02x\n", begin.code + i, ((uint8_t *)data)[begin.code + i]);
   // }
+  // printf("\n");
 
   return begin;
 }
@@ -659,27 +775,29 @@ struct gab_jtbb *gab_jtbbcreate(struct gab_triple gab, struct gab_jtbbid *id) {
 
   bb->id = *id;
 
-  uint8_t *ip = proto_ip(gab, id->proto) + id->block_offset;
+  uint8_t *ip = proto_ip(gab, id->proto);
   gab_value *kb = proto_ks(gab, id->proto);
 
   uint8_t op = *ip++;
 
   struct ir ir = {0};
-  ir.sp = ir.sb + 1;
+  ir.sp = ir.sb;
 
-  bool result = handlers[op](&gab, bb, ip, kb, &ir);
+  uint8_t *result = handlers[op](&gab, bb, ip, kb, &ir);
 
-  emito(&ir, kGAB_IR_JIT_EXIT, kGAB_IRTYPE_UNKNOWN, 0, 0);
+  if (!result)
+    return nullptr;
 
-  if (result) {
-    gab_fmodinspect(stderr, __gab_obj(id->proto));
+  emito(&ir, nullptr, 0, kGAB_IR_JIT_EXIT, kGAB_IRTYPE_UNKNOWN,
+        emitk_v(&ir, (uintptr_t)result), emitk_b(&ir, *ir.sp));
 
-    irdump(&ir);
+  gab_fmodinspect(stderr, __gab_obj(id->proto));
+  
+  irdump(&ir);
 
-    bb->code_size = ir_size(&ir);
+  bb->code_size = ir_size(&ir);
 
-    bb->native_code = assemble(&ir);
-  }
+  bb->native_code = assemble(&ir);
 
   return bb;
 }
@@ -709,7 +827,6 @@ struct gab_jtbb *gab_jtchk(struct gab_triple gab, struct gab_jt *jt,
   init_type_state(gab, &successor_state, loc, upv, proto);
 
   struct gab_jtbbid id = {
-      .block_offset = offset,
       .proto = proto,
       .entry_state = successor_state,
   };
@@ -722,7 +839,6 @@ struct gab_jtbb *gab_jttry(struct gab_triple gab, struct gab_jt *jt,
                            struct gab_oprototype *proto, uint8_t *ip,
                            gab_value *loc, gab_value *upv) {
   assert(proto->header.kind == kGAB_PROTOTYPE);
-  uint64_t offset = ip - proto_ip(gab, proto);
 
   // Build the type state for the successor block.
   // The inline cache tells us the receiver type at this send site.
@@ -733,15 +849,15 @@ struct gab_jtbb *gab_jttry(struct gab_triple gab, struct gab_jt *jt,
   init_type_state(gab, &successor_state, loc, upv, proto);
 
   struct gab_jtbbid id = {
-      .block_offset = offset,
       .proto = proto,
       .entry_state = successor_state,
   };
 
   struct gab_jtbb *version = d_bb_read(&jt->blocks, &id);
 
-  if (version)
+  if (version) {
     return version;
+  }
 
   version = gab_jtbbcreate(gab, &id);
 
@@ -758,63 +874,34 @@ struct gab_jtbb *gab_jttry(struct gab_triple gab, struct gab_jt *jt,
 
 static void *assemble(struct ir *ir) {
   uint64_t n = ir_size(ir);
-  uint8_t *code = mmap(nullptr, n, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
+  uint8_t *code =
+      mmap(nullptr, n, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
   gab_assert(code != nullptr, "Failed to mmap");
 
   struct bb_off off = {ir_codesize(ir), n};
 
-  // TODO @jit: Register Allocation
-  // We need a way of mapping values in SSA form back onto the stack.
-  // Registers are kinda full, so we won't use those.
-  // We can simply offset everything from the FB(), like normal.
-  //
-  // Reverse linear scan to assign ssa to registers, we can have a reasonable
-  // max. Don't need any spilling, because we are hitting to virtual registers
-  // still.
-  //
-  // This means we'll have to emit code backwards, but that is fine.
-
-  for (uint16_t i = 0; i < ir->os; i++)
-    off = bbappend(code, ir, off, ir->ir[IR_BIAS + i]);
+  for (int32_t i = ir->os - 1; i >= 0; i--)
+    off = bbappend(code, ir, off, IR_BIAS + i);
 
   gab_assert(off.code <= ir_codesize(ir),
              "The code should remain in the code section of the allocation.");
 
-  // TODO @jit: Return from the jit code in a valid way.
-  // This can be done by trampolining out to another fn, or maybe
-  // manually jumping to a specific op-code.
-  // We could also have a new IR op for this.
-
+  // fprintf(stderr, "ASSEMBLED FROM %lu -> %lu\n", off.code, ir_codesize(ir));
   // for (uint32_t i = off.code; i < ir_codesize(ir); i++) {
-  //   fprintf(stderr, "%02X ", code[i]);
+  //   fprintf(stderr, "%i: %02X\n", i, code[i]);
   // }
   //
   // fprintf(stderr, "\n");
-  //
+
   mprotect(code, n, PROT_READ | PROT_EXEC);
 
   return code + off.code;
 }
 
-// typedef struct {
-//   uint16_t bytecode_offset; // where to resume in the interpreter
-//   uint8_t nlocals;
-//   // register/spill assignments for each local at this guard point
-//   // (populated by the register allocator)
-//   struct {
-//     enum { kREG, kSPILL, kCONST } location;
-//     union {
-//       uint8_t reg;
-//       uint16_t spill_offset;
-//       gab_value constant;
-//     };
-//   } local_locs[GAB_JIT_MAX_LOCALS];
-// } gab_deopt_record;
-
 #define ATTRIBUTES
 
 #define CASE_CODE(name)                                                        \
-  ATTRIBUTES bool OP_GAB_IR_##name##_HANDLER(OP_HANDLER_ARGS)
+  ATTRIBUTES uint8_t *OP_GAB_IR_##name##_HANDLER(OP_HANDLER_ARGS)
 
 #define DISPATCH_ARGS() __gab, __bb, __ip, __kb, __ir
 
@@ -824,6 +911,14 @@ static void *assemble(struct ir *ir) {
     [[clang::musttail]] return handlers[o](DISPATCH_ARGS());                   \
   })
 
+#define FAIL()                                                                 \
+  ({                                                                           \
+    fprintf(stderr, "FAIL TO JIT COMPILE %s\n", __FUNCTION__);                 \
+    return nullptr;                                                            \
+  })
+
+#define SUCCEED(diff) ({ return IP() - diff; })
+
 #define NEXT() ({ DISPATCH(*(IP()++)); })
 #define NEXT_CHECKED() (NEXT())
 
@@ -832,6 +927,7 @@ static void *assemble(struct ir *ir) {
 #define PUSH(ssa) (ir_push(IR(), ssa))
 #define PUSHTUPLE(have)                                                        \
   ({                                                                           \
+    emito(IR(), IP(), VAR(), kGAB_IR_TUPLE, kGAB_IRTYPE_UNKNOWN, 0, 0);        \
     ir_push(IR(), have);                                                       \
     *SP() = 0;                                                                 \
   })
@@ -855,12 +951,20 @@ static void *assemble(struct ir *ir) {
 #define READ_CONSTANT                                                          \
   ({                                                                           \
     gab_value k = KB()[READ_SHORT];                                            \
-    emitk_v(IR(), k);                                                          \
+    emito(IR(), IP(), VAR(), kGAB_IR_LOAD_CONSTANT, gab_valkind(k),            \
+          emitk_v(IR(), k), 0);                                                \
   })
 #define READ_SENDCONSTANTS                                                     \
   ({                                                                           \
     uint16_t shrt = READ_SHORT & (~(fHAVE_TAIL << 8));                         \
     KB() + shrt;                                                               \
+  })
+
+#define PRIMITIVE_SENDK()                                                      \
+  ({                                                                           \
+    gab_value k = ks[GAB_SEND_KSPEC];                                          \
+    emito(IR(), IP(), VAR(), kGAB_IR_SEND_CONSTANT, gab_valkind(k),            \
+          emitk_v(IR(), k), 0);                                                \
   })
 
 #define READ_SENDCONSTANTS_ANDTAIL(t)                                          \
@@ -871,211 +975,229 @@ static void *assemble(struct ir *ir) {
   })
 
 #define SEND_GUARD_CACHED_MESSAGE_SPECS(e)                                     \
-  emito(IR(), kGAB_IR_GUARD_SPECS, kGAB_IRTYPE_UNKNOWN, emitk_b(IR(), e), 0)
+  emito(IR(), IP(), VAR(), kGAB_IR_GUARD_SPECS, kGAB_IRTYPE_UNKNOWN,           \
+        emitk_b(IR(), e), 0)
 
-#define SEND_GUARD_CACHED_MATCH_TYPE(idx, t)                                   \
-  emito(IR(), kGAB_IR_GUARD_MATCH_TYPE, kGAB_IRTYPE_UNKNOWN, t, idx)
+#define SEND_GUARD_CACHED_MATCH_TYPE(idx, t) FAIL()
+// emito(IR(),IP(), kGAB_IR_GUARD_MATCH_TYPE, kGAB_IRTYPE_UNKNOWN, t, idx)
 
 #define SEND_GUARD_CACHED_RECEIVER_TYPE(r)                                     \
-  emito(IR(), kGAB_IR_GUARD_TYPE, kGAB_IRTYPE_UNKNOWN, r,                      \
+  emito(IR(), IP(), VAR(), kGAB_IR_GUARD_TYPE, kGAB_IRTYPE_UNKNOWN, r,         \
         emitk_v(IR(), ks[GAB_SEND_KTYPE]))
 
 #define SEND_GUARD_KIND(v, k)                                                  \
-  emito(IR(), kGAB_IR_GUARD_KIND, kGAB_IRTYPE_UNKNOWN, v, k)
+  emito(IR(), IP(), VAR(), kGAB_IR_GUARD_KIND, kGAB_IRTYPE_UNKNOWN, v, k)
 
 #define SEND_GUARD_ISSHP(v) SEND_GUARD_KIND(v, kGAB_SHAPE)
 
 #define SEND_GUARD_ISREC(v) SEND_GUARD_KIND(v, kGAB_RECORD)
 
-#define NILPAD_GUARD_ARGS_GTE(n)                                               \
-  emito(IR(), kGAB_IR_GUARD_NILPAD, kGAB_IRTYPE_UNKNOWN, n, have)
+// TODO @jit: This should be compile-time only check.
+// Could probably implement this without a guard, even.
+#define NILPAD_GUARD_ARGS_GTE(n)
+// emito(IR(), IP(), VAR(), kGAB_IR_GUARD_NILPAD, kGAB_IRTYPE_UNKNOWN, n, have)
 
 #define PANIC_GUARD_STACKSPACE(v)                                              \
-  emito(IR(), kGAB_IR_GUARD_STACKSPACE, kGAB_IRTYPE_UNKNOWN, v, 0)
+  emito(IR(), IP(), VAR(), kGAB_IR_GUARD_STACKSPACE, kGAB_IRTYPE_UNKNOWN, v, 0)
 
 #define PANIC_GUARD_STACKSPACE_SPLATLIST(v)                                    \
-  emito(IR(), kGAB_IR_GUARD_STACKSPACE_SPLATLIST, kGAB_IRTYPE_UNKNOWN, v, 0)
+  emito(IR(), IP(), VAR(), kGAB_IR_GUARD_STACKSPACE_SPLATLIST,                 \
+        kGAB_IRTYPE_UNKNOWN, v, 0)
 
 #define PANIC_GUARD_STACKSPACE_SPLATDICT(v)                                    \
-  emito(IR(), kGAB_IR_GUARD_STACKSPACE_SPLATDICT, kGAB_IRTYPE_UNKNOWN, v, 0)
+  emito(IR(), IP(), VAR(), kGAB_IR_GUARD_STACKSPACE_SPLATDICT,                 \
+        kGAB_IRTYPE_UNKNOWN, v, 0)
 
 #define PANIC_GUARD_STACKSPACE_SPLATSHAPE(v)                                   \
-  emito(IR(), kGAB_IR_GUARD_STACKSPACE_SPLATSHAPE, kGAB_IRTYPE_UNKNOWN, v, 0)
+  emito(IR(), IP(), VAR(), kGAB_IR_GUARD_STACKSPACE_SPLATSHAPE,                \
+        kGAB_IRTYPE_UNKNOWN, v, 0)
 
 #define PANIC_GUARD_KIND(v, k)                                                 \
-  emito(IR(), kGAB_IR_GUARD_KIND, kGAB_IRTYPE_UNKNOWN, v, k)
+  emito(IR(), IP(), VAR(), kGAB_IR_GUARD_KIND, kGAB_IRTYPE_UNKNOWN, v, k)
 
 #define PANIC_GUARD_ISN(v) PANIC_GUARD_KIND(v, kGAB_NUMBER)
 
 // TODO
-#define PANIC_GUARD_ISB(v) return false
+#define PANIC_GUARD_ISB(v) FAIL()
 
 // TODO
-#define PANIC_GUARD_ISS(v) return false
+#define PANIC_GUARD_ISS(v) FAIL()
 
 // TODO
-#define PANIC_GUARD_SHAPE_LEN(shape, len) return false
+#define PANIC_GUARD_SHAPE_LEN(shape, len) FAIL()
 
 // TOOD
-#define SHORTCUT_GUARD_ARGS_LT(n) return false
+#define SHORTCUT_GUARD_ARGS_LT(n) FAIL()
 
 #define GUARD_NOP
 
 #define TRIM_GUARD_EXACTLY_N(want, n)                                          \
-  emito(IR(), kGAB_IR_GUARD_TRIM_EXACTLY_N, kGAB_IRTYPE_UNKNOWN, want, n)
+  emito(IR(), IP(), VAR(), kGAB_IR_GUARD_TRIM_EXACTLY_N, kGAB_IRTYPE_UNKNOWN,  \
+        want, n)
 
 #define TRIM_GUARD_DOWN_N(want, n)                                             \
-  emito(IR(), kGAB_IR_GUARD_TRIM_DOWN_N, kGAB_IRTYPE_UNKNOWN, want, n)
+  emito(IR(), IP(), VAR(), kGAB_IR_GUARD_TRIM_DOWN_N, kGAB_IRTYPE_UNKNOWN,     \
+        want, n)
 
 #define TRIM_GUARD_UP_N(want, n)                                               \
-  emito(IR(), kGAB_IR_GUARD_TRIM_UP_N, kGAB_IRTYPE_UNKNOWN, want, n)
+  emito(IR(), IP(), VAR(), kGAB_IR_GUARD_TRIM_UP_N, kGAB_IRTYPE_UNKNOWN, want, \
+        n)
 
-#define PRIMITIVE_TYPE(v) emito(IR(), kGAB_IR_TYPE, kGAB_IRTYPE_UNKNOWN, v, 0)
+#define PRIMITIVE_TYPE(v)                                                      \
+  emito(IR(), IP(), VAR(), kGAB_IR_TYPE, kGAB_IRTYPE_UNKNOWN, v, 0)
 
 #define PRIMITIVE_MATCH_HASHT(v)                                               \
-  emito(IR(), kGAB_IR_MATCH_HASHT, kGAB_IRTYPE_UNBOXU, v, 0)
+  emito(IR(), IP(), VAR(), kGAB_IR_MATCH_HASHT, kGAB_IRTYPE_UNBOXU, v, 0)
 
 #define LOCAL(b)                                                               \
   ({                                                                           \
     uint8_t loc = (b);                                                         \
-    emito(IR(), kGAB_IR_LOAD_LOCAL, localt(IR(), BB(), loc), loc, 0);          \
+    emito(IR(), IP(), VAR(), kGAB_IR_LOAD_LOCAL, localt(IR(), BB(), loc), loc, \
+          0);                                                                  \
   })
 
 #define UPVALUE(b)                                                             \
   ({                                                                           \
     uint8_t upv = (b);                                                         \
-    emito(IR(), kGAB_IR_LOAD_UPVALUE, upvaluet(IR(), BB(), upv), upv, 0);      \
+    emito(IR(), IP(), VAR(), kGAB_IR_LOAD_UPVALUE, upvaluet(IR(), BB(), upv),  \
+          upv, 0);                                                             \
   })
 
 #define STORE_LOCAL(b, v)                                                      \
-  emito(IR(), kGAB_IR_STORE_LOCAL, kGAB_IRTYPE_UNKNOWN, b, v)
+  emito(IR(), IP(), VAR(), kGAB_IR_STORE_LOCAL, kGAB_IRTYPE_UNKNOWN, b, v)
 
-#define SET_VAR(n)
+#define SET_VAR(n) ({ *SP() = n; })
 
 #define PRIMITIVE_CALL_NATIVE(n, have, below_have, message)                    \
-  emito(IR(), kGAB_IR_CALL_NATIVE, 0, emitk_b(IR(), (uintptr_t)n), 0)
+  ({                                                                           \
+    emito(IR(), IP(), VAR(), kGAB_IR_CALL_NATIVE, 0,                           \
+          emitk_v(IR(), (uintptr_t)n), emitk_v(IR(), (uintptr_t)IP()));        \
+    DROP_N(have + 1);                                                          \
+    SET_VAR(below_have + 1);                                                   \
+    SUCCEED(GAB_SEND_CACHE_SIZE);                                              \
+  })
 
 // Valid terminations of jitted bb's
 // TODO: inline all these calls
-#define PRIMITIVE_CALL_BLOCK(blk, have) return true
+#define PRIMITIVE_CALL_BLOCK(blk, have) SUCCEED(GAB_SEND_CACHE_SIZE)
 
-#define PRIMITIVE_LOCALCALL_BLOCK(blk, have) return true
+#define PRIMITIVE_LOCALCALL_BLOCK(blk, have) SUCCEED(GAB_SEND_CACHE_SIZE)
 
-#define PRIMITIVE_MATCHCALL_BLOCK(idx, have) return true
+#define PRIMITIVE_MATCHCALL_BLOCK(idx, have) SUCCEED(GAB_SEND_CACHE_SIZE)
 
-#define PRIMITIVE_LOCALTAILCALL_BLOCK(blk, have) return true
+#define PRIMITIVE_LOCALTAILCALL_BLOCK(blk, have) SUCCEED(GAB_SEND_CACHE_SIZE)
 
-#define PRIMITIVE_MATCHTAILCALL_BLOCK(idx, have) return true
+#define PRIMITIVE_MATCHTAILCALL_BLOCK(idx, have) SUCCEED(GAB_SEND_CACHE_SIZE)
 
-#define PRIMITIVE_TAILCALL_BLOCK(blk, have) return true
+#define PRIMITIVE_TAILCALL_BLOCK(blk, have) SUCCEED(GAB_SEND_CACHE_SIZE)
 
-#define PRIMITIVE_RETURN() return true
+#define PRIMITIVE_RETURN() SUCCEED(1)
 
 // Invalid terminations of jitted bb's
-#define PRIMITIVE_USE(v) return false
+#define PRIMITIVE_USE(v) FAIL()
 
-#define PRIMITIVE_SEND(n) return false
+#define PRIMITIVE_SEND(n) FAIL()
 
-#define PRIMITIVE_TAKE(c) return false
+#define PRIMITIVE_TAKE(c) FAIL()
 
-#define PRIMITIVE_PUT(c) return false
+#define PRIMITIVE_PUT(c) FAIL()
 
-#define PRIMITIVE_FIBER(c) return false
+#define PRIMITIVE_FIBER(c) FAIL()
 
 #define PRIMITIVE_BINARY_ADD(a, b)                                             \
-  emito(IR(), kGAB_IR_FADD, kGAB_IRTYPE_UNBOXF, a, b)
+  emito(IR(), IP(), VAR(), kGAB_IR_FADD, kGAB_IRTYPE_UNBOXF, a, b)
 
 #define PRIMITIVE_BINARY_SUB(a, b)                                             \
-  emito(IR(), kGAB_IR_FSUB, kGAB_IRTYPE_UNBOXF, a, b)
+  emito(IR(), IP(), VAR(), kGAB_IR_FSUB, kGAB_IRTYPE_UNBOXF, a, b)
 
 #define PRIMITIVE_BINARY_MUL(a, b)                                             \
-  emito(IR(), kGAB_IR_FMUL, kGAB_IRTYPE_UNBOXF, a, b)
+  emito(IR(), IP(), VAR(), kGAB_IR_FMUL, kGAB_IRTYPE_UNBOXF, a, b)
 
 #define PRIMITIVE_BINARY_DIV(a, b)                                             \
-  emito(IR(), kGAB_IR_FDIV, kGAB_IRTYPE_UNBOXF, a, b)
+  emito(IR(), IP(), VAR(), kGAB_IR_FDIV, kGAB_IRTYPE_UNBOXF, a, b)
 
 #define PRIMITIVE_BINARY_MOD(a, b)                                             \
-  emito(IR(), kGAB_IR_IMOD, kGAB_IRTYPE_UNBOXF, a, b)
+  emito(IR(), IP(), VAR(), kGAB_IR_IMOD, kGAB_IRTYPE_UNBOXF, a, b)
 
 #define PRIMITIVE_BINARY_LT(a, b)                                              \
-  emito(IR(), kGAB_IR_FLT, kGAB_IRTYPE_UNBOXB, a, b)
+  emito(IR(), IP(), VAR(), kGAB_IR_FLT, kGAB_IRTYPE_UNBOXB, a, b)
 
 #define PRIMITIVE_BINARY_LTE(a, b)                                             \
-  emito(IR(), kGAB_IR_FLTE, kGAB_IRTYPE_UNBOXB, a, b)
+  emito(IR(), IP(), VAR(), kGAB_IR_FLTE, kGAB_IRTYPE_UNBOXB, a, b)
 
 #define PRIMITIVE_BINARY_GT(a, b)                                              \
-  emito(IR(), kGAB_IR_FGT, kGAB_IRTYPE_UNBOXB, a, b)
+  emito(IR(), IP(), VAR(), kGAB_IR_FGT, kGAB_IRTYPE_UNBOXB, a, b)
 
 #define PRIMITIVE_BINARY_GTE(a, b)                                             \
-  emito(IR(), kGAB_IR_FGTE, kGAB_IRTYPE_UNBOXB, a, b)
+  emito(IR(), IP(), VAR(), kGAB_IR_FGTE, kGAB_IRTYPE_UNBOXB, a, b)
 
 #define PRIMITIVE_BINARY_BOR(a, b)                                             \
-  emito(IR(), kGAB_IR_IBOR, kGAB_IRTYPE_UNBOXI, a, b)
+  emito(IR(), IP(), VAR(), kGAB_IR_IBOR, kGAB_IRTYPE_UNBOXI, a, b)
 
 #define PRIMITIVE_BINARY_BND(a, b)                                             \
-  emito(IR(), kGAB_IR_IBND, kGAB_IRTYPE_UNBOXI, a, b)
+  emito(IR(), IP(), VAR(), kGAB_IR_IBND, kGAB_IRTYPE_UNBOXI, a, b)
 
 #define PRIMITIVE_BINARY_STRLT(a, b)                                           \
-  emito(IR(), kGAB_IR_STRLT, kGAB_IRTYPE_UNBOXB, a, b)
+  emito(IR(), IP(), VAR(), kGAB_IR_STRLT, kGAB_IRTYPE_UNBOXB, a, b)
 
 #define PRIMITIVE_BINARY_STRLTE(a, b)                                          \
-  emito(IR(), kGAB_IR_STRLTE, kGAB_IRTYPE_UNBOXB, a, b)
+  emito(IR(), IP(), VAR(), kGAB_IR_STRLTE, kGAB_IRTYPE_UNBOXB, a, b)
 
 #define PRIMITIVE_BINARY_STRGT(a, b)                                           \
-  emito(IR(), kGAB_IR_STRGT, kGAB_IRTYPE_UNBOXB, a, b)
+  emito(IR(), IP(), VAR(), kGAB_IR_STRGT, kGAB_IRTYPE_UNBOXB, a, b)
 
 #define PRIMITIVE_BINARY_STRGTE(a, b)                                          \
-  emito(IR(), kGAB_IR_STRGTE, kGAB_IRTYPE_UNBOXB, a, b)
+  emito(IR(), IP(), VAR(), kGAB_IR_STRGTE, kGAB_IRTYPE_UNBOXB, a, b)
 
 #define PRIMITIVE_BINARY_LSH(a, b)                                             \
-  emito(IR(), kGAB_IR_ULSH, kGAB_IRTYPE_UNBOXU, a, b)
+  emito(IR(), IP(), VAR(), kGAB_IR_ULSH, kGAB_IRTYPE_UNBOXU, a, b)
 
 #define PRIMITIVE_BINARY_RSH(a, b)                                             \
-  emito(IR(), kGAB_IR_URSH, kGAB_IRTYPE_UNBOXU, a, b)
+  emito(IR(), IP(), VAR(), kGAB_IR_URSH, kGAB_IRTYPE_UNBOXU, a, b)
 
 #define PRIMITIVE_BINARY_CONCAT(a, b)                                          \
-  emito(IR(), kGAB_IR_STRCONCAT, kGAB_IRTYPE_STRING, a, b)
+  emito(IR(), IP(), VAR(), kGAB_IR_STRCONCAT, kGAB_IRTYPE_STRING, a, b)
 
 #define PRIMITIVE_BINARY_EQ(a, b)                                              \
-  emito(IR(), kGAB_IR_VEQ, kGAB_IRTYPE_UNBOXB, a, b)
+  emito(IR(), IP(), VAR(), kGAB_IR_VEQ, kGAB_IRTYPE_UNBOXB, a, b)
 
 #define PRIMITIVE_UNARY_LIN(a)                                                 \
-  emito(IR(), kGAB_IR_BLIN, kGAB_IRTYPE_UNBOXB, a, 0)
+  emito(IR(), IP(), VAR(), kGAB_IR_BLIN, kGAB_IRTYPE_UNBOXB, a, 0)
 
 #define PRIMITIVE_UNARY_BIN(a)                                                 \
-  emito(IR(), kGAB_IR_IBIN, kGAB_IRTYPE_UNBOXI, a, 0)
+  emito(IR(), IP(), VAR(), kGAB_IR_IBIN, kGAB_IRTYPE_UNBOXI, a, 0)
 
 #define PRIMITIVE_UNBOXF(ssa)                                                  \
-  emito(IR(), kGAB_IR_UNBOXF, kGAB_IRTYPE_UNBOXF, ssa, 0)
+  emito(IR(), IP(), VAR(), kGAB_IR_UNBOXF, kGAB_IRTYPE_UNBOXF, ssa, 0)
 
 #define PRIMITIVE_UNBOXI(ssa)                                                  \
-  emito(IR(), kGAB_IR_UNBOXI, kGAB_IRTYPE_UNBOXI, ssa, 0)
+  emito(IR(), IP(), VAR(), kGAB_IR_UNBOXI, kGAB_IRTYPE_UNBOXI, ssa, 0)
 
 #define PRIMITIVE_UNBOXU(ssa)                                                  \
-  emito(IR(), kGAB_IR_UNBOXU, kGAB_IRTYPE_UNBOXU, ssa, 0)
+  emito(IR(), IP(), VAR(), kGAB_IR_UNBOXU, kGAB_IRTYPE_UNBOXU, ssa, 0)
 
 #define PRIMITIVE_UNBOXB(ssa)                                                  \
-  emito(IR(), kGAB_IR_UNBOXB, kGAB_IRTYPE_UNBOXB, ssa, 0)
+  emito(IR(), IP(), VAR(), kGAB_IR_UNBOXB, kGAB_IRTYPE_UNBOXB, ssa, 0)
 
 #define PRIMITIVE_UNBOXS(ssa)                                                  \
-  emito(IR(), kGAB_IR_UNBOXS, kGAB_IRTYPE_UNBOXS, ssa, 0)
+  emito(IR(), IP(), VAR(), kGAB_IR_UNBOXS, kGAB_IRTYPE_UNBOXS, ssa, 0)
 
 #define PRIMITIVE_UNBOXV(ssa) 0
 
 #define PRIMITIVE_UNBOXF2(ssa)                                                 \
-  emito(IR(), kGAB_IR_UNBOXF2, kGAB_IRTYPE_UNBOXF, ssa, 0)
+  emito(IR(), IP(), VAR(), kGAB_IR_UNBOXF2, kGAB_IRTYPE_UNBOXF, ssa, 0)
 
 #define PRIMITIVE_UNBOXI2(ssa)                                                 \
-  emito(IR(), kGAB_IR_UNBOXI2, kGAB_IRTYPE_UNBOXI, ssa, 0)
+  emito(IR(), IP(), VAR(), kGAB_IR_UNBOXI2, kGAB_IRTYPE_UNBOXI, ssa, 0)
 
 #define PRIMITIVE_UNBOXU2(ssa)                                                 \
-  emito(IR(), kGAB_IR_UNBOXU2, kGAB_IRTYPE_UNBOXU, ssa, 0)
+  emito(IR(), IP(), VAR(), kGAB_IR_UNBOXU2, kGAB_IRTYPE_UNBOXU, ssa, 0)
 
 #define PRIMITIVE_UNBOXB2(ssa)                                                 \
-  emito(IR(), kGAB_IR_UNBOXB2, kGAB_IRTYPE_UNBOXB, ssa, 0)
+  emito(IR(), IP(), VAR(), kGAB_IR_UNBOXB2, kGAB_IRTYPE_UNBOXB, ssa, 0)
 
 #define PRIMITIVE_UNBOXS2(ssa)                                                 \
-  emito(IR(), kGAB_IR_UNBOXS2, kGAB_IRTYPE_UNBOXS, ssa, 0)
+  emito(IR(), IP(), VAR(), kGAB_IR_UNBOXS2, kGAB_IRTYPE_UNBOXS, ssa, 0)
 
 #define PRIMITIVE_UNBOXV2(ssa) 0
 
@@ -1087,58 +1209,59 @@ static void *assemble(struct ir *ir) {
 #define PRIMITIVE_UNBOXV_T uint16_t
 
 #define PRIMITIVE_BOXN(ssa)                                                    \
-  emito(IR(), kGAB_IR_BOXN, kGAB_IRTYPE_NUMBER, ssa, 0)
+  emito(IR(), IP(), VAR(), kGAB_IR_BOXN, kGAB_IRTYPE_NUMBER, ssa, 0)
 
 #define PRIMITIVE_BOXB(ssa)                                                    \
-  emito(IR(), kGAB_IR_BOXB, kGAB_IRTYPE_MESSAGE_BOOL, ssa, 0)
+  emito(IR(), IP(), VAR(), kGAB_IR_BOXB, kGAB_IRTYPE_MESSAGE_BOOL, ssa, 0)
 
 #define PRIMITIVE_BOXV(ssa) ssa
 
 #define PRIMITIVE_CONS(a, b)                                                   \
-  emito(IR(), kGAB_IR_VCONS, kGAB_IRTYPE_RECORD, a, b)
+  emito(IR(), IP(), VAR(), kGAB_IR_VCONS, kGAB_IRTYPE_RECORD, a, b)
 
 #define PRIMITIVE_CONS_RECORD(a, b)                                            \
-  emito(IR(), kGAB_IR_VCONS_RECORD, kGAB_IRTYPE_RECORD, a, b)
+  emito(IR(), IP(), VAR(), kGAB_IR_VCONS_RECORD, kGAB_IRTYPE_RECORD, a, b)
 
 #define PRIMITIVE_SPLATSHAPE(v)                                                \
-  emito(IR(), kGAB_IR_SPLAT_SHAPE, kGAB_IRTYPE_UNKNOWN, v, 0)
+  emito(IR(), IP(), VAR(), kGAB_IR_SPLAT_SHAPE, kGAB_IRTYPE_UNKNOWN, v, 0)
 
 #define PRIMITIVE_SPLATDICT(v)                                                 \
-  emito(IR(), kGAB_IR_SPLAT_DICT, kGAB_IRTYPE_UNKNOWN, v, 0)
+  emito(IR(), IP(), VAR(), kGAB_IR_SPLAT_DICT, kGAB_IRTYPE_UNKNOWN, v, 0)
 
 #define PRIMITIVE_SPLATLIST(v)                                                 \
-  emito(IR(), kGAB_IR_SPLAT_LIST, kGAB_IRTYPE_UNKNOWN, v, 0)
+  emito(IR(), IP(), VAR(), kGAB_IR_SPLAT_LIST, kGAB_IRTYPE_UNKNOWN, v, 0)
 
 #define PRIMITIVE_PROPERTY_RECORD(v, offset, have, below_have)                 \
   assert(offset < IR_BIAS);                                                    \
-  emito(IR(), kGAB_IR_LOAD_PROPERTY, 0, v, offset)
+  emito(IR(), IP(), VAR(), kGAB_IR_LOAD_PROPERTY, 0, v, offset)
 
 #define PRIMITIVE_BLOCK(v)                                                     \
-  emito(IR(), kGAB_IR_LOAD_BLOCK, kGAB_IRTYPE_BLOCK, v, 0)
+  emito(IR(), IP(), VAR(), kGAB_IR_LOAD_BLOCK, kGAB_IRTYPE_BLOCK, v, 0)
 
 #define PRIMITIVE_CHANNEL()                                                    \
-  emito(IR(), kGAB_IR_LOAD_CHANNEL, kGAB_IRTYPE_CHANNEL, 0, 0)
+  emito(IR(), IP(), VAR(), kGAB_IR_LOAD_CHANNEL, kGAB_IRTYPE_CHANNEL, 0, 0)
 
 #define PRIMITIVE_TRIM(want, have)                                             \
-  emito(IR(), kGAB_IR_TRIM, kGAB_IRTYPE_UNKNOWN, want, 0)
+  emito(IR(), IP(), VAR(), kGAB_IR_TRIM, kGAB_IRTYPE_UNKNOWN, want, 0)
 
 #define PRIMITIVE_PACKRECORD(below, above)                                     \
-  emito(IR(), kGAB_IR_PACK_DICT, kGAB_IRTYPE_UNKNOWN, below, above)
+  emito(IR(), IP(), VAR(), kGAB_IR_PACK_DICT, kGAB_IRTYPE_UNKNOWN, below, above)
 
 #define PRIMITIVE_PACKLIST(below, above)                                       \
-  emito(IR(), kGAB_IR_PACK_LIST, kGAB_IRTYPE_UNKNOWN, below, above)
+  emito(IR(), IP(), VAR(), kGAB_IR_PACK_LIST, kGAB_IRTYPE_UNKNOWN, below, above)
 
 #define PRIMITIVE_RECORD(len)                                                  \
-  emito(IR(), kGAB_IR_LOAD_RECORD, kGAB_IRTYPE_RECORD, len, 0)
+  emito(IR(), IP(), VAR(), kGAB_IR_LOAD_RECORD, kGAB_IRTYPE_RECORD, len, 0)
 
 #define PRIMITIVE_RECORDFROM(shape, len)                                       \
-  emito(IR(), kGAB_IR_LOAD_RECORDFROM, kGAB_IRTYPE_RECORD, len, shape)
+  emito(IR(), IP(), VAR(), kGAB_IR_LOAD_RECORDFROM, kGAB_IRTYPE_RECORD, len,   \
+        shape)
 
 #define PRIMITIVE_SHAPE(len)                                                   \
-  emito(IR(), kGAB_IR_LOAD_SHAPE, kGAB_IRTYPE_SHAPE, len, 0)
+  emito(IR(), IP(), VAR(), kGAB_IR_LOAD_SHAPE, kGAB_IRTYPE_SHAPE, len, 0)
 
 #define PRIMITIVE_LIST(len)                                                    \
-  emito(IR(), kGAB_IR_LOAD_LIST, kGAB_IRTYPE_RECORD, len, 0)
+  emito(IR(), IP(), VAR(), kGAB_IR_LOAD_LIST, kGAB_IRTYPE_RECORD, len, 0)
 
 #define PRIMITIVE_JIT_ENTER(code)
 

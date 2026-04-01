@@ -14,8 +14,6 @@ union gab_value_pair vm_terminate(struct gab_triple gab, const char *fmt, ...);
 /* IMPL in vm.c */
 union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
 
-#define SEND_CACHE_DIST 3
-
 /*
  * In x86, the maximum number of ponter arguments that are passed
  * in registers is 6.
@@ -28,7 +26,7 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
   struct gab_triple *__gab, struct gab_vm *__vm, uint8_t *__ip,                \
       gab_value *__kb, gab_value *__fb, gab_value *__sp
 
-#define ATTRIBUTES [[clang::preserve_none]]
+#define ATTRIBUTES
 
 #define CASE_CODE(name)                                                        \
   ATTRIBUTES union gab_value_pair OP_##name##_HANDLER(OP_HANDLER_ARGS)
@@ -136,15 +134,16 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
 
 #define PRIMITIVE_JIT_TICK(block, ip, ks)                                      \
   ({                                                                           \
-    if (gab_jttick(GAB(), &GAB().eg->jobs[GAB().wkid].jt, IP())) {               \
+    if (gab_jttick(GAB(), &GAB().eg->jobs[GAB().wkid].jt, IP())) {             \
       struct gab_jtbb *bb =                                                    \
           gab_jttry(GAB(), &GAB().eg->jobs[GAB().wkid].jt,                     \
-                    GAB_VAL_TO_PROTOTYPE(block->p), IP(), FB(), UPV());          \
+                    GAB_VAL_TO_PROTOTYPE(block->p), IP(), FB(), UPV());        \
       if (bb && bb->native_code) {                                             \
-        WRITE_BYTE(SEND_CACHE_DIST, OP_SEND_PRIMITIVE_JIT_ENTER);              \
-        ks[GAB_SEND_KSPEC] = (uintptr_t)bb->native_code;                       \
-        IP() = ip - SEND_CACHE_DIST;                                           \
-        NEXT();                                                                \
+        ks[GAB_SEND_KJIT] = (uintptr_t)bb->native_code;                        \
+        IP() = ip - GAB_SEND_CACHE_SIZE;                                       \
+        WRITE_BYTE(0, *IP() + 6);                                              \
+        [[clang::musttail]] return ((handler)bb->native_code)(                 \
+            DISPATCH_ARGS());                                                  \
       }                                                                        \
     }                                                                          \
   })
@@ -172,7 +171,7 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
                                                                                \
     PUSH_FRAME(blk, have);                                                     \
                                                                                \
-    IP() = ((void *)ks[GAB_SEND_KOFFSET]);                                     \
+    IP() = proto_ip(GAB(), p);                                                 \
     FB() = SP() - have;                                                        \
                                                                                \
     SET_VAR(have);                                                             \
@@ -209,7 +208,7 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
     memmove(to, from, have * sizeof(gab_value));                               \
     SP() = to + have;                                                          \
                                                                                \
-    IP() = ((void *)ks[GAB_SEND_KOFFSET]);                                     \
+    IP() = proto_ip(GAB(), p);                                                 \
                                                                                \
     SET_BLOCK(blk);                                                            \
     SET_VAR(have);                                                             \
@@ -305,7 +304,7 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
   })
 
 #define PRIMITIVE_JIT_ENTER(code)                                              \
-  ({ union gab_value_pair res = code(DISPATCH_ARGS()); })
+  ({ [[clang::musttail]] return code(DISPATCH_ARGS()); })
 
 /*
  * These primitives need some sort of control-flow in order
@@ -484,8 +483,8 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
     gab_value m = ks[GAB_SEND_KMESSAGE];                                       \
                                                                                \
     if (BLOCK() && try_setup_localmatch(GAB(), m, ks, BLOCK_PROTO())) {        \
-      WRITE_BYTE(SEND_CACHE_DIST, OP_MATCHSEND_BLOCK + adjust);                \
-      IP() -= SEND_CACHE_DIST;                                                 \
+      WRITE_BYTE(GAB_SEND_CACHE_SIZE, OP_MATCHSEND_BLOCK + adjust);            \
+      IP() -= GAB_SEND_CACHE_SIZE;                                             \
       NEXT();                                                                  \
     }                                                                          \
                                                                                \
@@ -512,7 +511,7 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
       if (op == OP_SEND_PRIMITIVE_CALL_BLOCK)                                  \
         op += adjust;                                                          \
                                                                                \
-      WRITE_BYTE(SEND_CACHE_DIST, op);                                         \
+      WRITE_BYTE(GAB_SEND_CACHE_SIZE, op);                                     \
                                                                                \
       break;                                                                   \
     }                                                                          \
@@ -527,20 +526,20 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
         ks[GAB_SEND_KOFFSET] = (intptr_t)proto_ip(GAB(), p);                   \
       }                                                                        \
                                                                                \
-      WRITE_BYTE(SEND_CACHE_DIST, OP_SEND_BLOCK + adjust);                     \
+      WRITE_BYTE(GAB_SEND_CACHE_SIZE, OP_SEND_BLOCK + adjust);                 \
                                                                                \
       break;                                                                   \
     }                                                                          \
     case kGAB_NATIVE: {                                                        \
-      WRITE_BYTE(SEND_CACHE_DIST, OP_SEND_NATIVE);                             \
+      WRITE_BYTE(GAB_SEND_CACHE_SIZE, OP_SEND_NATIVE);                         \
       break;                                                                   \
     }                                                                          \
     default:                                                                   \
-      WRITE_BYTE(SEND_CACHE_DIST, OP_SEND_CONSTANT);                           \
+      WRITE_BYTE(GAB_SEND_CACHE_SIZE, OP_SEND_CONSTANT);                       \
       break;                                                                   \
     }                                                                          \
                                                                                \
-    IP() -= SEND_CACHE_DIST;                                                   \
+    IP() -= GAB_SEND_CACHE_SIZE;                                               \
                                                                                \
     NEXT();                                                                    \
   })
@@ -751,7 +750,7 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
 
 #define MISS_CACHED_SEND(reason)                                               \
   ({                                                                           \
-    IP() -= SEND_CACHE_DIST - 1;                                               \
+    IP() -= GAB_SEND_CACHE_SIZE - 1;                                           \
     [[clang::musttail]] return OP_SEND_HANDLER(DISPATCH_ARGS());               \
   })
 
@@ -763,7 +762,7 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
 
 #define VM_YIELD(value)                                                        \
   ({                                                                           \
-    IP() -= SEND_CACHE_DIST;                                                   \
+    IP() -= GAB_SEND_CACHE_SIZE;                                               \
     STORE();                                                                   \
     return vm_yield(GAB(), value);                                             \
   })
@@ -1057,6 +1056,8 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
 #define PRIMITIVE_CONS_RECORD(r, arg) (gab_lstpush(GAB(), r, arg))
 
 #define PRIMITIVE_CONS(a, b) (gab_listof(GAB(), a, b))
+
+#define PRIMITIVE_SENDK() (ks[GAB_SEND_KSPEC])
 
 #define PRIMITIVE_BINARY_ADD(a, b) (a + b)
 #define PRIMITIVE_BINARY_SUB(a, b) (a - b)

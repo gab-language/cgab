@@ -5,17 +5,37 @@
 /*
  * This file contains stenciled version of the micro-op codes.
  */
-extern uintptr_t _jit_arg1, _jit_arg2;
+extern unsigned char _jit_arg1[8];
+extern unsigned char _jit_arg2[8];
+extern unsigned char _jit_arg1_large[100000];
+extern unsigned char _jit_arg2_large[100000];
+extern unsigned char _jit_arg_ip[100000];
+extern unsigned char _jit_arg_hv[100000];
 
-#define STENCIL_ARG0(t) (t)((uintptr_t)(&_jit_arg1))
-#define STENCIL_ARG1(t) (t)((uintptr_t)(&_jit_arg2))
+#define STENCIL_ARG0(t)                                                        \
+  ({                                                                           \
+    static_assert(sizeof(t) <= 4);                                             \
+    (t)((uintptr_t)(&_jit_arg1));                                              \
+  })
+
+#define STENCIL_ARG1(t)                                                        \
+  ({                                                                           \
+    static_assert(sizeof(t) <= 4);                                             \
+    (t)((uintptr_t)(&_jit_arg2));                                              \
+  })
+
+#define STENCIL_ARG0_64(t) (t)((uintptr_t)(&_jit_arg1_large))
+#define STENCIL_ARG1_64(t) (t)((uintptr_t)(&_jit_arg2_large))
+
+#define STENCIL_IP() (uint8_t *)(uintptr_t)(&_jit_arg_ip)
+#define STENCIL_HV() (uintptr_t)(&_jit_arg_hv)
 
 ATTRIBUTES extern union gab_value_pair _jit_next(OP_HANDLER_ARGS);
 ATTRIBUTES extern union gab_value_pair _jit_exit(OP_HANDLER_ARGS);
 ATTRIBUTES extern union gab_value_pair _jit_bail(OP_HANDLER_ARGS);
 
 #undef NEXT
-#define NEXT() [[clang::musttail]] return _jit_next(DISPATCH_ARGS());
+#define NEXT() ({ [[clang::musttail]] return _jit_next(DISPATCH_ARGS()); })
 
 #define EXIT() [[clang::musttail]] return _jit_exit(DISPATCH_ARGS());
 
@@ -24,14 +44,38 @@ ATTRIBUTES extern union gab_value_pair _jit_bail(OP_HANDLER_ARGS);
 // OP-HANDLER that I want?
 #undef MISS_CACHED_SEND
 #define MISS_CACHED_SEND(reason)                                               \
-  [[clang::musttail]] return _jit_bail(DISPATCH_ARGS());
+  ({                                                                           \
+    IP() = STENCIL_IP();                                                       \
+    SET_VAR(STENCIL_HV());                                                     \
+    [[clang::musttail]] return _jit_bail(DISPATCH_ARGS());                     \
+  })
 
 #undef MISS_CACHED_TRIM
 #define MISS_CACHED_TRIM(reason)                                               \
-  [[clang::musttail]] return _jit_bail(DISPATCH_ARGS());
+  ({                                                                           \
+    IP() = STENCIL_IP();                                                       \
+    SET_VAR(STENCIL_HV());                                                     \
+    [[clang::musttail]] return _jit_bail(DISPATCH_ARGS());                     \
+  })
+
+extern void putl(uintptr_t arg);
+extern void putf(double arg);
+extern void putg(gab_value arg);
+extern void putcs(char *arg);
+
+CASE_CODE(MICRO_OP_LOAD_CONSTANT) {
+  gab_value k = STENCIL_ARG0_64(gab_value);
+
+  PUSH(k);
+
+  NEXT();
+}
 
 CASE_CODE(MICRO_OP_LOAD_LOCAL) {
-  PUSH(LOCAL(STENCIL_ARG0(uint8_t)));
+  uint8_t local = STENCIL_ARG0(uint8_t);
+
+  PUSH(LOCAL(local));
+
   NEXT();
 }
 
@@ -41,14 +85,15 @@ CASE_CODE(MICRO_OP_STORE_LOCAL) {
 }
 
 CASE_CODE(MICRO_OP_LOAD_UPVALUE) {
-  PUSH(UPVALUE(STENCIL_ARG0(uint8_t)));
+  gab_value upv = UPVALUE(STENCIL_ARG0(uint8_t));
+  PUSH(upv);
   NEXT();
 }
 
 #define IMPL_BINARY_MICROOP(name, lt, rt, op)                                  \
   CASE_CODE(MICRO_OP_##name##K) {                                              \
     lt l = (lt)(uintptr_t)POP();                                               \
-    rt r = STENCIL_ARG0(rt);                                                   \
+    rt r = STENCIL_ARG0_64(rt);                                                \
                                                                                \
     PUSH((uintptr_t)op(l, r));                                                 \
                                                                                \
@@ -56,18 +101,19 @@ CASE_CODE(MICRO_OP_LOAD_UPVALUE) {
   }                                                                            \
                                                                                \
   CASE_CODE(MICRO_OP_##name) {                                                 \
-    lt l = (lt)(uintptr_t)POP();                                               \
-    rt r = (rt)(uintptr_t)POP();                                               \
+    rt r = (rt)(uintptr_t)(POP());                                             \
+    lt l = (lt)(uintptr_t)(POP());                                             \
                                                                                \
-    PUSH((uintptr_t)op(l, r));                                                 \
+    uintptr_t v = op(l, r);                                                    \
+    PUSH(v);                                                                   \
                                                                                \
     NEXT();                                                                    \
   }
 
 #define IMPL_UNARY_MICROOP(name, t, op)                                        \
   CASE_CODE(MICRO_OP_##name) {                                                 \
-    t v = (t)(uintptr_t)PEEK();                                                \
-    PEEK() = (uintptr_t)op(v);                                                 \
+    t v = (t)(uintptr_t)POP();                                                 \
+    PUSH((uintptr_t)op(v));                                                    \
     NEXT();                                                                    \
   }                                                                            \
   CASE_CODE(MICRO_OP_##name##2) {                                              \
@@ -228,26 +274,20 @@ CASE_CODE(MICRO_OP_SPLAT_SHAPE) {
   NEXT();
 }
 
-/*
- * How should these guards work?
- *
- * BC -> IR -> STENCIL
- * stack -> ssa -> stack
- */
 CASE_CODE(MICRO_OP_GUARD_KIND) {
-  uint8_t local = STENCIL_ARG0(uint8_t);
+  uint8_t n = STENCIL_ARG0(uint8_t);
   uint8_t kind = STENCIL_ARG1(uint8_t);
 
-  SEND_GUARD_KIND(LOCAL(local), kind);
+  SEND_GUARD_KIND(PEEK_N(n), kind);
 
   NEXT();
 }
 
 CASE_CODE(MICRO_OP_GUARD_TYPE) {
-  uint8_t local = STENCIL_ARG0(uint8_t);
-  gab_value type = STENCIL_ARG1(gab_value);
+  uint8_t n = STENCIL_ARG0(uint8_t);
+  gab_value type = STENCIL_ARG1_64(gab_value);
 
-  SEND_GUARD_TYPE(LOCAL(local), type);
+  SEND_GUARD_TYPE(PEEK_N(n), type);
 
   NEXT();
 }
@@ -298,7 +338,7 @@ CASE_CODE(MICRO_OP_TRIM) {
 }
 
 CASE_CODE(MICRO_OP_GUARD_SPECS) {
-  uint64_t epoch = STENCIL_ARG0(uint64_t);
+  uint64_t epoch = STENCIL_ARG0_64(uint64_t);
 
   SEND_GUARD_CACHED_MESSAGE_SPECS(epoch);
 
@@ -335,22 +375,42 @@ CASE_CODE(MICRO_OP_GUARD_STACKSPACE_SPLATSHAPE) {
   NEXT();
 }
 
-CASE_CODE(MICRO_OP_CALL_NATIVE) {
-  struct gab_onative *n = STENCIL_ARG0(struct gab_onative *);
-  bool message = STENCIL_ARG1(bool);
-  uint64_t have = COMPUTE_TUPLE();
+CASE_CODE(MICRO_OP_SEND_CONSTANT) {
+  gab_value k = STENCIL_ARG0_64(gab_value);
+
+  uint64_t have = STENCIL_HV();
   uint64_t below_have = PEEK_N(have + 1);
 
-  PRIMITIVE_CALL_NATIVE(n, have, below_have, message);
+  DROP_N(have + 1);
+
+  PUSH(k);
+
+  SET_VAR(below_have + 1);
 
   NEXT();
 }
 
+CASE_CODE(MICRO_OP_CALL_NATIVE) {
+  struct gab_onative *n = STENCIL_ARG0_64(struct gab_onative *);
+  uint8_t *ip = STENCIL_ARG1_64(uint8_t *);
+
+  uint64_t have = STENCIL_HV();
+  IP() = STENCIL_IP();
+
+  uint64_t below_have = PEEK_N(have + 1);
+
+  PRIMITIVE_CALL_NATIVE(n, have, below_have, true);
+
+  IP() = ip;
+
+  EXIT();
+}
+
 CASE_CODE(MICRO_OP_LOAD_PROPERTY) {
   uint8_t local = STENCIL_ARG0(uint8_t);
-  uint64_t offset = STENCIL_ARG1(uint64_t);
+  uint64_t offset = STENCIL_ARG1_64(uint64_t);
 
-  uint64_t have = COMPUTE_TUPLE();
+  uint64_t have = STENCIL_HV();
   uint64_t below_have = PEEK_N(have + 1);
 
   PRIMITIVE_PROPERTY_RECORD(LOCAL(local), offset, have, below_have);
@@ -359,7 +419,7 @@ CASE_CODE(MICRO_OP_LOAD_PROPERTY) {
 }
 
 CASE_CODE(MICRO_OP_LOAD_BLOCK) {
-  gab_value prototype = STENCIL_ARG0(gab_value);
+  gab_value prototype = STENCIL_ARG0_64(gab_value);
 
   PUSH(PRIMITIVE_BLOCK(prototype));
 
@@ -374,9 +434,11 @@ CASE_CODE(MICRO_OP_LOAD_CHANNEL) {
 }
 
 CASE_CODE(MICRO_OP_JIT_EXIT) {
-  uintptr_t ip = STENCIL_ARG0(uintptr_t);
+  uintptr_t ip = STENCIL_ARG0_64(uintptr_t);
+  uint32_t have = STENCIL_ARG1(uint32_t);
 
   IP() = (uint8_t *)ip;
+  SET_VAR(have);
 
   EXIT();
 }
@@ -401,6 +463,15 @@ CASE_CODE(MICRO_OP_LOAD_SHAPE) {
 
 CASE_CODE(MICRO_OP_LOAD_LIST) {
   // TODO @jit: Implement load list
+
+  NEXT();
+}
+
+CASE_CODE(MICRO_OP_TUPLE) {
+  uint64_t have = STENCIL_HV();
+  PUSHTUPLE(have);
+
+  SET_VAR(0);
 
   NEXT();
 }

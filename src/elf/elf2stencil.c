@@ -24,10 +24,22 @@ bool scn_isop(const char *scn_name) {
 
 const char *symtoknownhole(const char *symbol) {
   if (!strcmp(symbol, "_jit_arg1"))
-    return "kGAB_JIT_RELOC_ARG1";
+    return "kGAB_JIT_RELOC_32ARG1";
 
   if (!strcmp(symbol, "_jit_arg2"))
-    return "kGAB_JIT_RELOC_ARG2";
+    return "kGAB_JIT_RELOC_32ARG2";
+
+  if (!strcmp(symbol, "_jit_arg1_large"))
+    return "kGAB_JIT_RELOC_64ARG1";
+
+  if (!strcmp(symbol, "_jit_arg2_large"))
+    return "kGAB_JIT_RELOC_64ARG2";
+
+  if (!strcmp(symbol, "_jit_arg_ip"))
+    return "kGAB_JIT_RELOC_IP";
+
+  if (!strcmp(symbol, "_jit_arg_hv"))
+    return "kGAB_JIT_RELOC_HV";
 
   if (!strcmp(symbol, "_jit_bail"))
     return "kGAB_JIT_RELOC_BAIL";
@@ -88,7 +100,7 @@ void emit_scn(Elf *elf, size_t section, Elf_Scn *strtab, Elf_Scn *symtab) {
     fprintf(stderr, "%s had non-rela type %i. Emitting empty relocations.\n",
             elf_strptr(elf, stridx, scn_rela_hdr->sh_name), scn_data->d_type);
     printf("struct gab_jit_reloc %.*s_RELAS[] = {};\n", (int)scn_name_len - 6,
-          scn_name + 6);
+           scn_name + 6);
     return;
   }
 
@@ -116,9 +128,17 @@ void emit_scn(Elf *elf, size_t section, Elf_Scn *strtab, Elf_Scn *symtab) {
       printf("\t{ %s, %lu, %li, { .trampoline = { \"%s\" } } },\n", known_hole,
              rela.r_offset, rela.r_addend, symname);
     } else {
+      /*
+        * String constant's sizes aren't copied correctly here
+        *
+        * That is an issue 4 sure.
+        */
+
       Elf_Scn *scn = elf_getscn(elf, sym.st_shndx);
+
       Elf_Data *data = elf_getdata(scn, nullptr);
-      unsigned char *src = (unsigned char *)data->d_buf + sym.st_value;
+      const unsigned char *src = (unsigned char *)data->d_buf + sym.st_value;
+
       size_t len = sym.st_size ? sym.st_size : data->d_align;
 
       printf("\t{ kGAB_JIT_RELOC_CONST, %lu, %li, ", rela.r_offset,
