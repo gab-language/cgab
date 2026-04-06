@@ -875,7 +875,7 @@ static inline uint8_t *proto_ip(struct gab_triple gab,
 
 struct gab_jtbb *gab_jttry(struct gab_triple gab, struct gab_jt *jt,
                            struct gab_oprototype *proto, uint8_t *ip,
-                           gab_value *loc, gab_value *upv);
+                           gab_value *loc, gab_value *upv, gab_value *sp);
 
 struct gab_jtbb *gab_jtchk(struct gab_triple gab, struct gab_jt *jt,
                            struct gab_oprototype *proto, uint8_t *ip,

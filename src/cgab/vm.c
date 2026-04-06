@@ -284,7 +284,7 @@ union gab_value_pair vvm_terminate(struct gab_triple gab, const char *fmt,
     return GAB_VAL_TO_FIBER(fiber)->res_values;
 
   gab_assert(gab_valkind(fiber) == kGAB_FIBERRUNNING,
-             "Terminating fiber must be running or done, not: %d",
+             "Terminating fiber must be running, not: %d. Terminating.",
              gab_valkind(fiber));
 
   gab_assert(GAB_VAL_TO_FIBER(fiber)->res_env == gab_cinvalid,
@@ -321,6 +321,8 @@ union gab_value_pair vvm_terminate(struct gab_triple gab, const char *fmt,
   GAB_VAL_TO_FIBER(fiber)->res_values = res;
   GAB_VAL_TO_FIBER(fiber)->res_env = env;
   GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERDONE;
+  // gab_fprintf(stderr, "($) VMTERM finished fiber $.\n", gab_number(gab.wkid),
+  //             __gab_obj(fiber));
 
   return res;
 }
@@ -337,7 +339,7 @@ union gab_value_pair vm_givenerr(struct gab_triple gab,
     return GAB_VAL_TO_FIBER(fiber)->res_values;
 
   gab_assert(gab_valkind(fiber) == kGAB_FIBERRUNNING,
-             "Terminating fiber must be running or done, not: %d",
+             "Terminating fiber must be running, not: %d. Given err.",
              gab_valkind(fiber));
 
   gab_assert(GAB_VAL_TO_FIBER(fiber)->res_env == gab_cinvalid,
@@ -366,13 +368,19 @@ union gab_value_pair vm_givenerr(struct gab_triple gab,
   return given;
 }
 
+static const char *gab_status_names[] = {
+#define STATUS(name, message) #name,
+#include "status_code.h"
+#undef STATUS
+};
+
 union gab_value_pair vvm_error(struct gab_triple gab, enum gab_status s,
                                const char *fmt, va_list va) {
   gab_value fiber = gab_thisfiber(gab);
 
   gab_assert(gab_valkind(fiber) == kGAB_FIBERRUNNING,
-             "Terminating fiber must be running or done, not: %d",
-             gab_valkind(fiber));
+             "Terminating fiber must be running, not: %d. Error status %s.",
+             gab_valkind(fiber), gab_status_names[s]);
 
   gab_assert(GAB_VAL_TO_FIBER(fiber)->res_env == gab_cinvalid,
              "Terminating fiber res_env shall be uninitialized.");
@@ -416,6 +424,8 @@ union gab_value_pair vvm_error(struct gab_triple gab, enum gab_status s,
     GAB_VAL_TO_FIBER(fiber)->res_env = env;
   }
   GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERDONE;
+  // gab_fprintf(stderr, "($) VVMERR finished fiber $.\n", gab_number(gab.wkid),
+  //             __gab_obj(fiber));
 
   return res;
 }
@@ -601,16 +611,6 @@ void gab_fvminspectall(FILE *stream, struct gab_vm *vm) {
     gab_fvminspect(stream, vm, i);
   }
 }
-
-static inline uint64_t get_stackspace(gab_value *sp, gab_value *sb) {
-  return (sp - sb) + 3;
-}
-
-static inline bool has_stackspace(gab_value *sp, gab_value *sb,
-                                  uint64_t space_needed) {
-  return get_stackspace(sp, sb) + space_needed < cGAB_STACK_MAX;
-}
-
 gab_value gab_vmpop(struct gab_vm *vm) {
   if (__gab_unlikely(vm->sp == vm->sb))
     return gab_cundefined;
@@ -629,7 +629,7 @@ gab_value gab_vmpeek(struct gab_vm *vm, uint64_t dist) {
 }
 
 uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc, gab_value argv[argc]) {
-  if (__gab_unlikely(argc == 0 || !has_stackspace(vm->sp, vm->sb, argc))) {
+  if (__gab_unlikely(argc == 0 || !HAS_STACKSPACE(vm->sp, vm->sb, argc))) {
     return 0;
   }
 
@@ -664,8 +664,15 @@ union gab_value_pair vm_ok(OP_HANDLER_ARGS) {
 
   struct gab_ofiber *fiber = FIBER();
 
+  if (fiber->header.kind == kGAB_FIBERDONE) {
+    // gab_fprintf(stderr, "[$] OK'd finished fiber $.\n",
+    // gab_number(GAB().wkid),
+    //             __gab_obj(fiber));
+    // gab_fprintf(stderr, "STATUS: $\n", fiber->res_values.status);
+    // gab_fprintf(stderr, "VRESULT: $\n", fiber->res_values.vresult);
+  }
   gab_assert(fiber->header.kind == kGAB_FIBERRUNNING,
-             "Terminating fiber must be running or done, not: %d",
+             "Terminating fiber must be running, not: %d. OK!",
              fiber->header.kind);
 
   gab_assert(fiber->res_env == gab_cinvalid,
@@ -689,6 +696,8 @@ union gab_value_pair vm_ok(OP_HANDLER_ARGS) {
   }
 
   fiber->header.kind = kGAB_FIBERDONE;
+  // gab_fprintf(stderr, "($) VMOK finished fiber $.\n", gab_number(GAB().wkid),
+  //             __gab_obj(fiber));
 
   return res;
 }
@@ -780,9 +789,11 @@ static inline bool try_setup_localmatch(struct gab_triple gab, gab_value m,
 ATTRIBUTES
 union gab_value_pair gab_jtexit(OP_HANDLER_ARGS) {
   // uint64_t have = *__sp;
-  // printf("EXIT TO %s: \n", gab_opcode_names[*IP()]);
+  // fprintf(stderr, "(%i) EXIT TO %s (%p)\n", GAB().wkid, gab_opcode_names[*IP()],
+  //         IP());
   // for (int i = 1; i < have + 1; i++) {
-  //   gab_fprintf(stdout, "$: $\n", gab_number(i), PEEK_N(i));
+  //   gab_fprintf(stderr, "($) $: $\n", gab_number(GAB().wkid), gab_number(i),
+  //               PEEK_N(i));
   // }
 
   NEXT();
@@ -790,12 +801,13 @@ union gab_value_pair gab_jtexit(OP_HANDLER_ARGS) {
 
 ATTRIBUTES
 union gab_value_pair gab_jtbail(OP_HANDLER_ARGS) {
-// uint64_t have = *__sp;
-//   printf("BAIL TO %s: ", gab_opcode_names[*IP()]);
-//   printf("HAVE %lu\n", have);
-//   for (int i = 1; i < have + 1; i++) {
-//     gab_fprintf(stdout, "$: $\n", gab_number(i), PEEK_N(i));
-//   }
+  // uint64_t have = *__sp;
+  // fprintf(stderr, "(%i) BAIL TO %s (%p) HAVE %lu\n", GAB().wkid,
+  //         gab_opcode_names[*IP()], IP(), have);
+  // for (int i = 1; i < have + 1; i++) {
+  //   gab_fprintf(stderr, "($) $: $\n", gab_number(GAB().wkid), gab_number(i),
+  //               PEEK_N(i));
+  // }
 
   NEXT();
 }

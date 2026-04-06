@@ -105,17 +105,27 @@ const char *irtypenames[] = {
     [kGAB_IRTYPE_MESSAGE_BOOL] = "[B]",
 };
 
-bool ir_isk(uint16_t ssa) { return ssa < IR_VBIAS; }
+bool ir_isk(uint16_t ssa) { return ssa < IR_VBIAS || ssa > IR_OBIAS + IR_SIZE; }
 bool ir_isv(uint16_t ssa) { return ssa > IR_VBIAS && ssa < IR_OBIAS; }
-bool ir_iso(uint16_t ssa) { return ssa > IR_OBIAS; }
+bool ir_iso(uint16_t ssa) { return ssa > IR_OBIAS && ssa < IR_OBIAS + IR_SIZE; }
+
+union gab_jtir ir_geto(struct ir *ir, uint16_t ssa) {
+  return ir->ir[ssa - IR_BIAS];
+}
 
 uint16_t emito(struct ir *ir, uint8_t *ip, uint64_t have, enum gab_irop_kind op,
                uint8_t type, uint16_t a, uint16_t b) {
   uint16_t ssa = ir->os++ + IR_BIAS;
   gab_assert(ssa < IR_SIZE, "Too many instructions in ir");
 
+  gab_assert(ir->sp >= ir->sb, "Stack pointer fell below stack base for %s",
+             irnames[op]);
+
   uint64_t slot = ir->sp - ir->sb;
-  gab_assert(slot < UINT16_MAX, "Slot too big");
+  gab_assert(slot < UINT16_MAX, "Slot too big, tried %lu for %s", slot,
+             irnames[op]);
+
+  gab_assert(have < IR_SIZE, "Have nonsensical");
 
   ir->ir[ssa].op.kind = op;
   ir->ir[ssa].op.type = type;
@@ -123,8 +133,8 @@ uint16_t emito(struct ir *ir, uint8_t *ip, uint64_t have, enum gab_irop_kind op,
   ir->ir[ssa].op.b = b;
   ir->ir[ssa].op.slot = slot;
 
-  if (ip)
-    ip -= 3;
+  // if (ip)
+  //   ip -= 3;
 
   ir->ip[ssa - IR_BIAS] = ip;
   ir->hv[ssa - IR_BIAS] = have;
@@ -142,6 +152,7 @@ uint16_t emitk_v(struct ir *ir, gab_value k) {
 uint16_t emitk_b(struct ir *ir, int64_t bits) {
   gab_assert(bits < IR_BIAS, "Bits '%b' (%li) not representable by immediate",
              bits, bits);
+
   return bits;
 }
 
@@ -160,19 +171,23 @@ void ir_push(struct ir *ir, uint16_t ssa) {
     uint64_t slot = ir->sp - ir->sb;
     // gab_assert((ssa - IR_BIAS) < IR_SIZE, "Index %lu out of bounds (ssa: %u,
     // size: %u)", slot, ssa, IR_SIZE);
-    gab_assert(slot < UINT16_MAX, "Slot too big");
-    ir->ir[ssa - IR_OBIAS].op.slot = slot;
-    // ir->hv[ssa - IR_OBIAS]++;
+    gab_assert(slot < IR_SIZE, "Slot too big");
+    ir->ir[ssa - IR_OBIAS].op.slot += slot;
   }
 
+  uint16_t have = *ir->sp;
   *ir->sp++ = ssa;
+  *ir->sp = have + 1;
 }
 
 void ir_dropn(struct ir *ir, int64_t n) {
-  gab_assert(ir->sp - ir->sb >= 0, "Too few refs on stack");
+  gab_assert(ir->sp - ir->sb >= n, "Too few refs on stack");
   uint16_t have = *ir->sp;
+  gab_assert(have + 1 >= n, "Drop too many from tuple");
   ir->sp -= n;
-  *ir->sp = have - n;
+
+  if (n < have + 1)
+    *ir->sp = have - n;
 }
 
 uint16_t ir_pop(struct ir *ir) {
@@ -252,7 +267,7 @@ static inline enum gab_irtype_kind upvaluet(struct ir *ir, struct gab_jtbb *bb,
 
 void irdumpa(struct ir *ir, uint16_t a) {
   if (ir_isk(a)) {
-    fprintf(stderr, GAB_YELLOW "%04i" GAB_RESET, a);
+    fprintf(stderr, GAB_YELLOW "%04i" GAB_RESET, (int16_t)a);
   } else if (ir_isv(a)) {
     gab_fprintf(stderr, GAB_CYAN "$" GAB_RESET,
                 ir->ir[IR_BIAS + IR_VBIAS - a].value);
@@ -262,31 +277,36 @@ void irdumpa(struct ir *ir, uint16_t a) {
   }
 }
 
-void irdump_(struct ir *ir, uint16_t i, union gab_jtir inst) {
-  fprintf(stderr, " %s | " GAB_GREEN "%%%04i" GAB_RESET " | %-20s | ",
-          irtypenames[inst.op.type], i, irnames[inst.op.kind]);
-
-  fprintf(stderr, "%02u | %02lu | ", inst.op.slot, ir->hv[i]);
-
-  fprintf(stderr, "\n");
+void irdump_(struct gab_triple gab, struct ir *ir, uint16_t i,
+             union gab_jtir inst) {
+  fprintf(stderr,
+          "(%i) %s | " GAB_GREEN "%%%04i" GAB_RESET
+          " | %-28s | %02u | %02lu |\n",
+          gab.wkid, irtypenames[inst.op.type], i, irnames[inst.op.kind],
+          inst.op.slot, ir->hv[i]);
 }
 
-void irdump_1(struct ir *ir, uint16_t i, union gab_jtir inst) {
-  fprintf(stderr, " %s | " GAB_GREEN "%%%04i" GAB_RESET " | %-20s | ",
-          irtypenames[inst.op.type], i, irnames[inst.op.kind]);
-
-  fprintf(stderr, "%02u | %02lu | ", inst.op.slot, ir->hv[i]);
+void irdump_1(struct gab_triple gab, struct ir *ir, uint16_t i,
+              union gab_jtir inst) {
+  fprintf(stderr,
+          "(%i) %s | " GAB_GREEN "%%%04i" GAB_RESET
+          " | %-28s | %02u | %02lu | ",
+          gab.wkid, irtypenames[inst.op.type], i, irnames[inst.op.kind],
+          inst.op.slot, ir->hv[i]);
 
   irdumpa(ir, inst.op.a);
 
   fprintf(stderr, "\n");
 }
 
-void irdump_2(struct ir *ir, uint16_t i, union gab_jtir inst) {
-  fprintf(stderr, " %s | " GAB_GREEN "%%%04i" GAB_RESET " | %-20s | ",
-          irtypenames[inst.op.type], i, irnames[inst.op.kind]);
+void irdump_2(struct gab_triple gab, struct ir *ir, uint16_t i,
+              union gab_jtir inst) {
 
-  fprintf(stderr, "%02u | %02lu | ", inst.op.slot, ir->hv[i]);
+  fprintf(stderr,
+          "(%i) %s | " GAB_GREEN "%%%04i" GAB_RESET
+          " | %-28s | %02u | %02lu | ",
+          gab.wkid, irtypenames[inst.op.type], i, irnames[inst.op.kind],
+          inst.op.slot, ir->hv[i]);
 
   irdumpa(ir, inst.op.a);
 
@@ -301,7 +321,9 @@ uint8_t ir_nargs(union gab_jtir inst) {
   switch (inst.op.kind) {
   case kGAB_IR_LOAD_CHANNEL:
   case kGAB_IR_TUPLE:
+  case kGAB_IR_ENTER:
     return 0;
+  case kGAB_IR_DROP_N:
   case kGAB_IR_LOAD_LOCAL:
   case kGAB_IR_LOAD_UPVALUE:
   case kGAB_IR_LOAD_CONSTANT:
@@ -329,15 +351,13 @@ uint8_t ir_nargs(union gab_jtir inst) {
   case kGAB_IR_TRIM:
   case kGAB_IR_CALL_NATIVE:
   case kGAB_IR_SPLAT_SHAPE:
-  case kGAB_IR_SPLAT_LIST:
-  case kGAB_IR_SPLAT_DICT:
-  case kGAB_IR_LOAD_PROPERTY:
   case kGAB_IR_LOAD_BLOCK:
   case kGAB_IR_LOAD_RECORD:
   case kGAB_IR_LOAD_RECORDFROM:
   case kGAB_IR_LOAD_SHAPE:
-  case kGAB_IR_LOAD_LIST:
+  case kGAB_IR_SEND_CONSTANT:
     return 1;
+  case kGAB_IR_LOAD_LIST:
   case kGAB_IR_JIT_EXIT:
   case kGAB_IR_FADD:
   case kGAB_IR_FSUB:
@@ -362,33 +382,40 @@ uint8_t ir_nargs(union gab_jtir inst) {
   case kGAB_IR_VEQ:
   case kGAB_IR_VCONS:
   case kGAB_IR_VCONS_RECORD:
-  case kGAB_IR_PACK_LIST:
   case kGAB_IR_PACK_DICT:
+  case kGAB_IR_PACK_LIST:
   case kGAB_IR_GUARD_TYPE:
   case kGAB_IR_GUARD_KIND:
   case kGAB_IR_GUARD_MATCH_TYPE:
   case kGAB_IR_GUARD_TRIM_EXACTLY_N:
   case kGAB_IR_GUARD_TRIM_DOWN_N:
   case kGAB_IR_GUARD_TRIM_UP_N:
+  case kGAB_IR_UVRECAT:
+  case kGAB_IR_UKRECAT:
+  case kGAB_IR_SPILL:
     return 2;
   }
 }
 
-void irdump(struct ir *ir) {
+void irdump(struct gab_triple gab, struct ir *ir) {
+  flockfile(stderr);
+
   for (int i = 0; i < ir->os; i++) {
     union gab_jtir inst = ir->ir[i + IR_BIAS];
     switch (ir_nargs(inst)) {
     case 0:
-      irdump_(ir, i, inst);
+      irdump_(gab, ir, i, inst);
       break;
     case 1:
-      irdump_1(ir, i, inst);
+      irdump_1(gab, ir, i, inst);
       break;
     case 2:
-      irdump_2(ir, i, inst);
+      irdump_2(gab, ir, i, inst);
       break;
     }
   }
+
+  funlockfile(stderr);
 }
 
 static const char *gab_opcode_names[] = {
@@ -434,9 +461,13 @@ static const uint8_t trampoline[] = {
 
 #define GAB_JIT_TRMPSIZE sizeof(trampoline);
 
-void putl(long arg) { printf("%lu\n", arg); }
-void putf(double arg) { printf("%lf\n", arg); }
-void putg(gab_value arg) { gab_fprintf(stdout, "$\n", arg); }
+void puti(long arg) { fprintf(stderr, "%li\n", arg); }
+void putl(long arg) { fprintf(stderr, "%lu\n", arg); }
+void putcs(const char *arg) { fprintf(stderr, "%s\n", arg); }
+void putp(uintptr_t arg) { fprintf(stderr, "%p\n", (void*)arg); }
+void putf(double arg) { fprintf(stderr, "%lf\n", arg); }
+void putg(gab_value arg) { gab_fprintf(stderr, "$\n", arg); }
+void puta(char arg) { fprintf(stderr, "%c\n", arg); }
 
 void *address_for_symbol(const char *symbol) {
   if (!strcmp(symbol, "memmove"))
@@ -444,6 +475,18 @@ void *address_for_symbol(const char *symbol) {
 
   if (!strcmp(symbol, "putl"))
     return putl;
+
+  if (!strcmp(symbol, "puta"))
+    return puta;
+
+  if (!strcmp(symbol, "putcs"))
+    return putcs;
+
+  if (!strcmp(symbol, "putp"))
+    return putp;
+
+  if (!strcmp(symbol, "puti"))
+    return puti;
 
   if (!strcmp(symbol, "putg"))
     return putg;
@@ -465,6 +508,18 @@ void *address_for_symbol(const char *symbol) {
 
   if (!strcmp(symbol, "gab_yield"))
     return gab_yield;
+
+  if (!strcmp(symbol, "gab_uvrecat"))
+    return gab_uvrecat;
+
+  if (!strcmp(symbol, "gab_ukrecat"))
+    return gab_ukrecat;
+
+  if (!strcmp(symbol, "gab_list"))
+    return gab_list;
+
+  if (!strcmp(symbol, "gab_block"))
+    return gab_block;
 
   if (!strcmp(symbol, "gab_gcepochnext"))
     return gab_gcepochnext;
@@ -602,15 +657,13 @@ struct bb_off bbappend(uint8_t *data, struct ir *ir, struct bb_off begin,
       }
 
       if (ir_iso(inst.op.args[arg])) {
-        uint16_t arg_slot = ir->ir[inst.op.args[arg] - IR_OBIAS].op.slot;
-
-        gab_assert(inst.op.slot > arg_slot,
-                   "Argument slot should be below inst slot");
+        union gab_jtir a = ir_geto(ir, inst.op.args[arg]);
+        uint16_t arg_slot = a.op.slot;
 
         gab_assert(reloca->addend == 0,
                    "No addend allowed for this arg patch type");
 
-        uint16_t patch_val = inst.op.slot - arg_slot;
+        int32_t patch_val = (int32_t)inst.op.slot - (int32_t)arg_slot;
         memcpy(data + patch_off, &patch_val, sizeof(patch_val));
         break;
       }
@@ -649,10 +702,13 @@ struct bb_off bbappend(uint8_t *data, struct ir *ir, struct bb_off begin,
       }
 
       if (ir_iso(inst.op.args[arg])) {
+        union gab_jtir a = ir_geto(ir, inst.op.args[arg]);
+        uint16_t arg_slot = a.op.slot;
+
         gab_assert(reloca->addend == 0,
                    "No addend allowed for this arg patch type");
-        int64_t patch_val = ir->ir[inst.op.args[arg] - IR_BIAS].op.slot;
-        /* Write the 64 bit value to data + patch_off */
+
+        int64_t patch_val = (int64_t)inst.op.slot - (int64_t)arg_slot;
         memcpy(data + patch_off, &patch_val, sizeof(patch_val));
         break;
       }
@@ -767,7 +823,8 @@ struct bb_off bbappend(uint8_t *data, struct ir *ir, struct bb_off begin,
 
 static void *assemble(struct ir *ir);
 
-struct gab_jtbb *gab_jtbbcreate(struct gab_triple gab, struct gab_jtbbid *id) {
+struct gab_jtbb *gab_jtbbcreate(struct gab_triple gab, struct gab_jtbbid *id,
+                                gab_value *sp) {
   struct gab_jtbb *bb = calloc(sizeof(struct gab_jtbb), 1);
 
   if (!bb)
@@ -783,6 +840,14 @@ struct gab_jtbb *gab_jtbbcreate(struct gab_triple gab, struct gab_jtbbid *id) {
   struct ir ir = {0};
   ir.sp = ir.sb;
 
+  uint64_t have = *sp;
+
+  for (int i = have; i > 0; i--) {
+    ir_push(&ir,
+            emito(&ir, nullptr, 0, kGAB_IR_ENTER, gab_valkind(sp[-i]), 0, 0));
+  }
+  *ir.sp = have;
+
   uint8_t *result = handlers[op](&gab, bb, ip, kb, &ir);
 
   if (!result)
@@ -791,9 +856,9 @@ struct gab_jtbb *gab_jtbbcreate(struct gab_triple gab, struct gab_jtbbid *id) {
   emito(&ir, nullptr, 0, kGAB_IR_JIT_EXIT, kGAB_IRTYPE_UNKNOWN,
         emitk_v(&ir, (uintptr_t)result), emitk_b(&ir, *ir.sp));
 
-  gab_fmodinspect(stderr, __gab_obj(id->proto));
-  
-  irdump(&ir);
+  // gab_fmodinspect(stderr, __gab_obj(id->proto));
+
+  // irdump(gab, &ir);
 
   bb->code_size = ir_size(&ir);
 
@@ -837,7 +902,8 @@ struct gab_jtbb *gab_jtchk(struct gab_triple gab, struct gab_jt *jt,
 // Try to jit a basic block
 struct gab_jtbb *gab_jttry(struct gab_triple gab, struct gab_jt *jt,
                            struct gab_oprototype *proto, uint8_t *ip,
-                           gab_value *loc, gab_value *upv) {
+                           gab_value *loc, gab_value *upv, gab_value *sp) {
+  // return nullptr;
   assert(proto->header.kind == kGAB_PROTOTYPE);
 
   // Build the type state for the successor block.
@@ -859,7 +925,7 @@ struct gab_jtbb *gab_jttry(struct gab_triple gab, struct gab_jt *jt,
     return version;
   }
 
-  version = gab_jtbbcreate(gab, &id);
+  version = gab_jtbbcreate(gab, &id, sp);
 
   struct gab_jtbbid *pid = malloc(sizeof(struct gab_jtbbid));
   assert(pid);
@@ -911,9 +977,10 @@ static void *assemble(struct ir *ir) {
     [[clang::musttail]] return handlers[o](DISPATCH_ARGS());                   \
   })
 
+// fprintf(stderr, "FAIL TO JIT COMPILE %s\n", __FUNCTION__);                 
+
 #define FAIL()                                                                 \
   ({                                                                           \
-    fprintf(stderr, "FAIL TO JIT COMPILE %s\n", __FUNCTION__);                 \
     return nullptr;                                                            \
   })
 
@@ -932,6 +999,12 @@ static void *assemble(struct ir *ir) {
     *SP() = 0;                                                                 \
   })
 #define POP() (ir_pop(IR()))
+#define POPTUPLE(have)                                                         \
+  ({                                                                           \
+    ir_dropn(IR(), have + 1);                                                  \
+    emito(IR(), IP(), VAR(), kGAB_IR_DROP_N, kGAB_IRTYPE_UNKNOWN, have + 1,    \
+          0);                                                                  \
+  })
 #define IP() (__ip)
 #define KB() (__kb)
 #define IR() (__ir)
@@ -939,7 +1012,7 @@ static void *assemble(struct ir *ir) {
 #define SP() (IR()->sp)
 #define GAB() (*__gab)
 #define DROP() (ir_dropn(IR(), 1))
-#define DROP_N(n) (ir_dropn(IR(), n))
+#define DROP_N(n) ({ ir_dropn(IR(), n); })
 #define PEEK() (ir_peekn(IR(), 1))
 #define PEEK2() (ir_peekn(IR(), 2))
 #define PEEK3() (ir_peekn(IR(), 3))
@@ -960,7 +1033,7 @@ static void *assemble(struct ir *ir) {
     KB() + shrt;                                                               \
   })
 
-#define PRIMITIVE_SENDK()                                                      \
+#define MICRO_OP_SENDK()                                                       \
   ({                                                                           \
     gab_value k = ks[GAB_SEND_KSPEC];                                          \
     emito(IR(), IP(), VAR(), kGAB_IR_SEND_CONSTANT, gab_valkind(k),            \
@@ -975,18 +1048,18 @@ static void *assemble(struct ir *ir) {
   })
 
 #define SEND_GUARD_CACHED_MESSAGE_SPECS(e)                                     \
-  emito(IR(), IP(), VAR(), kGAB_IR_GUARD_SPECS, kGAB_IRTYPE_UNKNOWN,           \
+  emito(IR(), IP() - 3, VAR(), kGAB_IR_GUARD_SPECS, kGAB_IRTYPE_UNKNOWN,       \
         emitk_b(IR(), e), 0)
 
 #define SEND_GUARD_CACHED_MATCH_TYPE(idx, t) FAIL()
 // emito(IR(),IP(), kGAB_IR_GUARD_MATCH_TYPE, kGAB_IRTYPE_UNKNOWN, t, idx)
 
 #define SEND_GUARD_CACHED_RECEIVER_TYPE(r)                                     \
-  emito(IR(), IP(), VAR(), kGAB_IR_GUARD_TYPE, kGAB_IRTYPE_UNKNOWN, r,         \
+  emito(IR(), IP() - 3, VAR(), kGAB_IR_GUARD_TYPE, kGAB_IRTYPE_UNKNOWN, r,     \
         emitk_v(IR(), ks[GAB_SEND_KTYPE]))
 
 #define SEND_GUARD_KIND(v, k)                                                  \
-  emito(IR(), IP(), VAR(), kGAB_IR_GUARD_KIND, kGAB_IRTYPE_UNKNOWN, v, k)
+  emito(IR(), IP() - 3, VAR(), kGAB_IR_GUARD_KIND, kGAB_IRTYPE_UNKNOWN, v, k)
 
 #define SEND_GUARD_ISSHP(v) SEND_GUARD_KIND(v, kGAB_SHAPE)
 
@@ -997,23 +1070,45 @@ static void *assemble(struct ir *ir) {
 #define NILPAD_GUARD_ARGS_GTE(n)
 // emito(IR(), IP(), VAR(), kGAB_IR_GUARD_NILPAD, kGAB_IRTYPE_UNKNOWN, n, have)
 
+// In some cases, we may not have static stackspace to even compile this
+// bytecode.
 #define PANIC_GUARD_STACKSPACE(v)                                              \
-  emito(IR(), IP(), VAR(), kGAB_IR_GUARD_STACKSPACE, kGAB_IRTYPE_UNKNOWN, v, 0)
+  ({                                                                           \
+    if (v > IR_SIZE - (IR()->sp - IR()->sb))                                   \
+      FAIL();                                                                  \
+    else                                                                       \
+      emito(IR(), IP() - 3, VAR(), kGAB_IR_GUARD_STACKSPACE,                   \
+            kGAB_IRTYPE_UNKNOWN, emitk_b(IR(), v), 0);                         \
+  })
 
 #define PANIC_GUARD_STACKSPACE_SPLATLIST(v)                                    \
-  emito(IR(), IP(), VAR(), kGAB_IR_GUARD_STACKSPACE_SPLATLIST,                 \
-        kGAB_IRTYPE_UNKNOWN, v, 0)
+  ({                                                                           \
+    uint64_t n = gab_shplen(v);                                                \
+    if (n > IR_SIZE - (IR()->sp - IR()->sb))                                   \
+      FAIL();                                                                  \
+    else                                                                       \
+      emito(IR(), IP() - 3, VAR(), kGAB_IR_GUARD_STACKSPACE_SPLATLIST,         \
+            kGAB_IRTYPE_UNKNOWN, emitk_b(IR(), n), 0);                         \
+    n;                                                                         \
+  })
 
 #define PANIC_GUARD_STACKSPACE_SPLATDICT(v)                                    \
-  emito(IR(), IP(), VAR(), kGAB_IR_GUARD_STACKSPACE_SPLATDICT,                 \
-        kGAB_IRTYPE_UNKNOWN, v, 0)
+  ({                                                                           \
+    uint64_t n = gab_shplen(v) * 2;                                            \
+    if (n > IR_SIZE - (IR()->sp - IR()->sb))                                   \
+      FAIL();                                                                  \
+    else                                                                       \
+      emito(IR(), IP() - 3, VAR(), kGAB_IR_GUARD_STACKSPACE_SPLATDICT,         \
+            kGAB_IRTYPE_UNKNOWN, v, 0);                                        \
+    n;                                                                         \
+  })
 
 #define PANIC_GUARD_STACKSPACE_SPLATSHAPE(v)                                   \
-  emito(IR(), IP(), VAR(), kGAB_IR_GUARD_STACKSPACE_SPLATSHAPE,                \
+  emito(IR(), IP() - 3, VAR(), kGAB_IR_GUARD_STACKSPACE_SPLATSHAPE,            \
         kGAB_IRTYPE_UNKNOWN, v, 0)
 
 #define PANIC_GUARD_KIND(v, k)                                                 \
-  emito(IR(), IP(), VAR(), kGAB_IR_GUARD_KIND, kGAB_IRTYPE_UNKNOWN, v, k)
+  emito(IR(), IP() - 3, VAR(), kGAB_IR_GUARD_KIND, kGAB_IRTYPE_UNKNOWN, v, k)
 
 #define PANIC_GUARD_ISN(v) PANIC_GUARD_KIND(v, kGAB_NUMBER)
 
@@ -1032,21 +1127,21 @@ static void *assemble(struct ir *ir) {
 #define GUARD_NOP
 
 #define TRIM_GUARD_EXACTLY_N(want, n)                                          \
-  emito(IR(), IP(), VAR(), kGAB_IR_GUARD_TRIM_EXACTLY_N, kGAB_IRTYPE_UNKNOWN,  \
-        want, n)
+  emito(IR(), IP() - 2, VAR(), kGAB_IR_GUARD_TRIM_EXACTLY_N,                   \
+        kGAB_IRTYPE_UNKNOWN, want, n)
 
 #define TRIM_GUARD_DOWN_N(want, n)                                             \
-  emito(IR(), IP(), VAR(), kGAB_IR_GUARD_TRIM_DOWN_N, kGAB_IRTYPE_UNKNOWN,     \
+  emito(IR(), IP() - 2, VAR(), kGAB_IR_GUARD_TRIM_DOWN_N, kGAB_IRTYPE_UNKNOWN, \
         want, n)
 
 #define TRIM_GUARD_UP_N(want, n)                                               \
-  emito(IR(), IP(), VAR(), kGAB_IR_GUARD_TRIM_UP_N, kGAB_IRTYPE_UNKNOWN, want, \
-        n)
+  emito(IR(), IP() - 2, VAR(), kGAB_IR_GUARD_TRIM_UP_N, kGAB_IRTYPE_UNKNOWN,   \
+        want, n)
 
-#define PRIMITIVE_TYPE(v)                                                      \
+#define MICRO_OP_TYPE(v)                                                       \
   emito(IR(), IP(), VAR(), kGAB_IR_TYPE, kGAB_IRTYPE_UNKNOWN, v, 0)
 
-#define PRIMITIVE_MATCH_HASHT(v)                                               \
+#define MICRO_OP_MATCH_HASHT(v)                                                \
   emito(IR(), IP(), VAR(), kGAB_IR_MATCH_HASHT, kGAB_IRTYPE_UNBOXU, v, 0)
 
 #define LOCAL(b)                                                               \
@@ -1068,204 +1163,236 @@ static void *assemble(struct ir *ir) {
 
 #define SET_VAR(n) ({ *SP() = n; })
 
-#define PRIMITIVE_CALL_NATIVE(n, have, below_have, message)                    \
+#define MICRO_OP_CALL_NATIVE(n, have, below_have, message)                     \
   ({                                                                           \
     emito(IR(), IP(), VAR(), kGAB_IR_CALL_NATIVE, 0,                           \
-          emitk_v(IR(), (uintptr_t)n), emitk_v(IR(), (uintptr_t)IP()));        \
-    DROP_N(have + 1);                                                          \
-    SET_VAR(below_have + 1);                                                   \
-    SUCCEED(GAB_SEND_CACHE_SIZE);                                              \
+          emitk_v(IR(), (uintptr_t)n), 0);                                     \
+    SET_VAR(0);                                                                \
+    SUCCEED(0);                                                                \
   })
 
 // Valid terminations of jitted bb's
 // TODO: inline all these calls
-#define PRIMITIVE_CALL_BLOCK(blk, have) SUCCEED(GAB_SEND_CACHE_SIZE)
+#define MICRO_OP_CALL_BLOCK(blk, have) SUCCEED(GAB_SEND_CACHE_SIZE)
 
-#define PRIMITIVE_LOCALCALL_BLOCK(blk, have) SUCCEED(GAB_SEND_CACHE_SIZE)
+#define MICRO_OP_LOCALCALL_BLOCK(blk, have) SUCCEED(GAB_SEND_CACHE_SIZE)
 
-#define PRIMITIVE_MATCHCALL_BLOCK(idx, have) SUCCEED(GAB_SEND_CACHE_SIZE)
+#define MICRO_OP_MATCHCALL_BLOCK(idx, have) SUCCEED(GAB_SEND_CACHE_SIZE)
 
-#define PRIMITIVE_LOCALTAILCALL_BLOCK(blk, have) SUCCEED(GAB_SEND_CACHE_SIZE)
+#define MICRO_OP_LOCALTAILCALL_BLOCK(blk, have) SUCCEED(GAB_SEND_CACHE_SIZE)
 
-#define PRIMITIVE_MATCHTAILCALL_BLOCK(idx, have) SUCCEED(GAB_SEND_CACHE_SIZE)
+#define MICRO_OP_MATCHTAILCALL_BLOCK(idx, have) SUCCEED(GAB_SEND_CACHE_SIZE)
 
-#define PRIMITIVE_TAILCALL_BLOCK(blk, have) SUCCEED(GAB_SEND_CACHE_SIZE)
+#define MICRO_OP_TAILCALL_BLOCK(blk, have) SUCCEED(GAB_SEND_CACHE_SIZE)
 
-#define PRIMITIVE_RETURN() SUCCEED(1)
+#define MICRO_OP_RETURN() SUCCEED(1)
 
 // Invalid terminations of jitted bb's
-#define PRIMITIVE_USE(v) FAIL()
+#define MICRO_OP_USE(v) FAIL()
 
-#define PRIMITIVE_SEND(n) FAIL()
+#define MICRO_OP_SEND(n) FAIL()
 
-#define PRIMITIVE_TAKE(c) FAIL()
+#define MICRO_OP_TAKE(c) FAIL()
 
-#define PRIMITIVE_PUT(c) FAIL()
+#define MICRO_OP_PUT(c) FAIL()
 
-#define PRIMITIVE_FIBER(c) FAIL()
+#define MICRO_OP_FIBER(c) FAIL()
 
-#define PRIMITIVE_BINARY_ADD(a, b)                                             \
+#define MICRO_OP_BINARY_ADD(a, b)                                              \
   emito(IR(), IP(), VAR(), kGAB_IR_FADD, kGAB_IRTYPE_UNBOXF, a, b)
 
-#define PRIMITIVE_BINARY_SUB(a, b)                                             \
+#define MICRO_OP_BINARY_SUB(a, b)                                              \
   emito(IR(), IP(), VAR(), kGAB_IR_FSUB, kGAB_IRTYPE_UNBOXF, a, b)
 
-#define PRIMITIVE_BINARY_MUL(a, b)                                             \
+#define MICRO_OP_BINARY_MUL(a, b)                                              \
   emito(IR(), IP(), VAR(), kGAB_IR_FMUL, kGAB_IRTYPE_UNBOXF, a, b)
 
-#define PRIMITIVE_BINARY_DIV(a, b)                                             \
+#define MICRO_OP_BINARY_DIV(a, b)                                              \
   emito(IR(), IP(), VAR(), kGAB_IR_FDIV, kGAB_IRTYPE_UNBOXF, a, b)
 
-#define PRIMITIVE_BINARY_MOD(a, b)                                             \
+#define MICRO_OP_BINARY_MOD(a, b)                                              \
   emito(IR(), IP(), VAR(), kGAB_IR_IMOD, kGAB_IRTYPE_UNBOXF, a, b)
 
-#define PRIMITIVE_BINARY_LT(a, b)                                              \
+#define MICRO_OP_BINARY_LT(a, b)                                               \
   emito(IR(), IP(), VAR(), kGAB_IR_FLT, kGAB_IRTYPE_UNBOXB, a, b)
 
-#define PRIMITIVE_BINARY_LTE(a, b)                                             \
+#define MICRO_OP_BINARY_LTE(a, b)                                              \
   emito(IR(), IP(), VAR(), kGAB_IR_FLTE, kGAB_IRTYPE_UNBOXB, a, b)
 
-#define PRIMITIVE_BINARY_GT(a, b)                                              \
+#define MICRO_OP_BINARY_GT(a, b)                                               \
   emito(IR(), IP(), VAR(), kGAB_IR_FGT, kGAB_IRTYPE_UNBOXB, a, b)
 
-#define PRIMITIVE_BINARY_GTE(a, b)                                             \
+#define MICRO_OP_BINARY_GTE(a, b)                                              \
   emito(IR(), IP(), VAR(), kGAB_IR_FGTE, kGAB_IRTYPE_UNBOXB, a, b)
 
-#define PRIMITIVE_BINARY_BOR(a, b)                                             \
+#define MICRO_OP_BINARY_BOR(a, b)                                              \
   emito(IR(), IP(), VAR(), kGAB_IR_IBOR, kGAB_IRTYPE_UNBOXI, a, b)
 
-#define PRIMITIVE_BINARY_BND(a, b)                                             \
+#define MICRO_OP_BINARY_BND(a, b)                                              \
   emito(IR(), IP(), VAR(), kGAB_IR_IBND, kGAB_IRTYPE_UNBOXI, a, b)
 
-#define PRIMITIVE_BINARY_STRLT(a, b)                                           \
+#define MICRO_OP_BINARY_STRLT(a, b)                                            \
   emito(IR(), IP(), VAR(), kGAB_IR_STRLT, kGAB_IRTYPE_UNBOXB, a, b)
 
-#define PRIMITIVE_BINARY_STRLTE(a, b)                                          \
+#define MICRO_OP_BINARY_STRLTE(a, b)                                           \
   emito(IR(), IP(), VAR(), kGAB_IR_STRLTE, kGAB_IRTYPE_UNBOXB, a, b)
 
-#define PRIMITIVE_BINARY_STRGT(a, b)                                           \
+#define MICRO_OP_BINARY_STRGT(a, b)                                            \
   emito(IR(), IP(), VAR(), kGAB_IR_STRGT, kGAB_IRTYPE_UNBOXB, a, b)
 
-#define PRIMITIVE_BINARY_STRGTE(a, b)                                          \
+#define MICRO_OP_BINARY_STRGTE(a, b)                                           \
   emito(IR(), IP(), VAR(), kGAB_IR_STRGTE, kGAB_IRTYPE_UNBOXB, a, b)
 
-#define PRIMITIVE_BINARY_LSH(a, b)                                             \
+#define MICRO_OP_BINARY_LSH(a, b)                                              \
   emito(IR(), IP(), VAR(), kGAB_IR_ULSH, kGAB_IRTYPE_UNBOXU, a, b)
 
-#define PRIMITIVE_BINARY_RSH(a, b)                                             \
+#define MICRO_OP_BINARY_RSH(a, b)                                              \
   emito(IR(), IP(), VAR(), kGAB_IR_URSH, kGAB_IRTYPE_UNBOXU, a, b)
 
-#define PRIMITIVE_BINARY_CONCAT(a, b)                                          \
+#define MICRO_OP_BINARY_CONCAT(a, b)                                           \
   emito(IR(), IP(), VAR(), kGAB_IR_STRCONCAT, kGAB_IRTYPE_STRING, a, b)
 
-#define PRIMITIVE_BINARY_EQ(a, b)                                              \
+#define MICRO_OP_BINARY_EQ(a, b)                                               \
   emito(IR(), IP(), VAR(), kGAB_IR_VEQ, kGAB_IRTYPE_UNBOXB, a, b)
 
-#define PRIMITIVE_UNARY_LIN(a)                                                 \
+#define MICRO_OP_UNARY_LIN(a)                                                  \
   emito(IR(), IP(), VAR(), kGAB_IR_BLIN, kGAB_IRTYPE_UNBOXB, a, 0)
 
-#define PRIMITIVE_UNARY_BIN(a)                                                 \
+#define MICRO_OP_UNARY_BIN(a)                                                  \
   emito(IR(), IP(), VAR(), kGAB_IR_IBIN, kGAB_IRTYPE_UNBOXI, a, 0)
 
-#define PRIMITIVE_UNBOXF(ssa)                                                  \
+#define MICRO_OP_UNBOXF(ssa)                                                   \
   emito(IR(), IP(), VAR(), kGAB_IR_UNBOXF, kGAB_IRTYPE_UNBOXF, ssa, 0)
 
-#define PRIMITIVE_UNBOXI(ssa)                                                  \
+#define MICRO_OP_UNBOXI(ssa)                                                   \
   emito(IR(), IP(), VAR(), kGAB_IR_UNBOXI, kGAB_IRTYPE_UNBOXI, ssa, 0)
 
-#define PRIMITIVE_UNBOXU(ssa)                                                  \
+#define MICRO_OP_UNBOXU(ssa)                                                   \
   emito(IR(), IP(), VAR(), kGAB_IR_UNBOXU, kGAB_IRTYPE_UNBOXU, ssa, 0)
 
-#define PRIMITIVE_UNBOXB(ssa)                                                  \
+#define MICRO_OP_UNBOXB(ssa)                                                   \
   emito(IR(), IP(), VAR(), kGAB_IR_UNBOXB, kGAB_IRTYPE_UNBOXB, ssa, 0)
 
-#define PRIMITIVE_UNBOXS(ssa)                                                  \
+#define MICRO_OP_UNBOXS(ssa)                                                   \
   emito(IR(), IP(), VAR(), kGAB_IR_UNBOXS, kGAB_IRTYPE_UNBOXS, ssa, 0)
 
-#define PRIMITIVE_UNBOXV(ssa) 0
+#define MICRO_OP_UNBOXV(ssa) 0
 
-#define PRIMITIVE_UNBOXF2(ssa)                                                 \
+#define MICRO_OP_UNBOXF2(ssa)                                                  \
   emito(IR(), IP(), VAR(), kGAB_IR_UNBOXF2, kGAB_IRTYPE_UNBOXF, ssa, 0)
 
-#define PRIMITIVE_UNBOXI2(ssa)                                                 \
+#define MICRO_OP_UNBOXI2(ssa)                                                  \
   emito(IR(), IP(), VAR(), kGAB_IR_UNBOXI2, kGAB_IRTYPE_UNBOXI, ssa, 0)
 
-#define PRIMITIVE_UNBOXU2(ssa)                                                 \
+#define MICRO_OP_UNBOXU2(ssa)                                                  \
   emito(IR(), IP(), VAR(), kGAB_IR_UNBOXU2, kGAB_IRTYPE_UNBOXU, ssa, 0)
 
-#define PRIMITIVE_UNBOXB2(ssa)                                                 \
+#define MICRO_OP_UNBOXB2(ssa)                                                  \
   emito(IR(), IP(), VAR(), kGAB_IR_UNBOXB2, kGAB_IRTYPE_UNBOXB, ssa, 0)
 
-#define PRIMITIVE_UNBOXS2(ssa)                                                 \
+#define MICRO_OP_UNBOXS2(ssa)                                                  \
   emito(IR(), IP(), VAR(), kGAB_IR_UNBOXS2, kGAB_IRTYPE_UNBOXS, ssa, 0)
 
-#define PRIMITIVE_UNBOXV2(ssa) 0
+#define MICRO_OP_UNBOXV2(ssa) 0
 
-#define PRIMITIVE_UNBOXF_T uint16_t
-#define PRIMITIVE_UNBOXI_T uint16_t
-#define PRIMITIVE_UNBOXU_T uint16_t
-#define PRIMITIVE_UNBOXB_T uint16_t
-#define PRIMITIVE_UNBOXS_T uint16_t
-#define PRIMITIVE_UNBOXV_T uint16_t
+#define MICRO_OP_UNBOXF_T uint16_t
+#define MICRO_OP_UNBOXI_T uint16_t
+#define MICRO_OP_UNBOXU_T uint16_t
+#define MICRO_OP_UNBOXB_T uint16_t
+#define MICRO_OP_UNBOXS_T uint16_t
+#define MICRO_OP_UNBOXV_T uint16_t
 
-#define PRIMITIVE_BOXN(ssa)                                                    \
+#define MICRO_OP_BOXN(ssa)                                                     \
   emito(IR(), IP(), VAR(), kGAB_IR_BOXN, kGAB_IRTYPE_NUMBER, ssa, 0)
 
-#define PRIMITIVE_BOXB(ssa)                                                    \
+#define MICRO_OP_BOXI(ssa)                                                     \
+  emito(IR(), IP(), VAR(), kGAB_IR_BOXI, kGAB_IRTYPE_NUMBER, ssa, 0)
+
+#define MICRO_OP_BOXB(ssa)                                                     \
   emito(IR(), IP(), VAR(), kGAB_IR_BOXB, kGAB_IRTYPE_MESSAGE_BOOL, ssa, 0)
 
-#define PRIMITIVE_BOXV(ssa) ssa
+#define MICRO_OP_BOXV(ssa) ssa
 
-#define PRIMITIVE_CONS(a, b)                                                   \
+#define MICRO_OP_CONS(a, b)                                                    \
   emito(IR(), IP(), VAR(), kGAB_IR_VCONS, kGAB_IRTYPE_RECORD, a, b)
 
-#define PRIMITIVE_CONS_RECORD(a, b)                                            \
+#define MICRO_OP_CONS_RECORD(a, b)                                             \
   emito(IR(), IP(), VAR(), kGAB_IR_VCONS_RECORD, kGAB_IRTYPE_RECORD, a, b)
 
-#define PRIMITIVE_SPLATSHAPE(v)                                                \
+#define MICRO_OP_SPLATSHAPE(v)                                                 \
   emito(IR(), IP(), VAR(), kGAB_IR_SPLAT_SHAPE, kGAB_IRTYPE_UNKNOWN, v, 0)
 
-#define PRIMITIVE_SPLATDICT(v)                                                 \
+#define MICRO_OP_SPLATDICT(v)                                                  \
   emito(IR(), IP(), VAR(), kGAB_IR_SPLAT_DICT, kGAB_IRTYPE_UNKNOWN, v, 0)
 
-#define PRIMITIVE_SPLATLIST(v)                                                 \
+#define MICRO_OP_SPLATLIST(v)                                                  \
   emito(IR(), IP(), VAR(), kGAB_IR_SPLAT_LIST, kGAB_IRTYPE_UNKNOWN, v, 0)
 
-#define PRIMITIVE_PROPERTY_RECORD(v, offset, have, below_have)                 \
-  assert(offset < IR_BIAS);                                                    \
-  emito(IR(), IP(), VAR(), kGAB_IR_LOAD_PROPERTY, 0, v, offset)
+#define MICRO_OP_UKRECAT(r, i)                                                 \
+  emito(IR(), IP(), VAR(), kGAB_IR_UKRECAT, kGAB_IRTYPE_UNKNOWN, r, i)
 
-#define PRIMITIVE_BLOCK(v)                                                     \
+#define MICRO_OP_UVRECAT(r, i)                                                 \
+  emito(IR(), IP(), VAR(), kGAB_IR_UVRECAT, kGAB_IRTYPE_UNKNOWN, r, i)
+
+#define MICRO_OP_BLOCK(v)                                                      \
   emito(IR(), IP(), VAR(), kGAB_IR_LOAD_BLOCK, kGAB_IRTYPE_BLOCK, v, 0)
 
-#define PRIMITIVE_CHANNEL()                                                    \
+#define MICRO_OP_CHANNEL()                                                     \
   emito(IR(), IP(), VAR(), kGAB_IR_LOAD_CHANNEL, kGAB_IRTYPE_CHANNEL, 0, 0)
 
-#define PRIMITIVE_TRIM(want, have)                                             \
+#define MICRO_OP_TRIM(want, have)                                              \
   emito(IR(), IP(), VAR(), kGAB_IR_TRIM, kGAB_IRTYPE_UNKNOWN, want, 0)
 
-#define PRIMITIVE_PACKRECORD(below, above)                                     \
-  emito(IR(), IP(), VAR(), kGAB_IR_PACK_DICT, kGAB_IRTYPE_UNKNOWN, below, above)
+#define MICRO_OP_PACK_DICT(below, above)                                       \
+  ({                                                                           \
+    emito(IR(), IP(), VAR(), kGAB_IR_PACK_DICT, kGAB_IRTYPE_RECORD, below,     \
+          above);                                                              \
+  })
 
-#define PRIMITIVE_PACKLIST(below, above)                                       \
-  emito(IR(), IP(), VAR(), kGAB_IR_PACK_LIST, kGAB_IRTYPE_UNKNOWN, below, above)
+#define MICRO_OP_PACK_LIST(below, above)                                       \
+  ({                                                                           \
+    emito(IR(), IP(), VAR(), kGAB_IR_PACK_LIST, kGAB_IRTYPE_RECORD, below,     \
+          above);                                                              \
+  })
 
-#define PRIMITIVE_RECORD(len)                                                  \
+#define MICRO_OP_RECORD(len)                                                   \
   emito(IR(), IP(), VAR(), kGAB_IR_LOAD_RECORD, kGAB_IRTYPE_RECORD, len, 0)
 
-#define PRIMITIVE_RECORDFROM(shape, len)                                       \
+#define MICRO_OP_RECORDFROM(shape, len)                                        \
   emito(IR(), IP(), VAR(), kGAB_IR_LOAD_RECORDFROM, kGAB_IRTYPE_RECORD, len,   \
         shape)
 
-#define PRIMITIVE_SHAPE(len)                                                   \
+#define MICRO_OP_SHAPE(len)                                                    \
   emito(IR(), IP(), VAR(), kGAB_IR_LOAD_SHAPE, kGAB_IRTYPE_SHAPE, len, 0)
 
-#define PRIMITIVE_LIST(len)                                                    \
-  emito(IR(), IP(), VAR(), kGAB_IR_LOAD_LIST, kGAB_IRTYPE_RECORD, len, 0)
+#define MICRO_OP_LIST(n, len)                                                  \
+  emito(IR(), IP(), VAR(), kGAB_IR_LOAD_LIST, kGAB_IRTYPE_RECORD, n, len)
 
-#define PRIMITIVE_JIT_ENTER(code)
+#define MICRO_OP_JIT_ENTER(code)
 
-#define PRIMITIVE_JIT_TICK(block, ip, ks)
+#define MICRO_OP_JIT_TICK(block, ip, ks)
+
+#define MICRO_OP_NIL()                                                         \
+  (emito(IR(), IP(), VAR(), kGAB_IR_LOAD_CONSTANT, kGAB_IRTYPE_MESSAGE,        \
+         emitk_v(IR(), gab_nil), 0))
+
+#define MICRO_OP_SET_PEEK_N(n, v)                                              \
+  (emito(IR(), IP(), VAR(), kGAB_IR_MOV, kGAB_IRTYPE_UNKNOWN, v,               \
+         emitk_b(IR(), n)))
+
+#define MICRO_OP_SHIFT(n, amount)                                              \
+  (emito(IR(), IP(), VAR(), kGAB_IR_SHIFT, kGAB_IRTYPE_UNKNOWN,                \
+         emitk_b(IR(), n), emitk_b(IR(), amount)))
+
+#define MICRO_OP_SPILL(r, n)                                                   \
+  ({                                                                           \
+    int computed = (n);                                                        \
+    uint16_t clamped = computed < 0 ? 0 : computed;                            \
+    uint16_t ssa = emito(IR(), IP(), VAR(), kGAB_IR_SPILL,                     \
+                         kGAB_IRTYPE_UNKNOWN, r, emitk_b(IR(), clamped));      \
+    IR()->ir[ssa - IR_BIAS].op.slot += clamped;                                \
+    ssa;                                                                       \
+  })
 
 #define STORE_SP(n)
 

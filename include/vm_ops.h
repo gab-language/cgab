@@ -14,6 +14,13 @@ union gab_value_pair vm_terminate(struct gab_triple gab, const char *fmt, ...);
 /* IMPL in vm.c */
 union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
 
+extern void putl(uintptr_t arg);
+extern void putp(uintptr_t arg);
+extern void puti(int64_t arg);
+extern void putf(double arg);
+extern void putg(gab_value arg);
+extern void putcs(char *arg);
+
 /*
  * In x86, the maximum number of ponter arguments that are passed
  * in registers is 6.
@@ -35,8 +42,8 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
 
 #if cGAB_LOG_VM
 #define LOG(gab, op)                                                           \
-  fprintf(stderr, "OP_%s [%lu] (%i)\n", gab_opcode_names[op], VAR(),           \
-          GAB().wkid);
+  fprintf(stderr, "%p OP_%s [%lu] (%i)\n", IP() - 1, gab_opcode_names[op],     \
+          VAR(), GAB().wkid);
 #else
 #define LOG(gab, op)
 #endif
@@ -111,20 +118,32 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
 #define STORE_LOCAL(i, v) (LOCAL(i) = v)
 #define UPVALUE(i) (BLOCK()->upvalues[i])
 
+#define GET_STACKSPACE(sp, sb) ((sp - sb) + 3)
+#define HAS_STACKSPACE(sp, sb, space)                                          \
+  (GET_STACKSPACE(sp, sb) + space < cGAB_STACK_MAX)
+
 #define PANIC_GUARD_STACKSPACE(space)                                          \
-  if (__gab_unlikely(!has_stackspace(SP(), SB(), space)))                      \
+  if (__gab_unlikely(!HAS_STACKSPACE(SP(), SB(), space)))                      \
     VM_PANIC(GAB_OVERFLOW, "");
 
 #define PANIC_GUARD_STACKSPACE_SPLATDICT(r)                                    \
-  if (__gab_unlikely(!has_stackspace(SP(), SB(), gab_reclen(r) * 2)))          \
-    VM_PANIC(GAB_OVERFLOW, "");
+  ({                                                                           \
+    uint64_t n = gab_shplen(r) * 2;                                            \
+    if (__gab_unlikely(!HAS_STACKSPACE(SP(), SB(), n)))                        \
+      VM_PANIC(GAB_OVERFLOW, "");                                              \
+    n;                                                                         \
+  })
 
 #define PANIC_GUARD_STACKSPACE_SPLATLIST(r)                                    \
-  if (__gab_unlikely(!has_stackspace(SP(), SB(), gab_reclen(r))))              \
-    VM_PANIC(GAB_OVERFLOW, "");
+  ({                                                                           \
+    uint64_t n = gab_shplen(r);                                                \
+    if (__gab_unlikely(!HAS_STACKSPACE(SP(), SB(), n)))                        \
+      VM_PANIC(GAB_OVERFLOW, "");                                              \
+    n;                                                                         \
+  })
 
 #define PANIC_GUARD_STACKSPACE_SPLATSHAPE(r)                                   \
-  if (__gab_unlikely(!has_stackspace(SP(), SB(), gab_shplen(r))))              \
+  if (__gab_unlikely(!HAS_STACKSPACE(SP(), SB(), gab_shplen(r))))              \
     VM_PANIC(GAB_OVERFLOW, "");
 
 #define PANIC_GUARD_SHAPE_LEN(shape, len)                                      \
@@ -132,12 +151,19 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
     VM_PANIC(GAB_PANIC, "Expected $ arguments, got $",                         \
              gab_number(gab_shplen(shape)), gab_number(len));
 
-#define PRIMITIVE_JIT_TICK(block, ip, ks)                                      \
+// fprintf(stderr, "(%i) COMPILED JIT CODE FOR %p, ENTER AT %p\n",        \
+//         GAB().wkid, IP(), ip - GAB_SEND_CACHE_SIZE);                   \
+// for (int i = 1; i < VAR() + 1; i++) {                                  \
+//   gab_fprintf(stderr, "($) $: $\n", gab_number(GAB().wkid),            \
+//               gab_number(i), PEEK_N(i));                               \
+// }
+
+#define MICRO_OP_JIT_TICK(block, ip, ks)                                       \
   ({                                                                           \
     if (gab_jttick(GAB(), &GAB().eg->jobs[GAB().wkid].jt, IP())) {             \
       struct gab_jtbb *bb =                                                    \
           gab_jttry(GAB(), &GAB().eg->jobs[GAB().wkid].jt,                     \
-                    GAB_VAL_TO_PROTOTYPE(block->p), IP(), FB(), UPV());        \
+                    GAB_VAL_TO_PROTOTYPE(block->p), IP(), FB(), UPV(), SP());  \
       if (bb && bb->native_code) {                                             \
         ks[GAB_SEND_KJIT] = (uintptr_t)bb->native_code;                        \
         IP() = ip - GAB_SEND_CACHE_SIZE;                                       \
@@ -148,7 +174,7 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
     }                                                                          \
   })
 
-#define PRIMITIVE_CALL_BLOCK(blk, have)                                        \
+#define MICRO_OP_CALL_BLOCK(blk, have)                                         \
   ({                                                                           \
     struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(blk->p);                   \
                                                                                \
@@ -163,7 +189,7 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
     SET_VAR(have);                                                             \
   })
 
-#define PRIMITIVE_LOCALCALL_BLOCK(blk, have)                                   \
+#define MICRO_OP_LOCALCALL_BLOCK(blk, have)                                    \
   ({                                                                           \
     struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(blk->p);                   \
                                                                                \
@@ -177,7 +203,7 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
     SET_VAR(have);                                                             \
   })
 
-#define PRIMITIVE_TAILCALL_BLOCK(blk, have)                                    \
+#define MICRO_OP_TAILCALL_BLOCK(blk, have)                                     \
   ({                                                                           \
     struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(blk->p);                   \
                                                                                \
@@ -196,7 +222,7 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
     SET_VAR(have);                                                             \
   })
 
-#define PRIMITIVE_LOCALTAILCALL_BLOCK(blk, have)                               \
+#define MICRO_OP_LOCALTAILCALL_BLOCK(blk, have)                                \
   ({                                                                           \
     struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(blk->p);                   \
                                                                                \
@@ -214,7 +240,7 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
     SET_VAR(have);                                                             \
   })
 
-#define PRIMITIVE_MATCHTAILCALL_BLOCK(idx, have)                               \
+#define MICRO_OP_MATCHTAILCALL_BLOCK(idx, have)                                \
   ({                                                                           \
     struct gab_oblock *b = GAB_VAL_TO_BLOCK(ks[GAB_SEND_KSPEC + idx]);         \
                                                                                \
@@ -232,7 +258,7 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
     SET_VAR(have);                                                             \
   })
 
-#define PRIMITIVE_MATCHCALL_BLOCK(idx, have)                                   \
+#define MICRO_OP_MATCHCALL_BLOCK(idx, have)                                    \
   ({                                                                           \
     struct gab_oblock *blk = GAB_VAL_TO_BLOCK(ks[GAB_SEND_KSPEC + idx]);       \
                                                                                \
@@ -248,15 +274,7 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
     SET_VAR(have);                                                             \
   })
 
-#define PRIMITIVE_PROPERTY_RECORD(r, offset, have, below_have)                 \
-  ({                                                                           \
-    DROP_N(have + 1);                                                          \
-    PUSH(gab_uvrecat(r, offset));                                              \
-                                                                               \
-    SET_VAR(below_have + 1);                                                   \
-  })
-
-#define PRIMITIVE_CALL_NATIVE(native, have, below_have, message)               \
+#define MICRO_OP_CALL_NATIVE(native, have, below_have, message)                \
   ({                                                                           \
     STORE();                                                                   \
                                                                                \
@@ -289,11 +307,11 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
     if (__gab_unlikely(res.status == gab_cvalid))                              \
       return res;                                                              \
                                                                                \
-    assert(SP() >= before);                                                    \
+    gab_assert(SP() >= before, "Fewer than zero values returned from native"); \
     uint64_t have = SP() - before;                                             \
                                                                                \
     if (!have)                                                                 \
-      PUSH(gab_nil), have++;                                                   \
+      PUSH(MICRO_OP_NIL()), have++;                                            \
                                                                                \
     memmove(to, before, have * sizeof(gab_value));                             \
     SP() = to + have;                                                          \
@@ -303,14 +321,21 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
     assert(returnptr == RETURN_FB());                                          \
   })
 
-#define PRIMITIVE_JIT_ENTER(code)                                              \
+// fprintf(stderr, "(%i) ENTER JIT AT %p, HAVE %lu\n", GAB().wkid, IP() - 3,  \
+//         VAR());                                                            \
+// for (int i = 1; i < VAR() + 1; i++) {                                      \
+//   gab_fprintf(stderr, "($) $: $\n", gab_number(GAB().wkid), gab_number(i), \
+//               PEEK_N(i));                                                  \
+// }
+
+#define MICRO_OP_JIT_ENTER(code)                                               \
   ({ [[clang::musttail]] return code(DISPATCH_ARGS()); })
 
 /*
  * These primitives need some sort of control-flow in order
  * to work cleanly with the JIT IR.
  */
-#define PRIMITIVE_TAKE(channel)                                                \
+#define MICRO_OP_TAKE(channel)                                                 \
   ({                                                                           \
     if (!REENTRANT()) {                                                        \
       SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);                    \
@@ -325,7 +350,7 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
      * Adjust for the tuple-len value at *SP() on the stack.                   \
      * Store above it, and subract one from the stackspace to reserve it.      \
      */                                                                        \
-    uint64_t stackspace = get_stackspace(SP(), SB()) - 1;                      \
+    uint64_t stackspace = GET_STACKSPACE(SP(), SB()) - 1;                      \
                                                                                \
     gab_value v = gab_ntchntake(GAB(), c, stackspace, SP() + 1,                \
                                 cGAB_VM_CHANNEL_TAKE_TRIES);                   \
@@ -370,7 +395,7 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
     }                                                                          \
   })
 
-#define PRIMITIVE_PUT(channel)                                                 \
+#define MICRO_OP_PUT(channel)                                                  \
   ({                                                                           \
     if (!REENTRANT()) {                                                        \
       SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);                    \
@@ -422,7 +447,7 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
     }                                                                          \
   })
 
-#define PRIMITIVE_FIBER(block)                                                 \
+#define MICRO_OP_FIBER(block)                                                  \
   ({                                                                           \
     STORE_SP();                                                                \
                                                                                \
@@ -470,11 +495,11 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
     }                                                                          \
   })
 
-#define PRIMITIVE_SEND(have)                                                   \
+#define MICRO_OP_SEND(have)                                                    \
   ({                                                                           \
     /* Have can not be 0. We need a receiver. */                               \
     if (__gab_unlikely(!have)) {                                               \
-      PUSH(gab_nil);                                                           \
+      PUSH(MICRO_OP_NIL());                                                    \
       SET_VAR(1);                                                              \
       have++;                                                                  \
     }                                                                          \
@@ -544,7 +569,7 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
     NEXT();                                                                    \
   })
 
-#define PRIMITIVE_TRIM(want, have)                                             \
+#define MICRO_OP_TRIM(want, have)                                              \
   ({                                                                           \
     uint64_t nulls = 0;                                                        \
                                                                                \
@@ -590,7 +615,7 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
     SET_VAR(want);                                                             \
   })
 
-#define PRIMITIVE_USE(have)                                                    \
+#define MICRO_OP_USE(have)                                                     \
   ({                                                                           \
     CHECK_SIGNAL();                                                            \
                                                                                \
@@ -675,7 +700,7 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
 
 #define PUSH_VM_PANIC_FRAME(have) ({})
 
-#define STORE_PRIMITIVE_VM_PANIC_FRAME(have)                                   \
+#define STORE_MICRO_OP_VM_PANIC_FRAME(have)                                    \
   ({                                                                           \
     STORE();                                                                   \
     PUSH_VM_PANIC_FRAME(have);                                                 \
@@ -722,7 +747,7 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
 #define PEEK3() (*(SP() - 3))
 #define PEEK_N(n) (*(SP() - (n)))
 
-#define WRITE_BYTE(dist, n) (*(IP() - dist) = (n))
+#define WRITE_BYTE(dist, n) ({ *(IP() - dist) = (n); })
 
 #define WRITE_INLINEBYTE(n) (*IP()++ = (n))
 
@@ -788,7 +813,7 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
 
 #define PANIC_GUARD_KIND(value, kind)                                          \
   if (__gab_unlikely(gab_valkind(value) != kind)) {                            \
-    STORE_PRIMITIVE_VM_PANIC_FRAME(1);                                         \
+    STORE_MICRO_OP_VM_PANIC_FRAME(1);                                          \
     VM_PANIC(GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, ks[GAB_SEND_KMESSAGE],       \
              ks[GAB_SEND_KSPEC], value, gab_valtype(GAB(), value),             \
              gab_type(GAB(), kind));                                           \
@@ -796,7 +821,7 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
 
 #define PANIC_GUARD_ISB(value)                                                 \
   if (__gab_unlikely(!__gab_valisb(value))) {                                  \
-    STORE_PRIMITIVE_VM_PANIC_FRAME(have);                                      \
+    STORE_MICRO_OP_VM_PANIC_FRAME(have);                                       \
     VM_PANIC(GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, ks[GAB_SEND_KMESSAGE],       \
              ks[GAB_SEND_KSPEC], value, gab_valtype(GAB(), value),             \
              gab_type(GAB(), kGAB_MESSAGE));                                   \
@@ -804,7 +829,7 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
 
 #define PANIC_GUARD_ISN(value)                                                 \
   if (__gab_unlikely(!__gab_valisn(value))) {                                  \
-    STORE_PRIMITIVE_VM_PANIC_FRAME(have);                                      \
+    STORE_MICRO_OP_VM_PANIC_FRAME(have);                                       \
     VM_PANIC(GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, ks[GAB_SEND_KMESSAGE],       \
              ks[GAB_SEND_KSPEC], value, gab_valtype(GAB(), value),             \
              gab_type(GAB(), kGAB_NUMBER));                                    \
@@ -889,40 +914,44 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
 #define NILPAD_GUARD_ARGS_GTE(n)                                               \
   ({                                                                           \
     if (__gab_unlikely(have < n))                                              \
-      PUSH(gab_nil), have++;                                                   \
+      PUSH(MICRO_OP_NIL()), have++;                                            \
   })
 
 // If the LSB is 1, the number is not divisible by 2.
-#define PRIMITIVE_RECORD(len)                                                  \
+#define MICRO_OP_RECORD(len)                                                   \
   ({                                                                           \
     if (__gab_unlikely(len & 1))                                               \
-      PUSH(gab_nil), len++, have++;                                            \
+      PUSH(MICRO_OP_NIL()), len++, have++;                                     \
                                                                                \
     STORE_SP();                                                                \
     gab_record(GAB(), 2, len / 2, SP() - len, SP() + 1 - len);                 \
   })
 
-#define PRIMITIVE_RECORDFROM(shape, len)                                       \
+#define MICRO_OP_RECORDFROM(shape, len)                                        \
   ({                                                                           \
     STORE_SP();                                                                \
     gab_recordfrom(GAB(), shape, 1, len, SP() - len, nullptr);                 \
   })
 
-#define PRIMITIVE_SHAPE(len)                                                   \
+#define MICRO_OP_SHAPE(len)                                                    \
   ({                                                                           \
     STORE_SP();                                                                \
     gab_shape(GAB(), 1, len, SP() - len, nullptr);                             \
   })
 
-#define PRIMITIVE_LIST(len)                                                    \
+#define MICRO_OP_LIST(n, len)                                                  \
   ({                                                                           \
     STORE_SP();                                                                \
-    gab_list(GAB(), len, SP() - len);                                          \
+    gab_list(GAB(), (len), SP() - ((n) + (len)));                              \
   })
 
-#define PRIMITIVE_CHANNEL() (gab_channel(GAB()))
+#define MICRO_OP_CHANNEL()                                                     \
+  ({                                                                           \
+    STORE_SP();                                                                \
+    gab_channel(GAB());                                                        \
+  })
 
-#define PRIMITIVE_PACKLIST(below, above)                                       \
+#define MICRO_OP_PACK_LIST(below, above)                                       \
   ({                                                                           \
     uint64_t have = COMPUTE_TUPLE();                                           \
                                                                                \
@@ -949,14 +978,14 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
     SET_VAR(want + 1);                                                         \
   })
 
-#define PRIMITIVE_PACKRECORD(below, above)                                     \
+#define MICRO_OP_PACK_DICT(below, above)                                       \
   ({                                                                           \
     uint64_t have = COMPUTE_TUPLE();                                           \
                                                                                \
     uint64_t want = below + above;                                             \
                                                                                \
     while (have < want)                                                        \
-      PUSH(gab_nil), have++;                                                   \
+      PUSH(MICRO_OP_NIL()), have++;                                            \
                                                                                \
     assert(have >= want);                                                      \
     int64_t len = have - want;                                                 \
@@ -976,8 +1005,9 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
     SET_VAR(want + 1);                                                         \
   })
 
-#define PRIMITIVE_BLOCK(p)                                                     \
+#define MICRO_OP_BLOCK(p)                                                      \
   ({                                                                           \
+    STORE_SP();                                                                \
     gab_value blk = gab_block(GAB(), p);                                       \
                                                                                \
     struct gab_oblock *b = GAB_VAL_TO_BLOCK(blk);                              \
@@ -996,11 +1026,12 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
     blk;                                                                       \
   })
 
-#define PRIMITIVE_TYPE(v) (gab_valtype(GAB(), v))
+#define MICRO_OP_TYPE(v) (gab_valtype(GAB(), v))
 
 #define PUSHTUPLE(n) PUSH(n);
+#define POPTUPLE(n) DROP_N(n + 1);
 
-#define PRIMITIVE_RETURN()                                                     \
+#define MICRO_OP_RETURN()                                                      \
   ({                                                                           \
     uint64_t have = COMPUTE_TUPLE();                                           \
     uint64_t below_have = RETURN_HAVE();                                       \
@@ -1023,27 +1054,11 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
     assert(BLOCK_PROTO()->header.kind == kGAB_PROTOTYPE);                      \
   })
 
-#define PRIMITIVE_SPLATDICT(r)                                                 \
-  ({                                                                           \
-    uint64_t len = gab_reclen(r);                                              \
-                                                                               \
-    for (uint64_t i = 0; i < len; i++)                                         \
-      PUSH(gab_ukrecat(r, i)), PUSH(gab_uvrecat(r, i));                        \
-                                                                               \
-    len * 2;                                                                   \
-  })
+#define MICRO_OP_UVRECAT(r, i) (gab_uvrecat(r, i))
 
-#define PRIMITIVE_SPLATLIST(r)                                                 \
-  ({                                                                           \
-    uint64_t len = gab_reclen(r);                                              \
-                                                                               \
-    for (uint64_t i = 0; i < len; i++)                                         \
-      PUSH(gab_uvrecat(r, i));                                                 \
-                                                                               \
-    len;                                                                       \
-  })
+#define MICRO_OP_UKRECAT(r, i) (gab_ukrecat(r, i))
 
-#define PRIMITIVE_SPLATSHAPE(s)                                                \
+#define MICRO_OP_SPLATSHAPE(s)                                                 \
   ({                                                                           \
     uint64_t len = gab_shplen(s);                                              \
                                                                                \
@@ -1053,36 +1068,43 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
     len;                                                                       \
   })
 
-#define PRIMITIVE_CONS_RECORD(r, arg) (gab_lstpush(GAB(), r, arg))
+#define MICRO_OP_CONS_RECORD(r, arg) (gab_lstpush(GAB(), r, arg))
 
-#define PRIMITIVE_CONS(a, b) (gab_listof(GAB(), a, b))
+#define MICRO_OP_CONS(a, b) (gab_listof(GAB(), a, b))
 
-#define PRIMITIVE_SENDK() (ks[GAB_SEND_KSPEC])
+#define MICRO_OP_SENDK() (ks[GAB_SEND_KSPEC])
 
-#define PRIMITIVE_BINARY_ADD(a, b) (a + b)
-#define PRIMITIVE_BINARY_SUB(a, b) (a - b)
-#define PRIMITIVE_BINARY_MUL(a, b) (a * b)
-#define PRIMITIVE_BINARY_DIV(a, b) (a / b)
-#define PRIMITIVE_BINARY_LT(a, b) (a < b)
-#define PRIMITIVE_BINARY_LTE(a, b) (a <= b)
-#define PRIMITIVE_BINARY_GT(a, b) (a > b)
-#define PRIMITIVE_BINARY_GTE(a, b) (a >= b)
-#define PRIMITIVE_BINARY_BOR(a, b) (a | b)
-#define PRIMITIVE_BINARY_BND(a, b) (a & b)
-#define PRIMITIVE_BINARY_MOD(a, b)                                             \
+#define MICRO_OP_NIL() (gab_nil)
+
+#define MICRO_OP_SPILL(r, n) (r)
+
+#define MICRO_OP_BINARY_ADD(a, b) (a + b)
+#define MICRO_OP_BINARY_SUB(a, b) (a - b)
+#define MICRO_OP_BINARY_MUL(a, b) (a * b)
+#define MICRO_OP_BINARY_DIV(a, b) (a / b)
+#define MICRO_OP_BINARY_LT(a, b) (a < b)
+#define MICRO_OP_BINARY_LTE(a, b) (a <= b)
+#define MICRO_OP_BINARY_GT(a, b) (a > b)
+#define MICRO_OP_BINARY_GTE(a, b) (a >= b)
+#define MICRO_OP_BINARY_BOR(a, b) (a | b)
+#define MICRO_OP_BINARY_BND(a, b) (a & b)
+#define MICRO_OP_BINARY_MOD(a, b)                                              \
   (__gab_unlikely(b == 0) ? (0.0 / 0.0) : (a % b))
 
 #define BINARY_SHIFT(a, b, op, op_op)                                          \
-  ((__gab_unlikely(b >= GAB_INTWIDTH)) ? (0)                                   \
-   : (__gab_unlikely(b < 0))           ? (a op_op((gab_uint) - b))             \
-                                       : (a op(gab_uint) b))
+  ({                                                                           \
+    gab_int result = ((__gab_unlikely(b >= GAB_INTWIDTH)) ? (0)                \
+                      : (__gab_unlikely(b < 0)) ? (a op_op(uint32_t)(-b))      \
+                                                : (a op(uint32_t) b));         \
+    result;                                                                    \
+  })
 
-#define PRIMITIVE_BINARY_LSH(a, b) BINARY_SHIFT(a, b, <<, >>)
-#define PRIMITIVE_BINARY_RSH(a, b) BINARY_SHIFT(a, b, >>, <<)
+#define MICRO_OP_BINARY_LSH(a, b) BINARY_SHIFT(a, b, <<, >>)
+#define MICRO_OP_BINARY_RSH(a, b) BINARY_SHIFT(a, b, >>, <<)
 
-#define PRIMITIVE_BINARY_EQ(a, b) (gab_valeq(a, b))
+#define MICRO_OP_BINARY_EQ(a, b) (gab_valeq(a, b))
 
-#define PRIMITIVE_BINARY_CONCAT(a, b)                                          \
+#define MICRO_OP_BINARY_CONCAT(a, b)                                           \
   ({                                                                           \
     gab_value val_ab = gab_tstrcat(GAB(), a, b);                               \
                                                                                \
@@ -1099,39 +1121,40 @@ union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
     val_ab;                                                                    \
   })
 
-#define PRIMITIVE_BINARY_STRLT(a, b) (strcoll(a, b) < 0)
-#define PRIMITIVE_BINARY_STRLTE(a, b) (strcoll(a, b) <= 0)
-#define PRIMITIVE_BINARY_STRGT(a, b) (strcoll(a, b) > 0)
-#define PRIMITIVE_BINARY_STRGTE(a, b) (strcoll(a, b) >= 0)
+#define MICRO_OP_BINARY_STRLT(a, b) (strcoll(a, b) < 0)
+#define MICRO_OP_BINARY_STRLTE(a, b) (strcoll(a, b) <= 0)
+#define MICRO_OP_BINARY_STRGT(a, b) (strcoll(a, b) > 0)
+#define MICRO_OP_BINARY_STRGTE(a, b) (strcoll(a, b) >= 0)
 
-#define PRIMITIVE_UNARY_BIN(a) (~a)
-#define PRIMITIVE_UNARY_LIN(a) (!a)
+#define MICRO_OP_UNARY_BIN(a) (~a)
+#define MICRO_OP_UNARY_LIN(a) (!a)
 
-#define PRIMITIVE_BOXN(dbl) (gab_number(dbl))
-#define PRIMITIVE_BOXB(t_or_f) (gab_bool(t_or_f))
-#define PRIMITIVE_BOXV(v) (v)
+#define MICRO_OP_BOXN(dbl) (gab_number(dbl))
+#define MICRO_OP_BOXI(i) (gab_safeinteger(i))
+#define MICRO_OP_BOXB(t_or_f) (gab_bool(t_or_f))
+#define MICRO_OP_BOXV(v) (v)
 
-#define PRIMITIVE_UNBOXF(v) (gab_valtof(v))
-#define PRIMITIVE_UNBOXI(v) (gab_valtoi(v))
-#define PRIMITIVE_UNBOXU(v) (gab_valtou(v))
-#define PRIMITIVE_UNBOXB(v) (gab_valintob(v))
-#define PRIMITIVE_UNBOXS(v) (gab_strdata(&v))
-#define PRIMITIVE_UNBOXV(v) (v)
+#define MICRO_OP_UNBOXF(v) (gab_valtof(v))
+#define MICRO_OP_UNBOXI(v) (({ gab_valtoi(v); }))
+#define MICRO_OP_UNBOXU(v) (({ gab_valtou(v); }))
+#define MICRO_OP_UNBOXB(v) (gab_valintob(v))
+#define MICRO_OP_UNBOXS(v) (gab_strdata(&v))
+#define MICRO_OP_UNBOXV(v) (v)
 
-#define PRIMITIVE_UNBOXF2(v) (PRIMITIVE_UNBOXF(v))
-#define PRIMITIVE_UNBOXI2(v) (PRIMITIVE_UNBOXI(v))
-#define PRIMITIVE_UNBOXU2(v) (PRIMITIVE_UNBOXU(v))
-#define PRIMITIVE_UNBOXB2(v) (PRIMITIVE_UNBOXB(v))
-#define PRIMITIVE_UNBOXS2(v) (PRIMITIVE_UNBOXS(v))
-#define PRIMITIVE_UNBOXV2(v) (PRIMITIVE_UNBOXV(v))
+#define MICRO_OP_UNBOXF2(v) (MICRO_OP_UNBOXF(v))
+#define MICRO_OP_UNBOXI2(v) (MICRO_OP_UNBOXI(v))
+#define MICRO_OP_UNBOXU2(v) (MICRO_OP_UNBOXU(v))
+#define MICRO_OP_UNBOXB2(v) (MICRO_OP_UNBOXB(v))
+#define MICRO_OP_UNBOXS2(v) (MICRO_OP_UNBOXS(v))
+#define MICRO_OP_UNBOXV2(v) (MICRO_OP_UNBOXV(v))
 
-#define PRIMITIVE_UNBOXF_T gab_float
-#define PRIMITIVE_UNBOXU_T gab_uint
-#define PRIMITIVE_UNBOXI_T gab_int
-#define PRIMITIVE_UNBOXB_T bool
-#define PRIMITIVE_UNBOXS_T const char *
-#define PRIMITIVE_UNBOXV_T gab_value
+#define MICRO_OP_UNBOXF_T gab_float
+#define MICRO_OP_UNBOXU_T gab_uint
+#define MICRO_OP_UNBOXI_T gab_int
+#define MICRO_OP_UNBOXB_T bool
+#define MICRO_OP_UNBOXS_T const char *
+#define MICRO_OP_UNBOXV_T gab_value
 
 #define GUARD_NOP(v)
 
-#define PRIMITIVE_MATCH_HASHT(t) (GAB_SEND_HASH(t) * GAB_SEND_CACHE_SIZE)
+#define MICRO_OP_MATCH_HASHT(t) (GAB_SEND_HASH(t) * GAB_SEND_CACHE_SIZE)

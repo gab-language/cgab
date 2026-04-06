@@ -71,11 +71,10 @@
                                                                                \
     SEND_GUARD_CACHED_RECEIVER_TYPE(a);                                        \
                                                                                \
-    guard(a);                                                                  \
     guard(b);                                                                  \
                                                                                \
     a_type val_a = a_unboxer(a);                                               \
-    b_type val_b = b_unboxer##2(b);                                               \
+    b_type val_b = b_unboxer##2(b);                                            \
                                                                                \
     c_type val_c = primitive(val_a, val_b);                                    \
                                                                                \
@@ -117,7 +116,7 @@
     TRIM_GUARD_UP_N(want, n);                                                  \
                                                                                \
     for (int i = 0; i < n; i++)                                                \
-      PUSH(gab_nil);                                                           \
+      PUSH(MICRO_OP_NIL());                                                    \
                                                                                \
     SET_VAR(want);                                                             \
                                                                                \
@@ -135,14 +134,14 @@ CASE_CODE(MATCHTAILSEND_BLOCK) {
 
   gab_value r = PEEK_N(have);
 
-  gab_value t = PRIMITIVE_TYPE(r);
+  gab_value t = MICRO_OP_TYPE(r);
 
-  uint16_t idx = PRIMITIVE_MATCH_HASHT(t);
+  uint16_t idx = MICRO_OP_MATCH_HASHT(t);
 
   // TODO @cgab @vm @perf: Handle undefined and record case
   SEND_GUARD_CACHED_MATCH_TYPE(idx, t);
 
-  PRIMITIVE_MATCHTAILCALL_BLOCK(idx, have);
+  MICRO_OP_MATCHTAILCALL_BLOCK(idx, have);
 
   NEXT_CHECKED();
 }
@@ -158,14 +157,14 @@ CASE_CODE(MATCHSEND_BLOCK) {
 
   gab_value r = PEEK_N(have);
 
-  gab_value t = PRIMITIVE_TYPE(r);
+  gab_value t = MICRO_OP_TYPE(r);
 
-  uint16_t idx = PRIMITIVE_MATCH_HASHT(t);
+  uint16_t idx = MICRO_OP_MATCH_HASHT(t);
 
   // TODO @cgab @vm @perf: Handle undefined and record case
   SEND_GUARD_CACHED_MATCH_TYPE(idx, t);
 
-  PRIMITIVE_MATCHCALL_BLOCK(idx, have);
+  MICRO_OP_MATCHCALL_BLOCK(idx, have);
 
   NEXT_CHECKED();
 }
@@ -280,7 +279,7 @@ CASE_CODE(SEND_NATIVE) {
 
   struct gab_onative *n = GAB_VAL_TO_NATIVE(ks[GAB_SEND_KSPEC]);
 
-  PRIMITIVE_CALL_NATIVE(n, have, below_have, true);
+  MICRO_OP_CALL_NATIVE(n, have, below_have, true);
 
   NEXT_CHECKED();
 }
@@ -299,11 +298,11 @@ CASE_CODE(SEND_BLOCK) {
 
   struct gab_oblock *b = GAB_VAL_TO_BLOCK(ks[GAB_SEND_KSPEC]);
 
-  uint8_t* ip = IP();
+  uint8_t *ip = IP();
 
-  PRIMITIVE_CALL_BLOCK(b, have);
+  MICRO_OP_CALL_BLOCK(b, have);
 
-  PRIMITIVE_JIT_TICK(b, ip, ks);
+  MICRO_OP_JIT_TICK(b, ip, ks);
 
   NEXT_CHECKED();
 }
@@ -322,11 +321,11 @@ CASE_CODE(TAILSEND_BLOCK) {
 
   struct gab_oblock *b = GAB_VAL_TO_BLOCK(ks[GAB_SEND_KSPEC]);
 
-  uint8_t* ip = IP();
+  uint8_t *ip = IP();
 
-  PRIMITIVE_TAILCALL_BLOCK(b, have);
+  MICRO_OP_TAILCALL_BLOCK(b, have);
 
-  PRIMITIVE_JIT_TICK(b, ip, ks);
+  MICRO_OP_JIT_TICK(b, ip, ks);
 
   NEXT_CHECKED();
 }
@@ -345,11 +344,11 @@ CASE_CODE(LOCALSEND_BLOCK) {
 
   struct gab_oblock *b = GAB_VAL_TO_BLOCK(ks[GAB_SEND_KSPEC]);
 
-  uint8_t* ip = IP();
+  uint8_t *ip = IP();
 
-  PRIMITIVE_LOCALCALL_BLOCK(b, have);
+  MICRO_OP_LOCALCALL_BLOCK(b, have);
 
-  PRIMITIVE_JIT_TICK(b, ip, ks);
+  MICRO_OP_JIT_TICK(b, ip, ks);
 
   NEXT_CHECKED();
 }
@@ -364,15 +363,16 @@ CASE_CODE(LOCALTAILSEND_BLOCK) {
   gab_value r = PEEK_N(have);
 
   SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);
+
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
 
   struct gab_oblock *b = GAB_VAL_TO_BLOCK(ks[GAB_SEND_KSPEC]);
 
-  uint8_t* ip = IP();
+  uint8_t *ip = IP();
 
-  PRIMITIVE_LOCALTAILCALL_BLOCK(b, have);
+  MICRO_OP_LOCALTAILCALL_BLOCK(b, have);
 
-  PRIMITIVE_JIT_TICK(b, ip, ks);
+  MICRO_OP_JIT_TICK(b, ip, ks);
 
   NEXT_CHECKED();
 }
@@ -386,17 +386,15 @@ CASE_CODE(SEND_PRIMITIVE_CALL_BLOCK) {
 
   gab_value r = PEEK_N(have);
 
-  SEND_GUARD_CACHED_RECEIVER_TYPE(r);
+  SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);
 
-  PANIC_GUARD_KIND(r, kGAB_BLOCK);
+  SEND_GUARD_CACHED_RECEIVER_TYPE(r);
 
   struct gab_oblock *b = GAB_VAL_TO_BLOCK(r);
 
-  uint8_t* ip = IP();
+  uint8_t *ip = IP();
 
-  PRIMITIVE_CALL_BLOCK(b, have);
-
-  PRIMITIVE_JIT_TICK(b, ip, ks);
+  MICRO_OP_CALL_BLOCK(b, have);
 
   NEXT_CHECKED();
 }
@@ -412,15 +410,13 @@ CASE_CODE(TAILSEND_PRIMITIVE_CALL_BLOCK) {
 
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
 
-  PANIC_GUARD_KIND(r, kGAB_BLOCK);
+  // PANIC_GUARD_KIND(r, kGAB_BLOCK);
 
   struct gab_oblock *b = GAB_VAL_TO_BLOCK(r);
 
-  uint8_t* ip = IP();
+  uint8_t *ip = IP();
 
-  PRIMITIVE_TAILCALL_BLOCK(b, have);
-
-  PRIMITIVE_JIT_TICK(b, ip, ks);
+  MICRO_OP_TAILCALL_BLOCK(b, have);
 
   NEXT_CHECKED();
 }
@@ -441,127 +437,127 @@ CASE_CODE(SEND_PRIMITIVE_CALL_NATIVE) {
 
   struct gab_onative *n = GAB_VAL_TO_NATIVE(r);
 
-  PRIMITIVE_CALL_NATIVE(n, have, below_have, false);
+  MICRO_OP_CALL_NATIVE(n, have, below_have, false);
 
   NEXT();
 }
 
 // float + float = float
-IMPL_SEND_BINARY(PRIMITIVE_ADD, PANIC_GUARD_ISN, PRIMITIVE_UNBOXF_T,
-                 PRIMITIVE_UNBOXF, PRIMITIVE_UNBOXF_T, PRIMITIVE_UNBOXF,
-                 PRIMITIVE_UNBOXF_T, PRIMITIVE_BOXN, PRIMITIVE_BINARY_ADD);
+IMPL_SEND_BINARY(PRIMITIVE_ADD, PANIC_GUARD_ISN, MICRO_OP_UNBOXF_T,
+                 MICRO_OP_UNBOXF, MICRO_OP_UNBOXF_T, MICRO_OP_UNBOXF,
+                 MICRO_OP_UNBOXF_T, MICRO_OP_BOXN, MICRO_OP_BINARY_ADD);
 
 // float - float = float
-IMPL_SEND_BINARY(PRIMITIVE_SUB, PANIC_GUARD_ISN, PRIMITIVE_UNBOXF_T,
-                 PRIMITIVE_UNBOXF, PRIMITIVE_UNBOXF_T, PRIMITIVE_UNBOXF,
-                 PRIMITIVE_UNBOXF_T, PRIMITIVE_BOXN, PRIMITIVE_BINARY_SUB);
+IMPL_SEND_BINARY(PRIMITIVE_SUB, PANIC_GUARD_ISN, MICRO_OP_UNBOXF_T,
+                 MICRO_OP_UNBOXF, MICRO_OP_UNBOXF_T, MICRO_OP_UNBOXF,
+                 MICRO_OP_UNBOXF_T, MICRO_OP_BOXN, MICRO_OP_BINARY_SUB);
 
 // float * float = float
-IMPL_SEND_BINARY(PRIMITIVE_MUL, PANIC_GUARD_ISN, PRIMITIVE_UNBOXF_T,
-                 PRIMITIVE_UNBOXF, PRIMITIVE_UNBOXF_T, PRIMITIVE_UNBOXF,
-                 PRIMITIVE_UNBOXF_T, PRIMITIVE_BOXN, PRIMITIVE_BINARY_MUL);
+IMPL_SEND_BINARY(PRIMITIVE_MUL, PANIC_GUARD_ISN, MICRO_OP_UNBOXF_T,
+                 MICRO_OP_UNBOXF, MICRO_OP_UNBOXF_T, MICRO_OP_UNBOXF,
+                 MICRO_OP_UNBOXF_T, MICRO_OP_BOXN, MICRO_OP_BINARY_MUL);
 
 // float / float = float
-IMPL_SEND_BINARY(PRIMITIVE_DIV, PANIC_GUARD_ISN, PRIMITIVE_UNBOXF_T,
-                 PRIMITIVE_UNBOXF, PRIMITIVE_UNBOXF_T, PRIMITIVE_UNBOXF,
-                 PRIMITIVE_UNBOXF_T, PRIMITIVE_BOXN, PRIMITIVE_BINARY_DIV);
+IMPL_SEND_BINARY(PRIMITIVE_DIV, PANIC_GUARD_ISN, MICRO_OP_UNBOXF_T,
+                 MICRO_OP_UNBOXF, MICRO_OP_UNBOXF_T, MICRO_OP_UNBOXF,
+                 MICRO_OP_UNBOXF_T, MICRO_OP_BOXN, MICRO_OP_BINARY_DIV);
 
 // int % int = int
-IMPL_SEND_BINARY(PRIMITIVE_MOD, PANIC_GUARD_ISN, PRIMITIVE_UNBOXI_T,
-                 PRIMITIVE_UNBOXI, PRIMITIVE_UNBOXI_T, PRIMITIVE_UNBOXI,
-                 PRIMITIVE_UNBOXI_T, PRIMITIVE_BOXN, PRIMITIVE_BINARY_MOD);
+IMPL_SEND_BINARY(PRIMITIVE_MOD, PANIC_GUARD_ISN, MICRO_OP_UNBOXI_T,
+                 MICRO_OP_UNBOXI, MICRO_OP_UNBOXI_T, MICRO_OP_UNBOXI,
+                 MICRO_OP_UNBOXI_T, MICRO_OP_BOXN, MICRO_OP_BINARY_MOD);
 
 // float < float = bool
-IMPL_SEND_BINARY(PRIMITIVE_LT, PANIC_GUARD_ISN, PRIMITIVE_UNBOXF_T,
-                 PRIMITIVE_UNBOXF, PRIMITIVE_UNBOXF_T, PRIMITIVE_UNBOXF,
-                 PRIMITIVE_UNBOXB_T, PRIMITIVE_BOXB, PRIMITIVE_BINARY_LT);
+IMPL_SEND_BINARY(PRIMITIVE_LT, PANIC_GUARD_ISN, MICRO_OP_UNBOXF_T,
+                 MICRO_OP_UNBOXF, MICRO_OP_UNBOXF_T, MICRO_OP_UNBOXF,
+                 MICRO_OP_UNBOXB_T, MICRO_OP_BOXB, MICRO_OP_BINARY_LT);
 
 // float <= float = bool
-IMPL_SEND_BINARY(PRIMITIVE_LTE, PANIC_GUARD_ISN, PRIMITIVE_UNBOXF_T,
-                 PRIMITIVE_UNBOXF, PRIMITIVE_UNBOXF_T, PRIMITIVE_UNBOXF,
-                 PRIMITIVE_UNBOXB_T, PRIMITIVE_BOXB, PRIMITIVE_BINARY_LTE);
+IMPL_SEND_BINARY(PRIMITIVE_LTE, PANIC_GUARD_ISN, MICRO_OP_UNBOXF_T,
+                 MICRO_OP_UNBOXF, MICRO_OP_UNBOXF_T, MICRO_OP_UNBOXF,
+                 MICRO_OP_UNBOXB_T, MICRO_OP_BOXB, MICRO_OP_BINARY_LTE);
 
 // float >= float = bool
-IMPL_SEND_BINARY(PRIMITIVE_GT, PANIC_GUARD_ISN, PRIMITIVE_UNBOXF_T,
-                 PRIMITIVE_UNBOXF, PRIMITIVE_UNBOXF_T, PRIMITIVE_UNBOXF,
-                 PRIMITIVE_UNBOXB_T, PRIMITIVE_BOXB, PRIMITIVE_BINARY_GT);
+IMPL_SEND_BINARY(PRIMITIVE_GT, PANIC_GUARD_ISN, MICRO_OP_UNBOXF_T,
+                 MICRO_OP_UNBOXF, MICRO_OP_UNBOXF_T, MICRO_OP_UNBOXF,
+                 MICRO_OP_UNBOXB_T, MICRO_OP_BOXB, MICRO_OP_BINARY_GT);
 
 // float >= float = bool
-IMPL_SEND_BINARY(PRIMITIVE_GTE, PANIC_GUARD_ISN, PRIMITIVE_UNBOXF_T,
-                 PRIMITIVE_UNBOXF, PRIMITIVE_UNBOXF_T, PRIMITIVE_UNBOXF,
-                 PRIMITIVE_UNBOXB_T, PRIMITIVE_BOXB, PRIMITIVE_BINARY_GTE);
+IMPL_SEND_BINARY(PRIMITIVE_GTE, PANIC_GUARD_ISN, MICRO_OP_UNBOXF_T,
+                 MICRO_OP_UNBOXF, MICRO_OP_UNBOXF_T, MICRO_OP_UNBOXF,
+                 MICRO_OP_UNBOXB_T, MICRO_OP_BOXB, MICRO_OP_BINARY_GTE);
 
 // int | int = int
-IMPL_SEND_BINARY(PRIMITIVE_BOR, PANIC_GUARD_ISN, PRIMITIVE_UNBOXI_T,
-                 PRIMITIVE_UNBOXI, PRIMITIVE_UNBOXI_T, PRIMITIVE_UNBOXI,
-                 PRIMITIVE_UNBOXI_T, PRIMITIVE_BOXN, PRIMITIVE_BINARY_BOR);
+IMPL_SEND_BINARY(PRIMITIVE_BOR, PANIC_GUARD_ISN, MICRO_OP_UNBOXI_T,
+                 MICRO_OP_UNBOXI, MICRO_OP_UNBOXI_T, MICRO_OP_UNBOXI,
+                 MICRO_OP_UNBOXI_T, MICRO_OP_BOXN, MICRO_OP_BINARY_BOR);
 
 // int & int = int
-IMPL_SEND_BINARY(PRIMITIVE_BND, PANIC_GUARD_ISN, PRIMITIVE_UNBOXI_T,
-                 PRIMITIVE_UNBOXI, PRIMITIVE_UNBOXI_T, PRIMITIVE_UNBOXI,
-                 PRIMITIVE_UNBOXI_T, PRIMITIVE_BOXN, PRIMITIVE_BINARY_BND);
+IMPL_SEND_BINARY(PRIMITIVE_BND, PANIC_GUARD_ISN, MICRO_OP_UNBOXI_T,
+                 MICRO_OP_UNBOXI, MICRO_OP_UNBOXI_T, MICRO_OP_UNBOXI,
+                 MICRO_OP_UNBOXI_T, MICRO_OP_BOXN, MICRO_OP_BINARY_BND);
 
 // Implemented logical and/or for booleans with a binary &/| operation.
 // bool | bool = bool
-IMPL_SEND_BINARY(PRIMITIVE_LOR, PANIC_GUARD_ISB, PRIMITIVE_UNBOXB_T,
-                 PRIMITIVE_UNBOXB, PRIMITIVE_UNBOXB_T, PRIMITIVE_UNBOXB,
-                 PRIMITIVE_UNBOXB_T, PRIMITIVE_BOXB, PRIMITIVE_BINARY_BOR);
+IMPL_SEND_BINARY(PRIMITIVE_LOR, PANIC_GUARD_ISB, MICRO_OP_UNBOXB_T,
+                 MICRO_OP_UNBOXB, MICRO_OP_UNBOXB_T, MICRO_OP_UNBOXB,
+                 MICRO_OP_UNBOXB_T, MICRO_OP_BOXB, MICRO_OP_BINARY_BOR);
 
 // bool & bool = bool
-IMPL_SEND_BINARY(PRIMITIVE_LND, PANIC_GUARD_ISB, PRIMITIVE_UNBOXB_T,
-                 PRIMITIVE_UNBOXB, PRIMITIVE_UNBOXB_T, PRIMITIVE_UNBOXB,
-                 PRIMITIVE_UNBOXB_T, PRIMITIVE_BOXB, PRIMITIVE_BINARY_BND);
+IMPL_SEND_BINARY(PRIMITIVE_LND, PANIC_GUARD_ISB, MICRO_OP_UNBOXB_T,
+                 MICRO_OP_UNBOXB, MICRO_OP_UNBOXB_T, MICRO_OP_UNBOXB,
+                 MICRO_OP_UNBOXB_T, MICRO_OP_BOXB, MICRO_OP_BINARY_BND);
 
 // str < str = bool
-IMPL_SEND_BINARY(PRIMITIVE_STR_LT, PANIC_GUARD_ISS, PRIMITIVE_UNBOXS_T,
-                 PRIMITIVE_UNBOXS, PRIMITIVE_UNBOXS_T, PRIMITIVE_UNBOXS,
-                 PRIMITIVE_UNBOXB_T, PRIMITIVE_BOXB, PRIMITIVE_BINARY_STRLT);
+IMPL_SEND_BINARY(PRIMITIVE_STR_LT, PANIC_GUARD_ISS, MICRO_OP_UNBOXS_T,
+                 MICRO_OP_UNBOXS, MICRO_OP_UNBOXS_T, MICRO_OP_UNBOXS,
+                 MICRO_OP_UNBOXB_T, MICRO_OP_BOXB, MICRO_OP_BINARY_STRLT);
 
 // str <= str = bool
-IMPL_SEND_BINARY(PRIMITIVE_STR_LTE, PANIC_GUARD_ISS, PRIMITIVE_UNBOXS_T,
-                 PRIMITIVE_UNBOXS, PRIMITIVE_UNBOXS_T, PRIMITIVE_UNBOXS,
-                 PRIMITIVE_UNBOXB_T, PRIMITIVE_BOXB, PRIMITIVE_BINARY_STRLTE);
+IMPL_SEND_BINARY(PRIMITIVE_STR_LTE, PANIC_GUARD_ISS, MICRO_OP_UNBOXS_T,
+                 MICRO_OP_UNBOXS, MICRO_OP_UNBOXS_T, MICRO_OP_UNBOXS,
+                 MICRO_OP_UNBOXB_T, MICRO_OP_BOXB, MICRO_OP_BINARY_STRLTE);
 
 // str > str = bool
-IMPL_SEND_BINARY(PRIMITIVE_STR_GT, PANIC_GUARD_ISS, PRIMITIVE_UNBOXS_T,
-                 PRIMITIVE_UNBOXS, PRIMITIVE_UNBOXS_T, PRIMITIVE_UNBOXS,
-                 PRIMITIVE_UNBOXB_T, PRIMITIVE_BOXB, PRIMITIVE_BINARY_STRGT);
+IMPL_SEND_BINARY(PRIMITIVE_STR_GT, PANIC_GUARD_ISS, MICRO_OP_UNBOXS_T,
+                 MICRO_OP_UNBOXS, MICRO_OP_UNBOXS_T, MICRO_OP_UNBOXS,
+                 MICRO_OP_UNBOXB_T, MICRO_OP_BOXB, MICRO_OP_BINARY_STRGT);
 
 // str >= str = bool
-IMPL_SEND_BINARY(PRIMITIVE_STR_GTE, PANIC_GUARD_ISS, PRIMITIVE_UNBOXS_T,
-                 PRIMITIVE_UNBOXS, PRIMITIVE_UNBOXS_T, PRIMITIVE_UNBOXS,
-                 PRIMITIVE_UNBOXB_T, PRIMITIVE_BOXB, PRIMITIVE_BINARY_STRGTE);
+IMPL_SEND_BINARY(PRIMITIVE_STR_GTE, PANIC_GUARD_ISS, MICRO_OP_UNBOXS_T,
+                 MICRO_OP_UNBOXS, MICRO_OP_UNBOXS_T, MICRO_OP_UNBOXS,
+                 MICRO_OP_UNBOXB_T, MICRO_OP_BOXB, MICRO_OP_BINARY_STRGTE);
 // uint << int = uint
-IMPL_SEND_BINARY(PRIMITIVE_LSH, PANIC_GUARD_ISN, PRIMITIVE_UNBOXU_T,
-                 PRIMITIVE_UNBOXU, PRIMITIVE_UNBOXI_T, PRIMITIVE_UNBOXI,
-                 PRIMITIVE_UNBOXI_T, PRIMITIVE_BOXN, PRIMITIVE_BINARY_LSH);
+IMPL_SEND_BINARY(PRIMITIVE_LSH, PANIC_GUARD_ISN, MICRO_OP_UNBOXU_T,
+                 MICRO_OP_UNBOXU, MICRO_OP_UNBOXI_T, MICRO_OP_UNBOXI,
+                 MICRO_OP_UNBOXI_T, MICRO_OP_BOXN, MICRO_OP_BINARY_LSH);
 
 // uint >> int = uint
-IMPL_SEND_BINARY(PRIMITIVE_RSH, PANIC_GUARD_ISN, PRIMITIVE_UNBOXU_T,
-                 PRIMITIVE_UNBOXU, PRIMITIVE_UNBOXI_T, PRIMITIVE_UNBOXI,
-                 PRIMITIVE_UNBOXI_T, PRIMITIVE_BOXN, PRIMITIVE_BINARY_RSH);
+IMPL_SEND_BINARY(PRIMITIVE_RSH, PANIC_GUARD_ISN, MICRO_OP_UNBOXU_T,
+                 MICRO_OP_UNBOXU, MICRO_OP_UNBOXI_T, MICRO_OP_UNBOXI,
+                 MICRO_OP_UNBOXI_T, MICRO_OP_BOXN, MICRO_OP_BINARY_RSH);
 
 // str + str = str
-IMPL_SEND_BINARY(PRIMITIVE_CONCAT, PANIC_GUARD_ISS, PRIMITIVE_UNBOXV_T,
-                 PRIMITIVE_UNBOXV, PRIMITIVE_UNBOXV_T, PRIMITIVE_UNBOXV,
-                 PRIMITIVE_UNBOXV_T, PRIMITIVE_BOXV, PRIMITIVE_BINARY_CONCAT);
+IMPL_SEND_BINARY(PRIMITIVE_CONCAT, PANIC_GUARD_ISS, MICRO_OP_UNBOXV_T,
+                 MICRO_OP_UNBOXV, MICRO_OP_UNBOXV_T, MICRO_OP_UNBOXV,
+                 MICRO_OP_UNBOXV_T, MICRO_OP_BOXV, MICRO_OP_BINARY_CONCAT);
 
 // val == val = bool
-IMPL_SEND_BINARY(PRIMITIVE_EQ, GUARD_NOP, PRIMITIVE_UNBOXV_T, PRIMITIVE_UNBOXV,
-                 PRIMITIVE_UNBOXV_T, PRIMITIVE_UNBOXV, PRIMITIVE_UNBOXB_T,
-                 PRIMITIVE_BOXB, PRIMITIVE_BINARY_EQ);
+IMPL_SEND_BINARY(PRIMITIVE_EQ, GUARD_NOP, MICRO_OP_UNBOXV_T, MICRO_OP_UNBOXV,
+                 MICRO_OP_UNBOXV_T, MICRO_OP_UNBOXV, MICRO_OP_UNBOXB_T,
+                 MICRO_OP_BOXB, MICRO_OP_BINARY_EQ);
 
 // !bool = bool
-IMPL_SEND_UNARY(PRIMITIVE_LIN, PANIC_GUARD_ISB, PRIMITIVE_BOXB,
-                PRIMITIVE_UNBOXB_T, PRIMITIVE_UNBOXB, PRIMITIVE_UNARY_LIN);
+IMPL_SEND_UNARY(PRIMITIVE_LIN, PANIC_GUARD_ISB, MICRO_OP_BOXB,
+                MICRO_OP_UNBOXB_T, MICRO_OP_UNBOXB, MICRO_OP_UNARY_LIN);
 
 // ~int = int
-IMPL_SEND_UNARY(PRIMITIVE_BIN, PANIC_GUARD_ISN, PRIMITIVE_BOXN,
-                PRIMITIVE_UNBOXI_T, PRIMITIVE_UNBOXI, PRIMITIVE_UNARY_BIN);
+IMPL_SEND_UNARY(PRIMITIVE_BIN, PANIC_GUARD_ISN, MICRO_OP_BOXN,
+                MICRO_OP_UNBOXI_T, MICRO_OP_UNBOXI, MICRO_OP_UNARY_BIN);
 
 // val? = val
-IMPL_SEND_UNARY(PRIMITIVE_TYPE, GUARD_NOP, PRIMITIVE_BOXV, PRIMITIVE_UNBOXV_T,
-                PRIMITIVE_UNBOXV, PRIMITIVE_TYPE);
+IMPL_SEND_UNARY(PRIMITIVE_TYPE, GUARD_NOP, MICRO_OP_BOXV, MICRO_OP_UNBOXV_T,
+                MICRO_OP_UNBOXV, MICRO_OP_TYPE);
 
 CASE_CODE(SEND_PRIMITIVE_USE) {
   gab_value *ks = READ_SENDCONSTANTS;
@@ -574,7 +570,7 @@ CASE_CODE(SEND_PRIMITIVE_USE) {
 
   SEND_GUARD_KIND(r, kGAB_STRING);
 
-  PRIMITIVE_USE(have);
+  MICRO_OP_USE(have);
 
   NEXT();
 }
@@ -598,7 +594,7 @@ CASE_CODE(SEND_PRIMITIVE_CONS) {
 
   STORE_SP();
 
-  gab_value res = PRIMITIVE_CONS(a, b);
+  gab_value res = MICRO_OP_CONS(a, b);
 
   DROP_N(have + 1);
 
@@ -626,7 +622,7 @@ CASE_CODE(SEND_PRIMITIVE_CONS_RECORD) {
 
   gab_value arg = PEEK_N(have - 1);
 
-  gab_value res = PRIMITIVE_CONS_RECORD(r, arg);
+  gab_value res = MICRO_OP_CONS_RECORD(r, arg);
 
   DROP_N(have + 1);
 
@@ -652,7 +648,7 @@ CASE_CODE(SEND_PRIMITIVE_SPLATSHAPE) {
 
   PANIC_GUARD_STACKSPACE_SPLATSHAPE(s);
 
-  uint64_t len = PRIMITIVE_SPLATSHAPE(s);
+  uint64_t len = MICRO_OP_SPLATSHAPE(s);
 
   SET_VAR(below_have + len);
 
@@ -668,13 +664,18 @@ CASE_CODE(SEND_PRIMITIVE_SPLATLIST) {
 
   SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);
 
-  SEND_GUARD_ISREC(r);
+  SEND_GUARD_CACHED_RECEIVER_TYPE(r);
 
-  DROP_N(have + 1);
+  uint64_t n = gab_shplen(ks[GAB_SEND_KTYPE]);
 
-  PANIC_GUARD_STACKSPACE_SPLATLIST(r);
+  r = MICRO_OP_SPILL(r, n - (have + 1));
 
-  uint64_t n = PRIMITIVE_SPLATLIST(r);
+  POPTUPLE(have);
+
+  PANIC_GUARD_STACKSPACE(n);
+
+  for (uint64_t i = 0; i < n; i++)
+    PUSH(MICRO_OP_UVRECAT(r, i));
 
   SET_VAR(below_have + n);
 
@@ -690,13 +691,16 @@ CASE_CODE(SEND_PRIMITIVE_SPLATDICT) {
 
   SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);
 
-  SEND_GUARD_ISREC(r);
+  SEND_GUARD_CACHED_RECEIVER_TYPE(r);
+
+  uint64_t n = gab_shplen(ks[GAB_SEND_KTYPE]);
 
   DROP_N(have + 1);
 
-  PANIC_GUARD_STACKSPACE_SPLATDICT(r);
+  PANIC_GUARD_STACKSPACE_SPLATDICT(ks[GAB_SEND_KTYPE]);
 
-  uint64_t n = PRIMITIVE_SPLATDICT(r);
+  for (uint64_t i = 0; i < n; i++)
+    PUSH(MICRO_OP_UKRECAT(r, i)), PUSH(MICRO_OP_UVRECAT(r, i));
 
   SET_VAR(below_have + n);
 
@@ -713,9 +717,10 @@ CASE_CODE(SEND_CONSTANT) {
   SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
 
-  gab_value spec = PRIMITIVE_SENDK();
+  POPTUPLE(have);
 
-  DROP_N(have + 1);
+  gab_value spec = MICRO_OP_SENDK();
+
   PUSH(spec);
 
   SET_VAR(below_have + 1);
@@ -734,13 +739,19 @@ CASE_CODE(SEND_PROPERTY) {
 
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
 
-  PRIMITIVE_PROPERTY_RECORD(r, ks[GAB_SEND_KSPEC], have, below_have);
+  r = MICRO_OP_SPILL(r, 0);
+
+  POPTUPLE(have);
+
+  PUSH(MICRO_OP_UVRECAT(r, ks[GAB_SEND_KSPEC]));
+
+  SET_VAR(below_have + 1);
 
   NEXT_CHECKED();
 }
 
 CASE_CODE(RETURN) {
-  PRIMITIVE_RETURN();
+  MICRO_OP_RETURN();
 
   NEXT();
 }
@@ -795,9 +806,7 @@ CASE_CODE(BLOCK) {
   gab_value p = READ_CONSTANT;
   uint64_t have = VAR();
 
-  STORE_SP();
-
-  gab_value blk = PRIMITIVE_BLOCK(p);
+  gab_value blk = MICRO_OP_BLOCK(p);
 
   PUSH(blk);
 
@@ -993,7 +1002,7 @@ CASE_CODE(TRIM) {
   uint8_t want = READ_BYTE;
   uint64_t have = VAR();
 
-  PRIMITIVE_TRIM(want, have);
+  MICRO_OP_TRIM(want, have);
 
   NEXT();
 }
@@ -1002,7 +1011,7 @@ CASE_CODE(PACK_DICT) {
   uint8_t below = READ_BYTE;
   uint8_t above = READ_BYTE;
 
-  PRIMITIVE_PACKRECORD(below, above);
+  MICRO_OP_PACK_DICT(below, above);
 
   NEXT();
 }
@@ -1011,7 +1020,7 @@ CASE_CODE(PACK_LIST) {
   uint8_t below = READ_BYTE;
   uint8_t above = READ_BYTE;
 
-  PRIMITIVE_PACKLIST(below, above);
+  MICRO_OP_PACK_LIST(below, above);
 
   NEXT();
 }
@@ -1021,7 +1030,7 @@ CASE_CODE(SEND) {
   gab_value *ks = READ_SENDCONSTANTS_ANDTAIL(adjust);
   uint64_t have = COMPUTE_TUPLE();
 
-  PRIMITIVE_SEND(have);
+  MICRO_OP_SEND(have);
 }
 
 CASE_CODE(SEND_PRIMITIVE_TAKE) {
@@ -1031,7 +1040,7 @@ CASE_CODE(SEND_PRIMITIVE_TAKE) {
 
   gab_value c = PEEK_N(have);
 
-  PRIMITIVE_TAKE(c);
+  MICRO_OP_TAKE(c);
 }
 
 CASE_CODE(SEND_PRIMITIVE_PUT) {
@@ -1041,7 +1050,7 @@ CASE_CODE(SEND_PRIMITIVE_PUT) {
 
   gab_value c = PEEK_N(have);
 
-  PRIMITIVE_PUT(c);
+  MICRO_OP_PUT(c);
 }
 
 CASE_CODE(SEND_PRIMITIVE_FIBER) {
@@ -1057,7 +1066,7 @@ CASE_CODE(SEND_PRIMITIVE_FIBER) {
 
   PANIC_GUARD_KIND(block, kGAB_BLOCK);
 
-  PRIMITIVE_FIBER(block);
+  MICRO_OP_FIBER(block);
 }
 
 CASE_CODE(SEND_PRIMITIVE_CHANNEL) {
@@ -1067,10 +1076,10 @@ CASE_CODE(SEND_PRIMITIVE_CHANNEL) {
 
   SEND_GUARD_CACHED_RECEIVER_TYPE(PEEK_N(have));
 
-  STORE_SP();
-  gab_value chan = PRIMITIVE_CHANNEL();
+  gab_value chan = MICRO_OP_CHANNEL();
 
-  DROP_N(have + 1);
+  POPTUPLE(have);
+
   PUSH(chan);
 
   SET_VAR(below_have + 1);
@@ -1087,9 +1096,9 @@ CASE_CODE(SEND_PRIMITIVE_RECORD) {
 
   uint64_t len = have - 1;
 
-  gab_value record = PRIMITIVE_RECORD(len);
+  gab_value record = MICRO_OP_RECORD(len);
 
-  DROP_N(have + 1);
+  POPTUPLE(have);
 
   PUSH(record);
 
@@ -1110,9 +1119,9 @@ CASE_CODE(SEND_PRIMITIVE_MAKE_SHAPE) {
 
   PANIC_GUARD_SHAPE_LEN(shape, len);
 
-  gab_value record = PRIMITIVE_RECORDFROM(shape, len);
+  gab_value record = MICRO_OP_RECORDFROM(shape, len);
 
-  DROP_N(have + 1);
+  POPTUPLE(have);
 
   PUSH(record);
 
@@ -1130,9 +1139,9 @@ CASE_CODE(SEND_PRIMITIVE_SHAPE) {
 
   uint64_t len = have - 1;
 
-  gab_value shape = PRIMITIVE_SHAPE(len);
+  gab_value shape = MICRO_OP_SHAPE(len);
 
-  DROP_N(have + 1);
+  POPTUPLE(have);
 
   PUSH(shape);
 
@@ -1151,7 +1160,7 @@ CASE_CODE(SEND_PRIMITIVE_LIST) {
 
   uint64_t len = have - 1;
 
-  gab_value rec = PRIMITIVE_LIST(len);
+  gab_value rec = MICRO_OP_LIST(0, len);
 
   DROP_N(have + 1);
 
@@ -1177,9 +1186,9 @@ CASE_CODE(JIT_SEND_BLOCK) {
 
   handler code = (void *)(uintptr_t)ks[GAB_SEND_KJIT];
 
-  PRIMITIVE_CALL_BLOCK(b, have);
+  MICRO_OP_CALL_BLOCK(b, have);
 
-  PRIMITIVE_JIT_ENTER(code);
+  MICRO_OP_JIT_ENTER(code);
 }
 
 CASE_CODE(JIT_LOCALSEND_BLOCK) {
@@ -1197,9 +1206,9 @@ CASE_CODE(JIT_LOCALSEND_BLOCK) {
 
   handler code = (void *)(uintptr_t)ks[GAB_SEND_KJIT];
 
-  PRIMITIVE_LOCALCALL_BLOCK(b, have);
+  MICRO_OP_LOCALCALL_BLOCK(b, have);
 
-  PRIMITIVE_JIT_ENTER(code);
+  MICRO_OP_JIT_ENTER(code);
 }
 
 CASE_CODE(JIT_TAILSEND_BLOCK) {
@@ -1217,9 +1226,9 @@ CASE_CODE(JIT_TAILSEND_BLOCK) {
 
   handler code = (void *)(uintptr_t)ks[GAB_SEND_KJIT];
 
-  PRIMITIVE_TAILCALL_BLOCK(b, have);
+  MICRO_OP_TAILCALL_BLOCK(b, have);
 
-  PRIMITIVE_JIT_ENTER(code);
+  MICRO_OP_JIT_ENTER(code);
 }
 
 CASE_CODE(JIT_LOCALTAILSEND_BLOCK) {
@@ -1236,7 +1245,7 @@ CASE_CODE(JIT_LOCALTAILSEND_BLOCK) {
 
   handler code = (void *)(uintptr_t)ks[GAB_SEND_KJIT];
 
-  PRIMITIVE_LOCALTAILCALL_BLOCK(b, have);
+  MICRO_OP_LOCALTAILCALL_BLOCK(b, have);
 
-  PRIMITIVE_JIT_ENTER(code);
+  MICRO_OP_JIT_ENTER(code);
 }

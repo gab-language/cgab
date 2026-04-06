@@ -2420,7 +2420,7 @@ static uint64_t dumpInstruction(FILE *stream, struct gab_oprototype *self,
 
     for (int i = 0; i < operand - 1; i++) {
       fprintf(stream, "%hhx, ",
-              v_uint8_t_val_at(&self->src->bytecode, offset + 2 + i));
+              v_uint8_t_val_at(&self->src->bytecode, offset + 3 + i));
     }
 
     fprintf(stream, "%hhx\n",

@@ -38,6 +38,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <wchar.h>
+#include <float.h>
 
 #include "core.h"
 
@@ -209,20 +210,15 @@ typedef uint64_t gab_uint;
  * (when they are defined as 53 bits) will emit additional shl and shr instructions
  * to shift off the upper 11 bits.
  */
-#if DNDEBUG
 typedef signed _BitInt(GAB_INTWIDTH) gab_int;
 typedef unsigned _BitInt(GAB_INTWIDTH) gab_uint;
-#else
-typedef int64_t gab_int;
-typedef uint64_t gab_uint;
-#endif
 
 #endif
 
 // This is the MAXIMUM SAFE INTEGER, because anything greater
 // cannot be exactly represented by a 64-bit floating point number.
 // This is because they have 53 bits of mantissa.
-#define GAB_INTMAX (2e53 - 1.0)
+#define GAB_INTMAX ((gab_float)9007199254740992)
 
 typedef double gab_float;
 
@@ -280,6 +276,13 @@ GAB_API_INLINE gab_value __gab_dtoval(gab_float value) {
   } data;
   data.num = value;
   return data.bits;
+}
+
+GAB_API_INLINE gab_value __gab_itoval(gab_int value) {
+  if (value > GAB_INTMAX)
+    return __gab_dtoval(GAB_INTMAX);
+
+  return __gab_dtoval(value);
 }
 
 #define __gab_valisn(val) (((val) & __GAB_QNAN) != __GAB_QNAN)
@@ -370,28 +373,23 @@ GAB_API_INLINE gab_value __gab_dtoval(gab_float value) {
 /*
  * As Gab's number type is a double (64-bit floating point)
  *
- * The largest integer which can be *completely stored without any loss* is 32
+ * The largest integer which can be *completely stored without any loss* is 53
  * bits.
  */
 GAB_API_INLINE gab_int __gab_valtoi(gab_value v) {
   gab_float num = (__gab_valtod(v));
 
-  if (num < -(gab_float)GAB_INTMAX)
-    return 0;
+  if (num < -GAB_INTMAX)
+    return (gab_int)(-GAB_INTMAX);
 
-  if (num >= (gab_float)GAB_INTMAX)
-    return 0;
+  if (num >= GAB_INTMAX)
+    return (gab_int)(GAB_INTMAX);
 
   return (gab_int)num;
 }
 
 GAB_API_INLINE gab_uint __gab_valtou(gab_value v) {
-  gab_float num = (__gab_valtod(v));
-
-  if (num >= GAB_INTMAX)
-    return 0;
-
-  return (gab_uint)(gab_int)num;
+  return (gab_uint)__gab_valtoi(v);
 }
 
 /* Cast a gab value to a number - a double-precsision floating point, signed, or
