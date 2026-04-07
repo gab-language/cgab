@@ -693,7 +693,7 @@ union gab_jtir {
   uint8_t bitarray[8];
 };
 
-#define IR_SIZE 2048
+#define IR_SIZE 8192
 #define IR_BIAS (IR_SIZE >> 1)
 
 #define IR_KBIAS (0)

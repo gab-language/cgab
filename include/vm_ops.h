@@ -955,7 +955,7 @@ extern void putcs(char *arg);
     uint64_t want = below + above;                                             \
                                                                                \
     while (have < want)                                                        \
-      PUSH(gab_nil), have++;                                                   \
+      PUSH(MICRO_OP_NIL()), have++;                                            \
                                                                                \
     assert(have >= want);                                                      \
     int64_t len = have - want;                                                 \

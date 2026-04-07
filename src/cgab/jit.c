@@ -107,10 +107,16 @@ const char *irtypenames[] = {
 
 bool ir_isk(uint16_t ssa) { return ssa < IR_VBIAS || ssa > IR_OBIAS + IR_SIZE; }
 bool ir_isv(uint16_t ssa) { return ssa > IR_VBIAS && ssa < IR_OBIAS; }
-bool ir_iso(uint16_t ssa) { return ssa > IR_OBIAS && ssa < IR_OBIAS + IR_SIZE; }
+bool ir_iso(uint16_t ssa) {
+  return ssa >= IR_OBIAS && ssa < IR_OBIAS + IR_SIZE;
+}
 
 union gab_jtir ir_geto(struct ir *ir, uint16_t ssa) {
   return ir->ir[ssa - IR_BIAS];
+}
+
+union gab_jtir ir_getv(struct ir *ir, uint16_t ssa) {
+  return ir->ir[IR_BIAS - (ssa - IR_BIAS)];
 }
 
 uint16_t emito(struct ir *ir, uint8_t *ip, uint64_t have, enum gab_irop_kind op,
@@ -245,10 +251,19 @@ void init_type_state(struct gab_triple gab, struct gab_type_state *ts,
 
 static inline enum gab_irtype_kind localt(struct ir *ir, struct gab_jtbb *bb,
                                           uint16_t loc) {
-  gab_assert(loc < bb->id.entry_state.nlocals, "loc %i out of local range %i\n",
-             loc, bb->id.entry_state.nlocals);
+  uint16_t inst = ir->sb[loc];
 
-  return bb->id.entry_state.slots[loc];
+  if (ir_isv(inst))
+    return (enum gab_irtype_kind)gab_valkind(ir_getv(ir, inst).value);
+
+  if (ir_iso(inst))
+    return ir_geto(ir, inst).op.type;
+
+  gab_assert(
+      false,
+      "Cannot get the runtime type of compile time constant for local %u -> %u",
+      loc, inst);
+  return kGAB_IRTYPE_UNKNOWN;
 }
 
 static inline enum gab_irtype_kind upvaluet(struct ir *ir, struct gab_jtbb *bb,
@@ -323,6 +338,7 @@ uint8_t ir_nargs(union gab_jtir inst) {
   case kGAB_IR_TUPLE:
   case kGAB_IR_ENTER:
     return 0;
+  case kGAB_IR_LOCALTAILCALL_BLOCK:
   case kGAB_IR_DROP_N:
   case kGAB_IR_LOAD_LOCAL:
   case kGAB_IR_LOAD_UPVALUE:
@@ -714,9 +730,8 @@ struct bb_off bbappend(uint8_t *data, struct ir *ir, struct bb_off begin,
       }
 
       if (ir_isv(inst.op.args[arg])) {
-        uint64_t patch_val =
-            ir->ir[IR_BIAS - (inst.op.args[arg] - IR_BIAS)].bits +
-            reloca->addend;
+        union gab_jtir a = ir_getv(ir, inst.op.args[arg]);
+        uint64_t patch_val = a.bits + reloca->addend;
 
         /* Write the 64 bit value to data + patch_off */
         memcpy(data + patch_off, &patch_val, sizeof(patch_val));
@@ -991,6 +1006,7 @@ static void *assemble(struct ir *ir) {
 
 #define DISPATCH_ARGS() __gab, __bb, __ip, __kb, __ir
 
+// fprintf(stderr, "COMPILE %s\n", gab_opcode_names[o]);
 #define DISPATCH(op)                                                           \
   ({                                                                           \
     uint8_t o = (op);                                                          \
@@ -1196,7 +1212,23 @@ static void *assemble(struct ir *ir) {
 
 #define MICRO_OP_MATCHCALL_BLOCK(idx, have) SUCCEED(GAB_SEND_CACHE_SIZE)
 
-#define MICRO_OP_LOCALTAILCALL_BLOCK(blk, have) SUCCEED(GAB_SEND_CACHE_SIZE)
+// TODO @jit @perf: Break up local tail calls further.
+// These operations are basically just a memmove.
+// The LOCALTAILCALL_BLOCK used by vm_ops.h and therefore stencil.h
+// is actually *too big* and does more than it needs to.
+#define MICRO_OP_LOCALTAILCALL_BLOCK(blk, have)                                \
+  ({                                                                           \
+    struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(blk->p);                   \
+    PANIC_GUARD_STACKSPACE(p->nslots - have);                                  \
+    uint16_t *from = SP() - have;                                              \
+    uint16_t *to = IR()->sb;                                                   \
+    memmove(to, from, have * sizeof(uint16_t));                                \
+    SP() = to + have;                                                          \
+    IP() = proto_ip(GAB(), p);                                                 \
+    SET_VAR(have);                                                             \
+    emito(IR(), IP(), VAR(), kGAB_IR_LOCALTAILCALL_BLOCK, kGAB_IRTYPE_UNKNOWN, \
+          emitk_v(IR(), __gab_obj(blk)), 0);                                   \
+  })
 
 #define MICRO_OP_MATCHTAILCALL_BLOCK(idx, have) SUCCEED(GAB_SEND_CACHE_SIZE)
 
@@ -1368,8 +1400,19 @@ static void *assemble(struct ir *ir) {
 
 #define MICRO_OP_PACK_LIST(below, above)                                       \
   ({                                                                           \
-    emito(IR(), IP(), VAR(), kGAB_IR_PACK_LIST, kGAB_IRTYPE_RECORD, below,     \
-          above);                                                              \
+    uint64_t have = COMPUTE_TUPLE();                                           \
+                                                                               \
+    uint64_t want = below + above;                                             \
+    int64_t len = have - want;                                                 \
+                                                                               \
+    uint16_t *ap = SP() - above;                                               \
+    uint16_t ssa = emito(IR(), IP(), VAR(), kGAB_IR_PACK_LIST,                 \
+                         kGAB_IRTYPE_RECORD, below, above);                    \
+    DROP_N(len - 1);                                                           \
+    memmove(ap - len + 1, ap, above * sizeof(gab_value));                      \
+    IR()->sp[-(above + 1)] = ssa;                                              \
+    SET_VAR(want + 1);                                                         \
+    ssa;                                                                       \
   })
 
 #define MICRO_OP_RECORD(len)                                                   \
@@ -1385,7 +1428,7 @@ static void *assemble(struct ir *ir) {
 #define MICRO_OP_LIST(n, len)                                                  \
   emito(IR(), IP(), VAR(), kGAB_IR_LOAD_LIST, kGAB_IRTYPE_RECORD, n, len)
 
-#define MICRO_OP_JIT_ENTER(code)
+#define MICRO_OP_JIT_ENTER(code) NEXT();
 
 #define MICRO_OP_JIT_TICK(block, ip, ks)
 

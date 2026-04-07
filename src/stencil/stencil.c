@@ -30,6 +30,8 @@ extern unsigned char _jit_arg_hv[100000];
 #define STENCIL_IP() (uint8_t *)(uintptr_t)(&_jit_arg_ip)
 #define STENCIL_HV() (uintptr_t)(&_jit_arg_hv)
 
+typedef union gab_value_pair (*gab_vm_op)(OP_HANDLER_ARGS);
+
 ATTRIBUTES extern union gab_value_pair _jit_next(OP_HANDLER_ARGS);
 ATTRIBUTES extern union gab_value_pair _jit_exit(OP_HANDLER_ARGS);
 ATTRIBUTES extern union gab_value_pair _jit_bail(OP_HANDLER_ARGS);
@@ -468,7 +470,7 @@ CASE_CODE(MICRO_OP_LOAD_RECORDFROM) {
   uint64_t len = STENCIL_ARG1_64(uint64_t);
 
   gab_value shape = STENCIL_ARG1_64(gab_value);
-  
+
   gab_value record = MICRO_OP_RECORDFROM(shape, len);
 
   DROP_N(len + 2);
@@ -501,6 +503,26 @@ CASE_CODE(MICRO_OP_LOAD_LIST) {
   PUSH(list);
 
   NEXT();
+}
+
+CASE_CODE(MICRO_OP_LOCALTAILCALL_BLOCK) {
+  struct gab_oblock *blk = GAB_VAL_TO_BLOCK(STENCIL_ARG0_64(gab_value));
+  uint64_t have = STENCIL_HV();
+
+  MICRO_OP_LOCALTAILCALL_BLOCK(blk, have);
+
+  NEXT();
+}
+
+CASE_CODE(MICRO_OP_MATCHTAILCALL_BLOCK){
+  gab_vm_op* offsets = STENCIL_ARG0_64(gab_vm_op*);
+  uint64_t have = STENCIL_HV();
+
+  gab_value r = PEEK_N(have);
+
+  uint64_t idx = MICRO_OP_MATCH_HASHT(gab_valtype(GAB(), r));
+
+  [[clang::musttail]] return offsets[idx](DISPATCH_ARGS());
 }
 
 CASE_CODE(MICRO_OP_TUPLE) {

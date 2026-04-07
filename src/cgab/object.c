@@ -520,8 +520,8 @@ gab_value gab_tnstring(struct gab_triple gab, uint64_t len, const char *data) {
 }
 
 /*
- * TODO @cgab @runtime @bug: Becuase of how signaling works, the gc_mtx is held by the gc worker
- * for the entire signal.
+ * TODO @cgab @runtime @bug: Becuase of how signaling works, the gc_mtx is held
+ * by the gc worker for the entire signal.
  *
  * This means that strings cannot be created during a TERM signal.
  *
@@ -1704,7 +1704,7 @@ gab_value gab_fiber(struct gab_triple gab, struct gab_fiber_argt args) {
 
   self->vm.sp = self->vm.sb;
 
-  self->vm.sp += 3; // Return frame data
+  self->vm.sp += 3;          // Return frame data
   self->vm.fp = self->vm.sp; // Frame pointer
 
   // Setup main and args
@@ -1713,7 +1713,7 @@ gab_value gab_fiber(struct gab_triple gab, struct gab_fiber_argt args) {
     *self->vm.sp++ = args.argv[i]; // i'th argument
 
   *self->vm.sp = args.argc + 1; // have
-  
+
   assert(*self->vm.sb == 0);
 
   self->vm.ip = nullptr;
@@ -2251,8 +2251,9 @@ static uint64_t dumpSendInstruction(FILE *stream, struct gab_oprototype *self,
   return offset + 3;
 }
 
-static uint64_t dumpTwoByteInstruction(FILE *stream, struct gab_oprototype *self,
-                                    uint64_t offset) {
+static uint64_t dumpTwoByteInstruction(FILE *stream,
+                                       struct gab_oprototype *self,
+                                       uint64_t offset) {
   const char *name =
       gab_opcode_names[v_uint8_t_val_at(&self->src->bytecode, offset)];
 
@@ -2465,14 +2466,14 @@ static uint64_t dumpInstruction(FILE *stream, struct gab_oprototype *self,
 
     struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(pval);
 
-    printf("%-25s" GAB_CYAN "%-20s\n" GAB_RESET, "OP_BLOCK",
-           gab_strdata(&p->src->name));
+    fprintf(stream, "%-25s" GAB_CYAN "%-20s\n" GAB_RESET, "OP_BLOCK",
+            gab_strdata(&p->src->name));
 
     for (int j = 0; j < p->nupvalues; j++) {
       int isLocal = p->data[j] & fLOCAL_LOCAL;
       uint8_t index = p->data[j] >> 1;
-      printf("      |                   %d %s\n", index,
-             isLocal ? "local" : "upvalue");
+      fprintf(stream, "      |                   %d %s\n", index,
+              isLocal ? "local" : "upvalue");
     }
     return offset;
   }
