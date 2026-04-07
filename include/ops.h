@@ -695,9 +695,9 @@ CASE_CODE(SEND_PRIMITIVE_SPLATDICT) {
 
   uint64_t n = gab_shplen(ks[GAB_SEND_KTYPE]);
 
-  DROP_N(have + 1);
+  POPTUPLE(have);
 
-  PANIC_GUARD_STACKSPACE_SPLATDICT(ks[GAB_SEND_KTYPE]);
+  PANIC_GUARD_STACKSPACE(n * 2);
 
   for (uint64_t i = 0; i < n; i++)
     PUSH(MICRO_OP_UKRECAT(r, i)), PUSH(MICRO_OP_UVRECAT(r, i));
@@ -1076,9 +1076,9 @@ CASE_CODE(SEND_PRIMITIVE_CHANNEL) {
 
   SEND_GUARD_CACHED_RECEIVER_TYPE(PEEK_N(have));
 
-  gab_value chan = MICRO_OP_CHANNEL();
+  DROP_N(have + 1);
 
-  POPTUPLE(have);
+  gab_value chan = MICRO_OP_CHANNEL();
 
   PUSH(chan);
 
@@ -1096,9 +1096,12 @@ CASE_CODE(SEND_PRIMITIVE_RECORD) {
 
   uint64_t len = have - 1;
 
+  if (__gab_unlikely(len & 1))
+    PUSH(MICRO_OP_NIL()), len++, have++;
+
   gab_value record = MICRO_OP_RECORD(len);
 
-  POPTUPLE(have);
+  DROP_N(have + 1);
 
   PUSH(record);
 
@@ -1121,7 +1124,7 @@ CASE_CODE(SEND_PRIMITIVE_MAKE_SHAPE) {
 
   gab_value record = MICRO_OP_RECORDFROM(shape, len);
 
-  POPTUPLE(have);
+  DROP_N(have + 1);
 
   PUSH(record);
 
@@ -1141,7 +1144,7 @@ CASE_CODE(SEND_PRIMITIVE_SHAPE) {
 
   gab_value shape = MICRO_OP_SHAPE(len);
 
-  POPTUPLE(have);
+  DROP_N(have + 1);
 
   PUSH(shape);
 

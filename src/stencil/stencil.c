@@ -392,18 +392,6 @@ CASE_CODE(MICRO_OP_GUARD_STACKSPACE) {
   NEXT();
 }
 
-CASE_CODE(MICRO_OP_GUARD_STACKSPACE_SPLATLIST) {
-  // TODO @jit: Implement guard stackspace
-  gab_assert(false, "TODO");
-  NEXT();
-}
-
-CASE_CODE(MICRO_OP_GUARD_STACKSPACE_SPLATDICT) {
-  // TODO @jit: Implement guard stackspace
-  gab_assert(false, "TODO");
-  NEXT();
-}
-
 CASE_CODE(MICRO_OP_GUARD_STACKSPACE_SPLATSHAPE) {
   // TODO @jit: Implement guard stackspace
   gab_assert(false, "TODO");
@@ -465,22 +453,39 @@ CASE_CODE(MICRO_OP_JIT_EXIT) {
 }
 
 CASE_CODE(MICRO_OP_LOAD_RECORD) {
-  // TODO @jit: Implement load record
-  gab_assert(false, "TODO");
+  uint64_t len = STENCIL_ARG1_64(uint64_t);
+
+  gab_value shape = MICRO_OP_RECORD(len);
+
+  DROP_N(len + 2);
+
+  PUSH(shape);
 
   NEXT();
 }
 
 CASE_CODE(MICRO_OP_LOAD_RECORDFROM) {
-  // TODO @jit: Implement load recordfrom
-  gab_assert(false, "TODO");
+  uint64_t len = STENCIL_ARG1_64(uint64_t);
+
+  gab_value shape = STENCIL_ARG1_64(gab_value);
+  
+  gab_value record = MICRO_OP_RECORDFROM(shape, len);
+
+  DROP_N(len + 2);
+
+  PUSH(record);
 
   NEXT();
 }
 
 CASE_CODE(MICRO_OP_LOAD_SHAPE) {
-  // TODO @jit: Implement load shape
-  gab_assert(false, "TODO");
+  uint64_t len = STENCIL_ARG1_64(uint64_t);
+
+  gab_value shape = MICRO_OP_SHAPE(len);
+
+  DROP_N(len + 2);
+
+  PUSH(shape);
 
   NEXT();
 }

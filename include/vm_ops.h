@@ -920,9 +920,6 @@ extern void putcs(char *arg);
 // If the LSB is 1, the number is not divisible by 2.
 #define MICRO_OP_RECORD(len)                                                   \
   ({                                                                           \
-    if (__gab_unlikely(len & 1))                                               \
-      PUSH(MICRO_OP_NIL()), len++, have++;                                     \
-                                                                               \
     STORE_SP();                                                                \
     gab_record(GAB(), 2, len / 2, SP() - len, SP() + 1 - len);                 \
   })

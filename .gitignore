@@ -23,3 +23,4 @@ MyCertificate.crt
 MyKey.key
 cert_pubkey.pem
 key_pubkey.pem
+/elf2stencil

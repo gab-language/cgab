@@ -2534,7 +2534,7 @@ int gab_fmodinspect(FILE *stream, gab_value module) {
   uint64_t end = proto->offset + proto->len;
 
   gab_fvalinspect(stream, proto->src->name, 0);
-  printf("\n");
+  fputc('\n', stream);
 
   while (offset < end) {
     fprintf(stream, GAB_YELLOW "%04" PRIu64 " " GAB_RESET, offset);

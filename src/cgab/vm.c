@@ -741,8 +741,6 @@ union gab_value_pair gab_vmexec(struct gab_triple gab, gab_value f) {
 static inline bool try_setup_localmatch(struct gab_triple gab, gab_value m,
                                         gab_value *ks,
                                         struct gab_oprototype *p) {
-  return false;
-
   gab_value specs = gab_thisfibmsgrec(gab, m);
 
   if (specs == gab_cundefined)

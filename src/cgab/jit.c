@@ -344,8 +344,6 @@ uint8_t ir_nargs(union gab_jtir inst) {
   case kGAB_IR_BOXB:
   case kGAB_IR_GUARD_SPECS:
   case kGAB_IR_GUARD_STACKSPACE:
-  case kGAB_IR_GUARD_STACKSPACE_SPLATLIST:
-  case kGAB_IR_GUARD_STACKSPACE_SPLATDICT:
   case kGAB_IR_GUARD_STACKSPACE_SPLATSHAPE:
   case kGAB_IR_GUARD_NILPAD:
   case kGAB_IR_TRIM:
@@ -464,7 +462,7 @@ static const uint8_t trampoline[] = {
 void puti(long arg) { fprintf(stderr, "%li\n", arg); }
 void putl(long arg) { fprintf(stderr, "%lu\n", arg); }
 void putcs(const char *arg) { fprintf(stderr, "%s\n", arg); }
-void putp(uintptr_t arg) { fprintf(stderr, "%p\n", (void*)arg); }
+void putp(uintptr_t arg) { fprintf(stderr, "%p\n", (void *)arg); }
 void putf(double arg) { fprintf(stderr, "%lf\n", arg); }
 void putg(gab_value arg) { gab_fprintf(stderr, "$\n", arg); }
 void puta(char arg) { fprintf(stderr, "%c\n", arg); }
@@ -626,17 +624,42 @@ struct bb_off bbappend(uint8_t *data, struct ir *ir, struct bb_off begin,
   //        stencil_nrelocas[inst.op.kind]);
   gab_assert(begin.code - len >= 0, "Ran out of code");
 
+  const struct gab_jit_reloc *relocas = stencil_relocas[inst.op.kind];
+  const uint64_t nrelocas = stencil_nrelocas[inst.op.kind];
+
+  if (nrelocas) {
+    const struct gab_jit_reloc *reloca = &relocas[nrelocas - 1];
+    uint64_t patch_off = begin.code + reloca->offset;
+    int64_t patch_val = begin.code + len + reloca->addend - patch_off;
+
+    if (reloca->k == kGAB_JIT_RELOC_NEXT && patch_val == 0) {
+      gab_assert(patch_off == begin.code + len - 4,
+                 "This optimization should only be attempted as the last "
+                 "relocation. (%lu / %lu bytes)",
+                 patch_off, begin.code + len);
+      // TODO @jit @perf: Implement this for ARM properly.
+      // On x86_64, we simply skip this last jump.
+      // This is done by just chopping off the last 5 bytes.
+      // This has to be done proactively, as the relocations
+      // we perform later in this function depend on the *amount*
+      // of code we emit here. (For trampolines, for instance)
+      len -= 5;
+    }
+  }
+
   /* Copy the instruction, and increment code offset */
   begin.code -= len;
   memcpy(data + begin.code, stencil_bytes[inst.op.kind], len);
-
-  const struct gab_jit_reloc *relocas = stencil_relocas[inst.op.kind];
 
   for (uint64_t i = 0; i < stencil_nrelocas[inst.op.kind]; i++) {
     const struct gab_jit_reloc *reloca = relocas + i;
 
     /* Compute offset, relative to this stencil just copied */
     uint64_t patch_off = begin.code + reloca->offset;
+
+    // This relocation has been optimized out.
+    if (reloca->offset > len)
+      break;
 
     switch (reloca->k) {
     case kGAB_JIT_RELOC_32ARG1:
@@ -755,6 +778,9 @@ struct bb_off bbappend(uint8_t *data, struct ir *ir, struct bb_off begin,
      */
     case kGAB_JIT_RELOC_NEXT: {
       /* Compute value, code after stencil + addend - patch_offset; */
+      gab_assert(reloca->addend == -4,
+                 "NEXT patch relocation should have addend 0, got %i",
+                 reloca->addend);
       int64_t patch_val = begin.code + len + reloca->addend - patch_off;
 
       gab_assert(patch_val >= INT32_MIN && patch_val < INT32_MAX,
@@ -762,6 +788,8 @@ struct bb_off bbappend(uint8_t *data, struct ir *ir, struct bb_off begin,
 
       /* Write the 32 bit value to data + patch_off */
       int32_t patch_val32 = patch_val;
+      gab_assert(patch_val32 != 0, "NEXT patch value should not be 0, got %i",
+                 patch_val32);
       memcpy(data + patch_off, &patch_val32, sizeof(patch_val32));
       break;
     };
@@ -812,12 +840,6 @@ struct bb_off bbappend(uint8_t *data, struct ir *ir, struct bb_off begin,
     }
   }
 
-  // printf("\nCOPY AND PATCH %s:\n", irnames[inst.op.kind]);
-  // for (uint64_t i = 0; i < len; i++) {
-  //   printf("%li: %02x\n", begin.code + i, ((uint8_t *)data)[begin.code + i]);
-  // }
-  // printf("\n");
-
   return begin;
 }
 
@@ -856,9 +878,9 @@ struct gab_jtbb *gab_jtbbcreate(struct gab_triple gab, struct gab_jtbbid *id,
   emito(&ir, nullptr, 0, kGAB_IR_JIT_EXIT, kGAB_IRTYPE_UNKNOWN,
         emitk_v(&ir, (uintptr_t)result), emitk_b(&ir, *ir.sp));
 
-  // gab_fmodinspect(stderr, __gab_obj(id->proto));
+  gab_fmodinspect(stderr, __gab_obj(id->proto));
 
-  // irdump(gab, &ir);
+  irdump(gab, &ir);
 
   bb->code_size = ir_size(&ir);
 
@@ -881,7 +903,6 @@ struct gab_jtbb *gab_jtchk(struct gab_triple gab, struct gab_jt *jt,
                            struct gab_oprototype *proto, uint8_t *ip,
                            gab_value *loc, gab_value *upv) {
   assert(proto->header.kind == kGAB_PROTOTYPE);
-  uint64_t offset = ip - proto_ip(gab, proto);
 
   // Build the type state for the successor block.
   // The inline cache tells us the receiver type at this send site.
@@ -954,9 +975,8 @@ static void *assemble(struct ir *ir) {
 
   // fprintf(stderr, "ASSEMBLED FROM %lu -> %lu\n", off.code, ir_codesize(ir));
   // for (uint32_t i = off.code; i < ir_codesize(ir); i++) {
-  //   fprintf(stderr, "%i: %02X\n", i, code[i]);
+  //   fprintf(stderr, "%02X ", code[i]);
   // }
-  //
   // fprintf(stderr, "\n");
 
   mprotect(code, n, PROT_READ | PROT_EXEC);
@@ -977,12 +997,9 @@ static void *assemble(struct ir *ir) {
     [[clang::musttail]] return handlers[o](DISPATCH_ARGS());                   \
   })
 
-// fprintf(stderr, "FAIL TO JIT COMPILE %s\n", __FUNCTION__);                 
+// fprintf(stderr, "FAIL TO JIT COMPILE %s\n", __FUNCTION__);
 
-#define FAIL()                                                                 \
-  ({                                                                           \
-    return nullptr;                                                            \
-  })
+#define FAIL() ({ return nullptr; })
 
 #define SUCCEED(diff) ({ return IP() - diff; })
 
