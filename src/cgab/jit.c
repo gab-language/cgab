@@ -139,9 +139,6 @@ uint16_t emito(struct ir *ir, uint8_t *ip, uint64_t have, enum gab_irop_kind op,
   ir->ir[ssa].op.b = b;
   ir->ir[ssa].op.slot = slot;
 
-  // if (ip)
-  //   ip -= 3;
-
   ir->ip[ssa - IR_BIAS] = ip;
   ir->hv[ssa - IR_BIAS] = have;
 
@@ -212,12 +209,87 @@ uint16_t ir_peekn(struct ir *ir, int64_t n) {
   return *(ir->sp - n);
 }
 
+static inline enum gab_irtype_kind instt(struct ir *ir, uint16_t inst) {
+  if (ir_isv(inst))
+    return (enum gab_irtype_kind)gab_valkind(ir_getv(ir, inst).value);
+
+  if (ir_iso(inst))
+    return ir_geto(ir, inst).op.type;
+
+  gab_assert(
+      false,
+      "Cannot get the runtime type of compile time constant for local %u",
+      inst);
+  return kGAB_IRTYPE_UNKNOWN;
+}
+
+static inline enum gab_irtype_kind localt(struct ir *ir, struct gab_jtbb *bb,
+                                          uint16_t loc) {
+  uint16_t inst = ir->fp->fb[loc];
+
+  return instt(ir, inst);
+}
+
+void ir_pushframe(struct gab_triple gab, struct ir *ir, struct gab_jtbbid *id,
+                  uint64_t have) {
+  gab_assert(ir->fp - ir->fb < 16, "Too many frames on stack");
+  ir->fp++;
+  ir->fp->fb = ir->sp - have;
+  ir->fp->id = id;
+  ir->fp->ip = proto_ip(gab, id->proto);
+  // TODO @jit @bug: Keep track of recursive calls somehow?
+  gab_fprintf(stderr, "PUSH FRAME($) $\n", gab_number(have),
+              __gab_obj(id->proto));
+  for (int i = 0; i < have; i++) {
+    fprintf(stderr, "%i: %s\n", i, irtypenames[localt(ir, ir->bb, i)]);
+  }
+};
+
+void ir_popframe(struct ir *ir) {
+  gab_fprintf(stderr, "POP FRAME\n");
+  gab_assert(ir->fp >= ir->fb, "Too few frames on stack");
+  uint64_t have = *ir->sp;
+  struct gab_jtframe *f = ir->fp--;
+  memmove(f->fb, ir->sp - have, have * sizeof(uint16_t));
+  ir_dropn(ir, have);
+}
+
 // Initialize jit state
 void gab_jtcreate(struct gab_jt *jt) {
   d_bb_create(&jt->blocks, 32);
 
   for (int i = 0; i < HOTCOUNT_SIZE; i++)
     jt->hotcount[i] = HOTCOUNT_WARMUP;
+}
+
+void init_type_state_inline(struct gab_triple gab, struct ir *ir,
+                            struct gab_jtbb *bb, struct gab_type_state *ts,
+                            uint16_t *loc, gab_value *upv,
+                            struct gab_oprototype *proto) {
+  ts->nlocals = proto->nlocals;
+  ts->nupvalues = proto->nupvalues;
+
+  for (int i = 0; i < proto->nlocals; i++) {
+    gab_value v = loc[i];
+
+    if (v == gab_cinvalid || v == gab_cundefined)
+      ts->slots[i] = kGAB_IRTYPE_UNKNOWN;
+    else
+      ts->slots[i] = instt(ir, i);
+  }
+
+  for (int i = 0; i < proto->nupvalues; i++) {
+    uint8_t slot = ts->nlocals + i;
+    gab_value v = upv[slot];
+
+    if (v == gab_cinvalid || v == gab_cundefined)
+      ts->slots[slot] = kGAB_IRTYPE_UNKNOWN;
+    else
+      ts->slots[slot] = (enum gab_irtype_kind)gab_valkind(v);
+  }
+
+  for (int i = ts->nlocals + ts->nupvalues; i < GAB_JIT_MAX_LOCALS; i++)
+    ts->slots[i] = kGAB_IRTYPE_UNKNOWN;
 }
 
 void init_type_state(struct gab_triple gab, struct gab_type_state *ts,
@@ -237,7 +309,7 @@ void init_type_state(struct gab_triple gab, struct gab_type_state *ts,
 
   for (int i = 0; i < proto->nupvalues; i++) {
     uint8_t slot = ts->nlocals + i;
-    gab_value v = loc[slot];
+    gab_value v = upv[slot];
 
     if (v == gab_cinvalid || v == gab_cundefined)
       ts->slots[slot] = kGAB_IRTYPE_UNKNOWN;
@@ -249,21 +321,20 @@ void init_type_state(struct gab_triple gab, struct gab_type_state *ts,
     ts->slots[i] = kGAB_IRTYPE_UNKNOWN;
 }
 
-static inline enum gab_irtype_kind localt(struct ir *ir, struct gab_jtbb *bb,
-                                          uint16_t loc) {
-  uint16_t inst = ir->sb[loc];
+void tsdump(struct gab_type_state ts) {
+  flockfile(stderr);
 
-  if (ir_isv(inst))
-    return (enum gab_irtype_kind)gab_valkind(ir_getv(ir, inst).value);
+  fprintf(stderr, "TS %u %u:\n", ts.nlocals, ts.nupvalues);
 
-  if (ir_iso(inst))
-    return ir_geto(ir, inst).op.type;
+  for (int i = 0; i < ts.nlocals; i++) {
+    fprintf(stderr, "local %i: %s\n", i, irtypenames[ts.slots[i]]);
+  }
+  for (int i = 0; i < ts.nupvalues; i++) {
+    fprintf(stderr, "upvalue %i: %s\n", i,
+            irtypenames[ts.slots[ts.nlocals + i]]);
+  }
 
-  gab_assert(
-      false,
-      "Cannot get the runtime type of compile time constant for local %u -> %u",
-      loc, inst);
-  return kGAB_IRTYPE_UNKNOWN;
+  funlockfile(stderr);
 }
 
 static inline enum gab_irtype_kind upvaluet(struct ir *ir, struct gab_jtbb *bb,
@@ -339,6 +410,7 @@ uint8_t ir_nargs(union gab_jtir inst) {
   case kGAB_IR_ENTER:
     return 0;
   case kGAB_IR_LOCALTAILCALL_BLOCK:
+  case kGAB_IR_MATCHTAILCALL_BLOCK:
   case kGAB_IR_DROP_N:
   case kGAB_IR_LOAD_LOCAL:
   case kGAB_IR_LOAD_UPVALUE:
@@ -370,6 +442,7 @@ uint8_t ir_nargs(union gab_jtir inst) {
   case kGAB_IR_LOAD_SHAPE:
   case kGAB_IR_SEND_CONSTANT:
     return 1;
+  case kGAB_IR_LOCALCALL_BLOCK:
   case kGAB_IR_LOAD_LIST:
   case kGAB_IR_JIT_EXIT:
   case kGAB_IR_FADD:
@@ -670,8 +743,25 @@ struct bb_off bbappend(uint8_t *data, struct ir *ir, struct bb_off begin,
     }
   }
 
+  if (inst.op.kind == kGAB_IR_MATCHTAILCALL_BLOCK) {
+    // Must rewrite the match with correct addresses into our bytecode.
+    gab_value *ks = (void *)(uintptr_t)ir_getv(ir, inst.op.a).bits;
+    for (int i = 0; i < cGAB_SEND_CACHE_LEN; i++) {
+      uint8_t _idx = i * GAB_SEND_CACHE_SIZE;
+      if (ks[GAB_SEND_KSPEC + _idx] == gab_cinvalid)
+        continue;
+      uint16_t ssa_branch = ks[GAB_SEND_KJIT + _idx];
+      // TODO @jit @bug: Multiple of the same send
+      // It is possible to inline multiple of the same send
+      gab_assert(ssa_branch < IR_SIZE >> 1, "Nonsensical match branch %u\n",
+                 ssa_branch);
+      ks[GAB_SEND_KJIT + _idx] = (uintptr_t)data + ir->of[ssa_branch];
+    }
+  }
+
   /* Copy the instruction, and increment code offset */
   begin.code -= len;
+
   memcpy(data + begin.code, stencil_bytes[inst.op.kind], len);
 
   for (uint64_t i = 0; i < stencil_nrelocas[inst.op.kind]; i++) {
@@ -865,10 +955,55 @@ struct bb_off bbappend(uint8_t *data, struct ir *ir, struct bb_off begin,
     }
   }
 
+  ir->of[ssa - IR_BIAS] = begin.code;
   return begin;
 }
 
 static void *assemble(struct ir *ir);
+
+uint8_t *jtbbappend(struct gab_triple gab, struct gab_jtbb *bb, struct ir *ir,
+                    struct gab_oprototype *proto) {
+  uint8_t *ip = proto_ip(gab, proto);
+  gab_value *kb = proto_ks(gab, proto);
+
+  uint8_t op = *ip++;
+  uint8_t *result = handlers[op](&gab, bb, ip, kb, ir);
+
+  emito(ir, nullptr, 0, kGAB_IR_JIT_EXIT, kGAB_IRTYPE_UNKNOWN,
+        emitk_v(ir, (uintptr_t)result), emitk_b(ir, *ir->sp));
+
+  return result;
+};
+struct gab_jtbb *gab_jtbbinline(struct gab_triple gab, struct ir *ir,
+                                struct gab_jtbbid *id, uint16_t *sp) {
+  struct gab_jtbb *bb = calloc(sizeof(struct gab_jtbb), 1);
+
+  if (!bb)
+    return nullptr;
+
+  bb->id = *id;
+  bb->code_of = ir->os;
+
+  // Insert before finishing - as we'll need recursive calls to see this.
+  d_bb_insert(&gab.eg->jobs[gab.wkid].jt.blocks, &bb->id, bb);
+
+  ir_pushframe(gab, ir, id, *sp);
+  gab_fmodinspect(stderr, __gab_obj(id->proto));
+
+  uint8_t *result = jtbbappend(gab, bb, ir, id->proto);
+
+  if (!result)
+    return free(bb), nullptr;
+
+  struct gab_jtbb *ir_bb = ir->bb;
+  while (ir_bb->next)
+    ir_bb = ir_bb->next;
+  ir_bb->next = bb;
+
+  tsdump(id->entry_state);
+
+  return bb;
+}
 
 struct gab_jtbb *gab_jtbbcreate(struct gab_triple gab, struct gab_jtbbid *id,
                                 gab_value *sp) {
@@ -879,13 +1014,9 @@ struct gab_jtbb *gab_jtbbcreate(struct gab_triple gab, struct gab_jtbbid *id,
 
   bb->id = *id;
 
-  uint8_t *ip = proto_ip(gab, id->proto);
-  gab_value *kb = proto_ks(gab, id->proto);
-
-  uint8_t op = *ip++;
-
-  struct ir ir = {0};
+  struct ir ir = {.bb = bb};
   ir.sp = ir.sb;
+  ir.fp = ir.fb;
 
   uint64_t have = *sp;
 
@@ -895,21 +1026,21 @@ struct gab_jtbb *gab_jtbbcreate(struct gab_triple gab, struct gab_jtbbid *id,
   }
   *ir.sp = have;
 
-  uint8_t *result = handlers[op](&gab, bb, ip, kb, &ir);
-
-  if (!result)
-    return free(bb), nullptr;
-
-  emito(&ir, nullptr, 0, kGAB_IR_JIT_EXIT, kGAB_IRTYPE_UNKNOWN,
-        emitk_v(&ir, (uintptr_t)result), emitk_b(&ir, *ir.sp));
-
+  ir_pushframe(gab, &ir, id, have);
   gab_fmodinspect(stderr, __gab_obj(id->proto));
+
+  d_bb_insert(&gab.eg->jobs[gab.wkid].jt.blocks, &bb->id, bb);
+
+  uint8_t *result = jtbbappend(gab, bb, &ir, id->proto);
+
+  if (!result) {
+    // TODO @jit @bug: Insert nullptr if we failed
+    return free(bb), nullptr;
+  }
 
   irdump(gab, &ir);
 
-  bb->code_size = ir_size(&ir);
-
-  bb->native_code = assemble(&ir);
+  assemble(&ir);
 
   return bb;
 }
@@ -970,14 +1101,6 @@ struct gab_jtbb *gab_jttry(struct gab_triple gab, struct gab_jt *jt,
 
   struct gab_jtbb *version = gab_jtbbcreate(gab, &id, sp);
 
-  struct gab_jtbbid *pid = malloc(sizeof(struct gab_jtbbid));
-  assert(pid);
-  *pid = id;
-
-  // This will insert nullptr if we failed - and it will be returned above.
-
-  d_bb_insert(&jt->blocks, pid, version);
-
   return version;
 }
 
@@ -996,6 +1119,11 @@ static void *assemble(struct ir *ir) {
 
   gab_assert(off.code <= ir_codesize(ir),
              "The code should remain in the code section of the allocation.");
+
+  for (struct gab_jtbb *bb = ir->bb; bb; bb = bb->next) {
+    fprintf(stderr, "PATCH BB %u -> %lu\n", bb->code_of, ir->of[bb->code_of]);
+    bb->native_code = code + ir->of[bb->code_of];
+  }
 
   // fprintf(stderr, "ASSEMBLED FROM %lu -> %lu\n", off.code, ir_codesize(ir));
   // for (uint32_t i = off.code; i < ir_codesize(ir); i++) {
@@ -1054,6 +1182,9 @@ static void *assemble(struct ir *ir) {
 #define IR() (__ir)
 #define BB() (__bb)
 #define SP() (IR()->sp)
+#define FP() (IR()->fp)
+#define FB() (FP()->fb)
+#define JT() (&GAB().eg->jobs[GAB().wkid].jt)
 #define GAB() (*__gab)
 #define DROP() (ir_dropn(IR(), 1))
 #define DROP_N(n) ({ ir_dropn(IR(), n); })
@@ -1213,40 +1344,104 @@ static void *assemble(struct ir *ir) {
     SUCCEED(0);                                                                \
   })
 
-// Valid terminations of jitted bb's
-// TODO: inline all these calls
 #define MICRO_OP_CALL_BLOCK(blk, have) SUCCEED(GAB_SEND_CACHE_SIZE)
 
-#define MICRO_OP_LOCALCALL_BLOCK(blk, have) SUCCEED(GAB_SEND_CACHE_SIZE)
+// TODO @jit @bug: If we detect we've already jit-compiled the block here, jump
+// there.
+#define MICRO_OP_LOCALCALL_BLOCK(blk, have)                                    \
+  ({                                                                           \
+    struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(blk->p);                   \
+    struct gab_type_state successor_state = {};                                \
+    init_type_state_inline(GAB(), IR(), BB(), &successor_state, SP() - have,   \
+                           blk->upvalues, p);                                  \
+                                                                               \
+    struct gab_jtbbid id = {                                                   \
+        .proto = p,                                                            \
+        .entry_state = successor_state,                                        \
+    };                                                                         \
+                                                                               \
+    PANIC_GUARD_STACKSPACE(3 + p->nslots - have);                              \
+                                                                               \
+    bool exists = d_bb_exists(&JT()->blocks, &id);                             \
+                                                                               \
+    uint16_t arg =                                                             \
+        exists ? d_bb_read(&JT()->blocks, &id)->code_of : IR()->os + 1;        \
+                                                                               \
+    uint16_t ssa =                                                             \
+        emito(IR(), IP(), VAR(), kGAB_IR_LOCALCALL_BLOCK, kGAB_IRTYPE_UNKNOWN, \
+              emitk_v(IR(), __gab_obj(blk)), arg);                             \
+                                                                               \
+    if (!exists) {                                                             \
+      fprintf(stderr, "INLINELOCALCALL\n");                                    \
+      if (!gab_jtbbinline(GAB(), IR(), &id, SP()))                             \
+        FAIL();                                                                \
+    }                                                                          \
+                                                                               \
+    ssa;                                                                       \
+  })
 
 #define MICRO_OP_MATCHCALL_BLOCK(idx, have) SUCCEED(GAB_SEND_CACHE_SIZE)
 
-#define MICRO_OP_MATCHTAILCALL_BLOCK(idx, have) SUCCEED(GAB_SEND_CACHE_SIZE)
+// TODO @jit @perf: Inline MATCHTAILCALL properly
+// I can do this by compiling each branch, recording their offsets
+// within ks.
+#define MICRO_OP_MATCHTAILCALL_BLOCK(idx, have)                                \
+  ({                                                                           \
+    uint16_t ssa =                                                             \
+        emito(IR(), IP(), VAR(), kGAB_IR_MATCHTAILCALL_BLOCK,                  \
+              kGAB_IRTYPE_UNKNOWN, emitk_v(IR(), (uintptr_t)ks), 0);           \
+                                                                               \
+    for (int i = 0; i < cGAB_SEND_CACHE_LEN; i++) {                            \
+      uint8_t _idx = i * GAB_SEND_CACHE_SIZE;                                  \
+                                                                               \
+      if (ks[GAB_SEND_KSPEC + _idx] == gab_cinvalid)                           \
+        continue;                                                              \
+                                                                               \
+      struct gab_oblock *blk = (void *)ks[GAB_SEND_KSPEC + _idx];              \
+                                                                               \
+      struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(blk->p);                 \
+      struct gab_type_state successor_state = {};                              \
+      init_type_state_inline(GAB(), IR(), BB(), &successor_state, SP() - have, \
+                             blk->upvalues, p);                                \
+                                                                               \
+      struct gab_jtbbid id = {                                                 \
+          .proto = p,                                                          \
+          .entry_state = successor_state,                                      \
+      };                                                                       \
+                                                                               \
+      bool exists = d_bb_exists(&JT()->blocks, &id);                           \
+                                                                               \
+      uint16_t arg =                                                           \
+          exists ? d_bb_read(&JT()->blocks, &id)->code_of : IR()->os;          \
+                                                                               \
+      if (!exists) {                                                           \
+        fprintf(stderr, "INLINEMATCH\n");                                      \
+        if (!gab_jtbbinline(GAB(), IR(), &id, SP()))                           \
+          FAIL();                                                              \
+      }                                                                        \
+                                                                               \
+      fprintf(stderr, "BRANCH %u\n", arg);                                     \
+                                                                               \
+      ks[GAB_SEND_KJIT + _idx] = arg;                                          \
+    }                                                                          \
+    ssa;                                                                       \
+  })
 
 // TODO @jit @perf: Break up local tail calls further.
 // These operations are basically just a memmove.
 // The LOCALTAILCALL_BLOCK used by vm_ops.h and therefore stencil.h
 // is actually *too big* and does more than it needs to.
 #define MICRO_OP_LOCALTAILCALL_BLOCK(blk, have)                                \
-  ({                                                                           \
-    struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(blk->p);                   \
-    PANIC_GUARD_STACKSPACE(p->nslots - have);                                  \
-    uint16_t *from = SP() - have;                                              \
-    uint16_t *to = IR()->sb;                                                   \
-    memmove(to, from, have * sizeof(uint16_t));                                \
-    SP() = to + have;                                                          \
-    IP() = proto_ip(GAB(), p);                                                 \
-    SET_VAR(have);                                                             \
-    uint16_t ssa =                                                             \
-        emito(IR(), IP(), VAR(), kGAB_IR_LOCALTAILCALL_BLOCK,                  \
-              kGAB_IRTYPE_UNKNOWN, emitk_v(IR(), __gab_obj(blk)), 0);          \
-                                                                               \
-    ssa;                                                                       \
-  })
+  MICRO_OP_LOCALCALL_BLOCK(blk, have)
 
 #define MICRO_OP_TAILCALL_BLOCK(blk, have) SUCCEED(GAB_SEND_CACHE_SIZE)
 
-#define MICRO_OP_RETURN() SUCCEED(1)
+#define MICRO_OP_RETURN()                                                      \
+  ({                                                                           \
+    ir_popframe(IR());                                                         \
+    if (IR()->fp == IR()->fb)                                                  \
+      SUCCEED(1);                                                              \
+  })
 
 // Invalid terminations of jitted bb's
 #define MICRO_OP_USE(v) FAIL()

@@ -57,6 +57,10 @@
 #define cGAB_VM_CHANNEL_TAKE_TRIES (0)
 #endif
 
+#ifndef cGAB_JIT_ENABLED
+#define cGAB_JIT_ENABLED 1
+#endif
+
 // Collect as frequently as possible (on every RC push)
 // This is kinda broken fundamentally
 #ifndef cGAB_DEBUG_GC

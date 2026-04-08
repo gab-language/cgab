@@ -524,13 +524,9 @@ struct gab_jtbb {
 
   // Generated code
   void *native_code; // pointer into executable code buffer
-  uint32_t code_size;
+  uint32_t code_of;
 
-  // Lazily-computed result block.
-  struct gab_blkver *successor;
-
-  // For version chaining: multiple versions of same (proto, offset)
-  struct gab_blkver *next_version;
+  struct gab_jtbb *next;
 };
 
 static inline uint64_t hash_id(struct gab_jtbbid *id) {
@@ -701,14 +697,25 @@ union gab_jtir {
 #define IR_OBIAS (IR_VBIAS + IR_BIAS)
 
 struct ir {
+  struct gab_jtbb *bb;
+
   union gab_jtir ir[IR_SIZE];
   uint32_t ks, os;
 
   // Tracks side-exit points for guards.
-  uint8_t* ip[IR_SIZE >> 1];
+  uint8_t *ip[IR_SIZE >> 1];
   uint64_t hv[IR_SIZE >> 1];
+  // Each operations offset within the code.
+  uint64_t of[IR_SIZE >> 1];
 
   uint16_t local_map[GAB_JIT_MAX_LOCALS];
+
+  struct gab_jtframe {
+    struct gab_jtbbid *id;
+    uint8_t *ip;
+    uint16_t *fb;
+  } fb[16];
+  struct gab_jtframe* fp;
 
   uint16_t sb[IR_SIZE];
   uint16_t *sp;
