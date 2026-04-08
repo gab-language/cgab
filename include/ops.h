@@ -78,9 +78,9 @@
                                                                                \
     c_type val_c = primitive(val_a, val_b);                                    \
                                                                                \
-    gab_value c = c_boxer(val_c);                                              \
-                                                                               \
     DROP_N(have + 1);                                                          \
+                                                                               \
+    gab_value c = c_boxer(val_c);                                              \
                                                                                \
     PUSH(c);                                                                   \
                                                                                \
@@ -134,21 +134,16 @@ CASE_CODE(MATCHTAILSEND_BLOCK) {
 
   gab_value r = PEEK_N(have);
 
-  gab_value t = MICRO_OP_TYPE(r);
-
-  uint16_t idx = MICRO_OP_MATCH_HASHT(t);
-
   // TODO @cgab @vm @perf: Handle undefined and record case
-  SEND_GUARD_CACHED_MATCH_TYPE(idx, t);
+  SEND_GUARD_CACHED_MATCH_TYPE(r, ks);
 
   uint8_t *ip = IP();
 
+  uint8_t idx = MATCH_HASHT(gab_valtype(GAB(), r));
+
   MICRO_OP_MATCHTAILCALL_BLOCK(idx, have);
 
-  for (int i = 0; i < 4; i++) {
-    struct gab_oblock* b = (void*)ks[GAB_SEND_KSPEC + i];
-    MICRO_OP_JIT_TICK(ip, ks, b);
-  }
+  MICRO_OP_JIT_MATCHTICK(ip, ks, idx);
 
   NEXT_CHECKED();
 }
@@ -164,14 +159,16 @@ CASE_CODE(MATCHSEND_BLOCK) {
 
   gab_value r = PEEK_N(have);
 
-  gab_value t = MICRO_OP_TYPE(r);
-
-  uint16_t idx = MICRO_OP_MATCH_HASHT(t);
-
   // TODO @cgab @vm @perf: Handle undefined and record case
-  SEND_GUARD_CACHED_MATCH_TYPE(idx, t);
+  SEND_GUARD_CACHED_MATCH_TYPE(r, ks);
+
+  uint8_t *ip = IP();
+
+  uint8_t idx = MATCH_HASHT(gab_valtype(GAB(), r));
 
   MICRO_OP_MATCHCALL_BLOCK(idx, have);
+
+  MICRO_OP_JIT_MATCHTICK(ip, ks, idx);
 
   NEXT_CHECKED();
 }
@@ -347,6 +344,7 @@ CASE_CODE(LOCALSEND_BLOCK) {
   gab_value r = PEEK_N(have);
 
   SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);
+
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
 
   struct gab_oblock *b = GAB_VAL_TO_BLOCK(ks[GAB_SEND_KSPEC]);
@@ -1265,17 +1263,17 @@ CASE_CODE(JIT_MATCHSEND_BLOCK) {
 
   uint64_t have = COMPUTE_TUPLE();
 
-  gab_value r = PEEK_N(have);
-
   SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);
 
-  SEND_GUARD_CACHED_RECEIVER_TYPE(r);
+  gab_value r = PEEK_N(have);
 
-  struct gab_oblock *b = GAB_VAL_TO_BLOCK(ks[GAB_SEND_KSPEC]);
+  gab_value t = gab_valtype(GAB(), r);
 
-  handler code = (void *)(uintptr_t)ks[GAB_SEND_KJIT];
+  uint16_t idx = MATCH_HASHT(t);
 
-  MICRO_OP_LOCALCALL_BLOCK(b, have);
+  handler code = (void *)(uintptr_t)ks[GAB_SEND_KJIT + idx];
+
+  MICRO_OP_MATCHCALL_BLOCK(idx, have);
 
   MICRO_OP_JIT_ENTER(code);
 }
@@ -1289,13 +1287,9 @@ CASE_CODE(JIT_MATCHTAILSEND_BLOCK) {
 
   gab_value r = PEEK_N(have);
 
-  gab_value t = MICRO_OP_TYPE(r);
+  gab_value t = gab_valtype(GAB(), r);
 
-  uint16_t idx = MICRO_OP_MATCH_HASHT(t);
-
-  SEND_GUARD_CACHED_MATCH_TYPE(idx, t);
-
-  struct gab_oblock *b = GAB_VAL_TO_BLOCK(ks[GAB_SEND_KSPEC]);
+  uint16_t idx = MATCH_HASHT(t);
 
   handler code = (void *)(uintptr_t)ks[GAB_SEND_KJIT + idx];
 

@@ -313,7 +313,7 @@ CASE_CODE(MICRO_OP_GUARD_KIND) {
 }
 
 CASE_CODE(MICRO_OP_GUARD_TYPE) {
-  int32_t n = STENCIL_ARG0(uint32_t);
+  int32_t n = STENCIL_ARG0(int32_t);
   gab_value type = STENCIL_ARG1_64(gab_value);
 
   SEND_GUARD_TYPE(PEEK_N(n), type);
@@ -374,15 +374,12 @@ CASE_CODE(MICRO_OP_GUARD_SPECS) {
   NEXT();
 }
 
-CASE_CODE(MICRO_OP_MATCH_HASHT) {
-  // TODO @jit: Implement match
-  gab_assert(false, "TODO");
-  NEXT();
-}
-
 CASE_CODE(MICRO_OP_GUARD_MATCH_TYPE) {
-  // TODO @jit: Implement match
-  gab_assert(false, "TODO");
+  int32_t n = STENCIL_ARG0(int32_t);
+  gab_value *ks = STENCIL_ARG1_64(gab_value *);
+
+  SEND_GUARD_CACHED_MATCH_TYPE(PEEK_N(n), ks);
+
   NEXT();
 }
 
@@ -515,14 +512,16 @@ CASE_CODE(MICRO_OP_LOCALTAILCALL_BLOCK) {
 }
 
 CASE_CODE(MICRO_OP_MATCHTAILCALL_BLOCK){
-  gab_vm_op* offsets = STENCIL_ARG0_64(gab_vm_op*);
+  gab_value *ks = READ_SENDCONSTANTS;
   uint64_t have = STENCIL_HV();
 
   gab_value r = PEEK_N(have);
 
-  uint64_t idx = MICRO_OP_MATCH_HASHT(gab_valtype(GAB(), r));
+  uint64_t idx = MATCH_HASHT(gab_valtype(GAB(), r));
 
-  [[clang::musttail]] return offsets[idx](DISPATCH_ARGS());
+  gab_vm_op branch = (void*)(uintptr_t)ks[GAB_SEND_KJIT + idx];
+
+  [[clang::musttail]] return branch(DISPATCH_ARGS());
 }
 
 CASE_CODE(MICRO_OP_TUPLE) {

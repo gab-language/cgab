@@ -187,6 +187,8 @@
 #define GAB_PVEC_SIZE (1 << GAB_PVEC_BITS)
 #define GAB_PVEC_MASK (GAB_PVEC_SIZE - 1)
 
+#define MATCH_HASHT(t) (GAB_SEND_HASH(t) * GAB_SEND_CACHE_SIZE)
+
 #if GAB_PVEC_SIZE > 64
 #error "HAMT_SIZE is larger than is indexable by a size_t"
 #endif

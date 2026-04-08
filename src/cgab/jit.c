@@ -345,7 +345,6 @@ uint8_t ir_nargs(union gab_jtir inst) {
   case kGAB_IR_LOAD_CONSTANT:
   case kGAB_IR_STORE_LOCAL:
   case kGAB_IR_TYPE:
-  case kGAB_IR_MATCH_HASHT:
   case kGAB_IR_UNBOXF:
   case kGAB_IR_UNBOXI:
   case kGAB_IR_UNBOXU:
@@ -594,6 +593,8 @@ size_t relasize(const struct gab_jit_reloc *rela) {
   }
 }
 
+static inline size_t pad_to_16(size_t num) { return (num + 15) & ~15; }
+
 size_t inst_datasize(union gab_jtir inst) {
   uint64_t sum = 0;
 
@@ -601,7 +602,7 @@ size_t inst_datasize(union gab_jtir inst) {
 
   for (int i = 0; i < nrelas; i++) {
     sum += relasize(stencil_relocas[inst.op.kind] + i);
-    sum = (sum + 15) & ~15;
+    sum = pad_to_16(sum);
   }
 
   return sum;
@@ -613,8 +614,10 @@ size_t inst_datasize(union gab_jtir inst) {
 size_t ir_datasize(struct ir *ir) {
   size_t sum = 0;
 
-  for (uint16_t i = 0; i < ir->os; i++)
+  for (uint16_t i = 0; i < ir->os; i++) {
     sum += inst_datasize(ir->ir[IR_BIAS + i]);
+    sum = pad_to_16(sum);
+  }
 
   return sum;
 }
@@ -622,7 +625,10 @@ size_t ir_datasize(struct ir *ir) {
 /*
  * Compute the total amount of memory needed by ir to create a basic block.
  */
-size_t ir_size(struct ir *ir) { return ir_codesize(ir) + ir_datasize(ir); }
+size_t ir_size(struct ir *ir) {
+  size_t sum = ir_codesize(ir) + ir_datasize(ir);
+  return pad_to_16(sum);
+}
 
 struct bb_off {
   size_t code, data;
@@ -634,6 +640,7 @@ struct bb_off {
 struct bb_off bbappend(uint8_t *data, struct ir *ir, struct bb_off begin,
                        uint16_t ssa) {
   union gab_jtir inst = ir->ir[ssa];
+
   int64_t len = stencil_bytesizes[inst.op.kind];
 
   // printf("ASSEMBLE %s (nreloc %lu)\n", irnames[inst.op.kind],
@@ -767,7 +774,9 @@ struct bb_off bbappend(uint8_t *data, struct ir *ir, struct bb_off begin,
                  "A patched constant relocation must have offset within 32 bit "
                  "range.");
 
-      gab_assert(begin.data > ir_codesize(ir), "Too many constants. %lu vs %lu", begin.data, ir_codesize(ir));
+      gab_assert(begin.data > ir_codesize(ir),
+                 "Too many constants. %lu vs %lu:%lu. Needed %u.", begin.data,
+                 ir_codesize(ir), ir_datasize(ir), reloca->as.constant.len);
 
       gab_assert(patch_val < ir_size(ir), "Nonsensical patch");
 
@@ -801,10 +810,11 @@ struct bb_off bbappend(uint8_t *data, struct ir *ir, struct bb_off begin,
       gab_assert(patch_val >= INT32_MIN && patch_val < INT32_MAX,
                  "A patched next relocation must have offset within 32 bits.");
 
+      gab_assert(patch_val != 0, "NEXT patch value should not be 0, got %i",
+                 patch_val);
+
       /* Write the 32 bit value to data + patch_off */
       int32_t patch_val32 = patch_val;
-      gab_assert(patch_val32 != 0, "NEXT patch value should not be 0, got %i",
-                 patch_val32);
       memcpy(data + patch_off, &patch_val32, sizeof(patch_val32));
       break;
     };
@@ -1005,16 +1015,18 @@ static void *assemble(struct ir *ir) {
 
 #define DISPATCH_ARGS() __gab, __bb, __ip, __kb, __ir
 
+// fprintf(stderr, "COMPILE %s\n", gab_opcode_names[o]);
 #define DISPATCH(op)                                                           \
   ({                                                                           \
     uint8_t o = (op);                                                          \
-    fprintf(stderr, "COMPILE %s\n", gab_opcode_names[o]);                      \
     [[clang::musttail]] return handlers[o](DISPATCH_ARGS());                   \
   })
 
-// fprintf(stderr, "FAIL TO JIT COMPILE %s\n", __FUNCTION__);
-
-#define FAIL() ({ return nullptr; })
+#define FAIL()                                                                 \
+  ({                                                                           \
+    fprintf(stderr, "FAIL TO JIT COMPILE %s\n", __FUNCTION__);                 \
+    return nullptr;                                                            \
+  })
 
 #define SUCCEED(diff) ({ return IP() - diff; })
 
@@ -1083,8 +1095,9 @@ static void *assemble(struct ir *ir) {
   emito(IR(), IP() - 3, VAR(), kGAB_IR_GUARD_SPECS, kGAB_IRTYPE_UNKNOWN,       \
         emitk_b(IR(), e), 0)
 
-#define SEND_GUARD_CACHED_MATCH_TYPE(idx, t) FAIL()
-// emito(IR(),IP(), kGAB_IR_GUARD_MATCH_TYPE, kGAB_IRTYPE_UNKNOWN, t, idx)
+#define SEND_GUARD_CACHED_MATCH_TYPE(r, ks)                                    \
+  emito(IR(), IP(), VAR(), kGAB_IR_GUARD_MATCH_TYPE, kGAB_IRTYPE_UNKNOWN, r,   \
+        emitk_v(IR(), (uintptr_t)ks))
 
 #define SEND_GUARD_CACHED_RECEIVER_TYPE(r)                                     \
   emito(IR(), IP() - 3, VAR(), kGAB_IR_GUARD_TYPE, kGAB_IRTYPE_UNKNOWN, r,     \
@@ -1173,9 +1186,6 @@ static void *assemble(struct ir *ir) {
 #define MICRO_OP_TYPE(v)                                                       \
   emito(IR(), IP(), VAR(), kGAB_IR_TYPE, kGAB_IRTYPE_UNKNOWN, v, 0)
 
-#define MICRO_OP_MATCH_HASHT(v)                                                \
-  emito(IR(), IP(), VAR(), kGAB_IR_MATCH_HASHT, kGAB_IRTYPE_UNBOXU, v, 0)
-
 #define LOCAL(b)                                                               \
   ({                                                                           \
     uint8_t loc = (b);                                                         \
@@ -1211,6 +1221,8 @@ static void *assemble(struct ir *ir) {
 
 #define MICRO_OP_MATCHCALL_BLOCK(idx, have) SUCCEED(GAB_SEND_CACHE_SIZE)
 
+#define MICRO_OP_MATCHTAILCALL_BLOCK(idx, have) SUCCEED(GAB_SEND_CACHE_SIZE)
+
 // TODO @jit @perf: Break up local tail calls further.
 // These operations are basically just a memmove.
 // The LOCALTAILCALL_BLOCK used by vm_ops.h and therefore stencil.h
@@ -1231,8 +1243,6 @@ static void *assemble(struct ir *ir) {
                                                                                \
     ssa;                                                                       \
   })
-
-#define MICRO_OP_MATCHTAILCALL_BLOCK(idx, have) SUCCEED(GAB_SEND_CACHE_SIZE)
 
 #define MICRO_OP_TAILCALL_BLOCK(blk, have) SUCCEED(GAB_SEND_CACHE_SIZE)
 
@@ -1433,6 +1443,7 @@ static void *assemble(struct ir *ir) {
 #define MICRO_OP_JIT_ENTER(code) NEXT();
 
 #define MICRO_OP_JIT_TICK(block, ip, ks)
+#define MICRO_OP_JIT_MATCHTICK(block, ip, ks)
 
 #define MICRO_OP_NIL()                                                         \
   (emito(IR(), IP(), VAR(), kGAB_IR_LOAD_CONSTANT, kGAB_IRTYPE_MESSAGE,        \

@@ -174,6 +174,34 @@ extern void putcs(char *arg);
     }                                                                          \
   })
 
+#define MICRO_OP_JIT_MATCHTICK(ip, ks, idx)                                    \
+  ({                                                                           \
+    if (gab_jttick(GAB(), &GAB().eg->jobs[GAB().wkid].jt, IP())) {             \
+      bool success = true;                                                     \
+      for (int i = 0; i < 4; i++) {                                            \
+        uint8_t _idx = i * GAB_SEND_CACHE_SIZE;                                \
+        if (ks[GAB_SEND_KSPEC + _idx] == gab_cinvalid)                         \
+          continue;                                                            \
+        struct gab_oblock *block = (void *)ks[GAB_SEND_KSPEC + _idx];          \
+        struct gab_jtbb *bb = gab_jttry(GAB(), &GAB().eg->jobs[GAB().wkid].jt, \
+                                        GAB_VAL_TO_PROTOTYPE(block->p), IP(),  \
+                                        FB(), UPV(), SP());                    \
+        if (!bb || !bb->native_code) {                                         \
+          success = false;                                                     \
+          break;                                                               \
+        }                                                                      \
+                                                                               \
+        ks[GAB_SEND_KJIT + _idx] = (uintptr_t)bb->native_code;                 \
+      }                                                                        \
+      if (success) {                                                           \
+        IP() = ip - GAB_SEND_CACHE_SIZE;                                       \
+        WRITE_BYTE(0, *IP() + 6);                                              \
+        handler code = (void *)(uintptr_t)ks[GAB_SEND_KJIT + idx];             \
+        [[clang::musttail]] return code(DISPATCH_ARGS());                      \
+      }                                                                        \
+    }                                                                          \
+  })
+
 #define MICRO_OP_CALL_BLOCK(blk, have)                                         \
   ({                                                                           \
     struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(blk->p);                   \
@@ -243,8 +271,6 @@ extern void putcs(char *arg);
 #define MICRO_OP_MATCHTAILCALL_BLOCK(idx, have)                                \
   ({                                                                           \
     struct gab_oblock *b = GAB_VAL_TO_BLOCK(ks[GAB_SEND_KSPEC + idx]);         \
-                                                                               \
-    struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(b->p);                     \
                                                                                \
     gab_value *from = SP() - have;                                             \
     gab_value *to = FB();                                                      \
@@ -889,8 +915,12 @@ extern void putcs(char *arg);
 #define SEND_GUARD_CACHED_RECEIVER_TYPE(r)                                     \
   SEND_GUARD_TYPE(r, ks[GAB_SEND_KTYPE])
 
-#define SEND_GUARD_CACHED_MATCH_TYPE(idx, t)                                   \
-  SEND_GUARD(ks[GAB_SEND_KTYPE + idx] == t, "Match type missed")
+#define SEND_GUARD_CACHED_MATCH_TYPE(r, ks)                                    \
+  ({                                                                           \
+    gab_value t = gab_valtype(GAB(), r);                                       \
+    int64_t idx = MATCH_HASHT(t);                                              \
+    SEND_GUARD(ks[GAB_SEND_KTYPE + idx] == t, "Match type missed");            \
+  })
 
 #define TRIM_GUARD(clause, reason)                                             \
   if (__gab_unlikely(!(clause)))                                               \
@@ -1153,5 +1183,3 @@ extern void putcs(char *arg);
 #define MICRO_OP_UNBOXV_T gab_value
 
 #define GUARD_NOP(v)
-
-#define MICRO_OP_MATCH_HASHT(t) (GAB_SEND_HASH(t) * GAB_SEND_CACHE_SIZE)
