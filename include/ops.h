@@ -141,7 +141,14 @@ CASE_CODE(MATCHTAILSEND_BLOCK) {
   // TODO @cgab @vm @perf: Handle undefined and record case
   SEND_GUARD_CACHED_MATCH_TYPE(idx, t);
 
+  uint8_t *ip = IP();
+
   MICRO_OP_MATCHTAILCALL_BLOCK(idx, have);
+
+  for (int i = 0; i < 4; i++) {
+    struct gab_oblock* b = (void*)ks[GAB_SEND_KSPEC + i];
+    MICRO_OP_JIT_TICK(ip, ks, b);
+  }
 
   NEXT_CHECKED();
 }
@@ -302,7 +309,7 @@ CASE_CODE(SEND_BLOCK) {
 
   MICRO_OP_CALL_BLOCK(b, have);
 
-  MICRO_OP_JIT_TICK(b, ip, ks);
+  MICRO_OP_JIT_TICK(ip, ks, b);
 
   NEXT_CHECKED();
 }
@@ -325,7 +332,7 @@ CASE_CODE(TAILSEND_BLOCK) {
 
   MICRO_OP_TAILCALL_BLOCK(b, have);
 
-  MICRO_OP_JIT_TICK(b, ip, ks);
+  MICRO_OP_JIT_TICK(ip, ks, b);
 
   NEXT_CHECKED();
 }
@@ -348,7 +355,7 @@ CASE_CODE(LOCALSEND_BLOCK) {
 
   MICRO_OP_LOCALCALL_BLOCK(b, have);
 
-  MICRO_OP_JIT_TICK(b, ip, ks);
+  MICRO_OP_JIT_TICK(ip, ks, b);
 
   NEXT_CHECKED();
 }
@@ -372,7 +379,7 @@ CASE_CODE(LOCALTAILSEND_BLOCK) {
 
   MICRO_OP_LOCALTAILCALL_BLOCK(b, have);
 
-  MICRO_OP_JIT_TICK(b, ip, ks);
+  MICRO_OP_JIT_TICK(ip, ks, b);
 
   NEXT_CHECKED();
 }
@@ -1249,6 +1256,50 @@ CASE_CODE(JIT_LOCALTAILSEND_BLOCK) {
   handler code = (void *)(uintptr_t)ks[GAB_SEND_KJIT];
 
   MICRO_OP_LOCALTAILCALL_BLOCK(b, have);
+
+  MICRO_OP_JIT_ENTER(code);
+}
+
+CASE_CODE(JIT_MATCHSEND_BLOCK) {
+  gab_value *ks = READ_SENDCONSTANTS;
+
+  uint64_t have = COMPUTE_TUPLE();
+
+  gab_value r = PEEK_N(have);
+
+  SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);
+
+  SEND_GUARD_CACHED_RECEIVER_TYPE(r);
+
+  struct gab_oblock *b = GAB_VAL_TO_BLOCK(ks[GAB_SEND_KSPEC]);
+
+  handler code = (void *)(uintptr_t)ks[GAB_SEND_KJIT];
+
+  MICRO_OP_LOCALCALL_BLOCK(b, have);
+
+  MICRO_OP_JIT_ENTER(code);
+}
+
+CASE_CODE(JIT_MATCHTAILSEND_BLOCK) {
+  gab_value *ks = READ_SENDCONSTANTS;
+
+  uint64_t have = COMPUTE_TUPLE();
+
+  SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);
+
+  gab_value r = PEEK_N(have);
+
+  gab_value t = MICRO_OP_TYPE(r);
+
+  uint16_t idx = MICRO_OP_MATCH_HASHT(t);
+
+  SEND_GUARD_CACHED_MATCH_TYPE(idx, t);
+
+  struct gab_oblock *b = GAB_VAL_TO_BLOCK(ks[GAB_SEND_KSPEC]);
+
+  handler code = (void *)(uintptr_t)ks[GAB_SEND_KJIT + idx];
+
+  MICRO_OP_MATCHTAILCALL_BLOCK(idx, have);
 
   MICRO_OP_JIT_ENTER(code);
 }

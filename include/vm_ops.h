@@ -158,7 +158,7 @@ extern void putcs(char *arg);
 //               gab_number(i), PEEK_N(i));                               \
 // }
 
-#define MICRO_OP_JIT_TICK(block, ip, ks)                                       \
+#define MICRO_OP_JIT_TICK(ip, ks, block)                                       \
   ({                                                                           \
     if (gab_jttick(GAB(), &GAB().eg->jobs[GAB().wkid].jt, IP())) {             \
       struct gab_jtbb *bb =                                                    \

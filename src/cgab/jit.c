@@ -767,7 +767,7 @@ struct bb_off bbappend(uint8_t *data, struct ir *ir, struct bb_off begin,
                  "A patched constant relocation must have offset within 32 bit "
                  "range.");
 
-      gab_assert(begin.data > ir_codesize(ir), "Too many constants");
+      gab_assert(begin.data > ir_codesize(ir), "Too many constants. %lu vs %lu", begin.data, ir_codesize(ir));
 
       gab_assert(patch_val < ir_size(ir), "Nonsensical patch");
 
@@ -888,7 +888,7 @@ struct gab_jtbb *gab_jtbbcreate(struct gab_triple gab, struct gab_jtbbid *id,
   uint8_t *result = handlers[op](&gab, bb, ip, kb, &ir);
 
   if (!result)
-    return nullptr;
+    return free(bb), nullptr;
 
   emito(&ir, nullptr, 0, kGAB_IR_JIT_EXIT, kGAB_IRTYPE_UNKNOWN,
         emitk_v(&ir, (uintptr_t)result), emitk_b(&ir, *ir.sp));
@@ -955,17 +955,16 @@ struct gab_jtbb *gab_jttry(struct gab_triple gab, struct gab_jt *jt,
       .entry_state = successor_state,
   };
 
-  struct gab_jtbb *version = d_bb_read(&jt->blocks, &id);
+  if (d_bb_exists(&jt->blocks, &id))
+    return d_bb_read(&jt->blocks, &id);
 
-  if (version) {
-    return version;
-  }
-
-  version = gab_jtbbcreate(gab, &id, sp);
+  struct gab_jtbb *version = gab_jtbbcreate(gab, &id, sp);
 
   struct gab_jtbbid *pid = malloc(sizeof(struct gab_jtbbid));
   assert(pid);
   *pid = id;
+
+  // This will insert nullptr if we failed - and it will be returned above.
 
   d_bb_insert(&jt->blocks, pid, version);
 
@@ -1006,10 +1005,10 @@ static void *assemble(struct ir *ir) {
 
 #define DISPATCH_ARGS() __gab, __bb, __ip, __kb, __ir
 
-// fprintf(stderr, "COMPILE %s\n", gab_opcode_names[o]);
 #define DISPATCH(op)                                                           \
   ({                                                                           \
     uint8_t o = (op);                                                          \
+    fprintf(stderr, "COMPILE %s\n", gab_opcode_names[o]);                      \
     [[clang::musttail]] return handlers[o](DISPATCH_ARGS());                   \
   })
 
@@ -1226,8 +1225,11 @@ static void *assemble(struct ir *ir) {
     SP() = to + have;                                                          \
     IP() = proto_ip(GAB(), p);                                                 \
     SET_VAR(have);                                                             \
-    emito(IR(), IP(), VAR(), kGAB_IR_LOCALTAILCALL_BLOCK, kGAB_IRTYPE_UNKNOWN, \
-          emitk_v(IR(), __gab_obj(blk)), 0);                                   \
+    uint16_t ssa =                                                             \
+        emito(IR(), IP(), VAR(), kGAB_IR_LOCALTAILCALL_BLOCK,                  \
+              kGAB_IRTYPE_UNKNOWN, emitk_v(IR(), __gab_obj(blk)), 0);          \
+                                                                               \
+    ssa;                                                                       \
   })
 
 #define MICRO_OP_MATCHTAILCALL_BLOCK(idx, have) SUCCEED(GAB_SEND_CACHE_SIZE)
