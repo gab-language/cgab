@@ -76,9 +76,9 @@
     a_type val_a = a_unboxer(a);                                               \
     b_type val_b = b_unboxer##2(b);                                            \
                                                                                \
-    c_type val_c = primitive(val_a, val_b);                                    \
-                                                                               \
     DROP_N(have + 1);                                                          \
+                                                                               \
+    c_type val_c = primitive(val_a, val_b);                                    \
                                                                                \
     gab_value c = c_boxer(val_c);                                              \
                                                                                \
@@ -1221,6 +1221,8 @@ CASE_CODE(JIT_LOCALSEND_BLOCK) {
   SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);
 
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
+
+  putg(r);
 
   struct gab_oblock *b = GAB_VAL_TO_BLOCK(ks[GAB_SEND_KSPEC]);
 

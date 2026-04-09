@@ -355,7 +355,9 @@ extern void putcs(char *arg);
 // }
 
 #define MICRO_OP_JIT_ENTER(code)                                               \
-  ({ [[clang::musttail]] return code(DISPATCH_ARGS()); })
+  ({                                                                           \
+    [[clang::musttail]] return code(DISPATCH_ARGS());                          \
+  })
 
 /*
  * These primitives need some sort of control-flow in order
