@@ -21,6 +21,27 @@ extern void putf(double arg);
 extern void putg(gab_value arg);
 extern void putcs(char *arg);
 
+static inline void gmove(gab_value *dst, const gab_value *src, uint64_t n) {
+  if (dst == src)
+    return;
+
+  assert(dst + n < src);
+
+  while (n--)
+    *dst++ = *src++;
+}
+
+static inline void gmoveb(gab_value *dst, const gab_value *src, uint64_t n) {
+  assert(dst != src);
+  assert(dst + n < src);
+
+  dst += n;
+  src += n;
+
+  while (n--)
+    *--dst = *--src;
+}
+
 /*
  * In x86, the maximum number of ponter arguments that are passed
  * in registers is 6.
@@ -240,7 +261,7 @@ extern void putcs(char *arg);
     gab_value *from = SP() - have;                                             \
     gab_value *to = FB();                                                      \
                                                                                \
-    memmove(to, from, have * sizeof(gab_value));                               \
+    gmove(to, from, have);                                                     \
     SP() = to + have;                                                          \
                                                                                \
     IP() = proto_ip(GAB(), p);                                                 \
@@ -259,7 +280,8 @@ extern void putcs(char *arg);
     gab_value *from = SP() - have;                                             \
     gab_value *to = FB();                                                      \
                                                                                \
-    memmove(to, from, have * sizeof(gab_value));                               \
+    assert(to + have < from);                                                  \
+    gmove(to, from, have);                                                     \
     SP() = to + have;                                                          \
                                                                                \
     IP() = proto_ip(GAB(), p);                                                 \
@@ -275,7 +297,7 @@ extern void putcs(char *arg);
     gab_value *from = SP() - have;                                             \
     gab_value *to = FB();                                                      \
                                                                                \
-    memmove(to, from, have * sizeof(gab_value));                               \
+    gmove(to, from, have);                                                     \
                                                                                \
     IP() = (void *)ks[GAB_SEND_KOFFSET + idx];                                 \
     SP() = to + have;                                                          \
@@ -339,7 +361,7 @@ extern void putcs(char *arg);
     if (!have)                                                                 \
       PUSH(MICRO_OP_NIL()), have++;                                            \
                                                                                \
-    memmove(to, before, have * sizeof(gab_value));                             \
+    gmove(to, before, have);                                                   \
     SP() = to + have;                                                          \
                                                                                \
     SET_VAR(below_have + have);                                                \
@@ -355,9 +377,7 @@ extern void putcs(char *arg);
 // }
 
 #define MICRO_OP_JIT_ENTER(code)                                               \
-  ({                                                                           \
-    [[clang::musttail]] return code(DISPATCH_ARGS());                          \
-  })
+  ({ [[clang::musttail]] return code(DISPATCH_ARGS()); })
 
 /*
  * These primitives need some sort of control-flow in order
@@ -415,7 +435,7 @@ extern void putcs(char *arg);
        * We now know that we wrote *len* values to the buffer, because         \
        * it is guaranteed that len <= stackspace                               \
        * */                                                                    \
-      memmove(SP(), SP() + have + 1, len * sizeof(gab_value));                 \
+      gmove(SP(), SP() + have + 1, len);                                       \
       SP() += len;                                                             \
                                                                                \
       SET_VAR(below_have + len + 1);                                           \
@@ -719,7 +739,7 @@ extern void putcs(char *arg);
     assert(delta > 0);                                                         \
     assert(delta < UINT32_MAX);                                                \
     SP()[-(int64_t)(have + 1)] |= ((uint64_t)delta << 32);                     \
-    memmove(SP() - have + FRAME_SIZE, SP() - have, have * sizeof(gab_value));  \
+    gmoveb(SP() - have + FRAME_SIZE, SP() - have, have);                       \
     SP() += FRAME_SIZE;                                                        \
     SP()[-(int64_t)have - FRAME_IP] = (uintptr_t)IP();                         \
     SP()[-(int64_t)have - FRAME_BK] = (uintptr_t)b;                            \
@@ -919,9 +939,8 @@ extern void putcs(char *arg);
 
 #define SEND_GUARD_CACHED_MATCH_TYPE(r, ks)                                    \
   ({                                                                           \
-    gab_value t = gab_valtype(GAB(), r);                                       \
-    int64_t idx = MATCH_HASHT(t);                                              \
-    SEND_GUARD(ks[GAB_SEND_KTYPE + idx] == t, "Match type missed");            \
+    int64_t idx = MATCH_HASHT(gab_valtype(GAB(), r));                                              \
+    SEND_GUARD_TYPE(r, ks[GAB_SEND_KTYPE + idx]);                              \
   })
 
 #define TRIM_GUARD(clause, reason)                                             \
@@ -1000,7 +1019,7 @@ extern void putcs(char *arg);
                                                                                \
     DROP_N(len - 1);                                                           \
                                                                                \
-    memmove(ap - len + 1, ap, above * sizeof(gab_value));                      \
+    gmove(ap - len + 1, ap, above);                                            \
                                                                                \
     PEEK_N(above + 1) = rec;                                                   \
                                                                                \
@@ -1027,7 +1046,7 @@ extern void putcs(char *arg);
                                                                                \
     DROP_N(len - 1);                                                           \
                                                                                \
-    memmove(ap - len + 1, ap, above * sizeof(gab_value));                      \
+    gmove(ap - len + 1, ap, above);                                            \
                                                                                \
     PEEK_N(above + 1) = rec;                                                   \
                                                                                \
@@ -1074,7 +1093,7 @@ extern void putcs(char *arg);
     assert(RETURN_IP() != nullptr);                                            \
                                                                                \
     LOAD_FRAME();                                                              \
-    memmove(to, from, have * sizeof(gab_value));                               \
+    gmove(to, from, have);                                                     \
     SP() = to + have;                                                          \
     SET_VAR(have + below_have);                                                \
                                                                                \

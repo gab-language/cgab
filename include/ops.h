@@ -40,8 +40,6 @@
                                                                                \
     gab_value r = PEEK_N(have);                                                \
                                                                                \
-    SEND_GUARD_CACHED_RECEIVER_TYPE(r);                                        \
-                                                                               \
     guard(r);                                                                  \
                                                                                \
     operation_type val = unboxer(r);                                           \
@@ -69,8 +67,7 @@
     gab_value a = PEEK_N(have);                                                \
     gab_value b = PEEK_N(have - 1);                                            \
                                                                                \
-    SEND_GUARD_CACHED_RECEIVER_TYPE(a);                                        \
-                                                                               \
+    guard(a);                                                                  \
     guard(b);                                                                  \
                                                                                \
     a_type val_a = a_unboxer(a);                                               \
@@ -147,7 +144,7 @@ CASE_CODE(MATCHTAILSEND_BLOCK) {
   MICRO_OP_JIT_MATCHTICK(ip, ks, idx);
 #endif
 
-  NEXT_CHECKED();
+  NEXT();
 }
 
 CASE_CODE(MATCHSEND_BLOCK) {
@@ -162,11 +159,12 @@ CASE_CODE(MATCHSEND_BLOCK) {
   gab_value r = PEEK_N(have);
 
   // TODO @cgab @vm @perf: Handle undefined and record case
-  SEND_GUARD_CACHED_MATCH_TYPE(r, ks);
+  // SEND_GUARD_CACHED_MATCH_TYPE(r, ks);
 
   uint8_t *ip = IP();
 
   uint8_t idx = MATCH_HASHT(gab_valtype(GAB(), r));
+  SEND_GUARD_TYPE(r, ks[GAB_SEND_KTYPE + idx]);
 
   MICRO_OP_MATCHCALL_BLOCK(idx, have);
 
@@ -174,7 +172,7 @@ CASE_CODE(MATCHSEND_BLOCK) {
   MICRO_OP_JIT_MATCHTICK(ip, ks, idx);
 #endif
 
-  NEXT_CHECKED();
+  NEXT();
 }
 
 CASE_CODE(LOAD_UPVALUE) {
@@ -289,7 +287,7 @@ CASE_CODE(SEND_NATIVE) {
 
   MICRO_OP_CALL_NATIVE(n, have, below_have, true);
 
-  NEXT_CHECKED();
+  NEXT();
 }
 
 CASE_CODE(SEND_BLOCK) {
@@ -314,7 +312,7 @@ CASE_CODE(SEND_BLOCK) {
   MICRO_OP_JIT_TICK(ip, ks, b);
 #endif
 
-  NEXT_CHECKED();
+  NEXT();
 }
 
 CASE_CODE(TAILSEND_BLOCK) {
@@ -339,7 +337,7 @@ CASE_CODE(TAILSEND_BLOCK) {
   MICRO_OP_JIT_TICK(ip, ks, b);
 #endif
 
-  NEXT_CHECKED();
+  NEXT();
 }
 
 CASE_CODE(LOCALSEND_BLOCK) {
@@ -365,7 +363,7 @@ CASE_CODE(LOCALSEND_BLOCK) {
   MICRO_OP_JIT_TICK(ip, ks, b);
 #endif
 
-  NEXT_CHECKED();
+  NEXT();
 }
 
 CASE_CODE(LOCALTAILSEND_BLOCK) {
@@ -391,7 +389,7 @@ CASE_CODE(LOCALTAILSEND_BLOCK) {
   MICRO_OP_JIT_TICK(ip, ks, b);
 #endif
 
-  NEXT_CHECKED();
+  NEXT();
 }
 
 CASE_CODE(SEND_PRIMITIVE_CALL_BLOCK) {
@@ -413,7 +411,7 @@ CASE_CODE(SEND_PRIMITIVE_CALL_BLOCK) {
 
   MICRO_OP_CALL_BLOCK(b, have);
 
-  NEXT_CHECKED();
+  NEXT();
 }
 
 CASE_CODE(TAILSEND_PRIMITIVE_CALL_BLOCK) {
@@ -435,7 +433,7 @@ CASE_CODE(TAILSEND_PRIMITIVE_CALL_BLOCK) {
 
   MICRO_OP_TAILCALL_BLOCK(b, have);
 
-  NEXT_CHECKED();
+  NEXT();
 }
 
 CASE_CODE(SEND_PRIMITIVE_CALL_NATIVE) {
@@ -764,7 +762,7 @@ CASE_CODE(SEND_PROPERTY) {
 
   SET_VAR(below_have + 1);
 
-  NEXT_CHECKED();
+  NEXT();
 }
 
 CASE_CODE(RETURN) {
@@ -1221,8 +1219,6 @@ CASE_CODE(JIT_LOCALSEND_BLOCK) {
   SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);
 
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
-
-  putg(r);
 
   struct gab_oblock *b = GAB_VAL_TO_BLOCK(ks[GAB_SEND_KSPEC]);
 

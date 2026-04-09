@@ -15,4 +15,4 @@ fib: .def (Numbers.t, () => do
   (self < 2) .do_fib self
 end)
 
-25.fib.println
+35.fib.println

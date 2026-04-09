@@ -454,11 +454,11 @@ CASE_CODE(MICRO_OP_JIT_EXIT) {
 CASE_CODE(MICRO_OP_LOAD_RECORD) {
   uint64_t len = STENCIL_ARG1_64(uint64_t);
 
-  gab_value shape = MICRO_OP_RECORD(len);
+  gab_value record = MICRO_OP_RECORD(len);
 
   DROP_N(len + 2);
 
-  PUSH(shape);
+  PUSH(record);
 
   NEXT();
 }

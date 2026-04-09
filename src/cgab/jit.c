@@ -549,9 +549,6 @@ void putg(gab_value arg) { gab_fprintf(stderr, "$\n", arg); }
 void puta(char arg) { fprintf(stderr, "%c\n", arg); }
 
 void *address_for_symbol(const char *symbol) {
-  if (!strcmp(symbol, "memmove"))
-    return memmove;
-
   if (!strcmp(symbol, "putl"))
     return putl;
 
@@ -596,6 +593,9 @@ void *address_for_symbol(const char *symbol) {
 
   if (!strcmp(symbol, "gab_list"))
     return gab_list;
+
+  if (!strcmp(symbol, "gab_record"))
+    return gab_record;
 
   if (!strcmp(symbol, "gab_block"))
     return gab_block;
@@ -956,8 +956,8 @@ struct bb_off bbappend(uint8_t *data, struct ir *ir, struct bb_off begin,
       void *address = address_for_symbol(reloca->as.trampoline.symbol);
 
       gab_assert(address != nullptr,
-                 "Cannot patch trampoline to null address for symbol '%s'\n",
-                 reloca->as.trampoline.symbol);
+                 "Cannot patch trampoline to null address for symbol '%s' in %s\n",
+                 reloca->as.trampoline.symbol, irnames[inst.op.kind]);
 
       /* Copy/patch the trampoline with the 64 bit address. */
       memcpy(data + begin.data, trampoline, sizeof(trampoline));
@@ -1255,6 +1255,9 @@ static void *assemble(struct ir *ir) {
         emitk_v(IR(), ks[GAB_SEND_KTYPE]))
 
 #define SEND_GUARD_KIND(v, k)                                                  \
+  emito(IR(), IP() - 3, VAR(), kGAB_IR_GUARD_KIND, kGAB_IRTYPE_UNKNOWN, v, k)
+
+#define SEND_GUARD_TYPE(v, k)                                                  \
   emito(IR(), IP() - 3, VAR(), kGAB_IR_GUARD_KIND, kGAB_IRTYPE_UNKNOWN, v, k)
 
 #define SEND_GUARD_ISSHP(v) SEND_GUARD_KIND(v, kGAB_SHAPE)

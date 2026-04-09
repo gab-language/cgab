@@ -58,7 +58,7 @@
 #endif
 
 #ifndef cGAB_JIT_ENABLED
-#define cGAB_JIT_ENABLED 1
+#define cGAB_JIT_ENABLED 0
 #endif
 
 // Collect as frequently as possible (on every RC push)
