@@ -1161,7 +1161,7 @@ bool jobs_handler(struct command_arguments *args) {
 
   njobs = atoll(jobs);
   if (njobs == 0) {
-    clierror("Specify a number of jobs greater than 1.");
+    clierror("Specify a number of jobs greater than 0.");
     return false;
   }
 

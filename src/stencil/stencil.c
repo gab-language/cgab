@@ -504,8 +504,10 @@ CASE_CODE(MICRO_OP_LOAD_LIST) {
 
 CASE_CODE(MICRO_OP_LOCALCALL_BLOCK) {
   struct gab_oblock *blk = GAB_VAL_TO_BLOCK(STENCIL_ARG0_64(gab_value));
-  gab_vm_op branch = STENCIL_ARG1_64(void *);
+  ATTRIBUTES gab_vm_op branch = STENCIL_ARG1_64(void *);
+
   uint64_t have = STENCIL_HV();
+  IP() = STENCIL_IP();
 
   MICRO_OP_LOCALCALL_BLOCK(blk, have);
 
@@ -514,7 +516,9 @@ CASE_CODE(MICRO_OP_LOCALCALL_BLOCK) {
 
 CASE_CODE(MICRO_OP_INLINE_LOCALCALL_BLOCK) {
   struct gab_oblock *blk = GAB_VAL_TO_BLOCK(STENCIL_ARG0_64(gab_value));
+
   uint64_t have = STENCIL_HV();
+  IP() = STENCIL_IP();
 
   MICRO_OP_LOCALCALL_BLOCK(blk, have);
 
@@ -523,7 +527,9 @@ CASE_CODE(MICRO_OP_INLINE_LOCALCALL_BLOCK) {
 
 CASE_CODE(MICRO_OP_LOCALTAILCALL_BLOCK) {
   struct gab_oblock *blk = GAB_VAL_TO_BLOCK(STENCIL_ARG0_64(gab_value));
-  gab_vm_op branch = STENCIL_ARG1_64(void *);
+
+  ATTRIBUTES gab_vm_op branch = STENCIL_ARG1_64(void *);
+
   uint64_t have = STENCIL_HV();
 
   MICRO_OP_LOCALTAILCALL_BLOCK(blk, have);
@@ -550,10 +556,23 @@ CASE_CODE(MICRO_OP_MATCHTAILCALL_BLOCK) {
 
   MICRO_OP_MATCHTAILCALL_BLOCK(idx, have);
 
-  gab_vm_op branch = (void *)IP();
+  ATTRIBUTES gab_vm_op branch = (void *)IP();
   IP() = proto_ip(
       GAB(), GAB_VAL_TO_PROTOTYPE(
                  ((struct gab_oblock *)(void *)ks[GAB_SEND_KSPEC + idx])->p));
+
+  MICRO_OP_JIT_ENTER(branch);
+}
+
+CASE_CODE(MICRO_OP_INLINE_RETURN) {
+  MICRO_OP_RETURN(STENCIL_HV());
+  NEXT();
+}
+
+CASE_CODE(MICRO_OP_RETURN) {
+  ATTRIBUTES gab_vm_op branch = STENCIL_ARG1_64(void *);
+
+  MICRO_OP_RETURN(STENCIL_HV());
 
   MICRO_OP_JIT_ENTER(branch);
 }

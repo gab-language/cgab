@@ -811,7 +811,7 @@ bool gab_wkspawn(struct gab_triple gab, gab_value fiber) {
 
 union gab_value_pair gab_create(struct gab_create_argt args,
                                 struct gab_triple gab_out[static 1]) {
-  uint64_t njobs = args.jobs ? args.jobs : 8;
+  uint64_t njobs = args.jobs;
 
   if (njobs > 29)
     return (union gab_value_pair){{gab_cinvalid}};

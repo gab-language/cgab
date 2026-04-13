@@ -62,10 +62,8 @@
                                                                                \
     SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);                      \
                                                                                \
-    NILPAD_GUARD_ARGS_GTE(2);                                                  \
-                                                                               \
-    gab_value a = PEEK_N(have);                                                \
     gab_value b = PEEK_N(have - 1);                                            \
+    gab_value a = PEEK_N(have);                                                \
                                                                                \
     guard(a);                                                                  \
     guard(b);                                                                  \
@@ -766,7 +764,9 @@ CASE_CODE(SEND_PROPERTY) {
 }
 
 CASE_CODE(RETURN) {
-  MICRO_OP_RETURN();
+  uint64_t have = COMPUTE_TUPLE();
+
+  MICRO_OP_RETURN(have);
 
   NEXT();
 }
@@ -921,9 +921,7 @@ CASE_CODE(NTUPLE_LOAD_LOCAL) {
 
   while (n--) {
     uint64_t have = VAR();
-
     PUSHTUPLE(have);
-
     SET_VAR(0);
   }
 
@@ -939,9 +937,7 @@ CASE_CODE(NTUPLE_NLOAD_LOCAL) {
 
   while (n--) {
     uint64_t have = VAR();
-
     PUSHTUPLE(have);
-
     SET_VAR(0);
   }
 

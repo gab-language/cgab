@@ -518,8 +518,10 @@ struct gab_jtbb {
   // Identity
   struct gab_jtbbid {
     struct gab_oprototype *proto; // the prototype this block belongs to
+    struct gab_oblock *block;
     struct gab_type_state
         entry_state; // the type state this version was compiled for
+    size_t offset;
   } id;
 
   // Generated code
@@ -529,6 +531,7 @@ struct gab_jtbb {
   struct gab_jtbb *next;
 };
 
+// Lots of collisions on hashing different offsets in the same prototype
 static inline uint64_t hash_id(struct gab_jtbbid *id) {
   return (uintptr_t)id->proto;
 }
@@ -538,6 +541,9 @@ static inline bool eq_id(struct gab_jtbbid *a, struct gab_jtbbid *b) {
   assert(b->proto->header.kind == kGAB_PROTOTYPE);
 
   if (a->proto != b->proto)
+    return false;
+
+  if (a->offset != b->offset)
     return false;
 
   if (a->entry_state.nlocals != b->entry_state.nlocals)
@@ -696,6 +702,13 @@ union gab_jtir {
 #define IR_VBIAS (IR_KBIAS + IR_BIAS)
 #define IR_OBIAS (IR_VBIAS + IR_BIAS)
 
+struct gab_jtframe {
+  struct gab_jtbbid *id;
+  uint8_t *ip;
+  uint16_t *fb;
+  struct gab_jtframe *pt;
+};
+
 struct ir {
   struct gab_jtbb *bb;
 
@@ -707,15 +720,9 @@ struct ir {
   uint64_t hv[IR_SIZE >> 1];
   // Each operations offset within the code.
   uint64_t of[IR_SIZE >> 1];
+  bool tg[IR_SIZE >> 1];
 
   uint16_t local_map[GAB_JIT_MAX_LOCALS];
-
-  struct gab_jtframe {
-    struct gab_jtbbid *id;
-    uint8_t *ip;
-    uint16_t *fb;
-  } fb[16];
-  struct gab_jtframe* fp;
 
   uint16_t sb[IR_SIZE];
   uint16_t *sp;
@@ -892,13 +899,25 @@ bool gab_jttick(struct gab_triple gab, struct gab_jt *jt, uint8_t *ip);
 
 void gab_jtcreate(struct gab_jt *jt);
 
+[[clang::preserve_none, gnu::hot]]
 union gab_value_pair gab_jtexit(struct gab_triple *__gab, struct gab_vm *__vm,
                                 uint8_t *__ip, gab_value *__kb, gab_value *__fb,
                                 gab_value *__sp);
 
+[[clang::preserve_none, gnu::hot]]
 union gab_value_pair gab_jtbail(struct gab_triple *__gab, struct gab_vm *__vm,
                                 uint8_t *__ip, gab_value *__kb, gab_value *__fb,
                                 gab_value *__sp);
+
+[[clang::preserve_none, gnu::hot]]
+union gab_value_pair vm_eerror(struct gab_triple *__gab, struct gab_vm *__vm,
+                               uint8_t *__ip, gab_value *__kb, gab_value *__fb,
+                               gab_value *__sp);
+
+[[clang::preserve_none, gnu::hot]]
+union gab_value_pair vm_ok(struct gab_triple *__gab, struct gab_vm *__vm,
+                           uint8_t *__ip, gab_value *__kb, gab_value *__fb,
+                           gab_value *__sp);
 
 union gab_value_pair vm_terminate(struct gab_triple gab, const char *fmt, ...);
 

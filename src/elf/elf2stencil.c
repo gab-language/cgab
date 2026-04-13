@@ -129,20 +129,34 @@ void emit_scn(Elf *elf, size_t section, Elf_Scn *strtab, Elf_Scn *symtab) {
              rela.r_offset, rela.r_addend, symname);
     } else {
       /*
-        * String constant's sizes aren't copied correctly here
-        *
-        * That is an issue 4 sure.
-        */
+       * String constant's sizes aren't copied correctly here
+       *
+       * That is an issue 4 sure.
+       */
 
       Elf_Scn *scn = elf_getscn(elf, sym.st_shndx);
 
       Elf_Data *data = elf_getdata(scn, nullptr);
       const unsigned char *src = (unsigned char *)data->d_buf + sym.st_value;
 
-      size_t len = sym.st_size ? sym.st_size : data->d_align;
+      size_t len = data->d_align == 1 ? data->d_size : data->d_align;
 
-      printf("\t{ kGAB_JIT_RELOC_CONST, %lu, %li, ", rela.r_offset,
-             rela.r_addend);
+      int type = ELF64_R_TYPE(rela.r_info);
+
+      static const char *rela_types[] = {
+          [R_X86_64_64] = "kGAB_JIT_RELOC_CONST_ABSOLUTE",
+          [R_X86_64_32] = "kGAB_JIT_RELOC_CONST_ABSOLUTE",
+          [R_X86_64_PC64] = "kGAB_JIT_RELOC_CONST_RELATIVE",
+          [R_X86_64_PC32] = "kGAB_JIT_RELOC_CONST_RELATIVE",
+          [R_X86_64_PLT32] = "kGAB_JIT_RELOC_CONST_RELATIVE",
+      };
+
+      assert(type < sizeof(rela_types) / sizeof(rela_types[0]));
+
+      const char *stype = rela_types[type];
+      assert(stype);
+
+      printf("\t{ %s, %lu, %li, ", stype, rela.r_offset, rela.r_addend);
       if (len) {
         assert(len < UINT8_MAX);
 

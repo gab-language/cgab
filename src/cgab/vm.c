@@ -122,13 +122,6 @@ static const char *gab_opcode_names[] = {
 #undef GAB_OPCODE_NAMES_IMPL
 };
 
-uint64_t encode_fb(struct gab_vm *vm, gab_value *fb, uint64_t have) {
-  uint64_t offset = fb - vm->sb;
-  assert(offset < UINT32_MAX);
-  assert(have < UINT32_MAX);
-  return offset << 32 | have;
-}
-
 // The *below_have* is 64 bits of space. It already exists on stack when
 // The send is *sent*. Is there a way to convert this value into
 // a stack frame? Can we jam everything we need into 64 bits?
@@ -644,6 +637,25 @@ uint64_t gab_nvmpush(struct gab_vm *vm, uint64_t argc, gab_value argv[argc]) {
   return argc;
 }
 
+ATTRIBUTES
+union gab_value_pair vm_eerror(OP_HANDLER_ARGS) {
+  enum gab_status status = SP()[1];
+  switch (status) {
+  case GAB_OVERFLOW:
+    return vm_error(GAB(), status, "");
+  case GAB_PANIC:
+    return vm_error(GAB(), status, "");
+  case GAB_SPECIALIZATION_MISSING:
+    return vm_error(GAB(), status, FMT_MISSINGIMPL, SP()[2], SP()[3], SP()[4]);
+  case GAB_TYPE_MISMATCH:
+    return vm_error(GAB(), status, FMT_MISSINGIMPL, SP()[2], SP()[3], SP()[4],
+                    SP()[5], SP()[6]);
+  default:
+    assert(false && "Unreachable");
+  }
+}
+
+ATTRIBUTES
 union gab_value_pair vm_ok(OP_HANDLER_ARGS) {
   uint64_t have = *VM()->sp;
   gab_value *from = VM()->sp - have;
@@ -787,7 +799,8 @@ static inline bool try_setup_localmatch(struct gab_triple gab, gab_value m,
 ATTRIBUTES
 union gab_value_pair gab_jtexit(OP_HANDLER_ARGS) {
   // uint64_t have = *__sp;
-  // fprintf(stderr, "(%i) EXIT TO %s (%p)\n", GAB().wkid, gab_opcode_names[*IP()],
+  // fprintf(stderr, "(%i) EXIT TO %s (%p)\n", GAB().wkid,
+  // gab_opcode_names[*IP()],
   //         IP());
   // for (int i = 1; i < have + 1; i++) {
   //   gab_fprintf(stderr, "($) $: $\n", gab_number(GAB().wkid), gab_number(i),

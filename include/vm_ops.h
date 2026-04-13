@@ -21,26 +21,28 @@ extern void putf(double arg);
 extern void putg(gab_value arg);
 extern void putcs(char *arg);
 
-static inline void gmove(gab_value *dst, const gab_value *src, uint64_t n) {
-  if (dst == src)
-    return;
+// #define gmove(dst, src, n) \
+//   ({ \
+//     gab_value *D = dst; \
+//     gab_value *S = src; \
+//     uint64_t N = n; \
+//     if (D != S) \
+//       while (N--) \
+//         *D++ = *S++; \
+//   })
+#define gmove(dst, src, n) memmove(dst, src, n * sizeof(gab_value))
 
-  assert(dst + n < src);
-
-  while (n--)
-    *dst++ = *src++;
-}
-
-static inline void gmoveb(gab_value *dst, const gab_value *src, uint64_t n) {
-  assert(dst != src);
-  assert(dst + n < src);
-
-  dst += n;
-  src += n;
-
-  while (n--)
-    *--dst = *--src;
-}
+// #define gmoveb(dst, src, n) \
+//   ({ \
+//     gab_value *D = dst; \
+//     gab_value *S = src; \
+//     uint64_t N = n; \
+//     D += N; \
+//     S += N; \
+//     while (N--) \
+//       *--D = *--S; \
+//   })
+#define gmoveb(dst, src, n) memmove(dst, src, n * sizeof(gab_value))
 
 /*
  * In x86, the maximum number of ponter arguments that are passed
@@ -54,7 +56,7 @@ static inline void gmoveb(gab_value *dst, const gab_value *src, uint64_t n) {
   struct gab_triple *__gab, struct gab_vm *__vm, uint8_t *__ip,                \
       gab_value *__kb, gab_value *__fb, gab_value *__sp
 
-#define ATTRIBUTES
+#define ATTRIBUTES [[clang::preserve_none]]
 
 #define CASE_CODE(name)                                                        \
   ATTRIBUTES union gab_value_pair OP_##name##_HANDLER(OP_HANDLER_ARGS)
@@ -105,10 +107,33 @@ static inline void gmoveb(gab_value *dst, const gab_value *src, uint64_t n) {
 #define NEXT() ({ DISPATCH(*(IP()++)); })
 // #define NEXT() NEXT_CHECKED()
 
-#define VM_PANIC(status, help, ...)                                            \
+#define VM_PANIC(status)                                                       \
   ({                                                                           \
     STORE();                                                                   \
-    return vm_error(GAB(), status, help __VA_OPT__(, ) __VA_ARGS__);           \
+    SP()[1] = status;                                                          \
+    [[clang::musttail]] return vm_eerror(DISPATCH_ARGS());                     \
+  })
+
+#define VM_PANIC3(status, a, b, c)                                             \
+  ({                                                                           \
+    STORE();                                                                   \
+    SP()[1] = status;                                                          \
+    SP()[2] = a;                                                               \
+    SP()[3] = b;                                                               \
+    SP()[4] = c;                                                               \
+    [[clang::musttail]] return vm_eerror(DISPATCH_ARGS());                     \
+  })
+
+#define VM_PANIC5(status, a, b, c, d, e)                                       \
+  ({                                                                           \
+    STORE();                                                                   \
+    SP()[1] = status;                                                          \
+    SP()[2] = a;                                                               \
+    SP()[3] = b;                                                               \
+    SP()[4] = c;                                                               \
+    SP()[5] = d;                                                               \
+    SP()[6] = e;                                                               \
+    [[clang::musttail]] return vm_eerror(DISPATCH_ARGS());                     \
   })
 
 #define VM_GIVEN(err)                                                          \
@@ -145,13 +170,13 @@ static inline void gmoveb(gab_value *dst, const gab_value *src, uint64_t n) {
 
 #define PANIC_GUARD_STACKSPACE(space)                                          \
   if (__gab_unlikely(!HAS_STACKSPACE(SP(), SB(), space)))                      \
-    VM_PANIC(GAB_OVERFLOW, "");
+    VM_PANIC(GAB_OVERFLOW);
 
 #define PANIC_GUARD_STACKSPACE_SPLATDICT(r)                                    \
   ({                                                                           \
     uint64_t n = gab_shplen(r) * 2;                                            \
     if (__gab_unlikely(!HAS_STACKSPACE(SP(), SB(), n)))                        \
-      VM_PANIC(GAB_OVERFLOW, "");                                              \
+      VM_PANIC(GAB_OVERFLOW);                                                  \
     n;                                                                         \
   })
 
@@ -159,18 +184,17 @@ static inline void gmoveb(gab_value *dst, const gab_value *src, uint64_t n) {
   ({                                                                           \
     uint64_t n = gab_shplen(r);                                                \
     if (__gab_unlikely(!HAS_STACKSPACE(SP(), SB(), n)))                        \
-      VM_PANIC(GAB_OVERFLOW, "");                                              \
+      VM_PANIC(GAB_OVERFLOW);                                                  \
     n;                                                                         \
   })
 
 #define PANIC_GUARD_STACKSPACE_SPLATSHAPE(r)                                   \
   if (__gab_unlikely(!HAS_STACKSPACE(SP(), SB(), gab_shplen(r))))              \
-    VM_PANIC(GAB_OVERFLOW, "");
+    VM_PANIC(GAB_OVERFLOW);
 
 #define PANIC_GUARD_SHAPE_LEN(shape, len)                                      \
   if (__gab_unlikely(gab_shplen(shape) != len))                                \
-    VM_PANIC(GAB_PANIC, "Expected $ arguments, got $",                         \
-             gab_number(gab_shplen(shape)), gab_number(len));
+    VM_PANIC(GAB_PANIC);
 
 // fprintf(stderr, "(%i) COMPILED JIT CODE FOR %p, ENTER AT %p\n",        \
 //         GAB().wkid, IP(), ip - GAB_SEND_CACHE_SIZE);                   \
@@ -280,7 +304,6 @@ static inline void gmoveb(gab_value *dst, const gab_value *src, uint64_t n) {
     gab_value *from = SP() - have;                                             \
     gab_value *to = FB();                                                      \
                                                                                \
-    assert(to + have < from);                                                  \
     gmove(to, from, have);                                                     \
     SP() = to + have;                                                          \
                                                                                \
@@ -429,7 +452,7 @@ static inline void gmoveb(gab_value *dst, const gab_value *src, uint64_t n) {
        * stack, return an overflow.                                            \
        * */                                                                    \
       if (__gab_unlikely(len > stackspace))                                    \
-        VM_PANIC(GAB_OVERFLOW, "");                                            \
+        VM_PANIC(GAB_OVERFLOW);                                                \
                                                                                \
       /*                                                                       \
        * We now know that we wrote *len* values to the buffer, because         \
@@ -564,10 +587,8 @@ static inline void gmoveb(gab_value *dst, const gab_value *src, uint64_t n) {
     /* Do the expensive lookup */                                              \
     struct gab_impl_rest res = gab_impl(GAB(), m, r);                          \
                                                                                \
-    if (__gab_unlikely(!res.status)) {                                         \
-      VM_PANIC(GAB_SPECIALIZATION_MISSING, FMT_MISSINGIMPL, m, r,              \
-               gab_valtype(GAB(), r));                                         \
-    }                                                                          \
+    if (__gab_unlikely(!res.status))                                           \
+      VM_PANIC3(GAB_SPECIALIZATION_MISSING, m, r, gab_valtype(GAB(), r));      \
                                                                                \
     gab_value spec = res.status == kGAB_IMPL_PROPERTY                          \
                          ? gab_primitive(OP_SEND_PROPERTY)                     \
@@ -862,25 +883,23 @@ static inline void gmoveb(gab_value *dst, const gab_value *src, uint64_t n) {
 #define PANIC_GUARD_KIND(value, kind)                                          \
   if (__gab_unlikely(gab_valkind(value) != kind)) {                            \
     STORE_MICRO_OP_VM_PANIC_FRAME(1);                                          \
-    VM_PANIC(GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, ks[GAB_SEND_KMESSAGE],       \
-             ks[GAB_SEND_KSPEC], value, gab_valtype(GAB(), value),             \
-             gab_type(GAB(), kind));                                           \
+    VM_PANIC5(GAB_TYPE_MISMATCH, ks[GAB_SEND_KMESSAGE], ks[GAB_SEND_KSPEC],    \
+              value, gab_valtype(GAB(), value), gab_type(GAB(), kind));        \
   }
 
 #define PANIC_GUARD_ISB(value)                                                 \
   if (__gab_unlikely(!__gab_valisb(value))) {                                  \
     STORE_MICRO_OP_VM_PANIC_FRAME(have);                                       \
-    VM_PANIC(GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, ks[GAB_SEND_KMESSAGE],       \
-             ks[GAB_SEND_KSPEC], value, gab_valtype(GAB(), value),             \
-             gab_type(GAB(), kGAB_MESSAGE));                                   \
+    VM_PANIC5(GAB_TYPE_MISMATCH, ks[GAB_SEND_KMESSAGE], ks[GAB_SEND_KSPEC],    \
+              value, gab_valtype(GAB(), value),                                \
+              gab_type(GAB(), kGAB_MESSAGE));                                  \
   }
 
 #define PANIC_GUARD_ISN(value)                                                 \
   if (__gab_unlikely(!__gab_valisn(value))) {                                  \
     STORE_MICRO_OP_VM_PANIC_FRAME(have);                                       \
-    VM_PANIC(GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH, ks[GAB_SEND_KMESSAGE],       \
-             ks[GAB_SEND_KSPEC], value, gab_valtype(GAB(), value),             \
-             gab_type(GAB(), kGAB_NUMBER));                                    \
+    VM_PANIC5(GAB_TYPE_MISMATCH, ks[GAB_SEND_KMESSAGE], ks[GAB_SEND_KSPEC],    \
+              value, gab_valtype(GAB(), value), gab_type(GAB(), kGAB_NUMBER)); \
   }
 
 #define PANIC_GUARD_ISS(value) SEND_GUARD_KIND(value, kGAB_STRING)
@@ -939,7 +958,7 @@ static inline void gmoveb(gab_value *dst, const gab_value *src, uint64_t n) {
 
 #define SEND_GUARD_CACHED_MATCH_TYPE(r, ks)                                    \
   ({                                                                           \
-    int64_t idx = MATCH_HASHT(gab_valtype(GAB(), r));                                              \
+    int64_t idx = MATCH_HASHT(gab_valtype(GAB(), r));                          \
     SEND_GUARD_TYPE(r, ks[GAB_SEND_KTYPE + idx]);                              \
   })
 
@@ -1079,16 +1098,17 @@ static inline void gmoveb(gab_value *dst, const gab_value *src, uint64_t n) {
 #define PUSHTUPLE(n) PUSH(n);
 #define POPTUPLE(n) DROP_N(n + 1);
 
-#define MICRO_OP_RETURN()                                                      \
+#define MICRO_OP_RETURN(have)                                                      \
   ({                                                                           \
-    uint64_t have = COMPUTE_TUPLE();                                           \
     uint64_t below_have = RETURN_HAVE();                                       \
                                                                                \
     gab_value *from = SP() - have;                                             \
     gab_value *to = FB() - (FRAME_SIZE + 1);                                   \
                                                                                \
-    if (__gab_unlikely(RETURN_FB_DELTA() == 0))                                \
-      return STORE(), SET_VAR(have), vm_ok(DISPATCH_ARGS());                   \
+    if (__gab_unlikely(RETURN_FB_DELTA() == 0)) {                              \
+      STORE();                                                                 \
+      [[clang::musttail]] return vm_ok(DISPATCH_ARGS());                       \
+    }                                                                          \
                                                                                \
     assert(RETURN_IP() != nullptr);                                            \
                                                                                \

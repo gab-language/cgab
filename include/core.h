@@ -58,7 +58,7 @@
 #endif
 
 #ifndef cGAB_JIT_ENABLED
-#define cGAB_JIT_ENABLED 0
+#define cGAB_JIT_ENABLED 1
 #endif
 
 // Collect as frequently as possible (on every RC push)
@@ -375,6 +375,11 @@ static inline void v_uint8_t_npush(v_uint8_t *self, size_t n, uint8_t *buff) {
 
 #include <stdio.h>
 #include <stdarg.h>
+
+// TODO @cgab: Better 'asserts' which are self-describing.
+#ifdef NDEBUG
+#define gab_assert(expr, format, ...)
+#else
 [[noreturn]]
 static inline void __gab_assert_fail(const char *expr, const char *file,
                                      const char *function, size_t line,
@@ -391,10 +396,11 @@ static inline void __gab_assert_fail(const char *expr, const char *file,
   va_end(va);
 };
 
-// TODO @cgab: Better 'asserts' which are self-describing.
 #define gab_assert(expr, format, ...)                                               \
   ((expr) ? (void)(0)                                                          \
           : __gab_assert_fail(#expr, __FILE__, __FUNCTION__, __LINE__,  \
                               format __VA_OPT__(,) __VA_ARGS__))
+
+#endif
 
 #endif
