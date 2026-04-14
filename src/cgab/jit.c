@@ -390,7 +390,6 @@ uint8_t ir_nargs(union gab_jtir inst) {
   case kGAB_IR_ENTER:
   case kGAB_IR_INLINE_RETURN:
     return 0;
-  case kGAB_IR_RETURN:
   case kGAB_IR_INLINE_LOCALTAILCALL_BLOCK:
   case kGAB_IR_LOCALTAILCALL_BLOCK:
   case kGAB_IR_MATCHTAILCALL_BLOCK:
@@ -426,6 +425,7 @@ uint8_t ir_nargs(union gab_jtir inst) {
   case kGAB_IR_SEND_CONSTANT:
   case kGAB_IR_INLINE_LOCALCALL_BLOCK:
     return 1;
+  case kGAB_IR_RETURN:
   case kGAB_IR_LOCALCALL_BLOCK:
   case kGAB_IR_LOAD_LIST:
   case kGAB_IR_JIT_EXIT:
@@ -613,7 +613,10 @@ void *address_for_symbol(const char *symbol) {
     return vm_error;
 
   if (!strcmp(symbol, "vm_eerror"))
-    return vm_error;
+    return vm_eerror;
+
+  if (!strcmp(symbol, "vm_ok"))
+    return vm_ok;
 
   if (!strcmp(symbol, "vm_yield"))
     return vm_yield;
@@ -701,6 +704,33 @@ struct bb_off {
 
 void bbpatch(uint8_t *data, struct ir *ir, struct bb_off begin, uint16_t ssa) {
   union gab_jtir inst = ir->ir[ssa];
+
+  if (inst.op.kind == kGAB_IR_RETURN) {
+    uint16_t ssa_branch = inst.op.b;
+
+    const struct gab_jit_reloc *relocas = stencil_relocas[inst.op.kind];
+    const uint64_t nrelocas = stencil_nrelocas[inst.op.kind];
+
+    for (uint64_t i = 0; i < nrelocas; i++) {
+      const struct gab_jit_reloc *reloca = relocas + i;
+
+      if (reloca->k != kGAB_JIT_RELOC_64ARG2)
+        continue;
+
+      uint64_t offset = ir->of[ssa - IR_BIAS];
+      uint64_t patch_off = offset + reloca->offset;
+      int64_t patch_val = ir->of[ssa_branch] + reloca->addend - patch_off;
+      // fprintf(stderr, "PATCH %s 0x%lx -> 0x%lx = %li\n",
+      // irnames[inst.op.kind],
+      //         offset + reloca->offset + reloca->addend, ir->of[ssa_branch],
+      //         patch_val);
+      gab_assert(patch_val < INT32_MAX, "Jump too big");
+      int32_t patch_val32 = patch_val;
+
+      /* Write the 32 bit value to data + patch_off */
+      memcpy(data + patch_off, &patch_val32, sizeof(patch_val32));
+    }
+  }
 
   if (inst.op.kind == kGAB_IR_LOCALCALL_BLOCK) {
     uint16_t ssa_branch = inst.op.b;
@@ -1022,10 +1052,8 @@ uint8_t *jtbbappend(struct gab_triple gab, struct gab_jtbb *bb, struct ir *ir,
   gab_value *kb = proto_ks(gab, proto);
 
   uint8_t op = *ip++;
+  fprintf(stderr, "COMPILE %s\n", gab_opcode_names[op]);
   uint8_t *result = handlers[op](&gab, bb, ip, kb, ir, f);
-
-  emito(ir, nullptr, 0, kGAB_IR_JIT_EXIT, kGAB_IRTYPE_UNKNOWN,
-        emitk_v(ir, (uintptr_t)result), emitk_b(ir, *ir->sp));
 
   return result;
 };
@@ -1040,6 +1068,7 @@ struct gab_jtbb *gab_jtbbinline(struct gab_triple gab, struct ir *ir,
 
   bb->id = *id;
   bb->code_of = ir->os;
+  f->bb = bb;
   ir->tg[ir->os] = true;
 
   // Insert before finishing - as we'll need recursive calls to see this.
@@ -1059,8 +1088,52 @@ struct gab_jtbb *gab_jtbbinline(struct gab_triple gab, struct ir *ir,
 
   return bb;
 }
+
+void ir_checkpoint(struct ir *ir, uint16_t savedata[IR_SIZE], uint16_t **sp) {
+  memcpy(savedata, ir->sb, IR_SIZE * sizeof(uint16_t));
+  *sp = ir->sp;
+}
+
+void ir_restore(struct ir *ir, uint16_t savedata[IR_SIZE], uint16_t **sp) {
+  memcpy(ir->sb, savedata, IR_SIZE * sizeof(uint16_t));
+  ir->sp = *sp;
+}
+
+uint16_t gab_jtbbemitc(struct gab_triple gab, struct ir *ir,
+                       struct gab_jtbb *bb, struct gab_jtframe *fp, uint8_t *ip,
+                       uint64_t have) {}
+
+uint16_t gab_jtbbemitr(struct gab_triple gab, struct ir *ir,
+                       struct gab_jtbb *bb, struct gab_jtframe *fp, uint8_t *ip,
+                       uint64_t have) {
+  struct gab_jtbbid id = *fp->r_fp->id;
+  id.offset = fp->r_ip - proto_ip(gab, id.proto);
+
+  bool exists = d_bb_exists(&gab.eg->jobs[gab.wkid].jt.blocks, &id);
+
+  uint16_t arg =
+      exists ? d_bb_read(&gab.eg->jobs[gab.wkid].jt.blocks, &id)->code_of
+             : ir->os + 1;
+
+  emito(ir, ip, have, kGAB_IR_RETURN, kGAB_IRTYPE_UNKNOWN, 0, arg);
+
+  if (!exists) {
+    struct gab_jtframe new_fp = {
+        .r_fp = fp->r_fp->r_fp,
+        .fb = ir->sp - have,
+        .id = &id,
+        .ip = proto_ip(gab, id.proto) + id.offset,
+    };
+
+    if (!gab_jtbbinline(gab, ir, &id, &new_fp, ir->sp))
+      return -1;
+  }
+
+  return arg;
+}
+
 uint16_t gab_jtbbemitb(struct gab_triple gab, struct ir *ir,
-                       struct gab_jtbb *bb, struct gab_jtframe *pt,
+                       struct gab_jtbb *bb, struct gab_jtframe *pt, uint8_t *ip,
                        struct gab_oblock *b, uint64_t have) {
   struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(b->p);
   struct gab_type_state successor_state = {};
@@ -1080,7 +1153,8 @@ uint16_t gab_jtbbemitb(struct gab_triple gab, struct ir *ir,
 
   if (!exists) {
     struct gab_jtframe fp = {
-        .pt = pt,
+        .r_fp = pt,
+        .r_ip = ip,
         .fb = ir->sp - have,
         .id = &id,
         .ip = proto_ip(gab, id.proto),
@@ -1117,6 +1191,7 @@ struct gab_jtbb *gab_jtbbcreate(struct gab_triple gab, struct gab_jtbbid *id,
       .fb = ir.sb,
       .id = id,
       .ip = proto_ip(gab, id->proto),
+      .bb = bb,
   };
 
   d_bb_insert(&gab.eg->jobs[gab.wkid].jt.blocks, &bb->id, bb);
@@ -1223,11 +1298,11 @@ static void *assemble(struct ir *ir) {
     bb->native_code = code + ir->of[bb->code_of];
   }
 
-  fprintf(stderr, "ASSEMBLED FROM %lu -> %lu\n", off.code, ir_codesize(ir));
-  for (uint32_t i = off.code; i < ir_codesize(ir); i++) {
-    fprintf(stderr, "%02X ", code[i]);
-  }
-  fprintf(stderr, "\n");
+  // fprintf(stderr, "ASSEMBLED FROM %lu -> %lu\n", off.code, ir_codesize(ir));
+  // for (uint32_t i = off.code; i < ir_codesize(ir); i++) {
+  //   fprintf(stderr, "%02X ", code[i]);
+  // }
+  // fprintf(stderr, "\n");
 
   mprotect(code, n, PROT_READ | PROT_EXEC);
 
@@ -1323,13 +1398,13 @@ static void *assemble(struct ir *ir) {
   emito(IR(), IP() - 3, VAR(), kGAB_IR_GUARD_SPECS, kGAB_IRTYPE_UNKNOWN,       \
         emitk_b(IR(), e), 0)
 
-#define SEND_GUARD_CACHED_MATCH_TYPE(r, ks)
-// emito(IR(), IP(), VAR(), kGAB_IR_GUARD_MATCH_TYPE, kGAB_IRTYPE_UNKNOWN, r, \
-//       emitk_v(IR(), (uintptr_t)ks))
+#define SEND_GUARD_CACHED_MATCH_TYPE(r, ks)                                    \
+  emito(IR(), IP(), VAR(), kGAB_IR_GUARD_MATCH_TYPE, kGAB_IRTYPE_UNKNOWN, r,   \
+        emitk_v(IR(), (uintptr_t)ks))
 
-#define SEND_GUARD_CACHED_RECEIVER_TYPE(r)
-// emito(IR(), IP() - 3, VAR(), kGAB_IR_GUARD_TYPE, kGAB_IRTYPE_UNKNOWN, r, \
-//       emitk_v(IR(), ks[GAB_SEND_KTYPE]))
+#define SEND_GUARD_CACHED_RECEIVER_TYPE(r)                                     \
+  emito(IR(), IP() - 3, VAR(), kGAB_IR_GUARD_TYPE, kGAB_IRTYPE_UNKNOWN, r,     \
+        emitk_v(IR(), ks[GAB_SEND_KTYPE]))
 
 #define SEND_GUARD_KIND(v, k)                                                  \
   emito(IR(), IP() - 3, VAR(), kGAB_IR_GUARD_KIND, kGAB_IRTYPE_UNKNOWN, v, k)
@@ -1386,8 +1461,7 @@ static void *assemble(struct ir *ir) {
 #define PANIC_GUARD_KIND(v, k)                                                 \
   emito(IR(), IP() - 3, VAR(), kGAB_IR_GUARD_KIND, kGAB_IRTYPE_UNKNOWN, v, k)
 
-#define PANIC_GUARD_ISN(v)
-// PANIC_GUARD_KIND(v, kGAB_NUMBER)
+#define PANIC_GUARD_ISN(v) PANIC_GUARD_KIND(v, kGAB_NUMBER)
 
 // TODO
 #define PANIC_GUARD_ISB(v) FAIL()
@@ -1422,10 +1496,6 @@ static void *assemble(struct ir *ir) {
 #define LOCAL(b)                                                               \
   ({                                                                           \
     uint8_t loc = (b);                                                         \
-    fprintf(stderr, "LOCAL: %u/%u\n", loc, FP()->id->entry_state.nlocals);     \
-    for (int i = 0; i < FP()->id->entry_state.nlocals; i++) {                  \
-      fprintf(stderr, "%i: %u\n", i, FP()->fb[i]);                             \
-    }                                                                          \
     emito(IR(), IP(), VAR(), kGAB_IR_LOAD_LOCAL,                               \
           localt(IR(), FP(), BB(), loc), loc, 0);                              \
   })
@@ -1459,15 +1529,13 @@ static void *assemble(struct ir *ir) {
     struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(blk->p);                   \
     PANIC_GUARD_STACKSPACE(3 + p->nslots - have);                              \
                                                                                \
-    uint16_t arg = gab_jtbbemitb(GAB(), IR(), BB(), FP(), blk, have);          \
+    uint16_t arg = gab_jtbbemitb(GAB(), IR(), BB(), FP(), IP(), blk, have);    \
                                                                                \
     if (arg == -1)                                                             \
       FAIL();                                                                  \
                                                                                \
     emito(IR(), IP(), VAR(), kGAB_IR_LOCALCALL_BLOCK, kGAB_IRTYPE_UNKNOWN,     \
           emitk_v(IR(), __gab_obj(blk)), arg);                                 \
-                                                                               \
-    SUCCEED(0);                                                                \
   })
 
 // #define MICRO_OP_LOCALCALL_BLOCK(blk, have) SUCCEED(GAB_SEND_CACHE_SIZE);
@@ -1483,6 +1551,10 @@ static void *assemble(struct ir *ir) {
         emito(IR(), IP(), VAR(), kGAB_IR_MATCHTAILCALL_BLOCK,                  \
               kGAB_IRTYPE_UNKNOWN, emitk_v(IR(), (uintptr_t)ks), 0);           \
                                                                                \
+    uint16_t *_sp = SP();                                                      \
+    uint16_t _sb[IR_SIZE];                                                     \
+    ir_checkpoint(IR(), _sb, &_sp);                                            \
+                                                                               \
     for (int i = 0; i < cGAB_SEND_CACHE_LEN; i++) {                            \
       uint8_t _idx = i * GAB_SEND_CACHE_SIZE;                                  \
                                                                                \
@@ -1490,14 +1562,13 @@ static void *assemble(struct ir *ir) {
         continue;                                                              \
                                                                                \
       struct gab_oblock *blk = (void *)ks[GAB_SEND_KSPEC + _idx];              \
-      uint16_t *_sp = SP();                                                    \
                                                                                \
-      uint16_t arg = gab_jtbbemitb(GAB(), IR(), BB(), FP(), blk, have);        \
+      uint16_t arg = gab_jtbbemitb(GAB(), IR(), BB(), FP(), IP(), blk, have);  \
                                                                                \
       if (arg == -1)                                                           \
         FAIL();                                                                \
                                                                                \
-      SP() = _sp;                                                              \
+      ir_restore(IR(), _sb, &_sp);                                             \
                                                                                \
       ks[GAB_SEND_KJIT + _idx] = arg;                                          \
     }                                                                          \
@@ -1511,7 +1582,7 @@ static void *assemble(struct ir *ir) {
 // is actually *too big* and does more than it needs to.
 #define MICRO_OP_LOCALTAILCALL_BLOCK(blk, have)                                \
   ({                                                                           \
-    uint16_t arg = gab_jtbbemitb(GAB(), IR(), BB(), FP(), blk, have);          \
+    uint16_t arg = gab_jtbbemitb(GAB(), IR(), BB(), FP(), IP(), blk, have);    \
                                                                                \
     if (arg == -1)                                                             \
       FAIL();                                                                  \
@@ -1524,11 +1595,26 @@ static void *assemble(struct ir *ir) {
 
 #define MICRO_OP_TAILCALL_BLOCK(blk, have) SUCCEED(GAB_SEND_CACHE_SIZE)
 
-// uint16_t below_have = FP()->fb[-1];
-// memmove(FP()->fb - 1, SP() - have, have * sizeof(uint16_t));
-// SET_VAR(below_have + have);
-
-#define MICRO_OP_RETURN(have) ({ SUCCEED(0); })
+#define MICRO_OP_RETURN(have)                                                  \
+  ({                                                                           \
+    if (FP()->r_fp == nullptr) {                                               \
+      emito(IR(), nullptr, 0, kGAB_IR_JIT_EXIT, kGAB_IRTYPE_UNKNOWN,           \
+            emitk_v(IR(), (uintptr_t)IP() - 1), emitk_b(IR(), VAR()));         \
+      return IP();                                                             \
+    }                                                                          \
+                                                                               \
+    uint16_t below_have = FP()->fb[-1];                                        \
+    memmove(FP()->fb - 1, SP() - have, have * sizeof(uint16_t));               \
+    SP() = FP()->fb + have;                                                    \
+    SET_VAR(below_have + have);                                                \
+                                                                               \
+    uint16_t arg = gab_jtbbemitr(GAB(), IR(), BB(), FP(), IP(), have);         \
+                                                                               \
+    if (arg == -1)                                                             \
+      FAIL();                                                                  \
+                                                                               \
+    return IP();                                                               \
+  })
 
 // Invalid terminations of jitted bb's
 #define MICRO_OP_USE(v) FAIL()

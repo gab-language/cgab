@@ -511,7 +511,12 @@ CASE_CODE(MICRO_OP_LOCALCALL_BLOCK) {
 
   MICRO_OP_LOCALCALL_BLOCK(blk, have);
 
-  MICRO_OP_JIT_ENTER(branch);
+  union gab_value_pair results = branch(DISPATCH_ARGS());
+
+  if (__gab_unlikely(results.status == gab_cvalid))
+    return results;
+
+  NEXT();
 }
 
 CASE_CODE(MICRO_OP_INLINE_LOCALCALL_BLOCK) {

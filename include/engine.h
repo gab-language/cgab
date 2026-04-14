@@ -706,7 +706,9 @@ struct gab_jtframe {
   struct gab_jtbbid *id;
   uint8_t *ip;
   uint16_t *fb;
-  struct gab_jtframe *pt;
+  struct gab_jtbb *bb;
+  struct gab_jtframe *r_fp;
+  uint8_t *r_ip;
 };
 
 struct ir {
