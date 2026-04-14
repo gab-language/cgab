@@ -516,7 +516,10 @@ CASE_CODE(MICRO_OP_LOCALCALL_BLOCK) {
   if (__gab_unlikely(results.status == gab_cvalid))
     return results;
 
+  LOAD_FRAME();
+
   NEXT();
+  // MICRO_OP_JIT_ENTER(branch);
 }
 
 CASE_CODE(MICRO_OP_INLINE_LOCALCALL_BLOCK) {
