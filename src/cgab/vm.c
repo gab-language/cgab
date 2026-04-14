@@ -1639,13 +1639,18 @@ extern void putcs(char *arg);
               value, gab_valtype(GAB(), value), gab_type(GAB(), kGAB_NUMBER)); \
   }
 
-#define PANIC_GUARD_ISS(value) SEND_GUARD_KIND(value, kGAB_STRING)
+#define PANIC_GUARD_ISS(value) PANIC_GUARD_KIND(value, kGAB_STRING)
+
+#define SEND_GUARD_ISS(value) SEND_GUARD_KIND(value, kGAB_STRING)
 
 #define SEND_GUARD(clause, reason)                                             \
   if (__gab_unlikely(!(clause)))                                               \
     MISS_CACHED_SEND(reason);
 
 #define SEND_GUARD_KIND(r, k) SEND_GUARD(gab_valkind(r) == k, "Unexpected kind")
+
+#define SEND_GUARD_ISN(value) SEND_GUARD(__gab_valisn(value), "Not number")
+#define SEND_GUARD_ISB(value) SEND_GUARD(__gab_valisb(value), "Not number")
 
 /*
  * SEND guard which checks that the
@@ -1960,7 +1965,8 @@ extern void putcs(char *arg);
 #define MICRO_OP_UNBOXS_T const char *
 #define MICRO_OP_UNBOXV_T gab_value
 
-#define GUARD_NOP(v)
+#define SEND_GUARD_NOP(v) SEND_GUARD_CACHED_RECEIVER_TYPE(v)
+#define PANIC_GUARD_NOP(v)
 
 #define IMPL_SEND_UNARY(CODE, guard, boxer, operation_type, unboxer,           \
                         primitive)                                             \
@@ -1969,9 +1975,11 @@ extern void putcs(char *arg);
     uint64_t have = COMPUTE_TUPLE();                                           \
     uint64_t below_have = PEEK_N(have + 1);                                    \
                                                                                \
+    SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);                      \
+                                                                               \
     gab_value r = PEEK_N(have);                                                \
                                                                                \
-    guard(r);                                                                  \
+    SEND_GUARD_##guard(r);                                                     \
                                                                                \
     operation_type val = unboxer(r);                                           \
                                                                                \
@@ -1993,18 +2001,20 @@ extern void putcs(char *arg);
                                                                                \
     SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);                      \
                                                                                \
+    NILPAD_GUARD_ARGS_GTE(2);                                                  \
+                                                                               \
     gab_value b = PEEK_N(have - 1);                                            \
     gab_value a = PEEK_N(have);                                                \
                                                                                \
-    guard(a);                                                                  \
-    guard(b);                                                                  \
+    SEND_GUARD_##guard(a);                                                     \
+    PANIC_GUARD_##guard(b);                                                    \
                                                                                \
     a_type val_a = a_unboxer(a);                                               \
     b_type val_b = b_unboxer##2(b);                                            \
                                                                                \
-    DROP_N(have + 1);                                                          \
-                                                                               \
     c_type val_c = primitive(val_a, val_b);                                    \
+                                                                               \
+    DROP_N(have + 1);                                                          \
                                                                                \
     gab_value c = c_boxer(val_c);                                              \
                                                                                \
@@ -2342,120 +2352,120 @@ CASE_CODE(SEND_PRIMITIVE_CALL_NATIVE) {
 }
 
 // float + float = float
-IMPL_SEND_BINARY(PRIMITIVE_ADD, PANIC_GUARD_ISN, MICRO_OP_UNBOXF_T,
-                 MICRO_OP_UNBOXF, MICRO_OP_UNBOXF_T, MICRO_OP_UNBOXF,
-                 MICRO_OP_UNBOXF_T, MICRO_OP_BOXN, MICRO_OP_BINARY_ADD);
+IMPL_SEND_BINARY(PRIMITIVE_ADD, ISN, MICRO_OP_UNBOXF_T, MICRO_OP_UNBOXF,
+                 MICRO_OP_UNBOXF_T, MICRO_OP_UNBOXF, MICRO_OP_UNBOXF_T,
+                 MICRO_OP_BOXN, MICRO_OP_BINARY_ADD);
 
 // float - float = float
-IMPL_SEND_BINARY(PRIMITIVE_SUB, PANIC_GUARD_ISN, MICRO_OP_UNBOXF_T,
-                 MICRO_OP_UNBOXF, MICRO_OP_UNBOXF_T, MICRO_OP_UNBOXF,
-                 MICRO_OP_UNBOXF_T, MICRO_OP_BOXN, MICRO_OP_BINARY_SUB);
+IMPL_SEND_BINARY(PRIMITIVE_SUB, ISN, MICRO_OP_UNBOXF_T, MICRO_OP_UNBOXF,
+                 MICRO_OP_UNBOXF_T, MICRO_OP_UNBOXF, MICRO_OP_UNBOXF_T,
+                 MICRO_OP_BOXN, MICRO_OP_BINARY_SUB);
 
 // float * float = float
-IMPL_SEND_BINARY(PRIMITIVE_MUL, PANIC_GUARD_ISN, MICRO_OP_UNBOXF_T,
-                 MICRO_OP_UNBOXF, MICRO_OP_UNBOXF_T, MICRO_OP_UNBOXF,
-                 MICRO_OP_UNBOXF_T, MICRO_OP_BOXN, MICRO_OP_BINARY_MUL);
+IMPL_SEND_BINARY(PRIMITIVE_MUL, ISN, MICRO_OP_UNBOXF_T, MICRO_OP_UNBOXF,
+                 MICRO_OP_UNBOXF_T, MICRO_OP_UNBOXF, MICRO_OP_UNBOXF_T,
+                 MICRO_OP_BOXN, MICRO_OP_BINARY_MUL);
 
 // float / float = float
-IMPL_SEND_BINARY(PRIMITIVE_DIV, PANIC_GUARD_ISN, MICRO_OP_UNBOXF_T,
-                 MICRO_OP_UNBOXF, MICRO_OP_UNBOXF_T, MICRO_OP_UNBOXF,
-                 MICRO_OP_UNBOXF_T, MICRO_OP_BOXN, MICRO_OP_BINARY_DIV);
+IMPL_SEND_BINARY(PRIMITIVE_DIV, ISN, MICRO_OP_UNBOXF_T, MICRO_OP_UNBOXF,
+                 MICRO_OP_UNBOXF_T, MICRO_OP_UNBOXF, MICRO_OP_UNBOXF_T,
+                 MICRO_OP_BOXN, MICRO_OP_BINARY_DIV);
 
 // int % int = int
-IMPL_SEND_BINARY(PRIMITIVE_MOD, PANIC_GUARD_ISN, MICRO_OP_UNBOXI_T,
-                 MICRO_OP_UNBOXI, MICRO_OP_UNBOXI_T, MICRO_OP_UNBOXI,
-                 MICRO_OP_UNBOXI_T, MICRO_OP_BOXN, MICRO_OP_BINARY_MOD);
+IMPL_SEND_BINARY(PRIMITIVE_MOD, ISN, MICRO_OP_UNBOXI_T, MICRO_OP_UNBOXI,
+                 MICRO_OP_UNBOXI_T, MICRO_OP_UNBOXI, MICRO_OP_UNBOXI_T,
+                 MICRO_OP_BOXN, MICRO_OP_BINARY_MOD);
 
 // float < float = bool
-IMPL_SEND_BINARY(PRIMITIVE_LT, PANIC_GUARD_ISN, MICRO_OP_UNBOXF_T,
-                 MICRO_OP_UNBOXF, MICRO_OP_UNBOXF_T, MICRO_OP_UNBOXF,
-                 MICRO_OP_UNBOXB_T, MICRO_OP_BOXB, MICRO_OP_BINARY_LT);
+IMPL_SEND_BINARY(PRIMITIVE_LT, ISN, MICRO_OP_UNBOXF_T, MICRO_OP_UNBOXF,
+                 MICRO_OP_UNBOXF_T, MICRO_OP_UNBOXF, MICRO_OP_UNBOXB_T,
+                 MICRO_OP_BOXB, MICRO_OP_BINARY_LT);
 
 // float <= float = bool
-IMPL_SEND_BINARY(PRIMITIVE_LTE, PANIC_GUARD_ISN, MICRO_OP_UNBOXF_T,
-                 MICRO_OP_UNBOXF, MICRO_OP_UNBOXF_T, MICRO_OP_UNBOXF,
-                 MICRO_OP_UNBOXB_T, MICRO_OP_BOXB, MICRO_OP_BINARY_LTE);
+IMPL_SEND_BINARY(PRIMITIVE_LTE, ISN, MICRO_OP_UNBOXF_T, MICRO_OP_UNBOXF,
+                 MICRO_OP_UNBOXF_T, MICRO_OP_UNBOXF, MICRO_OP_UNBOXB_T,
+                 MICRO_OP_BOXB, MICRO_OP_BINARY_LTE);
 
 // float >= float = bool
-IMPL_SEND_BINARY(PRIMITIVE_GT, PANIC_GUARD_ISN, MICRO_OP_UNBOXF_T,
-                 MICRO_OP_UNBOXF, MICRO_OP_UNBOXF_T, MICRO_OP_UNBOXF,
-                 MICRO_OP_UNBOXB_T, MICRO_OP_BOXB, MICRO_OP_BINARY_GT);
+IMPL_SEND_BINARY(PRIMITIVE_GT, ISN, MICRO_OP_UNBOXF_T, MICRO_OP_UNBOXF,
+                 MICRO_OP_UNBOXF_T, MICRO_OP_UNBOXF, MICRO_OP_UNBOXB_T,
+                 MICRO_OP_BOXB, MICRO_OP_BINARY_GT);
 
 // float >= float = bool
-IMPL_SEND_BINARY(PRIMITIVE_GTE, PANIC_GUARD_ISN, MICRO_OP_UNBOXF_T,
-                 MICRO_OP_UNBOXF, MICRO_OP_UNBOXF_T, MICRO_OP_UNBOXF,
-                 MICRO_OP_UNBOXB_T, MICRO_OP_BOXB, MICRO_OP_BINARY_GTE);
+IMPL_SEND_BINARY(PRIMITIVE_GTE, ISN, MICRO_OP_UNBOXF_T, MICRO_OP_UNBOXF,
+                 MICRO_OP_UNBOXF_T, MICRO_OP_UNBOXF, MICRO_OP_UNBOXB_T,
+                 MICRO_OP_BOXB, MICRO_OP_BINARY_GTE);
 
 // int | int = int
-IMPL_SEND_BINARY(PRIMITIVE_BOR, PANIC_GUARD_ISN, MICRO_OP_UNBOXI_T,
-                 MICRO_OP_UNBOXI, MICRO_OP_UNBOXI_T, MICRO_OP_UNBOXI,
-                 MICRO_OP_UNBOXI_T, MICRO_OP_BOXN, MICRO_OP_BINARY_BOR);
+IMPL_SEND_BINARY(PRIMITIVE_BOR, ISN, MICRO_OP_UNBOXI_T, MICRO_OP_UNBOXI,
+                 MICRO_OP_UNBOXI_T, MICRO_OP_UNBOXI, MICRO_OP_UNBOXI_T,
+                 MICRO_OP_BOXN, MICRO_OP_BINARY_BOR);
 
 // int & int = int
-IMPL_SEND_BINARY(PRIMITIVE_BND, PANIC_GUARD_ISN, MICRO_OP_UNBOXI_T,
-                 MICRO_OP_UNBOXI, MICRO_OP_UNBOXI_T, MICRO_OP_UNBOXI,
-                 MICRO_OP_UNBOXI_T, MICRO_OP_BOXN, MICRO_OP_BINARY_BND);
+IMPL_SEND_BINARY(PRIMITIVE_BND, ISN, MICRO_OP_UNBOXI_T, MICRO_OP_UNBOXI,
+                 MICRO_OP_UNBOXI_T, MICRO_OP_UNBOXI, MICRO_OP_UNBOXI_T,
+                 MICRO_OP_BOXN, MICRO_OP_BINARY_BND);
 
 // Implemented logical and/or for booleans with a binary &/| operation.
 // bool | bool = bool
-IMPL_SEND_BINARY(PRIMITIVE_LOR, PANIC_GUARD_ISB, MICRO_OP_UNBOXB_T,
-                 MICRO_OP_UNBOXB, MICRO_OP_UNBOXB_T, MICRO_OP_UNBOXB,
-                 MICRO_OP_UNBOXB_T, MICRO_OP_BOXB, MICRO_OP_BINARY_BOR);
+IMPL_SEND_BINARY(PRIMITIVE_LOR, ISB, MICRO_OP_UNBOXB_T, MICRO_OP_UNBOXB,
+                 MICRO_OP_UNBOXB_T, MICRO_OP_UNBOXB, MICRO_OP_UNBOXB_T,
+                 MICRO_OP_BOXB, MICRO_OP_BINARY_BOR);
 
 // bool & bool = bool
-IMPL_SEND_BINARY(PRIMITIVE_LND, PANIC_GUARD_ISB, MICRO_OP_UNBOXB_T,
-                 MICRO_OP_UNBOXB, MICRO_OP_UNBOXB_T, MICRO_OP_UNBOXB,
-                 MICRO_OP_UNBOXB_T, MICRO_OP_BOXB, MICRO_OP_BINARY_BND);
+IMPL_SEND_BINARY(PRIMITIVE_LND, ISB, MICRO_OP_UNBOXB_T, MICRO_OP_UNBOXB,
+                 MICRO_OP_UNBOXB_T, MICRO_OP_UNBOXB, MICRO_OP_UNBOXB_T,
+                 MICRO_OP_BOXB, MICRO_OP_BINARY_BND);
 
 // str < str = bool
-IMPL_SEND_BINARY(PRIMITIVE_STR_LT, PANIC_GUARD_ISS, MICRO_OP_UNBOXS_T,
-                 MICRO_OP_UNBOXS, MICRO_OP_UNBOXS_T, MICRO_OP_UNBOXS,
-                 MICRO_OP_UNBOXB_T, MICRO_OP_BOXB, MICRO_OP_BINARY_STRLT);
+IMPL_SEND_BINARY(PRIMITIVE_STR_LT, ISS, MICRO_OP_UNBOXS_T, MICRO_OP_UNBOXS,
+                 MICRO_OP_UNBOXS_T, MICRO_OP_UNBOXS, MICRO_OP_UNBOXB_T,
+                 MICRO_OP_BOXB, MICRO_OP_BINARY_STRLT);
 
 // str <= str = bool
-IMPL_SEND_BINARY(PRIMITIVE_STR_LTE, PANIC_GUARD_ISS, MICRO_OP_UNBOXS_T,
-                 MICRO_OP_UNBOXS, MICRO_OP_UNBOXS_T, MICRO_OP_UNBOXS,
-                 MICRO_OP_UNBOXB_T, MICRO_OP_BOXB, MICRO_OP_BINARY_STRLTE);
+IMPL_SEND_BINARY(PRIMITIVE_STR_LTE, ISS, MICRO_OP_UNBOXS_T, MICRO_OP_UNBOXS,
+                 MICRO_OP_UNBOXS_T, MICRO_OP_UNBOXS, MICRO_OP_UNBOXB_T,
+                 MICRO_OP_BOXB, MICRO_OP_BINARY_STRLTE);
 
 // str > str = bool
-IMPL_SEND_BINARY(PRIMITIVE_STR_GT, PANIC_GUARD_ISS, MICRO_OP_UNBOXS_T,
-                 MICRO_OP_UNBOXS, MICRO_OP_UNBOXS_T, MICRO_OP_UNBOXS,
-                 MICRO_OP_UNBOXB_T, MICRO_OP_BOXB, MICRO_OP_BINARY_STRGT);
+IMPL_SEND_BINARY(PRIMITIVE_STR_GT, ISS, MICRO_OP_UNBOXS_T, MICRO_OP_UNBOXS,
+                 MICRO_OP_UNBOXS_T, MICRO_OP_UNBOXS, MICRO_OP_UNBOXB_T,
+                 MICRO_OP_BOXB, MICRO_OP_BINARY_STRGT);
 
 // str >= str = bool
-IMPL_SEND_BINARY(PRIMITIVE_STR_GTE, PANIC_GUARD_ISS, MICRO_OP_UNBOXS_T,
-                 MICRO_OP_UNBOXS, MICRO_OP_UNBOXS_T, MICRO_OP_UNBOXS,
-                 MICRO_OP_UNBOXB_T, MICRO_OP_BOXB, MICRO_OP_BINARY_STRGTE);
+IMPL_SEND_BINARY(PRIMITIVE_STR_GTE, ISS, MICRO_OP_UNBOXS_T, MICRO_OP_UNBOXS,
+                 MICRO_OP_UNBOXS_T, MICRO_OP_UNBOXS, MICRO_OP_UNBOXB_T,
+                 MICRO_OP_BOXB, MICRO_OP_BINARY_STRGTE);
 // uint << int = uint
-IMPL_SEND_BINARY(PRIMITIVE_LSH, PANIC_GUARD_ISN, MICRO_OP_UNBOXU_T,
-                 MICRO_OP_UNBOXU, MICRO_OP_UNBOXI_T, MICRO_OP_UNBOXI,
-                 MICRO_OP_UNBOXI_T, MICRO_OP_BOXN, MICRO_OP_BINARY_LSH);
+IMPL_SEND_BINARY(PRIMITIVE_LSH, ISN, MICRO_OP_UNBOXU_T, MICRO_OP_UNBOXU,
+                 MICRO_OP_UNBOXI_T, MICRO_OP_UNBOXI, MICRO_OP_UNBOXI_T,
+                 MICRO_OP_BOXN, MICRO_OP_BINARY_LSH);
 
 // uint >> int = uint
-IMPL_SEND_BINARY(PRIMITIVE_RSH, PANIC_GUARD_ISN, MICRO_OP_UNBOXU_T,
-                 MICRO_OP_UNBOXU, MICRO_OP_UNBOXI_T, MICRO_OP_UNBOXI,
-                 MICRO_OP_UNBOXI_T, MICRO_OP_BOXN, MICRO_OP_BINARY_RSH);
+IMPL_SEND_BINARY(PRIMITIVE_RSH, ISN, MICRO_OP_UNBOXU_T, MICRO_OP_UNBOXU,
+                 MICRO_OP_UNBOXI_T, MICRO_OP_UNBOXI, MICRO_OP_UNBOXI_T,
+                 MICRO_OP_BOXN, MICRO_OP_BINARY_RSH);
 
 // str + str = str
-IMPL_SEND_BINARY(PRIMITIVE_CONCAT, PANIC_GUARD_ISS, MICRO_OP_UNBOXV_T,
-                 MICRO_OP_UNBOXV, MICRO_OP_UNBOXV_T, MICRO_OP_UNBOXV,
-                 MICRO_OP_UNBOXV_T, MICRO_OP_BOXV, MICRO_OP_BINARY_CONCAT);
+IMPL_SEND_BINARY(PRIMITIVE_CONCAT, ISS, MICRO_OP_UNBOXV_T, MICRO_OP_UNBOXV,
+                 MICRO_OP_UNBOXV_T, MICRO_OP_UNBOXV, MICRO_OP_UNBOXV_T,
+                 MICRO_OP_BOXV, MICRO_OP_BINARY_CONCAT);
 
 // val == val = bool
-IMPL_SEND_BINARY(PRIMITIVE_EQ, GUARD_NOP, MICRO_OP_UNBOXV_T, MICRO_OP_UNBOXV,
+IMPL_SEND_BINARY(PRIMITIVE_EQ, NOP, MICRO_OP_UNBOXV_T, MICRO_OP_UNBOXV,
                  MICRO_OP_UNBOXV_T, MICRO_OP_UNBOXV, MICRO_OP_UNBOXB_T,
                  MICRO_OP_BOXB, MICRO_OP_BINARY_EQ);
 
 // !bool = bool
-IMPL_SEND_UNARY(PRIMITIVE_LIN, PANIC_GUARD_ISB, MICRO_OP_BOXB,
-                MICRO_OP_UNBOXB_T, MICRO_OP_UNBOXB, MICRO_OP_UNARY_LIN);
+IMPL_SEND_UNARY(PRIMITIVE_LIN, ISB, MICRO_OP_BOXB, MICRO_OP_UNBOXB_T,
+                MICRO_OP_UNBOXB, MICRO_OP_UNARY_LIN);
 
 // ~int = int
-IMPL_SEND_UNARY(PRIMITIVE_BIN, PANIC_GUARD_ISN, MICRO_OP_BOXN,
-                MICRO_OP_UNBOXI_T, MICRO_OP_UNBOXI, MICRO_OP_UNARY_BIN);
+IMPL_SEND_UNARY(PRIMITIVE_BIN, ISN, MICRO_OP_BOXN, MICRO_OP_UNBOXI_T,
+                MICRO_OP_UNBOXI, MICRO_OP_UNARY_BIN);
 
 // val? = val
-IMPL_SEND_UNARY(PRIMITIVE_TYPE, GUARD_NOP, MICRO_OP_BOXV, MICRO_OP_UNBOXV_T,
+IMPL_SEND_UNARY(PRIMITIVE_TYPE, NOP, MICRO_OP_BOXV, MICRO_OP_UNBOXV_T,
                 MICRO_OP_UNBOXV, MICRO_OP_TYPE);
 
 CASE_CODE(SEND_PRIMITIVE_USE) {
