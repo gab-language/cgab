@@ -2393,10 +2393,6 @@ static uint64_t dumpInstruction(FILE *stream, struct gab_oprototype *self,
   case OP_TAILSEND_PRIMITIVE_CALL_BLOCK:
   case OP_LOCALSEND_BLOCK:
   case OP_LOCALTAILSEND_BLOCK:
-  case OP_JIT_SEND_BLOCK:
-  case OP_JIT_TAILSEND_BLOCK:
-  case OP_JIT_LOCALSEND_BLOCK:
-  case OP_JIT_LOCALTAILSEND_BLOCK:
   case OP_MATCHSEND_BLOCK:
   case OP_MATCHTAILSEND_BLOCK:
     return dumpSendInstruction(stream, self, offset);

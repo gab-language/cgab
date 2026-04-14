@@ -2,15 +2,11 @@ NATIVECC    = zig cc
 TARGETCC	  = zig cc --target=$(GAB_TARGETS)
 TARGETCXX   = zig c++
 AR          = zig ar
-OBJCPY      = llvm-objcopy
 CLIDE       = clide
-ELF2STENCIL = elf2stencil
 
 CGAB_SRC_PREFIX     = src/cgab
 GAB_SRC_PREFIX      = src/gab
 MOD_SRC_PREFIX      = src/mod
-STENCIL_SRC_PREFIX  = src/stencil
-ELF_SRC_PREFIX      = src/elf
 
 BUILD_PREFIX 	 	= build-$(GAB_TARGETS)
 INCLUDE_PREFIX 	= -Iinclude -I$(BUILD_PREFIX)
@@ -30,24 +26,6 @@ CFLAGS = -std=c23 \
 				 -DGAB_BUILDTYPE=\"$(GAB_BUILDTYPE)\"\
 				 $(INCLUDE) \
 				 $(GAB_CCFLAGS)
-
-# Stencils need to be compiled with musl, as gnu abi enforces PIC.
-# But this means using two abi's. Mega Ew.
-STENCIL_CFLAGS =  -std=c23 \
-									-Wall \
-									--target=x86_64-linux-musl \
-									-fno-pic \
-									-MMD  \
-									-mcmodel=medium \
-									-DGAB_TARGET_TRIPLE=\"$(GAB_TARGETS)\"\
-									-DGAB_DYNLIB_FILEENDING=\"$(GAB_DYNLIB_FILEENDING)\" \
-									-DGAB_BUILDTYPE=\"release\"\
-									$(INCLUDE) \
-									-fomit-frame-pointer \
-									-ffunction-sections \
-									-O3 \
-									-DNDEBUG \
-									-DcGAB_THREADS_NATIVE
 
 CXXFLAGS =  -std=c++23 \
 						-fPIC \
@@ -93,13 +71,6 @@ GAB_OBJ = $(GAB_SRC:src/gab/%.c=$(BUILD_PREFIX)/gab/%.o)
 CGAB_SRC = $(wildcard src/cgab/*.c)
 CGAB_OBJ = $(CGAB_SRC:src/cgab/%.c=$(BUILD_PREFIX)/cgab/%.o)
 
-STENCIL_SRC = $(wildcard src/stencil/*.c)
-STENCIL_OBJ = $(GAB_SRC:src/gab/%.c=$(BUILD_PREFIX)/stencil/%.o)
-
-ELF_SRC = $(wildcard src/elf/*.c)
-
-CGAB_JIT_MICRO_OP_BYTES = $(CGAB_JIT_MICROOP:%=$(BUILD_PREFIX)/jit/OP_MICRO_OP_%_HANDLER)
-
 # Source files in src/mod/ are individual c-modules, importable from gab code.
 # They are compiled individually into dynamic libraries, loaded at runtime.
 CMOD_SRC 	 = $(wildcard src/mod/*.c)
@@ -119,19 +90,8 @@ all: gab cmodules cxxmodules
 $(BUILD_PREFIX)/gab/%.o: $(GAB_SRC_PREFIX)/%.c $(VENDOR_PREFIX)/miniz/amalgamation/miniz.c
 	$(TARGETCC) $(CFLAGS) $< -c -o $@
 
-$(BUILD_PREFIX)/cgab/%.o: $(CGAB_SRC_PREFIX)/%.c $(BUILD_PREFIX)/stencil.h
+$(BUILD_PREFIX)/cgab/%.o: $(CGAB_SRC_PREFIX)/%.c
 	$(TARGETCC) $(CFLAGS) $< -c -o $@
-
-# This needs to build for linux, but with the *target architecture*. Tough.
-$(BUILD_PREFIX)/stencil/%.o: $(STENCIL_SRC_PREFIX)/%.c
-	$(NATIVECC) $(STENCIL_CFLAGS) $< -c -o $@
-
-$(BUILD_PREFIX)/stencil.h: $(ELF2STENCIL) $(BUILD_PREFIX)/stencil/stencil.o
-	./$(ELF2STENCIL) < $(BUILD_PREFIX)/stencil/stencil.o > $(BUILD_PREFIX)/stencil.h 
-
-# This rule builds the gab executable, linking with libcgab.a
-$(ELF2STENCIL): $(ELF_SRC)
-	$(NATIVECC) $(CFLAGS) -lelf -o $@ $^
 
 # This rule builds libcgab by archiving the cgab object files together.
 $(BUILD_PREFIX)/libcgab.a: $(CGAB_OBJ)

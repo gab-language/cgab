@@ -782,8 +782,6 @@ bool gab_jbcreate(struct gab_triple gab, struct gab_job *job, int(fn)(void *),
   v_gab_value_create(&job->lock_keep, 8);
   q_gab_value_create(&job->queue, 32);
 
-  gab_jtcreate(&job->jt);
-
   job->work_channel = gab_channel(gab);
   gab_iref(gab, job->work_channel);
   gab_egkeep(gab.eg, job->work_channel);
@@ -2423,6 +2421,8 @@ union gab_value_pair gab_tarun(struct gab_triple gab, size_t tries,
 
   gab_iref(gab, fb);
   gab_egkeep(gab.eg, fb);
+
+  // TODO @runtime @perf: Push to local queue instead of always deferring globally.
 
   // If we're *in* a valid worker we can push to the local queue.
   //   if (gab.wkid) {

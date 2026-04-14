@@ -1669,7 +1669,7 @@ struct lookup_res {
     kLOOKUP_LOC,
   } k;
 
-  int64_t idx;
+  int32_t idx;
 };
 
 /*
@@ -2088,7 +2088,6 @@ gab_value compile_record(struct gab_triple gab, struct bc *bc, gab_value tuple,
     if (env == gab_cinvalid)
       return gab_cinvalid;
 
-    // If the lhs was multi,
     env = compile_tuple(gab, bc, rhs_node, env);
 
     if (env == gab_cinvalid)

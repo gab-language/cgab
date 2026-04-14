@@ -57,10 +57,6 @@
 #define cGAB_VM_CHANNEL_TAKE_TRIES (0)
 #endif
 
-#ifndef cGAB_JIT_ENABLED
-#define cGAB_JIT_ENABLED 0
-#endif
-
 // Collect as frequently as possible (on every RC push)
 // This is kinda broken fundamentally
 #ifndef cGAB_DEBUG_GC
@@ -75,6 +71,10 @@
 // Log what is happening to workers as the gab engine spins.
 #ifndef cGAB_LOG_EG
 #define cGAB_LOG_EG 0
+#endif
+
+#ifndef cGAB_VM_OPCODE_ATTRIBUTES
+#define cGAB_VM_OPCODE_ATTRIBUTES [[clang::preserve_none, gnu::hot]]
 #endif
 
 // Log what is happening during execution.
@@ -179,7 +179,6 @@
 #define GAB_SEND_KTYPE 2
 #define GAB_SEND_KSPEC 3
 #define GAB_SEND_KOFFSET 4
-#define GAB_SEND_KJIT 4
 
 #define GAB_SEND_KGENERIC_CALL_MESSAGE 5
 

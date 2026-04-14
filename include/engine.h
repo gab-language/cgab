@@ -477,127 +477,6 @@ static inline void gab_srccomplete(struct gab_triple gab,
 
 void gab_srcdestroy(struct gab_src *self);
 
-// Max locals per prototype - from gab_prototype_argt nslots field
-#define GAB_JIT_MAX_LOCALS 255
-
-enum gab_irtype_kind {
-  kGAB_IRTYPE_STRING = kGAB_STRING,
-  kGAB_IRTYPE_BINARY = kGAB_BINARY,
-  kGAB_IRTYPE_MESSAGE = kGAB_MESSAGE,
-  kGAB_IRTYPE_PRIMITIVE = kGAB_PRIMITIVE,
-  kGAB_IRTYPE_NUMBER = kGAB_NUMBER,
-  kGAB_IRTYPE_NATIVE = kGAB_NATIVE,
-  kGAB_IRTYPE_PROTOTYPE = kGAB_PROTOTYPE,
-  kGAB_IRTYPE_BLOCK = kGAB_BLOCK,
-  kGAB_IRTYPE_BOX = kGAB_BOX,
-  kGAB_IRTYPE_RECORD = kGAB_RECORD,
-  kGAB_IRTYPE_RECORDNODE = kGAB_RECORDNODE,
-  kGAB_IRTYPE_SHAPE = kGAB_SHAPE,
-  kGAB_IRTYPE_SHAPELIST = kGAB_SHAPELIST,
-  kGAB_IRTYPE_FIBER = kGAB_FIBER,
-  kGAB_IRTYPE_FIBERDONE = kGAB_FIBERDONE,
-  kGAB_IRTYPE_FIBERRUNNING = kGAB_FIBERRUNNING,
-  kGAB_IRTYPE_CHANNEL = kGAB_CHANNEL,
-  kGAB_IRTYPE_CHANNELCLOSED = kGAB_CHANNELCLOSED,
-  kGAB_IRTYPE_UNKNOWN,
-  kGAB_IRTYPE_MESSAGE_BOOL,
-  kGAB_IRTYPE_UNBOXF,
-  kGAB_IRTYPE_UNBOXI,
-  kGAB_IRTYPE_UNBOXU,
-  kGAB_IRTYPE_UNBOXB,
-  kGAB_IRTYPE_UNBOXS,
-};
-
-struct gab_type_state {
-  // The canonical gab_type for the local values.
-  enum gab_irtype_kind slots[GAB_JIT_MAX_LOCALS];
-  uint8_t nlocals, nupvalues;
-};
-
-struct gab_jtbb {
-  // Identity
-  struct gab_jtbbid {
-    struct gab_oprototype *proto; // the prototype this block belongs to
-    struct gab_oblock *block;
-    struct gab_type_state
-        entry_state; // the type state this version was compiled for
-    size_t offset;
-  } id;
-
-  // Generated code
-  void *native_code; // pointer into executable code buffer
-  uint32_t code_of;
-
-  struct gab_jtbb *next;
-};
-
-// Lots of collisions on hashing different offsets in the same prototype
-static inline uint64_t hash_id(struct gab_jtbbid *id) {
-  return (uintptr_t)id->proto;
-}
-
-static inline bool eq_id(struct gab_jtbbid *a, struct gab_jtbbid *b) {
-  assert(a->proto->header.kind == kGAB_PROTOTYPE);
-  assert(b->proto->header.kind == kGAB_PROTOTYPE);
-
-  if (a->proto != b->proto)
-    return false;
-
-  if (a->offset != b->offset)
-    return false;
-
-  if (a->entry_state.nlocals != b->entry_state.nlocals)
-    return false;
-  if (a->entry_state.nupvalues != b->entry_state.nupvalues)
-    return false;
-
-  for (int i = 0; i < a->entry_state.nlocals; i++) {
-    if (a->entry_state.slots[i] == kGAB_IRTYPE_UNKNOWN)
-      continue;
-    if (b->entry_state.slots[i] == kGAB_IRTYPE_UNKNOWN)
-      continue;
-    if (!gab_valeq(a->entry_state.slots[i], b->entry_state.slots[i]))
-      return false;
-  }
-
-  for (int i = 0; i < a->entry_state.nupvalues; i++) {
-    uint8_t slot = a->entry_state.nlocals + i;
-
-    if (a->entry_state.slots[slot] == kGAB_IRTYPE_UNKNOWN)
-      continue;
-    if (b->entry_state.slots[slot] == kGAB_IRTYPE_UNKNOWN)
-      continue;
-    if (!gab_valeq(a->entry_state.slots[slot], b->entry_state.slots[slot]))
-      return false;
-  }
-
-  return true;
-}
-
-#define K struct gab_jtbbid *
-#define V struct gab_jtbb *
-#define NAME bb
-#define HASH(k) (hash_id(k))
-#define EQUAL(a, b) (eq_id(a, b))
-#define DEF_V (nullptr)
-#include "dict.h"
-
-#define HOTCOUNT_SIZE 4096
-#define HOTCOUNT_MASK (HOTCOUNT_SIZE - 1)
-
-#define HOTCOUNT_WARMUP 128
-
-struct gab_jt {
-  d_bb blocks;
-
-  // Executable code buffer (mmap'd, PROT_READ|PROT_EXEC after fill)
-  // uint8_t *code_buf;
-  // uint32_t code_buf_len;
-  // uint32_t code_buf_cap;
-
-  uint8_t hotcount[HOTCOUNT_SIZE];
-};
-
 /**
  * @class The 'engine'. Stores the long-lived data
  * needed for the gab environment.
@@ -657,8 +536,6 @@ struct gab_eg {
     gab_value work_channel;
     q_gab_value queue;
 
-    struct gab_jt jt;
-
     struct gab_gcbuf {
       uint64_t len;
       struct gab_obj *data[cGAB_GC_MOD_BUFF_MAX];
@@ -666,69 +543,6 @@ struct gab_eg {
   } jobs[];
 };
 
-enum gab_irop_kind : uint8_t {
-
-#define IR_CODE(name) kGAB_IR_##name,
-
-#include "ir.h"
-
-#undef IR_CODE
-
-};
-
-union gab_jtir {
-  struct {
-    enum gab_irop_kind kind;
-    uint8_t type;
-
-    union {
-      struct {
-        uint16_t a, b;
-      };
-      uint16_t args[2];
-    };
-
-    uint16_t slot;
-  } op;
-  gab_value value;
-  int64_t bits;
-  uint8_t bitarray[8];
-};
-
-#define IR_SIZE 8192
-#define IR_BIAS (IR_SIZE >> 1)
-
-#define IR_KBIAS (0)
-#define IR_VBIAS (IR_KBIAS + IR_BIAS)
-#define IR_OBIAS (IR_VBIAS + IR_BIAS)
-
-struct gab_jtframe {
-  struct gab_jtbbid *id;
-  uint8_t *ip;
-  uint16_t *fb;
-  struct gab_jtbb *bb;
-  struct gab_jtframe *r_fp;
-  uint8_t *r_ip;
-};
-
-struct ir {
-  struct gab_jtbb *bb;
-
-  union gab_jtir ir[IR_SIZE];
-  uint32_t ks, os;
-
-  // Tracks side-exit points for guards.
-  uint8_t *ip[IR_SIZE >> 1];
-  uint64_t hv[IR_SIZE >> 1];
-  // Each operations offset within the code.
-  uint64_t of[IR_SIZE >> 1];
-  bool tg[IR_SIZE >> 1];
-
-  uint16_t local_map[GAB_JIT_MAX_LOCALS];
-
-  uint16_t sb[IR_SIZE];
-  uint16_t *sp;
-};
 
 union gab_value_pair gab_vmexec(struct gab_triple gab, gab_value fiber);
 
@@ -889,34 +703,12 @@ static inline uint8_t *proto_ip(struct gab_triple gab,
   return proto_srcbegin(gab, p) + p->offset;
 }
 
-struct gab_jtbb *gab_jttry(struct gab_triple gab, struct gab_jt *jt,
-                           struct gab_oprototype *proto, uint8_t *ip,
-                           gab_value *loc, gab_value *upv, gab_value *sp);
-
-struct gab_jtbb *gab_jtchk(struct gab_triple gab, struct gab_jt *jt,
-                           struct gab_oprototype *proto, uint8_t *ip,
-                           gab_value *loc, gab_value *upv);
-
-bool gab_jttick(struct gab_triple gab, struct gab_jt *jt, uint8_t *ip);
-
-void gab_jtcreate(struct gab_jt *jt);
-
-[[clang::preserve_none, gnu::hot]]
-union gab_value_pair gab_jtexit(struct gab_triple *__gab, struct gab_vm *__vm,
-                                uint8_t *__ip, gab_value *__kb, gab_value *__fb,
-                                gab_value *__sp);
-
-[[clang::preserve_none, gnu::hot]]
-union gab_value_pair gab_jtbail(struct gab_triple *__gab, struct gab_vm *__vm,
-                                uint8_t *__ip, gab_value *__kb, gab_value *__fb,
-                                gab_value *__sp);
-
-[[clang::preserve_none, gnu::hot]]
+[[clang::preserve_none]]
 union gab_value_pair vm_eerror(struct gab_triple *__gab, struct gab_vm *__vm,
                                uint8_t *__ip, gab_value *__kb, gab_value *__fb,
                                gab_value *__sp);
 
-[[clang::preserve_none, gnu::hot]]
+[[clang::preserve_none]]
 union gab_value_pair vm_ok(struct gab_triple *__gab, struct gab_vm *__vm,
                            uint8_t *__ip, gab_value *__kb, gab_value *__fb,
                            gab_value *__sp);

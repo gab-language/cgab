@@ -476,6 +476,7 @@ int run_repl(int flags, uint32_t wait, size_t nmodules,
 
   union gab_value_pair res = gab_create(
       (struct gab_create_argt){
+          .jobs = 8,
           .wait = wait,
           .packages = packages,
           .roots = roots,
