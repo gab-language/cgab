@@ -1993,11 +1993,10 @@ int exec(struct command_arguments *args) {
   }
 
   v_pkg modules = {0};
-    v_pkg_create(&modules, 8);
-  // int nmodules = init_modules(&modules, args);
+  int nmodules = init_modules(&modules, args);
 
   int res = run_string(args->argv[0], args->flags, args->wait, args->njobs,
-                       0, modules.data);
+                       nmodules, modules.data);
 
   v_pkg_destroy(&modules);
 
