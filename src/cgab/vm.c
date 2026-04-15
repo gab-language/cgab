@@ -172,14 +172,15 @@ static const char *gab_opcode_names[] = {
 #define RESET_BUMP() (FIBER()->allocator.len = 0)
 #define GC() (GAB().eg->gc)
 #define VM() (__vm)
-#define SET_BLOCK(b) (FB()[-FRAME_BK] = (uintptr_t)(b));
-#define BLOCK() ((struct gab_oblock *)(uintptr_t)FB()[-FRAME_BK])
+#define SET_BLOCK(b) (FB()[-(1 + FRAME_BK)] = (uintptr_t)(b));
+#define BLOCK() ((struct gab_oblock *)(uintptr_t)FB()[-(1 + FRAME_BK)])
 #define BLOCK_PROTO() (GAB_VAL_TO_PROTOTYPE(BLOCK()->p))
 #define IP() (__ip)
 #define SP() (__sp)
 #define SB() (VM()->sb)
-#define VAR() (*SP())
 #define FB() (__fb)
+#define HV() (*SP())
+#define BELOW_HV() (PEEK_N(HV() + 1))
 #define UPV() (BLOCK()->upvalues)
 #define KB() (__kb)
 #define LOCAL(i) (FB()[i])
@@ -189,7 +190,7 @@ static const char *gab_opcode_names[] = {
 #if cGAB_LOG_VM
 #define LOG(gab, op)                                                           \
   fprintf(stderr, "%p OP_%s [%lu] (%i)\n", IP() - 1, gab_opcode_names[op],     \
-          VAR(), GAB().wkid);
+          HV(), GAB().wkid);
 #else
 #define LOG(gab, op)
 #endif
@@ -209,6 +210,7 @@ static const char *gab_opcode_names[] = {
       break;                                                                   \
     }
 
+// assert(SP() >= FB());
 #define DISPATCH(op)                                                           \
   ({                                                                           \
     uint8_t o = (op);                                                          \
@@ -216,7 +218,6 @@ static const char *gab_opcode_names[] = {
     LOG(GAB(), o);                                                             \
                                                                                \
     assert(SP() < VM()->sb + cGAB_STACK_MAX);                                  \
-    assert(SP() >= FB());                                                      \
                                                                                \
     [[clang::musttail]] return handlers[o](DISPATCH_ARGS());                   \
   })
@@ -270,33 +271,24 @@ static const char *gab_opcode_names[] = {
 #define HAS_STACKSPACE(sp, sb, space)                                          \
   (GET_STACKSPACE(sp, sb) + space < cGAB_STACK_MAX)
 
-#define SET_VAR(n)                                                             \
-  ({                                                                           \
-    assert(SP() >= FB());                                                      \
-    *SP() = n;                                                                 \
-  })
-
-#define COMPUTE_TUPLE() (VAR())
+// assert(SP() >= FB());
+#define SET_HV(n) ({ *SP() = n; })
 
 #define PUSH_FRAME(b, have)                                                    \
   ({                                                                           \
     assert(have < UINT32_MAX);                                                 \
                                                                                \
-    int64_t delta = (SP() - have + FRAME_SIZE) - FB();                         \
+    int64_t delta = (SP() - have) - FB();                                      \
                                                                                \
-    assert((SP() - have + FRAME_SIZE) > FB());                                 \
+    assert((SP() - have) > FB());                                              \
     assert(delta > 0);                                                         \
     assert(delta < UINT32_MAX);                                                \
+    assert(SP()[-(int64_t)(have + 1 + FRAME_IP)] == FRAME_IP);                 \
+    assert(SP()[-(int64_t)(have + 1 + FRAME_BK)] == FRAME_BK);                 \
                                                                                \
     SP()[-(int64_t)(have + 1)] |= ((uint64_t)delta << 32);                     \
-                                                                               \
-    gmoveb(SP() - have + FRAME_SIZE, SP() - have, have);                       \
-                                                                               \
-    SP() += FRAME_SIZE;                                                        \
-    SP()[-(int64_t)have - FRAME_IP] = (uintptr_t)IP();                         \
-    SP()[-(int64_t)have - FRAME_BK] = (uintptr_t)b;                            \
-                                                                               \
-    assert(*GAB_VAL_TO_FIBER(gab_thisfiber(GAB()))->vm.sb == 0);               \
+    SP()[-(int64_t)(have + 1 + FRAME_IP)] = (uintptr_t)IP();                   \
+    SP()[-(int64_t)(have + 1 + FRAME_BK)] = (uintptr_t)b;                      \
   })
 
 #define PUSH_VM_PANIC_FRAME(have) ({})
@@ -307,19 +299,19 @@ static const char *gab_opcode_names[] = {
     PUSH_VM_PANIC_FRAME(have);                                                 \
   })
 
-#define RETURN_FB_DELTA() (FB()[-(FRAME_SIZE + 1)] >> 32)
+#define RETURN_FB_DELTA() (FB()[-(1)] >> 32)
 #define RETURN_FB() ((FB() - RETURN_FB_DELTA()))
 
-#define RETURN_IP() ((uint8_t *)(void *)FB()[-FRAME_IP])
-#define RETURN_BK() ((struct gab_oblock *)(void *)FB()[-FRAME_BK])
-#define RETURN_HAVE() (FB()[-(FRAME_SIZE + 1)] & 0xffffffff)
+#define RETURN_IP() ((uint8_t *)(void *)FB()[-(1 + FRAME_IP)])
+#define RETURN_BK() ((struct gab_oblock *)(void *)FB()[-(1 + FRAME_BK)])
+#define RETURN_HAVE() (FB()[-(1)] & 0xffffffff)
 
 #define LOAD_FRAME()                                                           \
   ({                                                                           \
     IP() = RETURN_IP();                                                        \
     FB() = RETURN_FB();                                                        \
     KB() = proto_ks(GAB(), BLOCK_PROTO());                                     \
-    assert(*GAB_VAL_TO_FIBER(gab_thisfiber(GAB()))->vm.sb == 0);               \
+    assert(GAB_VAL_TO_FIBER(gab_thisfiber(GAB()))->vm.sb[2] == 0);             \
   })
 
 #if cGAB_DEBUG_VM
@@ -415,15 +407,17 @@ static const char *gab_opcode_names[] = {
 #define FRAME_BK 2
 
 static inline gab_value *frame_parent(gab_value *f) {
-  int64_t delta = f[-(FRAME_SIZE + 1)] >> 32;
+  int64_t delta = f[-(1)] >> 32;
   return delta ? f - delta : nullptr;
 }
 
 static inline struct gab_oblock *frame_block(gab_value *f) {
-  return (void *)f[-FRAME_BK];
+  return (void *)f[-(FRAME_BK + 1)];
 }
 
-static inline uint8_t *frame_ip(gab_value *f) { return (void *)f[-FRAME_IP]; }
+static inline uint8_t *frame_ip(gab_value *f) {
+  return (void *)f[-(FRAME_IP + 1)];
+}
 
 static inline uint64_t compute_token_from_ip(struct gab_triple gab,
                                              struct gab_oblock *b,
@@ -931,14 +925,14 @@ cGAB_VM_OPCODE_ATTRIBUTES union gab_value_pair vm_ok(OP_HANDLER_ARGS) {
   struct gab_ofiber *fiber = FIBER();
 
   if (fiber->header.kind == kGAB_FIBERDONE) {
-    // gab_fprintf(stderr, "[$] OK'd finished fiber $.\n",
+    // gab_fprintf(stderr, "($) OK'd finished fiber $.\n",
     // gab_number(GAB().wkid),
     //             __gab_obj(fiber));
     // gab_fprintf(stderr, "STATUS: $\n", fiber->res_values.status);
     // gab_fprintf(stderr, "VRESULT: $\n", fiber->res_values.vresult);
   }
   gab_assert(fiber->header.kind == kGAB_FIBERRUNNING,
-             "Terminating fiber must be running, not: %d. OK!",
+             "(%i) Terminating fiber must be running, not: %d. OK!", GAB().wkid,
              fiber->header.kind);
 
   gab_assert(fiber->res_env == gab_cinvalid,
@@ -974,7 +968,7 @@ union gab_value_pair do_vmexecfiber(struct gab_triple gab, gab_value f) {
 
   assert(fiber->header.kind != kGAB_FIBERDONE);
 
-  assert(*fiber->vm.sb == 0);
+  assert(fiber->vm.sb[2] == 0);
   assert(fiber->vm.kb);
   assert(fiber->vm.ip);
 
@@ -1107,8 +1101,10 @@ extern void putcs(char *arg);
     IP() = proto_ip(GAB(), p);                                                 \
     KB() = proto_ks(GAB(), p);                                                 \
     FB() = SP() - have;                                                        \
+    assert(BLOCK()->header.kind == kGAB_BLOCK);                                \
+    assert(BLOCK_PROTO()->header.kind == kGAB_PROTOTYPE);                      \
                                                                                \
-    SET_VAR(have);                                                             \
+    SET_HV(have);                                                              \
   })
 
 #define MICRO_OP_LOCALCALL_BLOCK(blk, have)                                    \
@@ -1121,8 +1117,10 @@ extern void putcs(char *arg);
                                                                                \
     IP() = (void *)ks[GAB_SEND_KOFFSET];                                       \
     FB() = SP() - have;                                                        \
+    assert(BLOCK()->header.kind == kGAB_BLOCK);                                \
+    assert(BLOCK_PROTO()->header.kind == kGAB_PROTOTYPE);                      \
                                                                                \
-    SET_VAR(have);                                                             \
+    SET_HV(have);                                                              \
   })
 
 #define MICRO_OP_TAILCALL_BLOCK(blk, have)                                     \
@@ -1141,7 +1139,7 @@ extern void putcs(char *arg);
     KB() = proto_ks(GAB(), p);                                                 \
                                                                                \
     SET_BLOCK(blk);                                                            \
-    SET_VAR(have);                                                             \
+    SET_HV(have);                                                              \
   })
 
 #define MICRO_OP_LOCALTAILCALL_BLOCK(blk, have)                                \
@@ -1159,7 +1157,7 @@ extern void putcs(char *arg);
     IP() = (void *)ks[GAB_SEND_KOFFSET];                                       \
                                                                                \
     SET_BLOCK(blk);                                                            \
-    SET_VAR(have);                                                             \
+    SET_HV(have);                                                              \
   })
 
 #define MICRO_OP_MATCHTAILCALL_BLOCK(idx, have)                                \
@@ -1173,9 +1171,10 @@ extern void putcs(char *arg);
                                                                                \
     IP() = (void *)ks[GAB_SEND_KOFFSET + idx];                                 \
     SP() = to + have;                                                          \
+    FB() = SP() - have;                                                        \
                                                                                \
     SET_BLOCK(b);                                                              \
-    SET_VAR(have);                                                             \
+    SET_HV(have);                                                              \
   })
 
 #define MICRO_OP_MATCHCALL_BLOCK(idx, have)                                    \
@@ -1191,7 +1190,7 @@ extern void putcs(char *arg);
     IP() = (void *)ks[GAB_SEND_KOFFSET + idx];                                 \
     FB() = SP() - have;                                                        \
                                                                                \
-    SET_VAR(have);                                                             \
+    SET_HV(have);                                                              \
   })
 
 #define MICRO_OP_CALL_NATIVE(native, have, below_have, message)                \
@@ -1202,8 +1201,8 @@ extern void putcs(char *arg);
                                                                                \
     gab_value *returnptr = RETURN_FB();                                        \
                                                                                \
-    gab_value *to = SP() - (have + message);                                   \
-    gab_assert(to >= FB(),                                                     \
+    gab_value *to = SP() - (have + 1 + FRAME_SIZE);                            \
+    gab_assert(to >= FB() - 3,                                                 \
                "EXPECTED DEST TO BE GREATER THAN FRAME BASE. DIST: %li\n",     \
                to - FB());                                                     \
                                                                                \
@@ -1216,7 +1215,6 @@ extern void putcs(char *arg);
                                                                                \
     RESET_REENTRANT();                                                         \
                                                                                \
-    assert(SP() >= before);                                                    \
     SP() = VM()->sp;                                                           \
                                                                                \
     if (__gab_unlikely(res.status == gab_ctimeout))                            \
@@ -1236,7 +1234,7 @@ extern void putcs(char *arg);
     gmove(to, before, have);                                                   \
     SP() = to + have;                                                          \
                                                                                \
-    SET_VAR(below_have + have);                                                \
+    SET_HV(below_have + have);                                                 \
                                                                                \
     assert(returnptr == RETURN_FB());                                          \
   })
@@ -1273,16 +1271,16 @@ extern void putcs(char *arg);
     case gab_cinvalid:                                                         \
       VM_TERM();                                                               \
     case gab_cundefined:                                                       \
-      DROP_N(have + 1);                                                        \
+      DROP_N(have + 1 + FRAME_SIZE);                                           \
       PUSH(gab_none);                                                          \
                                                                                \
-      SET_VAR(below_have + 1);                                                 \
+      SET_HV(below_have + 1);                                                  \
       NEXT();                                                                  \
     default:                                                                   \
-      DROP_N(have + 1);                                                        \
-      PUSH(gab_ok);                                                            \
-                                                                               \
       uint64_t len = gab_valtou(v);                                            \
+                                                                               \
+      DROP_N(have + 1 + FRAME_SIZE);                                           \
+      PUSH(gab_ok);                                                            \
       /*                                                                       \
        * ntchntake returns the number of values *available*, but will only     \
        * write up to *stackspace*.                                             \
@@ -1297,10 +1295,10 @@ extern void putcs(char *arg);
        * We now know that we wrote *len* values to the buffer, because         \
        * it is guaranteed that len <= stackspace                               \
        * */                                                                    \
-      gmove(SP(), SP() + have + 1, len);                                       \
+      gmove(SP(), SP() + have + 1 + FRAME_SIZE, len);                          \
       SP() += len;                                                             \
                                                                                \
-      SET_VAR(below_have + len + 1);                                           \
+      SET_HV(below_have + len + 1);                                            \
       NEXT();                                                                  \
     }                                                                          \
   })
@@ -1332,11 +1330,11 @@ extern void putcs(char *arg);
       RESET_REENTRANT();                                                       \
                                                                                \
       /* If not, our put is complete and we can move on */                     \
-      DROP_N(have + 1);                                                        \
+      DROP_N(have + 1 + FRAME_SIZE);                                           \
                                                                                \
       PUSH(c);                                                                 \
                                                                                \
-      SET_VAR(below_have + 1);                                                 \
+      SET_HV(below_have + 1);                                                  \
                                                                                \
       NEXT();                                                                  \
     }                                                                          \
@@ -1393,10 +1391,10 @@ extern void putcs(char *arg);
     fin:                                                                       \
       RESET_REENTRANT();                                                       \
                                                                                \
-      DROP_N(have + 1);                                                        \
+      DROP_N(have + 1 + FRAME_SIZE);                                           \
       PUSH(fb);                                                                \
                                                                                \
-      SET_VAR(below_have + 1);                                                 \
+      SET_HV(below_have + 1);                                                  \
                                                                                \
       NEXT();                                                                  \
     default:                                                                   \
@@ -1410,7 +1408,7 @@ extern void putcs(char *arg);
     /* Have can not be 0. We need a receiver. */                               \
     if (__gab_unlikely(!have)) {                                               \
       PUSH(MICRO_OP_NIL());                                                    \
-      SET_VAR(1);                                                              \
+      SET_HV(1);                                                               \
       have++;                                                                  \
     }                                                                          \
                                                                                \
@@ -1520,7 +1518,7 @@ extern void putcs(char *arg);
     while (nulls--)                                                            \
       PEEK_N(nulls + 1) = gab_nil;                                             \
                                                                                \
-    SET_VAR(want);                                                             \
+    SET_HV(want);                                                              \
   })
 
 #define MICRO_OP_USE(have)                                                     \
@@ -1571,12 +1569,12 @@ extern void putcs(char *arg);
     if (mod.aresult->data[0] != gab_ok)                                        \
       VM_GIVEN(mod);                                                           \
                                                                                \
-    DROP_N(have + 1);                                                          \
+    DROP_N(have + 1 + FRAME_SIZE);                                             \
                                                                                \
     for (uint64_t i = 1; i < mod.aresult->len; i++)                            \
       PUSH(mod.aresult->data[i]);                                              \
                                                                                \
-    SET_VAR(below_have + mod.aresult->len - 1);                                \
+    SET_HV(below_have + mod.aresult->len - 1);                                 \
   })
 
 #define MISS_CACHED_SEND(reason)                                               \
@@ -1709,18 +1707,18 @@ extern void putcs(char *arg);
     MISS_CACHED_TRIM(reason);
 
 #define TRIM_GUARD_EXACTLY_N(want, n)                                          \
-  TRIM_GUARD(VAR() == want, "Mismatched tuple length")
+  TRIM_GUARD(HV() == want, "Mismatched tuple length")
 
 #define TRIM_GUARD_UP_N(want, n)                                               \
-  TRIM_GUARD((VAR() + n) == want, "Mismatched tuple length")
+  TRIM_GUARD((HV() + n) == want, "Mismatched tuple length")
 
 #define TRIM_GUARD_DOWN_N(want, n)                                             \
-  TRIM_GUARD((VAR() - n) == want, "Mismatched tuple length")
+  TRIM_GUARD((HV() - n) == want, "Mismatched tuple length")
 
 #define SHORTCUT_GUARD_ARGS_LT(n)                                              \
   ({                                                                           \
     if (__gab_unlikely(have < n))                                              \
-      SET_VAR(below_have + 1), NEXT();                                         \
+      SET_HV(below_have + 1), NEXT();                                          \
   })
 
 #define NILPAD_GUARD_ARGS_GTE(n)                                               \
@@ -1762,7 +1760,7 @@ extern void putcs(char *arg);
 
 #define MICRO_OP_PACK_LIST(below, above)                                       \
   ({                                                                           \
-    uint64_t have = COMPUTE_TUPLE();                                           \
+    uint64_t have = HV();                                                      \
                                                                                \
     uint64_t want = below + above;                                             \
                                                                                \
@@ -1784,12 +1782,12 @@ extern void putcs(char *arg);
                                                                                \
     PEEK_N(above + 1) = rec;                                                   \
                                                                                \
-    SET_VAR(want + 1);                                                         \
+    SET_HV(want + 1);                                                          \
   })
 
 #define MICRO_OP_PACK_DICT(below, above)                                       \
   ({                                                                           \
-    uint64_t have = COMPUTE_TUPLE();                                           \
+    uint64_t have = HV();                                                      \
                                                                                \
     uint64_t want = below + above;                                             \
                                                                                \
@@ -1811,7 +1809,7 @@ extern void putcs(char *arg);
                                                                                \
     PEEK_N(above + 1) = rec;                                                   \
                                                                                \
-    SET_VAR(want + 1);                                                         \
+    SET_HV(want + 1);                                                          \
   })
 
 #define MICRO_OP_BLOCK(p)                                                      \
@@ -1837,8 +1835,12 @@ extern void putcs(char *arg);
 
 #define MICRO_OP_TYPE(v) (gab_valtype(GAB(), v))
 
-#define PUSHTUPLE(n) PUSH(n);
-#define POPTUPLE(n) DROP_N(n + 1);
+#define PUSHTUPLE(n)                                                           \
+  ({                                                                           \
+    PUSH(FRAME_BK);                                                            \
+    PUSH(FRAME_IP);                                                            \
+    PUSH(n);                                                                   \
+  })
 
 #define MICRO_OP_RETURN(have)                                                  \
   ({                                                                           \
@@ -1855,9 +1857,11 @@ extern void putcs(char *arg);
     assert(RETURN_IP() != nullptr);                                            \
                                                                                \
     LOAD_FRAME();                                                              \
+                                                                               \
     gmove(to, from, have);                                                     \
+                                                                               \
     SP() = to + have;                                                          \
-    SET_VAR(have + below_have);                                                \
+    SET_HV(have + below_have);                                                 \
                                                                                \
     assert(FB() >= VM()->sb + FRAME_SIZE);                                     \
     assert(BLOCK()->header.kind == kGAB_BLOCK);                                \
@@ -1972,8 +1976,8 @@ extern void putcs(char *arg);
                         primitive)                                             \
   CASE_CODE(SEND_##CODE) {                                                     \
     gab_value *ks = READ_SENDCONSTANTS;                                        \
-    uint64_t have = COMPUTE_TUPLE();                                           \
-    uint64_t below_have = PEEK_N(have + 1);                                    \
+    uint64_t have = HV();                                                      \
+    uint64_t below_have = BELOW_HV();                                          \
                                                                                \
     SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);                      \
                                                                                \
@@ -1983,11 +1987,11 @@ extern void putcs(char *arg);
                                                                                \
     operation_type val = unboxer(r);                                           \
                                                                                \
-    DROP_N(have + 1);                                                          \
+    DROP_N(have + 1 + FRAME_SIZE);                                             \
                                                                                \
     PUSH(boxer(primitive(val)));                                               \
                                                                                \
-    SET_VAR(below_have + 1);                                                   \
+    SET_HV(below_have + 1);                                                    \
                                                                                \
     NEXT();                                                                    \
   }
@@ -1996,8 +2000,8 @@ extern void putcs(char *arg);
                          c_type, c_boxer, primitive)                           \
   CASE_CODE(SEND_##CODE) {                                                     \
     gab_value *ks = READ_SENDCONSTANTS;                                        \
-    uint64_t have = COMPUTE_TUPLE();                                           \
-    uint64_t below_have = PEEK_N(have + 1);                                    \
+    uint64_t have = HV();                                                      \
+    uint64_t below_have = BELOW_HV();                                          \
                                                                                \
     SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);                      \
                                                                                \
@@ -2014,13 +2018,13 @@ extern void putcs(char *arg);
                                                                                \
     c_type val_c = primitive(val_a, val_b);                                    \
                                                                                \
-    DROP_N(have + 1);                                                          \
-                                                                               \
     gab_value c = c_boxer(val_c);                                              \
+                                                                               \
+    DROP_N(have + 1 + FRAME_SIZE);                                             \
                                                                                \
     PUSH(c);                                                                   \
                                                                                \
-    SET_VAR(below_have + 1);                                                   \
+    SET_HV(below_have + 1);                                                    \
                                                                                \
     NEXT();                                                                    \
   }
@@ -2033,7 +2037,7 @@ extern void putcs(char *arg);
                                                                                \
     DROP_N(n);                                                                 \
                                                                                \
-    SET_VAR(want);                                                             \
+    SET_HV(want);                                                              \
                                                                                \
     NEXT();                                                                    \
   }                                                                            \
@@ -2054,7 +2058,7 @@ extern void putcs(char *arg);
     for (int i = 0; i < n; i++)                                                \
       PUSH(MICRO_OP_NIL());                                                    \
                                                                                \
-    SET_VAR(want);                                                             \
+    SET_HV(want);                                                              \
                                                                                \
     NEXT();                                                                    \
   }
@@ -2063,7 +2067,7 @@ extern void putcs(char *arg);
 CASE_CODE(MATCHTAILSEND_BLOCK) {
   bool istail;
   gab_value *ks = READ_SENDCONSTANTS_ANDTAIL(istail);
-  uint64_t have = COMPUTE_TUPLE();
+  uint64_t have = HV();
 
   assert(istail);
 
@@ -2083,7 +2087,7 @@ CASE_CODE(MATCHTAILSEND_BLOCK) {
 CASE_CODE(MATCHSEND_BLOCK) {
   bool istail;
   gab_value *ks = READ_SENDCONSTANTS_ANDTAIL(istail);
-  uint64_t have = COMPUTE_TUPLE();
+  uint64_t have = HV();
 
   assert(!istail);
 
@@ -2100,11 +2104,11 @@ CASE_CODE(MATCHSEND_BLOCK) {
 }
 
 CASE_CODE(LOAD_UPVALUE) {
-  uint64_t have = VAR();
+  uint64_t have = HV();
 
   PUSH(UPVALUE(READ_BYTE));
 
-  SET_VAR(have + 1);
+  SET_HV(have + 1);
 
   NEXT();
 }
@@ -2114,7 +2118,7 @@ CASE_CODE(NLOAD_UPVALUE) {
 
   PANIC_GUARD_STACKSPACE(n);
 
-  uint64_t have = VAR();
+  uint64_t have = HV();
 
   SP()[n] = have + n;
 
@@ -2125,11 +2129,11 @@ CASE_CODE(NLOAD_UPVALUE) {
 }
 
 CASE_CODE(LOAD_LOCAL) {
-  uint64_t have = VAR();
+  uint64_t have = HV();
 
   PUSH(LOCAL(READ_BYTE));
 
-  SET_VAR(have + 1);
+  SET_HV(have + 1);
 
   NEXT();
 }
@@ -2139,13 +2143,13 @@ CASE_CODE(NLOAD_LOCAL) {
 
   PANIC_GUARD_STACKSPACE(n);
 
-  uint64_t have = VAR();
+  uint64_t have = HV();
   uint64_t len = have + n;
 
   while (n--)
     PUSH(LOCAL(READ_BYTE));
 
-  SET_VAR(len);
+  SET_HV(len);
 
   NEXT();
 }
@@ -2156,17 +2160,17 @@ CASE_CODE(STORE_LOCAL) {
 }
 
 CASE_CODE(POPSTORE_LOCAL) {
-  uint64_t have = VAR();
+  uint64_t have = HV();
 
   STORE_LOCAL(READ_BYTE, POP());
 
   assert(have >= 1);
-  SET_VAR(have - 1);
+  SET_HV(have - 1);
   NEXT();
 }
 
 CASE_CODE(NPOPSTORE_LOCAL) {
-  uint64_t have = VAR();
+  uint64_t have = HV();
 
   uint8_t n = READ_BYTE;
 
@@ -2176,12 +2180,12 @@ CASE_CODE(NPOPSTORE_LOCAL) {
   while (n--)
     STORE_LOCAL(READ_BYTE, POP());
 
-  SET_VAR(have);
+  SET_HV(have);
   NEXT();
 }
 
 CASE_CODE(NPOPSTORE_STORE_LOCAL) {
-  uint64_t have = VAR();
+  uint64_t have = HV();
 
   uint8_t n = READ_BYTE;
 
@@ -2193,18 +2197,19 @@ CASE_CODE(NPOPSTORE_STORE_LOCAL) {
 
   STORE_LOCAL(READ_BYTE, PEEK());
 
-  SET_VAR(have + 1);
+  SET_HV(have + 1);
   NEXT();
 }
 
 CASE_CODE(SEND_NATIVE) {
   gab_value *ks = READ_SENDCONSTANTS;
-  uint64_t have = COMPUTE_TUPLE();
-  uint64_t below_have = PEEK_N(have + 1);
+  uint64_t have = HV();
+  uint64_t below_have = BELOW_HV();
 
   gab_value r = PEEK_N(have);
 
   SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);
+
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
 
   struct gab_onative *n = GAB_VAL_TO_NATIVE(ks[GAB_SEND_KSPEC]);
@@ -2217,7 +2222,7 @@ CASE_CODE(SEND_NATIVE) {
 CASE_CODE(SEND_BLOCK) {
   bool istail;
   gab_value *ks = READ_SENDCONSTANTS_ANDTAIL(istail);
-  uint64_t have = COMPUTE_TUPLE();
+  uint64_t have = HV();
   assert(!istail);
 
   gab_value r = PEEK_N(have);
@@ -2236,7 +2241,7 @@ CASE_CODE(SEND_BLOCK) {
 CASE_CODE(TAILSEND_BLOCK) {
   bool istail;
   gab_value *ks = READ_SENDCONSTANTS_ANDTAIL(istail);
-  uint64_t have = COMPUTE_TUPLE();
+  uint64_t have = HV();
   assert(istail);
 
   gab_value r = PEEK_N(have);
@@ -2255,7 +2260,7 @@ CASE_CODE(TAILSEND_BLOCK) {
 CASE_CODE(LOCALSEND_BLOCK) {
   bool istail;
   gab_value *ks = READ_SENDCONSTANTS_ANDTAIL(istail);
-  uint64_t have = COMPUTE_TUPLE();
+  uint64_t have = HV();
 
   assert(!istail);
 
@@ -2275,7 +2280,7 @@ CASE_CODE(LOCALSEND_BLOCK) {
 CASE_CODE(LOCALTAILSEND_BLOCK) {
   bool istail;
   gab_value *ks = READ_SENDCONSTANTS_ANDTAIL(istail);
-  uint64_t have = COMPUTE_TUPLE();
+  uint64_t have = HV();
 
   assert(istail);
 
@@ -2295,7 +2300,7 @@ CASE_CODE(LOCALTAILSEND_BLOCK) {
 CASE_CODE(SEND_PRIMITIVE_CALL_BLOCK) {
   bool istail;
   gab_value *ks = READ_SENDCONSTANTS_ANDTAIL(istail);
-  uint64_t have = COMPUTE_TUPLE();
+  uint64_t have = HV();
 
   assert(!istail);
 
@@ -2315,13 +2320,13 @@ CASE_CODE(SEND_PRIMITIVE_CALL_BLOCK) {
 CASE_CODE(TAILSEND_PRIMITIVE_CALL_BLOCK) {
   bool istail;
   gab_value *ks = READ_SENDCONSTANTS_ANDTAIL(istail);
-  uint64_t have = COMPUTE_TUPLE();
+  uint64_t have = HV();
 
   assert(istail);
 
   gab_value r = PEEK_N(have);
 
-  SEND_GUARD_CACHED_RECEIVER_TYPE(r);
+  SEND_GUARD_KIND(r, kGAB_BLOCK);
 
   struct gab_oblock *b = GAB_VAL_TO_BLOCK(r);
 
@@ -2332,15 +2337,15 @@ CASE_CODE(TAILSEND_PRIMITIVE_CALL_BLOCK) {
 
 CASE_CODE(SEND_PRIMITIVE_CALL_NATIVE) {
   gab_value *ks = READ_SENDCONSTANTS;
-  uint64_t have = COMPUTE_TUPLE();
-  uint64_t below_have = PEEK_N(have + 1);
+  uint64_t have = HV();
+  uint64_t below_have = BELOW_HV();
 
   // Sanity check
   assert(have > 0 && have < 32);
 
   gab_value r = PEEK_N(have);
 
-  SEND_GUARD_CACHED_RECEIVER_TYPE(r);
+  SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);
 
   PANIC_GUARD_KIND(r, kGAB_NATIVE);
 
@@ -2470,8 +2475,8 @@ IMPL_SEND_UNARY(PRIMITIVE_TYPE, NOP, MICRO_OP_BOXV, MICRO_OP_UNBOXV_T,
 
 CASE_CODE(SEND_PRIMITIVE_USE) {
   gab_value *ks = READ_SENDCONSTANTS;
-  uint64_t have = COMPUTE_TUPLE();
-  uint64_t below_have = PEEK_N(have + 1);
+  uint64_t have = HV();
+  uint64_t below_have = BELOW_HV();
 
   gab_value r = PEEK_N(have);
 
@@ -2486,8 +2491,8 @@ CASE_CODE(SEND_PRIMITIVE_USE) {
 
 CASE_CODE(SEND_PRIMITIVE_CONS) {
   gab_value *ks = READ_SENDCONSTANTS;
-  uint64_t have = COMPUTE_TUPLE();
-  uint64_t below_have = PEEK_N(have + 1);
+  uint64_t have = HV();
+  uint64_t below_have = BELOW_HV();
 
   gab_value r = PEEK_N(have);
 
@@ -2505,19 +2510,19 @@ CASE_CODE(SEND_PRIMITIVE_CONS) {
 
   gab_value res = MICRO_OP_CONS(a, b);
 
-  DROP_N(have + 1);
+  DROP_N(have + 1 + FRAME_SIZE);
 
   PUSH(res);
 
-  SET_VAR(below_have + 1);
+  SET_HV(below_have + 1);
 
   NEXT();
 }
 
 CASE_CODE(SEND_PRIMITIVE_CONS_RECORD) {
   gab_value *ks = READ_SENDCONSTANTS; // Constants
-  uint64_t have = COMPUTE_TUPLE();
-  uint64_t below_have = PEEK_N(have + 1);
+  uint64_t have = HV();
+  uint64_t below_have = BELOW_HV();
 
   SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);
 
@@ -2533,19 +2538,19 @@ CASE_CODE(SEND_PRIMITIVE_CONS_RECORD) {
 
   gab_value res = MICRO_OP_CONS_RECORD(r, arg);
 
-  DROP_N(have + 1);
+  DROP_N(have + 1 + FRAME_SIZE);
 
   PUSH(res);
 
-  SET_VAR(below_have + 1);
+  SET_HV(below_have + 1);
 
   NEXT();
 }
 
 CASE_CODE(SEND_PRIMITIVE_SPLATSHAPE) {
   gab_value *ks = READ_SENDCONSTANTS; // Constants
-  uint64_t have = COMPUTE_TUPLE();
-  uint64_t below_have = PEEK_N(have + 1);
+  uint64_t have = HV();
+  uint64_t below_have = BELOW_HV();
 
   gab_value s = PEEK_N(have);
 
@@ -2553,21 +2558,21 @@ CASE_CODE(SEND_PRIMITIVE_SPLATSHAPE) {
 
   SEND_GUARD_ISSHP(s);
 
-  DROP_N(have + 1);
+  DROP_N(have + 1 + FRAME_SIZE);
 
   PANIC_GUARD_STACKSPACE_SPLATSHAPE(s);
 
   uint64_t len = MICRO_OP_SPLATSHAPE(s);
 
-  SET_VAR(below_have + len);
+  SET_HV(below_have + len);
 
   NEXT();
 }
 
 CASE_CODE(SEND_PRIMITIVE_SPLATLIST) {
   gab_value *ks = READ_SENDCONSTANTS;
-  uint64_t have = COMPUTE_TUPLE();
-  uint64_t below_have = PEEK_N(have + 1);
+  uint64_t have = HV();
+  uint64_t below_have = BELOW_HV();
 
   gab_value r = PEEK_N(have);
 
@@ -2579,22 +2584,22 @@ CASE_CODE(SEND_PRIMITIVE_SPLATLIST) {
 
   r = MICRO_OP_SPILL(r, n - (have + 1));
 
-  POPTUPLE(have);
+  DROP_N(have + 1 + FRAME_SIZE);
 
   PANIC_GUARD_STACKSPACE(n);
 
   for (uint64_t i = 0; i < n; i++)
     PUSH(MICRO_OP_UVRECAT(r, i));
 
-  SET_VAR(below_have + n);
+  SET_HV(below_have + n);
 
   NEXT();
 }
 
 CASE_CODE(SEND_PRIMITIVE_SPLATDICT) {
   gab_value *ks = READ_SENDCONSTANTS;
-  uint64_t have = COMPUTE_TUPLE();
-  uint64_t below_have = PEEK_N(have + 1);
+  uint64_t have = HV();
+  uint64_t below_have = BELOW_HV();
 
   gab_value r = PEEK_N(have);
 
@@ -2604,43 +2609,43 @@ CASE_CODE(SEND_PRIMITIVE_SPLATDICT) {
 
   uint64_t n = gab_shplen(ks[GAB_SEND_KTYPE]);
 
-  POPTUPLE(have);
+  DROP_N(have + 1 + FRAME_SIZE);
 
   PANIC_GUARD_STACKSPACE(n * 2);
 
   for (uint64_t i = 0; i < n; i++)
     PUSH(MICRO_OP_UKRECAT(r, i)), PUSH(MICRO_OP_UVRECAT(r, i));
 
-  SET_VAR(below_have + n);
+  SET_HV(below_have + n);
 
   NEXT();
 }
 
 CASE_CODE(SEND_CONSTANT) {
   gab_value *ks = READ_SENDCONSTANTS;
-  uint64_t have = COMPUTE_TUPLE();
-  uint64_t below_have = PEEK_N(have + 1);
+  uint64_t have = HV();
+  uint64_t below_have = BELOW_HV();
 
   gab_value r = PEEK_N(have);
 
   SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);
   SEND_GUARD_CACHED_RECEIVER_TYPE(r);
 
-  POPTUPLE(have);
-
   gab_value spec = MICRO_OP_SENDK();
+
+  DROP_N(have + 1 + FRAME_SIZE);
 
   PUSH(spec);
 
-  SET_VAR(below_have + 1);
+  SET_HV(below_have + 1);
 
   NEXT();
 }
 
 CASE_CODE(SEND_PROPERTY) {
   gab_value *ks = READ_SENDCONSTANTS;
-  uint64_t have = COMPUTE_TUPLE();
-  uint64_t below_have = PEEK_N(have + 1);
+  uint64_t have = HV();
+  uint64_t below_have = BELOW_HV();
 
   gab_value r = PEEK_N(have);
 
@@ -2650,17 +2655,17 @@ CASE_CODE(SEND_PROPERTY) {
 
   r = MICRO_OP_SPILL(r, 0);
 
-  POPTUPLE(have);
+  DROP_N(have + 1 + FRAME_SIZE);
 
   PUSH(MICRO_OP_UVRECAT(r, ks[GAB_SEND_KSPEC]));
 
-  SET_VAR(below_have + 1);
+  SET_HV(below_have + 1);
 
   NEXT();
 }
 
 CASE_CODE(RETURN) {
-  uint64_t have = COMPUTE_TUPLE();
+  uint64_t have = HV();
 
   MICRO_OP_RETURN(have);
 
@@ -2670,11 +2675,11 @@ CASE_CODE(RETURN) {
 CASE_CODE(NOP) { NEXT(); }
 
 CASE_CODE(CONSTANT) {
-  uint64_t have = VAR();
+  uint64_t have = HV();
 
   PUSH(READ_CONSTANT);
 
-  SET_VAR(have + 1);
+  SET_HV(have + 1);
 
   NEXT();
 }
@@ -2684,54 +2689,66 @@ CASE_CODE(NCONSTANT) {
 
   PANIC_GUARD_STACKSPACE(n);
 
-  uint64_t have = VAR() + n;
+  uint64_t have = HV() + n;
 
   while (n--)
     PUSH(READ_CONSTANT);
 
-  SET_VAR(have);
+  SET_HV(have);
 
   NEXT();
 }
 
 CASE_CODE(POP) {
-  uint64_t have = VAR();
+  uint64_t have = HV();
 
   DROP();
 
-  SET_VAR(have - 1);
+  SET_HV(have - 1);
   NEXT();
 }
 
 CASE_CODE(POP_N) {
-  uint64_t have = VAR();
+  uint64_t have = HV();
 
   uint8_t n = READ_BYTE;
   DROP_N(n);
 
-  SET_VAR(have - n);
+  SET_HV(have - n);
   NEXT();
 }
 
 CASE_CODE(BLOCK) {
   gab_value p = READ_CONSTANT;
-  uint64_t have = VAR();
+  uint64_t have = HV();
 
   gab_value blk = MICRO_OP_BLOCK(p);
 
   PUSH(blk);
 
-  SET_VAR(have + 1);
+  SET_HV(have + 1);
+
+  NEXT();
+}
+
+CASE_CODE(FRAME) {
+  uint64_t have = HV();
+  SP() += FRAME_SIZE;
+
+  SP()[-1] = FRAME_IP;
+  SP()[-2] = FRAME_BK;
+
+  SET_HV(have);
 
   NEXT();
 }
 
 CASE_CODE(TUPLE) {
-  uint64_t have = VAR();
+  uint64_t have = HV();
 
   PUSHTUPLE(have);
 
-  SET_VAR(0);
+  SET_HV(0);
 
   NEXT();
 }
@@ -2740,30 +2757,28 @@ CASE_CODE(NTUPLE) {
   uint8_t n = READ_BYTE;
 
   while (n--) {
-    uint64_t have = VAR();
-
+    uint64_t have = HV();
     PUSHTUPLE(have);
-
-    SET_VAR(0);
+    SET_HV(0);
   }
 
   NEXT();
 }
 
 CASE_CODE(TUPLE_CONSTANT) {
-  uint64_t have = VAR();
+  uint64_t have = HV();
 
   PUSHTUPLE(have);
 
   PUSH(READ_CONSTANT);
 
-  SET_VAR(1);
+  SET_HV(1);
 
   NEXT();
 }
 
 CASE_CODE(TUPLE_NCONSTANT) {
-  uint64_t have = VAR();
+  uint64_t have = HV();
 
   PUSHTUPLE(have);
 
@@ -2776,25 +2791,25 @@ CASE_CODE(TUPLE_NCONSTANT) {
   while (n--)
     PUSH(READ_CONSTANT);
 
-  SET_VAR(have);
+  SET_HV(have);
 
   NEXT();
 }
 
 CASE_CODE(TUPLE_LOAD_LOCAL) {
-  uint64_t have = VAR();
+  uint64_t have = HV();
 
   PUSHTUPLE(have);
 
   PUSH(LOCAL(READ_BYTE));
 
-  SET_VAR(1);
+  SET_HV(1);
 
   NEXT();
 }
 
 CASE_CODE(TUPLE_NLOAD_LOCAL) {
-  uint64_t have = VAR();
+  uint64_t have = HV();
 
   PUSHTUPLE(have);
 
@@ -2807,7 +2822,7 @@ CASE_CODE(TUPLE_NLOAD_LOCAL) {
   while (n--)
     PUSH(LOCAL(READ_BYTE));
 
-  SET_VAR(have);
+  SET_HV(have);
 
   NEXT();
 }
@@ -2815,13 +2830,15 @@ CASE_CODE(TUPLE_NLOAD_LOCAL) {
 CASE_CODE(NTUPLE_LOAD_LOCAL) {
   uint8_t n = READ_BYTE;
 
-  SP()++;
-  while (--n)
-    PUSHTUPLE(0);
+  while (n--) {
+    uint64_t have = HV();
+    PUSHTUPLE(have);
+    SET_HV(0);
+  }
 
   PUSH(LOCAL(READ_BYTE));
 
-  SET_VAR(1);
+  SET_HV(1);
 
   NEXT();
 }
@@ -2830,9 +2847,9 @@ CASE_CODE(NTUPLE_NLOAD_LOCAL) {
   uint8_t n = READ_BYTE;
 
   while (n--) {
-    uint64_t have = VAR();
+    uint64_t have = HV();
     PUSHTUPLE(have);
-    SET_VAR(0);
+    SET_HV(0);
   }
 
   n = READ_BYTE;
@@ -2844,7 +2861,7 @@ CASE_CODE(NTUPLE_NLOAD_LOCAL) {
   while (n--)
     PUSH(LOCAL(READ_BYTE));
 
-  SET_VAR(have);
+  SET_HV(have);
 
   NEXT();
 }
@@ -2853,16 +2870,14 @@ CASE_CODE(NTUPLE_CONSTANT) {
   uint8_t n = READ_BYTE;
 
   while (n--) {
-    uint64_t have = VAR();
-
+    uint64_t have = HV();
     PUSHTUPLE(have);
-
-    SET_VAR(0);
+    SET_HV(0);
   }
 
   PUSH(READ_CONSTANT);
 
-  SET_VAR(1);
+  SET_HV(1);
 
   NEXT();
 }
@@ -2871,11 +2886,9 @@ CASE_CODE(NTUPLE_NCONSTANT) {
   uint8_t n = READ_BYTE;
 
   while (n--) {
-    uint64_t have = VAR();
-
+    uint64_t have = HV();
     PUSHTUPLE(have);
-
-    SET_VAR(0);
+    SET_HV(0);
   }
 
   n = READ_BYTE;
@@ -2887,7 +2900,7 @@ CASE_CODE(NTUPLE_NCONSTANT) {
   while (n--)
     PUSH(READ_CONSTANT);
 
-  SET_VAR(have);
+  SET_HV(have);
 
   NEXT();
 }
@@ -2905,7 +2918,7 @@ IMPL_TRIM_N(9)
 
 CASE_CODE(TRIM) {
   uint8_t want = READ_BYTE;
-  uint64_t have = VAR();
+  uint64_t have = HV();
 
   MICRO_OP_TRIM(want, have);
 
@@ -2933,15 +2946,82 @@ CASE_CODE(PACK_LIST) {
 CASE_CODE(SEND) {
   uint8_t adjust;
   gab_value *ks = READ_SENDCONSTANTS_ANDTAIL(adjust);
-  uint64_t have = COMPUTE_TUPLE();
+  uint64_t have = HV();
 
-  MICRO_OP_SEND(have);
+  /* Have can not be 0. We need a receiver. */
+  if (__gab_unlikely(!have)) {
+    PUSH(MICRO_OP_NIL());
+    SET_HV(1);
+    have++;
+  }
+
+  gab_value r = PEEK_N(have);
+  gab_value m = ks[GAB_SEND_KMESSAGE];
+
+  if (BLOCK() && try_setup_localmatch(GAB(), m, ks, BLOCK_PROTO())) {
+    WRITE_BYTE(GAB_SEND_CACHE_SIZE, OP_MATCHSEND_BLOCK + adjust);
+    IP() -= GAB_SEND_CACHE_SIZE;
+    NEXT();
+  }
+
+  /* Do the expensive lookup */
+  struct gab_impl_rest res = gab_impl(GAB(), m, r);
+
+  if (__gab_unlikely(!res.status))
+    VM_PANIC3(GAB_SPECIALIZATION_MISSING, m, r, gab_valtype(GAB(), r));
+
+  gab_value spec = res.status == kGAB_IMPL_PROPERTY
+                       ? gab_primitive(OP_SEND_PROPERTY)
+                       : res.as.spec;
+
+  ks[GAB_SEND_KSPECS] = atomic_load(&EG()->messages_epoch);
+  ks[GAB_SEND_KTYPE] = gab_valtype(GAB(), r);
+  ks[GAB_SEND_KSPEC] = res.as.spec;
+
+  switch (gab_valkind(spec)) {
+  case kGAB_PRIMITIVE: {
+    uint8_t op = gab_valtop(spec);
+
+    if (op == OP_SEND_PRIMITIVE_CALL_BLOCK)
+      op += adjust;
+
+    WRITE_BYTE(GAB_SEND_CACHE_SIZE, op);
+
+    break;
+  }
+  case kGAB_BLOCK: {
+    struct gab_oblock *b = GAB_VAL_TO_BLOCK(spec);
+    struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(b->p);
+
+    uint8_t local = (GAB_VAL_TO_PROTOTYPE(b->p)->src == BLOCK_PROTO()->src);
+    adjust |= (local << 1);
+
+    if (local) {
+      ks[GAB_SEND_KOFFSET] = (intptr_t)proto_ip(GAB(), p);
+    }
+
+    WRITE_BYTE(GAB_SEND_CACHE_SIZE, OP_SEND_BLOCK + adjust);
+
+    break;
+  }
+  case kGAB_NATIVE: {
+    WRITE_BYTE(GAB_SEND_CACHE_SIZE, OP_SEND_NATIVE);
+    break;
+  }
+  default:
+    WRITE_BYTE(GAB_SEND_CACHE_SIZE, OP_SEND_CONSTANT);
+    break;
+  }
+
+  IP() -= GAB_SEND_CACHE_SIZE;
+
+  NEXT();
 }
 
 CASE_CODE(SEND_PRIMITIVE_TAKE) {
   gab_value *ks = READ_SENDCONSTANTS;
-  uint64_t have = COMPUTE_TUPLE();
-  uint64_t below_have = PEEK_N(have + 1);
+  uint64_t have = HV();
+  uint64_t below_have = BELOW_HV();
 
   gab_value c = PEEK_N(have);
 
@@ -2950,8 +3030,8 @@ CASE_CODE(SEND_PRIMITIVE_TAKE) {
 
 CASE_CODE(SEND_PRIMITIVE_PUT) {
   gab_value *ks = READ_SENDCONSTANTS;
-  uint64_t have = COMPUTE_TUPLE();
-  uint64_t below_have = PEEK_N(have + 1);
+  uint64_t have = HV();
+  uint64_t below_have = BELOW_HV();
 
   gab_value c = PEEK_N(have);
 
@@ -2960,8 +3040,9 @@ CASE_CODE(SEND_PRIMITIVE_PUT) {
 
 CASE_CODE(SEND_PRIMITIVE_FIBER) {
   gab_value *ks = READ_SENDCONSTANTS;
-  uint64_t have = COMPUTE_TUPLE();
-  uint64_t below_have = PEEK_N(have + 1);
+
+  uint64_t have = HV();
+  uint64_t below_have = BELOW_HV();
 
   SEND_GUARD_CACHED_RECEIVER_TYPE(PEEK_N(have));
 
@@ -2976,26 +3057,28 @@ CASE_CODE(SEND_PRIMITIVE_FIBER) {
 
 CASE_CODE(SEND_PRIMITIVE_CHANNEL) {
   gab_value *ks = READ_SENDCONSTANTS;
-  uint64_t have = COMPUTE_TUPLE();
-  uint64_t below_have = PEEK_N(have + 1);
+
+  uint64_t have = HV();
+  uint64_t below_have = BELOW_HV();
 
   SEND_GUARD_CACHED_RECEIVER_TYPE(PEEK_N(have));
 
-  DROP_N(have + 1);
+  DROP_N(have + 1 + FRAME_SIZE);
 
   gab_value chan = MICRO_OP_CHANNEL();
 
   PUSH(chan);
 
-  SET_VAR(below_have + 1);
+  SET_HV(below_have + 1);
 
   NEXT();
 }
 
 CASE_CODE(SEND_PRIMITIVE_RECORD) {
   gab_value *ks = READ_SENDCONSTANTS;
-  uint64_t have = COMPUTE_TUPLE();
-  uint64_t below_have = PEEK_N(have + 1);
+
+  uint64_t have = HV();
+  uint64_t below_have = BELOW_HV();
 
   SEND_GUARD_CACHED_RECEIVER_TYPE(PEEK_N(have));
 
@@ -3006,19 +3089,20 @@ CASE_CODE(SEND_PRIMITIVE_RECORD) {
 
   gab_value record = MICRO_OP_RECORD(len);
 
-  DROP_N(have + 1);
+  DROP_N(have + 1 + FRAME_SIZE);
 
   PUSH(record);
 
-  SET_VAR(below_have + 1);
+  SET_HV(below_have + 1);
 
   NEXT();
 }
 
 CASE_CODE(SEND_PRIMITIVE_MAKE_SHAPE) {
   gab_value *ks = READ_SENDCONSTANTS;
-  uint64_t have = COMPUTE_TUPLE();
-  uint64_t below_have = PEEK_N(have + 1);
+
+  uint64_t have = HV();
+  uint64_t below_have = BELOW_HV();
 
   SEND_GUARD_CACHED_RECEIVER_TYPE(PEEK_N(have));
 
@@ -3029,19 +3113,20 @@ CASE_CODE(SEND_PRIMITIVE_MAKE_SHAPE) {
 
   gab_value record = MICRO_OP_RECORDFROM(shape, len);
 
-  DROP_N(have + 1);
+  DROP_N(have + 1 + FRAME_SIZE);
 
   PUSH(record);
 
-  SET_VAR(below_have + 1);
+  SET_HV(below_have + 1);
 
   NEXT();
 }
 
 CASE_CODE(SEND_PRIMITIVE_SHAPE) {
   gab_value *ks = READ_SENDCONSTANTS;
-  uint64_t have = COMPUTE_TUPLE();
-  uint64_t below_have = PEEK_N(have + 1);
+
+  uint64_t have = HV();
+  uint64_t below_have = BELOW_HV();
 
   SEND_GUARD_CACHED_RECEIVER_TYPE(PEEK_N(have));
 
@@ -3049,20 +3134,20 @@ CASE_CODE(SEND_PRIMITIVE_SHAPE) {
 
   gab_value shape = MICRO_OP_SHAPE(len);
 
-  DROP_N(have + 1);
+  DROP_N(have + 1 + FRAME_SIZE);
 
   PUSH(shape);
 
-  SET_VAR(below_have + 1);
+  SET_HV(below_have + 1);
 
   NEXT();
 }
 
 CASE_CODE(SEND_PRIMITIVE_LIST) {
   gab_value *ks = READ_SENDCONSTANTS;
-  uint64_t have = COMPUTE_TUPLE();
 
-  uint64_t below_have = PEEK_N(have + 1);
+  uint64_t have = HV();
+  uint64_t below_have = BELOW_HV();
 
   SEND_GUARD_CACHED_RECEIVER_TYPE(PEEK_N(have));
 
@@ -3070,11 +3155,11 @@ CASE_CODE(SEND_PRIMITIVE_LIST) {
 
   gab_value rec = MICRO_OP_LIST(0, len);
 
-  DROP_N(have + 1);
+  DROP_N(have + 1 + FRAME_SIZE);
 
   PUSH(rec);
 
-  SET_VAR(below_have + 1);
+  SET_HV(below_have + 1);
 
   NEXT();
 }

@@ -1714,8 +1714,6 @@ gab_value gab_fiber(struct gab_triple gab, struct gab_fiber_argt args) {
 
   *self->vm.sp = args.argc + 1; // have
 
-  assert(*self->vm.sb == 0);
-
   self->vm.ip = nullptr;
   self->res_env = gab_cinvalid;
 
