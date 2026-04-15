@@ -1106,8 +1106,6 @@ extern void putcs(char *arg);
     FB() = SP() - have;                                                        \
     assert(BLOCK()->header.kind == kGAB_BLOCK);                                \
     assert(BLOCK_PROTO()->header.kind == kGAB_PROTOTYPE);                      \
-                                                                               \
-    SET_HV(have);                                                              \
   })
 
 #define MICRO_OP_LOCALCALL_BLOCK(blk, have)                                    \
@@ -2261,6 +2259,12 @@ CASE_CODE(SEND_BLOCK) {
   NEXT();
 }
 
+/*
+ * TODO @vm @perf: Specializer tailsends for HV().
+ * Maybe specialize each of these even further based on the HV amount -
+ * this would allow the gmoved in TAILCALL to be even further optimized
+ * by the compiler, as the have argument would be compile-time.
+ */
 CASE_CODE(TAILSEND_BLOCK) {
   bool istail;
   gab_value *ks = READ_SENDCONSTANTS_ANDTAIL(istail);
