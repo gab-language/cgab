@@ -1996,7 +1996,7 @@ int exec(struct command_arguments *args) {
   int nmodules = init_modules(&modules, args);
 
   int res = run_string(args->argv[0], args->flags, args->wait, args->njobs,
-                       nmodules, modules.data);
+                       nmodules - 1, modules.data);
 
   v_pkg_destroy(&modules);
 
