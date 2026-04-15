@@ -67,26 +67,26 @@ jobs:
           mkdir -p ~/gab/${{ env.version }}-x86_64-macos-none
           mkdir -p ~/gab/${{ env.version }}-aarch64-macos-none
 
-          cp build-x86_64-linux-gnu/gab ~/gab/${{ env.version }}-x86_64-linux-gnu
-          cp build-aarch64-linux-gnu/gab ~/gab/${{ env.version }}-aarch64-linux-gnu
-          cp build-x86_64-macos-none/gab ~/gab/${{ env.version }}-x86_64-macos-none
-          cp build-aarch64-macos-none/gab ~/gab/${{ env.version }}-aarch64-macos-none
+          cp build-x86_64-linux-gnu/gab/gab ~/gab/${{ env.version }}-x86_64-linux-gnu
+          cp build-aarch64-linux-gnu/gab/gab ~/gab/${{ env.version }}-aarch64-linux-gnu
+          cp build-x86_64-macos-none/gab/gab ~/gab/${{ env.version }}-x86_64-macos-none
+          cp build-aarch64-macos-none/gab/gab ~/gab/${{ env.version }}-aarch64-macos-none
 
     - name: Create bundles
       run: |
-         ./build-x86_64-linux-gnu/gab build -n -t x86_64-linux-gnu   < bundle
-         ./build-x86_64-linux-gnu/gab build -n -t x86_64-macos-none  < bundle
-         ./build-x86_64-linux-gnu/gab build -n -t aarch64-linux-gnu  < bundle
-         ./build-x86_64-linux-gnu/gab build -n -t aarch64-macos-none < bundle
+         ./build-x86_64-linux-gnu/gab/gab build -n -t x86_64-linux-gnu   < bundle
+         ./build-x86_64-linux-gnu/gab/gab build -n -t x86_64-macos-none  < bundle
+         ./build-x86_64-linux-gnu/gab/gab build -n -t aarch64-linux-gnu  < bundle
+         ./build-x86_64-linux-gnu/gab/gab build -n -t aarch64-macos-none < bundle
 
     # For this step, gab needs to know where the binaries are to cross-compile
     # the executables.
     - name: Create Cross-Compiled Test binary
       run: |
-         ./build-x86_64-linux-gnu/gab build -n -t x86_64-linux-gnu test < bundle
-         ./build-x86_64-linux-gnu/gab build -n -t x86_64-macos-none test < bundle
-         ./build-x86_64-linux-gnu/gab build -n -t aarch64-linux-gnu test < bundle
-         ./build-x86_64-linux-gnu/gab build -n -t aarch64-macos-none test < bundle
+         ./build-x86_64-linux-gnu/gab/gab build -n -t x86_64-linux-gnu test < bundle
+         ./build-x86_64-linux-gnu/gab/gab build -n -t x86_64-macos-none test < bundle
+         ./build-x86_64-linux-gnu/gab/gab build -n -t aarch64-linux-gnu test < bundle
+         ./build-x86_64-linux-gnu/gab/gab build -n -t aarch64-macos-none test < bundle
 
     - name: Upload x86_64-linux-gnu Binary Artifact
       uses: pyTooling/upload-artifact@v4
