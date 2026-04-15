@@ -124,7 +124,7 @@ bool putevent(struct gab_triple gab, struct gui *gui, const char *type,
 }
 
 #define RGFW_KEY_CASE(keyname, str)                                            \
-  case RGFW_##keyname:                                                         \
+  case RGFW_key##keyname:                                                         \
     return putevent(gab, gui, "key", #str, gab_number(ev->key.mod),            \
                     gab_bool(ev->type == RGFW_keyPressed), gab_cundefined);
 
@@ -187,16 +187,16 @@ bool clay_RGFW_update(struct gab_triple gab, struct gui *gui, double deltaTime,
   case RGFW_keyPressed:
   case RGFW_keyReleased:
     switch (ev->key.value) {
-      RGFW_KEY_CASE(return, enter);
-      RGFW_KEY_CASE(escape, escape);
-      RGFW_KEY_CASE(backSpace, backspace);
-      RGFW_KEY_CASE(capsLock, capslock);
-      RGFW_KEY_CASE(insert, insert);
-      RGFW_KEY_CASE(end, end);
-      RGFW_KEY_CASE(home, home);
-      RGFW_KEY_CASE(pageUp, pageup);
-      RGFW_KEY_CASE(pageDown, pagedown);
-      RGFW_KEY_CASE(space, space);
+      RGFW_KEY_CASE(Return, enter);
+      RGFW_KEY_CASE(Escape, escape);
+      RGFW_KEY_CASE(BackSpace, backspace);
+      RGFW_KEY_CASE(CapsLock, capslock);
+      RGFW_KEY_CASE(Insert, insert);
+      RGFW_KEY_CASE(End, end);
+      RGFW_KEY_CASE(Home, home);
+      RGFW_KEY_CASE(PageUp, pageup);
+      RGFW_KEY_CASE(PageDown, pagedown);
+      RGFW_KEY_CASE(Space, space);
       RGFW_KEY_CASE(F1, f1);
       RGFW_KEY_CASE(F2, f2);
       RGFW_KEY_CASE(F3, f3);
@@ -1002,7 +1002,7 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
     if (res.status != gab_cundefined)
       goto err;
 
-    Clay_RenderCommandArray cmd = Clay_EndLayout();
+    Clay_RenderCommandArray cmd = Clay_EndLayout(1);
 
 #if GAB_PLATFORM_UNIX
     tb_clear();
@@ -1147,7 +1147,7 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_render) {
     if (res.status != gab_cundefined)
       goto err;
 
-    Clay_RenderCommandArray cmd = Clay_EndLayout();
+    Clay_RenderCommandArray cmd = Clay_EndLayout(1);
 
     sg_begin_pass(&(sg_pass){
         .action =
@@ -1228,7 +1228,7 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_event) {
     if (gab_chnisclosed(gui->evch))
       goto fin;
 
-    if (ev.type == RGFW_quit)
+    if (ev.type == RGFW_windowClose)
       goto fin;
 
     if (clay_RGFW_update(gab, gui, 10, &ev))
