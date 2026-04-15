@@ -99,37 +99,40 @@
 #include "gab.h"
 #include "stdint.h"
 
-// #define gmove(dst, src, n) \
-//   ({ \
-//     gab_value *D = dst; \
-//     gab_value *S = src; \
-//     uint64_t N = n; \
-//     if (D != S) \
-//       while (N--) \
-//         *D++ = *S++; \
-//   })
-#define gmove(dst, src, n) memmove(dst, src, n * sizeof(gab_value))
-
-// #define gmoveb(dst, src, n) \
-//   ({ \
-//     gab_value *D = dst; \
-//     gab_value *S = src; \
-//     uint64_t N = n; \
-//     D += N; \
-//     S += N; \
-//     while (N--) \
-//       *--D = *--S; \
-//   })
-#define gmoveb(dst, src, n) memmove(dst, src, n * sizeof(gab_value))
-
 /*
- * In x86, the maximum number of ponter arguments that are passed
- * in registers is 6.
- *
- * On arm, it is 8.
- *
- * we *cannot* go above this limit and pass args on the stack here.
+ * move-macros for shifting slices of gab values up and down the vm stack.
+ * Thereis a separate macro for an ascending-move (up the stack)
+ * and a descending-move (down the stack). This is because the moves
+ * must account for overlapping regions, so the dst doesn't overwrite the src.
  */
+#define gmoved(dst, src, n)                                                    \
+  ({                                                                           \
+    gab_value *D = dst;                                                        \
+    gab_value *S = src;                                                        \
+    uint64_t N = n;                                                            \
+    if (N && D != S) {                                                         \
+      gab_assert(D < S, "Tried to write ascending move. %lu", D - S);          \
+      while (N--)                                                              \
+        *D++ = *S++;                                                           \
+    }                                                                          \
+  })
+// #define gmoved(dst, src, n) memmove(dst, src, n * sizeof(gab_value))
+
+#define gmovea(dst, src, n)                                                    \
+  ({                                                                           \
+    gab_value *D = dst;                                                        \
+    gab_value *S = src;                                                        \
+    uint64_t N = n;                                                            \
+    if (N && D != S) {                                                         \
+      D += N - 1;                                                              \
+      S += N - 1;                                                              \
+      gab_assert(S < D, "Tried to write descending move. %lu", S - D);         \
+      while (N--)                                                              \
+        *D-- = *S--;                                                           \
+    }                                                                          \
+  })
+// #define gmovea(dst, src, n) memmove(dst, src, n * sizeof(gab_value))
+
 #define OP_HANDLER_ARGS                                                        \
   struct gab_triple *__gab, struct gab_vm *__vm, uint8_t *__ip,                \
       gab_value *__kb, gab_value *__fb, gab_value *__sp
@@ -1132,7 +1135,7 @@ extern void putcs(char *arg);
     gab_value *from = SP() - have;                                             \
     gab_value *to = FB();                                                      \
                                                                                \
-    gmove(to, from, have);                                                     \
+    gmoved(to, from, have);                                                    \
     SP() = to + have;                                                          \
                                                                                \
     IP() = proto_ip(GAB(), p);                                                 \
@@ -1151,7 +1154,7 @@ extern void putcs(char *arg);
     gab_value *from = SP() - have;                                             \
     gab_value *to = FB();                                                      \
                                                                                \
-    gmove(to, from, have);                                                     \
+    gmoved(to, from, have);                                                    \
     SP() = to + have;                                                          \
                                                                                \
     IP() = (void *)ks[GAB_SEND_KOFFSET];                                       \
@@ -1167,7 +1170,7 @@ extern void putcs(char *arg);
     gab_value *from = SP() - have;                                             \
     gab_value *to = FB();                                                      \
                                                                                \
-    gmove(to, from, have);                                                     \
+    gmoved(to, from, have);                                                    \
                                                                                \
     IP() = (void *)ks[GAB_SEND_KOFFSET + idx];                                 \
     SP() = to + have;                                                          \
@@ -1201,7 +1204,7 @@ extern void putcs(char *arg);
                                                                                \
     gab_value *returnptr = RETURN_FB();                                        \
                                                                                \
-    gab_value *to = SP() - (have + message + FRAME_SIZE);                            \
+    gab_value *to = SP() - (have + message + FRAME_SIZE);                      \
     gab_assert(to >= FB() - 3,                                                 \
                "EXPECTED DEST TO BE GREATER THAN FRAME BASE. DIST: %li\n",     \
                to - FB());                                                     \
@@ -1231,7 +1234,7 @@ extern void putcs(char *arg);
     if (!have)                                                                 \
       PUSH(MICRO_OP_NIL()), have++;                                            \
                                                                                \
-    gmove(to, before, have);                                                   \
+    gmoved(to, before, have);                                                  \
     SP() = to + have;                                                          \
                                                                                \
     SET_HV(below_have + have);                                                 \
@@ -1295,7 +1298,7 @@ extern void putcs(char *arg);
        * We now know that we wrote *len* values to the buffer, because         \
        * it is guaranteed that len <= stackspace                               \
        * */                                                                    \
-      gmove(SP(), SP() + have + 1 + FRAME_SIZE, len);                          \
+      gmoved(SP(), SP() + have + 1 + FRAME_SIZE, len);                         \
       SP() += len;                                                             \
                                                                                \
       SET_HV(below_have + len + 1);                                            \
@@ -1481,25 +1484,19 @@ extern void putcs(char *arg);
                                                                                \
     if (have == want && want < 10) {                                           \
       WRITE_BYTE(2, OP_TRIM_EXACTLY0 + want);                                  \
-                                                                               \
       IP() -= 2;                                                               \
-                                                                               \
       NEXT();                                                                  \
     }                                                                          \
                                                                                \
     if (have > want && have - want < 10) {                                     \
       WRITE_BYTE(2, OP_TRIM_DOWN1 - 1 + (have - want));                        \
-                                                                               \
       IP() -= 2;                                                               \
-                                                                               \
       NEXT();                                                                  \
     }                                                                          \
                                                                                \
     if (want > have && want - have < 10) {                                     \
       WRITE_BYTE(2, OP_TRIM_UP1 - 1 + (want - have));                          \
-                                                                               \
       IP() -= 2;                                                               \
-                                                                               \
       NEXT();                                                                  \
     }                                                                          \
                                                                                \
@@ -1588,6 +1585,9 @@ extern void putcs(char *arg);
     IP()--;                                                                    \
     [[clang::musttail]] return OP_TRIM_HANDLER(DISPATCH_ARGS());               \
   })
+
+#define MISS_CACHED_RETURN(reason)                                             \
+  ({ [[clang::musttail]] return OP_RETURN_HANDLER(DISPATCH_ARGS()); })
 
 #define VM_YIELD(value)                                                        \
   ({                                                                           \
@@ -1715,6 +1715,13 @@ extern void putcs(char *arg);
 #define TRIM_GUARD_DOWN_N(want, n)                                             \
   TRIM_GUARD((HV() - n) == want, "Mismatched tuple length")
 
+#define RETURN_GUARD(clause, reason)                                           \
+  if (__gab_unlikely(!(clause)))                                               \
+    MISS_CACHED_RETURN(reason);
+
+#define RETURN_GUARD_EXACTLY_N(n)                                              \
+  RETURN_GUARD(HV() == n, "Mismatched return tuple length")
+
 #define SHORTCUT_GUARD_ARGS_LT(n)                                              \
   ({                                                                           \
     if (__gab_unlikely(have < n))                                              \
@@ -1778,7 +1785,10 @@ extern void putcs(char *arg);
                                                                                \
     DROP_N(len - 1);                                                           \
                                                                                \
-    gmove(ap - len + 1, ap, above);                                            \
+    if (len)                                                                   \
+      gmoved(ap - len + 1, ap, above);                                         \
+    else                                                                       \
+      gmovea(ap + 1, ap, above);                                               \
                                                                                \
     PEEK_N(above + 1) = rec;                                                   \
                                                                                \
@@ -1805,7 +1815,10 @@ extern void putcs(char *arg);
                                                                                \
     DROP_N(len - 1);                                                           \
                                                                                \
-    gmove(ap - len + 1, ap, above);                                            \
+    if (len)                                                                   \
+      gmoved(ap - len + 1, ap, above);                                         \
+    else                                                                       \
+      gmovea(ap + 1, ap, above);                                               \
                                                                                \
     PEEK_N(above + 1) = rec;                                                   \
                                                                                \
@@ -1837,8 +1850,9 @@ extern void putcs(char *arg);
 
 #define PUSHTUPLE(n)                                                           \
   ({                                                                           \
-    PUSH(FRAME_BK);                                                            \
-    PUSH(FRAME_IP);                                                            \
+    SP() += 2;                                                                 \
+    assert(SP()[-1] = FRAME_IP);                                               \
+    assert(SP()[-2] = FRAME_BK);                                               \
     PUSH(n);                                                                   \
   })
 
@@ -1858,7 +1872,7 @@ extern void putcs(char *arg);
                                                                                \
     LOAD_FRAME();                                                              \
                                                                                \
-    gmove(to, from, have);                                                     \
+    gmoved(to, from, have);                                                    \
                                                                                \
     SP() = to + have;                                                          \
     SET_HV(have + below_have);                                                 \
@@ -2025,6 +2039,15 @@ extern void putcs(char *arg);
     PUSH(c);                                                                   \
                                                                                \
     SET_HV(below_have + 1);                                                    \
+                                                                               \
+    NEXT();                                                                    \
+  }
+
+#define IMPL_RETURN_N(n)                                                       \
+  CASE_CODE(RETURN_##n) {                                                      \
+    RETURN_GUARD_EXACTLY_N(n);                                                 \
+                                                                               \
+    MICRO_OP_RETURN(n);                                                        \
                                                                                \
     NEXT();                                                                    \
   }
@@ -2664,14 +2687,6 @@ CASE_CODE(SEND_PROPERTY) {
   NEXT();
 }
 
-CASE_CODE(RETURN) {
-  uint64_t have = HV();
-
-  MICRO_OP_RETURN(have);
-
-  NEXT();
-}
-
 CASE_CODE(NOP) { NEXT(); }
 
 CASE_CODE(CONSTANT) {
@@ -2830,11 +2845,11 @@ CASE_CODE(TUPLE_NLOAD_LOCAL) {
 CASE_CODE(NTUPLE_LOAD_LOCAL) {
   uint8_t n = READ_BYTE;
 
-  while (n--) {
-    uint64_t have = HV();
-    PUSHTUPLE(have);
-    SET_HV(0);
-  }
+  uint64_t have = HV();
+  PUSHTUPLE(have);
+
+  while (--n)
+    PUSHTUPLE(0);
 
   PUSH(LOCAL(READ_BYTE));
 
@@ -2846,15 +2861,15 @@ CASE_CODE(NTUPLE_LOAD_LOCAL) {
 CASE_CODE(NTUPLE_NLOAD_LOCAL) {
   uint8_t n = READ_BYTE;
 
-  while (n--) {
-    uint64_t have = HV();
-    PUSHTUPLE(have);
-    SET_HV(0);
-  }
+  uint64_t have = HV();
+  PUSHTUPLE(have);
+
+  while (--n)
+    PUSHTUPLE(0);
 
   n = READ_BYTE;
 
-  uint8_t have = n;
+  have = n;
 
   PANIC_GUARD_STACKSPACE(n);
 
@@ -2869,11 +2884,11 @@ CASE_CODE(NTUPLE_NLOAD_LOCAL) {
 CASE_CODE(NTUPLE_CONSTANT) {
   uint8_t n = READ_BYTE;
 
-  while (n--) {
-    uint64_t have = HV();
-    PUSHTUPLE(have);
-    SET_HV(0);
-  }
+  uint64_t have = HV();
+  PUSHTUPLE(have);
+
+  while (--n)
+    PUSHTUPLE(0);
 
   PUSH(READ_CONSTANT);
 
@@ -2885,15 +2900,15 @@ CASE_CODE(NTUPLE_CONSTANT) {
 CASE_CODE(NTUPLE_NCONSTANT) {
   uint8_t n = READ_BYTE;
 
-  while (n--) {
-    uint64_t have = HV();
-    PUSHTUPLE(have);
-    SET_HV(0);
-  }
+  uint64_t have = HV();
+  PUSHTUPLE(have);
+
+  while (--n)
+    PUSHTUPLE(0);
 
   n = READ_BYTE;
 
-  uint8_t have = n;
+  have = n;
 
   PANIC_GUARD_STACKSPACE(n);
 
@@ -2921,6 +2936,30 @@ CASE_CODE(TRIM) {
   uint64_t have = HV();
 
   MICRO_OP_TRIM(want, have);
+
+  NEXT();
+}
+
+IMPL_RETURN_N(1)
+IMPL_RETURN_N(2)
+IMPL_RETURN_N(3)
+IMPL_RETURN_N(4)
+IMPL_RETURN_N(5)
+IMPL_RETURN_N(6)
+IMPL_RETURN_N(7)
+IMPL_RETURN_N(8)
+IMPL_RETURN_N(9)
+
+CASE_CODE(RETURN) {
+  uint64_t have = HV();
+
+  if (have > 0 && have < 10) {
+    WRITE_BYTE(1, OP_RETURN + have);
+    IP() -= 1;
+    NEXT();
+  }
+
+  MICRO_OP_RETURN(have);
 
   NEXT();
 }

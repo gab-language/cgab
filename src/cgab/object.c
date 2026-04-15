@@ -2446,6 +2446,15 @@ static uint64_t dumpInstruction(FILE *stream, struct gab_oprototype *self,
     return offset + 2 + operand;
   }
   case OP_RETURN:
+  case OP_RETURN_1:
+  case OP_RETURN_2:
+  case OP_RETURN_3:
+  case OP_RETURN_4:
+  case OP_RETURN_5:
+  case OP_RETURN_6:
+  case OP_RETURN_7:
+  case OP_RETURN_8:
+  case OP_RETURN_9:
     return dumpReturnInstruction(stream, self, offset);
   case OP_BLOCK: {
     offset++;
