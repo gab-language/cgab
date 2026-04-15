@@ -433,10 +433,10 @@ static const struct gab_resource native_file_resources[] = {
     {"", GAB_NATIVE_MODULE_SUFFIX, gab_use_dynlib, file_exister},
     {"mod/", GAB_NATIVE_MODULE_SUFFIX, gab_use_dynlib, file_exister},
 
-    {"", "/mod.gab", gab_use_source, file_exister},
+    {"", "mod.gab", gab_use_source, file_exister},
     {"", ".gab", gab_use_source, file_exister},
 
-    {"mod/", "/mod.gab", gab_use_source, file_exister},
+    {"mod/", "mod.gab", gab_use_source, file_exister},
     {"mod/", ".gab", gab_use_source, file_exister},
 
     {}, // List terminator.
@@ -449,10 +449,10 @@ static const struct gab_resource native_zip_resources[] = {
     {"", GAB_NATIVE_MODULE_SUFFIX, gab_use_zip_dynlib, zip_exister},
     {"mod/", GAB_NATIVE_MODULE_SUFFIX, gab_use_zip_dynlib, zip_exister},
 
-    {"", "/mod.gab", gab_use_zip_source, zip_exister},
+    {"", "mod.gab", gab_use_zip_source, zip_exister},
     {"", ".gab", gab_use_zip_source, zip_exister},
 
-    {"mod/", "/mod.gab", gab_use_zip_source, zip_exister},
+    {"mod/", "mod.gab", gab_use_zip_source, zip_exister},
     {"mod/", ".gab", gab_use_zip_source, zip_exister},
 
     {}, // List terminator.
