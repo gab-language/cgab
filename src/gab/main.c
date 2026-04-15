@@ -584,6 +584,7 @@ int run_bundle(const char *mod) {
 
   union gab_value_pair res = gab_create(
       (struct gab_create_argt){
+          .jobs = 8,
           .packages = packages,
           /* Unique to bundled apps, the only root is for *within* the bundle.
            */

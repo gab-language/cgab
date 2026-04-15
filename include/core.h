@@ -1,6 +1,11 @@
 #ifndef GAB_COMMON_H
 #define GAB_COMMON_H
 
+// The default number of working jobs Gab will spawn.
+#ifndef cGAB_DEFAULT_NJOBS
+#define cGAB_DEFAULT_NJOBS 8
+#endif
+
 // The number of cache slots, mostly used for
 #ifndef cGAB_SEND_CACHE_LEN
 #define cGAB_SEND_CACHE_LEN 4
