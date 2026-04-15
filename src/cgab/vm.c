@@ -900,7 +900,7 @@ cGAB_VM_OPCODE_ATTRIBUTES union gab_value_pair vm_eerror(OP_HANDLER_ARGS) {
   case GAB_SPECIALIZATION_MISSING:
     return vm_error(GAB(), status, FMT_MISSINGIMPL, SP()[2], SP()[3], SP()[4]);
   case GAB_TYPE_MISMATCH:
-    return vm_error(GAB(), status, FMT_MISSINGIMPL, SP()[2], SP()[3], SP()[4],
+    return vm_error(GAB(), status, FMT_TYPEMISMATCH, SP()[2], SP()[3], SP()[4],
                     SP()[5], SP()[6]);
   default:
     assert(false && "Unreachable");
