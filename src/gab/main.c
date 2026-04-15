@@ -1092,6 +1092,7 @@ int help(struct command_arguments *args);
 int welcome(struct command_arguments *args);
 int build(struct command_arguments *args);
 int init(struct command_arguments *args);
+int info(struct command_arguments *args);
 
 #define DEFAULT_COMMAND commands[0]
 
@@ -1353,6 +1354,16 @@ static struct command commands[] = {
                 .flag = FLAG_STEP_AUTOCONFIRM,
             },
         },
+    },
+    {
+        "info",
+        "Log information about the local gab environment.",
+        "",
+        .example =
+            {
+                "gab info",
+            },
+        .handler = info,
     },
     // TODO @cli: Determine if this is how we want packages to work.
     // {
@@ -2052,6 +2063,52 @@ int welcome(struct command_arguments *args) {
   return 0;
 }
 
+struct {
+  char *name, *value;
+} compile_info[] = {
+    {"default workers", STR(cGAB_DEFAULT_NJOBS)},
+    {"send-cache len", STR(cGAB_SEND_CACHE_LEN)},
+    {"str-hash len", STR(cGAB_STRING_HASHLEN)},
+    {"superinsts?", STR(cGAB_SUPERINSTRUCTIONS)},
+    {"tailcall?", STR(cGAB_TAILCALL)},
+    {"likely?", STR(cGAB_LIKELY)},
+    {"eg-idle tries", STR(cGAB_WORKER_IDLE_TRIES)},
+    {"vm-put tries", STR(cGAB_VM_CHANNEL_PUT_TRIES)},
+    {"vm-take tries", STR(cGAB_VM_CHANNEL_TAKE_TRIES)},
+    {"busywait-ns", STR(cGAB_DEFAULT_WAIT_NS)},
+    {"dict load", STR(cGAB_DICT_MAX_LOAD)},
+    {"worker qmax", STR(cGAB_WORKER_LOCALQUEUE_MAX)},
+    {"max frames", STR(cGAB_FRAMES_MAX)},
+    {"max stack", STR(cGAB_STACK_MAX)},
+    {"res stack", STR(cGAB_RESOURCE_MAX)},
+};
+
+struct {
+  const char *name, *target;
+} possible_targets[] = {
+    {"x64 lnx", "x86_64-linux-gnu"},   {"x64 mac", "x86_64-macos-none"},
+    {"x64 win", "x86_64-windows-gnu"}, {"arm lnx", "aarch64-linux-gnu"},
+    {"arm mac", "aarch64-macos-none"}, {"arm win", "aarch64-windows-gnu"},
+};
+
+int info(struct command_arguments *args) {
+  printf("%s\n%17s\n", welcome_message, "CONFIGURATION");
+
+  for (int i = 0; i < LEN_CARRAY(compile_info); i++) {
+    printf("%17s | %s\n", compile_info[i].name, compile_info[i].value);
+  }
+
+  printf("\n%17s\n", "PLATFORMS");
+
+  for (int i = 0; i < LEN_CARRAY(possible_targets); i++) {
+    const char *target = possible_targets[i].target;
+    const char *loc = install_location(target, GAB_VERSION_TAG, nullptr);
+    bool exists = file_exister(loc);
+    printf("%17s | %s\n", possible_targets[i].name, exists ? loc : "not found");
+  }
+  return 0;
+}
+
 int help(struct command_arguments *args) {
   if (args->argc < 1) {
     printf("To see more details about each command, "
@@ -2477,10 +2534,6 @@ int main(int argc, const char **argv) {
   roots[0] = "./";
   roots[1] = install_location(GAB_TARGET_TRIPLE, GAB_VERSION_TAG, nullptr);
   roots[2] = nullptr;
-  // roots[2] = install_location(GAB_TARGET_TRIPLE, GAB_VERSION_TAG,
-  //                             "github.com/gab-language/cgab@"
-  //                             GAB_VERSION_TAG);
-  // roots[3] = nullptr;
 
   if (check_not_gab(argv[0]) && check_valid_zip())
     return run_bundle(argv[0]);

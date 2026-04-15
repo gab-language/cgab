@@ -51,15 +51,15 @@
 // New workers are spawned as needed up until a maximum is reached (specified at
 // runtime)
 #ifndef cGAB_WORKER_IDLE_TRIES
-#define cGAB_WORKER_IDLE_TRIES ((size_t)2)
+#define cGAB_WORKER_IDLE_TRIES 2
 #endif
 
 #ifndef cGAB_VM_CHANNEL_PUT_TRIES
-#define cGAB_VM_CHANNEL_PUT_TRIES (0)
+#define cGAB_VM_CHANNEL_PUT_TRIES 0
 #endif
 
 #ifndef cGAB_VM_CHANNEL_TAKE_TRIES
-#define cGAB_VM_CHANNEL_TAKE_TRIES (0)
+#define cGAB_VM_CHANNEL_TAKE_TRIES 0
 #endif
 
 // Collect as frequently as possible (on every RC push)
@@ -143,9 +143,6 @@
 #define cGAB_RESOURCE_MAX 64
 #endif
 
-// Garbage collection increment/decrement buffer size
-// I don't love having these just be static buffers, its very possible
-// for them to overflow
 #ifndef cGAB_GC_MOD_BUFF_MAX
 #define cGAB_GC_MOD_BUFF_MAX (cGAB_STACK_MAX * cGAB_WORKER_LOCALQUEUE_MAX)
 #endif
