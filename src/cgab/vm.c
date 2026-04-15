@@ -412,11 +412,11 @@ static inline gab_value *frame_parent(gab_value *f) {
 }
 
 static inline struct gab_oblock *frame_block(gab_value *f) {
-  return (void *)f[-(FRAME_BK + 1)];
+  return (void *)f[-(1 + FRAME_BK)];
 }
 
 static inline uint8_t *frame_ip(gab_value *f) {
-  return (void *)f[-(FRAME_IP + 1)];
+  return (void *)f[-(1 + FRAME_IP)];
 }
 
 static inline uint64_t compute_token_from_ip(struct gab_triple gab,
@@ -1201,7 +1201,7 @@ extern void putcs(char *arg);
                                                                                \
     gab_value *returnptr = RETURN_FB();                                        \
                                                                                \
-    gab_value *to = SP() - (have + 1 + FRAME_SIZE);                            \
+    gab_value *to = SP() - (have + message + FRAME_SIZE);                            \
     gab_assert(to >= FB() - 3,                                                 \
                "EXPECTED DEST TO BE GREATER THAN FRAME BASE. DIST: %li\n",     \
                to - FB());                                                     \

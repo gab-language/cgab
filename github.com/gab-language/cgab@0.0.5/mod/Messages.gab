@@ -28,5 +28,4 @@ defclass: .def (fields*, cxtor, module) => do
   self
 end
 
-
 Messages
