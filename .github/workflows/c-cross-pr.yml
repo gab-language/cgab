@@ -172,10 +172,10 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-linux-gnu
-            cmd: ./build-x86_64-linux-gnu/gab
+            cmd: ./build-x86_64-linux-gnu/gab/gab
           - os: macos-latest
             target: aarch64-macos-none
-            cmd: ./build-aarch64-macos-none/gab
+            cmd: ./build-aarch64-macos-none/gab/gab
           # - os: windows-latest
           #   target: x86_64-windows-gnu
           #   cmd: .\build-x86_64-windows-gnu\gab
