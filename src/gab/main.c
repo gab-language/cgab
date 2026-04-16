@@ -1358,7 +1358,7 @@ static struct command commands[] = {
     {
         "info",
         "Log information about the local gab environment.",
-        "",
+        "Dump compile-time configuration about this binary, as well as list the targets installed locally",
         .example =
             {
                 "gab info",
@@ -2086,9 +2086,9 @@ struct {
 struct {
   const char *name, *target;
 } possible_targets[] = {
-    {"x64 lnx", "x86_64-linux-gnu"},   {"x64 mac", "x86_64-macos-none"},
-    {"x64 win", "x86_64-windows-gnu"}, {"arm lnx", "aarch64-linux-gnu"},
-    {"arm mac", "aarch64-macos-none"}, {"arm win", "aarch64-windows-gnu"},
+    {"x64 linux", "x86_64-linux-gnu"},   {"x64 macos", "x86_64-macos-none"},
+    {"x64 windows", "x86_64-windows-gnu"}, {"arm linux", "aarch64-linux-gnu"},
+    {"arm macos", "aarch64-macos-none"}, {"arm windows", "aarch64-windows-gnu"},
 };
 
 int info(struct command_arguments *args) {
@@ -2098,13 +2098,13 @@ int info(struct command_arguments *args) {
     printf("%17s | %s\n", compile_info[i].name, compile_info[i].value);
   }
 
-  printf("\n%17s\n", "PLATFORMS");
+  printf("\n%17s\n", GAB_VERSION_TAG" TARGETS");
 
   for (int i = 0; i < LEN_CARRAY(possible_targets); i++) {
     const char *target = possible_targets[i].target;
     const char *loc = install_location(target, GAB_VERSION_TAG, nullptr);
     bool exists = file_exister(loc);
-    printf("%17s | %s\n", possible_targets[i].name, exists ? loc : "not found");
+    printf("%17s | %s\n", possible_targets[i].name, exists ? loc : "not installed");
   }
   return 0;
 }
