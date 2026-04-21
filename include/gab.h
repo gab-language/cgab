@@ -218,6 +218,7 @@ typedef unsigned _BitInt(GAB_INTWIDTH) gab_uint;
 // This is the MAXIMUM SAFE INTEGER, because anything greater
 // cannot be exactly represented by a 64-bit floating point number.
 // This is because they have 53 bits of mantissa.
+// This is essentially the maximum value of a 53 bit int.
 #define GAB_INTMAX ((gab_float)9007199254740992)
 
 typedef double gab_float;
@@ -506,14 +507,18 @@ struct gab_obj {
 // available, this will fall back to our threads wrapper compat layer. If it is
 // not defined, always use the compat layer.
 #ifdef cGAB_THREADS_NATIVE
+#if __has_include("threads.h")
 #include <threads.h>
+#else
+#include "cthreads.h"
+#endif
 #else
 #include "cthreads.h"
 #endif
 
 #define T gab_value
 #define NAME gab_value_thrd
-#define V_CONCURRENT
+#define V_THREADSAFE
 #include "vector.h"
 
 struct gab_gc;
@@ -547,20 +552,12 @@ struct gab_triple {
   int32_t wkid;
 };
 
-/*
- * Various callbacks used by the gab_box and gab_native types.
- */
-typedef void (*gab_gcvisit_f)(struct gab_triple, struct gab_obj *obj);
-
 typedef union gab_value_pair (*gab_native_f)(struct gab_triple, uint64_t argc,
                                              gab_value *argv,
                                              uintptr_t reentrant);
 
 typedef void (*gab_boxdestroy_f)(struct gab_triple gab, uint64_t len,
                                  char *data);
-
-typedef void (*gab_boxvisit_f)(struct gab_triple gab, gab_gcvisit_f visitor,
-                               uint64_t len, char *data);
 
 /**
  * @brief INTERNAL: Free memory held by an object.
@@ -2693,10 +2690,6 @@ struct gab_box_argt {
    * A callback called when the object is collected by the gc.
    */
   gab_boxdestroy_f destructor;
-  /**
-   * A callback called when the object is visited during gc.
-   */
-  gab_boxvisit_f visitor;
 };
 
 /**

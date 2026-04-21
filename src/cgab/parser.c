@@ -768,6 +768,31 @@ gab_value parse_exp_lst(struct gab_triple gab, struct parser *parser,
   return node;
 }
 
+gab_value parse_exp_shp(struct gab_triple gab, struct parser *parser,
+                        gab_value lhs) {
+  size_t begin = parser->offset;
+
+  gab_value result = parse_expressions_until(gab, parser, TOKEN_RBRACK);
+
+  if (result == gab_cinvalid)
+    return gab_cinvalid;
+
+  gab_value lhs_node = node_value(gab, gab_message(gab, tGAB_SHAPE));
+  gab_value msg_node = gab_message(gab, mGAB_MAKE);
+
+  gab_value node = node_send(gab, lhs_node, msg_node, result);
+
+  size_t end = parser->offset;
+
+  node_storeinfo(parser->src, result, begin, end);
+  node_storeinfo(parser->src, node, begin, end);
+  node_storeinfo(parser->src, lhs_node, begin, end);
+  node_storeinfo(parser->src, gab_uvrecat(node, 0), begin, end);
+
+  return node;
+
+}
+
 gab_value parse_exp_tup(struct gab_triple gab, struct parser *parser,
                         gab_value lhs) {
   return parse_expressions_until(gab, parser, TOKEN_RPAREN);
@@ -863,6 +888,7 @@ const struct parse_rule parse_rules[] = {
     {parse_exp_sstr, nullptr, kNONE},                 // STRING
     {parse_exp_dstr, nullptr, kNONE},                 // STRING
     {parse_exp_num, nullptr, kNONE},                  // NUMBER
+    {parse_exp_shp, nullptr, kNONE},                  // SLASH
     {nullptr, nullptr, kNONE},                        // NEWLINE
     {nullptr, nullptr, kNONE},                        // EOF
     {nullptr, nullptr, kNONE},                        // ERROR
@@ -1558,8 +1584,7 @@ static inline void push_listpack(struct gab_triple gab, struct bc *bc,
 }
 
 static inline void push_dictpack(struct gab_triple gab, struct bc *bc,
-                                   uint8_t below, uint8_t above,
-                                   gab_value node) {
+                                 uint8_t below, uint8_t above, gab_value node) {
   push_op(bc, OP_PACK_DICT, node);
   push_byte(bc, below, node);
   push_byte(bc, above, node);
@@ -1952,7 +1977,7 @@ gab_value unpack_bindings_into_env(struct gab_triple gab, struct bc *bc,
                   bindings);
   } else if (recpack_at_n >= 0) {
     push_dictpack(gab, bc, recpack_at_n, actual_targets - recpack_at_n - 1,
-                    bindings);
+                  bindings);
   } else if (!push_trim_node(gab, bc, actual_targets, values, bindings)) {
     return v_gab_value_destroy(&targets), gab_cinvalid;
   }

@@ -42,7 +42,7 @@
 #define LINKAGE static inline
 #define METHOD(name) CONCAT(PREFIX, CONCAT(_, name))
 
-#ifdef D_CONCURRENT
+#ifdef D_THREADSAFE
 #define INIT_LOCK(self) (mtx_init(&self->mtx, mtx_plain))
 #define DESTROY_LOCK(self) (mtx_destroy(&self->mtx))
 #define AQUIRE_LOCK(self) (mtx_lock(&self->mtx))
@@ -76,7 +76,7 @@ typedef struct TYPENAME TYPENAME;
 struct TYPENAME {
   size_t len, cap;
   BUCKET_T *buckets;
-#ifdef D_CONCURRENT
+#ifdef D_THREADSAFE
   mtx_t mtx;
 #endif
 };
@@ -296,4 +296,4 @@ LINKAGE V METHOD(read)(TYPENAME *self, K key) {
 #undef DESTROY_LOCK
 #undef AQUIRE_LOCK
 #undef RELEASE_LOCK
-#undef D_CONCURRENT
+#undef D_THREADSAFE

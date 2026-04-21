@@ -1165,6 +1165,7 @@ bool repl_check_res(struct gab_triple gab, union gab_value_pair res) {
         puts(errstr);
 
       // TODO @cgab @bug: Do something else if errtocs fails
+      gab_assert(errstr, "gab_errtocs should not produce nil. This happens if you try to create strings while signalling.");
     };
 
     free(err);
@@ -1281,6 +1282,22 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
     gab_value keyvals[len + 1];
     gab_value vals[len + 1];
 
+    // Process signals so that we can make strings.
+    // I'm not sure if there is still a gap where we *start signaling*
+    // somewhere after we process and need to make strings.
+    while (gab_signaling(gab))
+      switch (gab_yield(gab)) {
+      case sGAB_TERM:
+        gab_sigpropagate(gab);
+        break;
+      case sGAB_COLL:
+        gab_gcepochnext(gab);
+        gab_sigpropagate(gab);
+        break;
+      default:
+        continue;
+      }
+
     // Insert local names from env
     for (size_t i = 0; i < reclen; i++) {
       size_t index = i + 1;
@@ -1356,6 +1373,8 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
 
     assert(env != gab_cinvalid);
 
+    flockfile(stdout);
+
     if (repl_check_res(gab, res))
       goto fin;
 
@@ -1373,6 +1392,8 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
     putc('\n', stdout);
 
   fin:
+    funlockfile(stdout);
+
     source.len = 0;
   }
 }

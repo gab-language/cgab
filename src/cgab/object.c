@@ -248,9 +248,9 @@ int sinspectval(char **dest, size_t *n, gab_value self, int depth) {
            sshape_dumpkeys(dest, n, self, depth) +
            snprintf_through(dest, n, ">");
   case kGAB_CHANNEL:
-    return snprintf_through(dest, n, "<" tGAB_CHANNEL ">");
+    return snprintf_through(dest, n, "<" tGAB_CHANNEL " %p>", GAB_VAL_TO_CHANNEL(self));
   case kGAB_CHANNELCLOSED:
-    return snprintf_through(dest, n, "<" tGAB_CHANNEL " closed>");
+    return snprintf_through(dest, n, "<" tGAB_CHANNEL " %p>", GAB_VAL_TO_CHANNEL(self));
   case kGAB_FIBER:
   case kGAB_FIBERRUNNING:
   case kGAB_FIBERDONE: {
@@ -520,13 +520,7 @@ gab_value gab_tnstring(struct gab_triple gab, uint64_t len, const char *data) {
 }
 
 /*
- * TODO @cgab @runtime @bug: Becuase of how signaling works, the gc_mtx is held
- * by the gc worker for the entire signal.
- *
- * This means that strings cannot be created during a TERM signal.
- *
- * This doesn't have to be the case. The only signal that cares is the sGAB_COLL
- * - other signals actually don't really care about the gc_mtx.
+ * TODO @cgab @runtime @bug: can be interrupted by TERM, which can break a lot of things.
  */
 gab_value gab_nstring(struct gab_triple gab, uint64_t len, const char *data) {
   for (;;) {
@@ -800,7 +794,6 @@ gab_value gab_box(struct gab_triple gab, struct gab_box_argt args) {
       GAB_CREATE_FLEX_OBJ(gab_obox, unsigned char, args.size, kGAB_BOX);
 
   self->do_destroy = args.destructor;
-  self->do_visit = args.visitor;
   self->type = args.type;
   self->len = args.size;
 
@@ -2557,6 +2550,7 @@ int gab_fmodinspect(FILE *stream, gab_value module) {
  */
 enum gab_pprint_k {
   kPPRINT_VALUE,
+  kPPRINT_ADDRESS,
   kPPRINT_STRING,
   kPPRINT_BINARY,
   kPPRINT_BREAK,
@@ -2574,6 +2568,7 @@ struct gab_pprint {
                  primitive value, not a nested one. */
     char c;
     const char *s;
+    void *addr;
   } as;
 };
 
@@ -2640,6 +2635,19 @@ void push_pprint_v(v_gab_pprint *self, gab_value val) {
                           });
 }
 
+void push_pprint_p(v_gab_pprint *self, void *p) {
+  char buf[30] = {};
+  // Maybe I can just return number of bytes written?
+  snprintf(buf, sizeof(buf), "%p", p);
+  int width = strlen(buf);
+
+  v_gab_pprint_push(self, (struct gab_pprint){
+                              .k = kPPRINT_ADDRESS,
+                              .width = width,
+                              .as.addr = p,
+                          });
+}
+
 void push_pprint_k(v_gab_pprint *self, enum gab_pprint_k k) {
   v_gab_pprint_push(self, (struct gab_pprint){
                               .k = k,
@@ -2693,6 +2701,18 @@ void pprint_rec(v_gab_pprint *self, gab_value rec) {
   push_pprint_kd(self, kPPRINT_DEDENT, (union gab_pprint_d){'}'});
 };
 
+void pprint_channel(v_gab_pprint *self, gab_value chan) {
+  assert(gab_valkind(chan) == kGAB_CHANNEL ||
+         gab_valkind(chan) == kGAB_CHANNELCLOSED);
+
+  struct gab_ochannel *ch = GAB_VAL_TO_CHANNEL(chan);
+  push_pprint_kd(self, kPPRINT_INDENT, (union gab_pprint_d){'<'});
+  push_pprint_s(self, tGAB_CHANNEL);
+  push_pprint_k(self, kPPRINT_SPACE);
+  push_pprint_p(self, ch);
+  push_pprint_kd(self, kPPRINT_DEDENT, (union gab_pprint_d){'>'});
+}
+
 void pprint_fiber(v_gab_pprint *self, gab_value fib) {
   assert(gab_valkind(fib) == kGAB_FIBER ||
          gab_valkind(fib) == kGAB_FIBERRUNNING ||
@@ -2706,7 +2726,7 @@ void pprint_fiber(v_gab_pprint *self, gab_value fib) {
   push_pprint_kd(self, kPPRINT_INDENT, (union gab_pprint_d){'<'});
   push_pprint_s(self, tGAB_FIBER);
   push_pprint_k(self, kPPRINT_SPACE);
-  push_pprint_v(self, fib);
+  push_pprint_p(self, v);
   push_pprint_k(self, kPPRINT_SPACE);
   pprint_tokify(self, msg);
   push_pprint_k(self, kPPRINT_SPACE);
@@ -2819,6 +2839,9 @@ bool pprint_tokify(v_gab_pprint *self, gab_value val) {
   case kGAB_FIBERRUNNING:
   case kGAB_FIBERDONE:
     return pprint_fiber(self, val), false;
+  case kGAB_CHANNEL:
+  case kGAB_CHANNELCLOSED:
+    return pprint_channel(self, val), false;
   default:
     return push_pprint_v(self, val), false;
   }
@@ -2854,6 +2877,8 @@ int spprint_through(char **dest, size_t *n, struct gab_pprint t) {
     return snprintf_through(dest, n, GAB_YELLOW "%c" GAB_RESET, t.as.c);
   case kPPRINT_BREAK:
     return snprintf_through(dest, n, "\n");
+  case kPPRINT_ADDRESS:
+    return snprintf_through(dest, n, GAB_MAGENTA "%p" GAB_RESET, t.as.addr);
   case kPPRINT_STRING:
     return snprintf_through(dest, n, GAB_YELLOW "%.*s" GAB_RESET, t.width,
                             t.as.s);

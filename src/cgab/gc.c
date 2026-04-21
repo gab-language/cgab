@@ -227,7 +227,9 @@ void queue_destroy(struct gab_triple gab, struct gab_obj *obj) {
 }
 
 static inline void for_buf_do(uint8_t b, uint8_t wkid, uint8_t epoch,
-                              gab_gc_visitor fnc, struct gab_triple gab) {
+                              void (*fnc)(struct gab_triple gab,
+                                          struct gab_obj *obj),
+                              struct gab_triple gab) {
   struct gab_obj **buf = bufdata(gab, b, wkid, epoch);
   uint64_t len = buflen(gab, b, wkid, epoch);
   assert(len <= cGAB_GC_MOD_BUFF_MAX);
@@ -261,7 +263,9 @@ static inline void for_buf_do(uint8_t b, uint8_t wkid, uint8_t epoch,
   assert(len == buflen(gab, b, wkid, epoch));
 }
 
-static inline void for_child_do(struct gab_obj *obj, gab_gc_visitor fnc,
+static inline void for_child_do(struct gab_obj *obj,
+                                void (*fnc)(struct gab_triple gab,
+                                            struct gab_obj *obj),
                                 struct gab_triple gab) {
 #if cGAB_LOG_GC
   fprintf(stderr, "RECURSE\t%i\t%p\t%i\n", epochget(gab), obj, obj->references);
@@ -308,9 +312,6 @@ static inline void for_child_do(struct gab_obj *obj, gab_gc_visitor fnc,
 
     if (gab_valiso(box->type))
       fnc(gab, gab_valtoo(box->type));
-
-    if (box->do_visit)
-      box->do_visit(gab, fnc, box->len, box->data);
 
     break;
   }

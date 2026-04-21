@@ -286,17 +286,15 @@ struct gab_ofiber {
 struct gab_ochannel {
   struct gab_obj header;
   /* Number of values held at member *data* */
-  _Atomic(uint64_t) len;
+  _Atomic uint64_t len;
   /* Values held */
-  _Atomic(gab_value *) data;
+  _Atomic(gab_value *)data;
 };
 
 /**
  * @brief A container object, which holds arbitrary data.
  *
- * There are two callbacks:
  *  - one to do cleanup when the object is destroyed
- *  - one to visit children values when doing garbage collection.
  */
 struct gab_obox {
   struct gab_obj header;
@@ -307,14 +305,6 @@ struct gab_obox {
    * This function should release all non-gab resources owned by the box.
    */
   gab_boxdestroy_f do_destroy;
-
-  /**
-   * A callback called when the object is visited during gc.
-   *
-   * This function should be used to visit all gab_values that are referenced
-   * by the box.
-   */
-  gab_boxvisit_f do_visit;
 
   /**
    * The type of the box.
@@ -500,49 +490,78 @@ struct gab_eg {
     int8_t signal;
   } sig;
 
+  // Synchronization field for waking the GC
+  // thread to do do work.
   cnd_t gc_cnd;
+  mtx_t gc_mtx;
 
+  // Resources and roots define where/how packages and modules
+  // are discovered.
   const char *resroots[cGAB_RESOURCE_MAX];
-
   struct gab_resource res[cGAB_RESOURCE_MAX];
 
+  // Garbage Collection state
   struct gab_gc gc;
 
+  // The global message state.
+  // A gab record which holds all message specializations in the system.
   _Atomic gab_value messages;
+  // A value incremented whenever the messages record is changed.
+  // Used to check inline caches.
   _Atomic uint64_t messages_epoch;
+  // The global work queue, where jobs push fibers to other jobs.
   gab_value work_channel;
 
+  // The root shape and a mutex locking it.
   mtx_t shapes_mtx;
   gab_value shapes;
 
-  mtx_t gc_mtx;
+  // Intern table of strings.
   d_strings strings;
 
+  // Table of compiled source files.
   mtx_t sources_mtx;
   d_gab_src sources;
 
+  // Table of cached module results.
   mtx_t modules_mtx;
   d_gab_modules modules;
 
+  // Configured busywait value, and number of jobs.
   uint32_t wait, len;
 
+  // Data for each job.
   struct gab_job {
+    // Unique thread identifier.
     thrd_t td;
 
+    // GC epoch.
     uint32_t epoch;
+    // Used by gab_gclock() to prevent collection while locked > 0.
+    // Useful when allocating a lot of gab objects at once, and they
+    // need to be kept alive until you're done.
+    // While locked, gab objects are queued into the jobs lock_keep vector.
+    // When the lock is released, the vector is flushed into the GC algorithm.
     int32_t locked;
     v_gab_value lock_keep;
 
+    // A work channel specific to this job. Useful for sending work to a
+    // specific job, instead of any available.
     gab_value work_channel;
+
+    // Local work queue. When work is taken from any work channel
+    // (global or local), it is tracked in this queue. Once a fiber has
+    // begun running in a job, *it may not migrate*. If it yields, it returns
+    // to this queue.
     q_gab_value queue;
 
+    // GC inc/dec ref count tracking buffer.
     struct gab_gcbuf {
       uint64_t len;
       struct gab_obj *data[cGAB_GC_MOD_BUFF_MAX];
     } buffers[kGAB_NBUF][GAB_GCNEPOCHS];
   } jobs[];
 };
-
 
 union gab_value_pair gab_vmexec(struct gab_triple gab, gab_value fiber);
 
@@ -561,9 +580,8 @@ bool gab_gctrigger(struct gab_triple gab);
 void gab_gcdocollect(struct gab_triple gab);
 
 void gab_gcloglen(struct gab_triple gab);
-void gab_gcassertdone(struct gab_triple gab);
 
-typedef void (*gab_gc_visitor)(struct gab_triple gab, struct gab_obj *obj);
+void gab_gcassertdone(struct gab_triple gab);
 
 enum variable_flag {
   fLOCAL_LOCAL = 1 << 0,
@@ -572,6 +590,7 @@ enum variable_flag {
   fLOCAL_REST = 1 << 3,
 };
 
+// Allocate/deallocate a gab_object.
 static inline void *gab_egalloc(struct gab_triple gab, struct gab_obj *obj,
                                 uint64_t size) {
   if (size == 0) {
@@ -601,13 +620,13 @@ struct gab_err_argt {
 
 #define T struct gab_err_argt
 #define NAME err
-#define CONCURRENT
+#define V_THREADSAFE
 #include "vector.h"
 
 /*
  * @brief Construct a panic.
  */
-gab_value gab_vspanicf(struct gab_triple gab, va_list vastruct,
+GAB_API gab_value gab_vspanicf(struct gab_triple gab, va_list vastruct,
                        struct gab_err_argt args);
 
 /**
@@ -703,12 +722,12 @@ static inline uint8_t *proto_ip(struct gab_triple gab,
   return proto_srcbegin(gab, p) + p->offset;
 }
 
-[[clang::preserve_none]]
+cGAB_VM_OPCODE_ATTRIBUTES
 union gab_value_pair vm_eerror(struct gab_triple *__gab, struct gab_vm *__vm,
                                uint8_t *__ip, gab_value *__kb, gab_value *__fb,
                                gab_value *__sp);
 
-[[clang::preserve_none]]
+cGAB_VM_OPCODE_ATTRIBUTES
 union gab_value_pair vm_ok(struct gab_triple *__gab, struct gab_vm *__vm,
                            uint8_t *__ip, gab_value *__kb, gab_value *__fb,
                            gab_value *__sp);

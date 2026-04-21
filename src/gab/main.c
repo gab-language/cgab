@@ -949,7 +949,8 @@ void elogstep(struct step *step, int i, int res) {
   case kSTEP_UNZIP:
     switch (res) {
     case 2:
-      return clierror("Step %i failed: Package mismatch\n");
+      return clierror("Step %i failed: A module within this package did not "
+                      "have a prefix which matched the specified package.\n");
     default:
       return clierror("Step %i failed: %i\n", i, res);
     }
@@ -1358,7 +1359,8 @@ static struct command commands[] = {
     {
         "info",
         "Log information about the local gab environment.",
-        "Dump compile-time configuration about this binary, as well as list the targets installed locally",
+        "Dump compile-time configuration about this binary, as well as list "
+        "the targets installed locally",
         .example =
             {
                 "gab info",
@@ -2086,9 +2088,12 @@ struct {
 struct {
   const char *name, *target;
 } possible_targets[] = {
-    {"x64 linux", "x86_64-linux-gnu"},   {"x64 macos", "x86_64-macos-none"},
-    {"x64 windows", "x86_64-windows-gnu"}, {"arm linux", "aarch64-linux-gnu"},
-    {"arm macos", "aarch64-macos-none"}, {"arm windows", "aarch64-windows-gnu"},
+    {"x64 linux", "x86_64-linux-gnu"},
+    {"x64 macos", "x86_64-macos-none"},
+    {"x64 windows", "x86_64-windows-gnu"},
+    {"arm linux", "aarch64-linux-gnu"},
+    {"arm macos", "aarch64-macos-none"},
+    {"arm windows", "aarch64-windows-gnu"},
 };
 
 int info(struct command_arguments *args) {
@@ -2098,13 +2103,14 @@ int info(struct command_arguments *args) {
     printf("%17s | %s\n", compile_info[i].name, compile_info[i].value);
   }
 
-  printf("\n%17s\n", GAB_VERSION_TAG" TARGETS");
+  printf("\n%17s\n", GAB_VERSION_TAG " TARGETS");
 
   for (int i = 0; i < LEN_CARRAY(possible_targets); i++) {
     const char *target = possible_targets[i].target;
     const char *loc = install_location(target, GAB_VERSION_TAG, nullptr);
     bool exists = file_exister(loc);
-    printf("%17s | %s\n", possible_targets[i].name, exists ? loc : "not installed");
+    printf("%17s | %s\n", possible_targets[i].name,
+           exists ? loc : "not installed");
   }
   return 0;
 }
@@ -2166,7 +2172,7 @@ int build_exe(struct command_arguments *args, const char *module) {
 
   memset(platform_file_resources, 0, sizeof platform_file_resources);
 
-  memcpy(platform_file_resources, native_file_resources,
+  memcpy(platform_file_resources + 1, native_file_resources,
          sizeof(native_file_resources));
 
   v_char platform_dynlib_suffix = {0};
@@ -2179,8 +2185,8 @@ int build_exe(struct command_arguments *args, const char *module) {
 
   // Replace the native DYNLIBFILEENDING witht the platform-specific one.
   // TODO @cli @bug: This is kinda manual and bug prone if we change resources.
-  platform_file_resources[0].suffix = platform_dynlib_suffix.data;
   platform_file_resources[1].suffix = platform_dynlib_suffix.data;
+  platform_file_resources[2].suffix = platform_dynlib_suffix.data;
 
   v_char platform_bundle_suffix = {0};
   v_char_spush(&platform_bundle_suffix, s_char_cstr("cgab-"));
@@ -2189,7 +2195,7 @@ int build_exe(struct command_arguments *args, const char *module) {
   v_char_spush(&platform_bundle_suffix, s_char_cstr(platform));
   v_char_push(&platform_bundle_suffix, '\0');
 
-  platform_file_resources[nnative_file_resources] = (struct gab_resource){
+  platform_file_resources[0] = (struct gab_resource){
       .prefix = "",
       .suffix = platform_bundle_suffix.data,
       .exister = file_exister,
@@ -2279,7 +2285,7 @@ int build_lib(struct command_arguments *args) {
 
   memset(platform_file_resources, 0, sizeof platform_file_resources);
 
-  memcpy(platform_file_resources, native_file_resources,
+  memcpy(platform_file_resources + 1, native_file_resources,
          sizeof(native_file_resources));
 
   v_char platform_dynlib_suffix = {0};
@@ -2292,8 +2298,8 @@ int build_lib(struct command_arguments *args) {
 
   // Replace the native DYNLIBFILEENDING with the platform-specific one.
   // This is kinda manual and bug prone if we change resources.
-  platform_file_resources[0].suffix = platform_dynlib_suffix.data;
   platform_file_resources[1].suffix = platform_dynlib_suffix.data;
+  platform_file_resources[2].suffix = platform_dynlib_suffix.data;
 
   v_char platform_bundle_suffix = {0};
   v_char_spush(&platform_bundle_suffix, s_char_cstr("/cgab-"));
@@ -2306,7 +2312,7 @@ int build_lib(struct command_arguments *args) {
    * A BUNDLE loading resource.
    * cgab@0.0.5 -> gab-language/cgab/cgab-0.0.5-x86_64-linux-gnu
    */
-  platform_file_resources[nnative_file_resources] = (struct gab_resource){
+  platform_file_resources[0] = (struct gab_resource){
       .prefix = "",
       .suffix = platform_bundle_suffix.data,
       .exister = file_exister,
