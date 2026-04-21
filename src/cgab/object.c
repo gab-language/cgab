@@ -248,9 +248,11 @@ int sinspectval(char **dest, size_t *n, gab_value self, int depth) {
            sshape_dumpkeys(dest, n, self, depth) +
            snprintf_through(dest, n, ">");
   case kGAB_CHANNEL:
-    return snprintf_through(dest, n, "<" tGAB_CHANNEL " %p>", GAB_VAL_TO_CHANNEL(self));
+    return snprintf_through(dest, n, "<" tGAB_CHANNEL " %p>",
+                            GAB_VAL_TO_CHANNEL(self));
   case kGAB_CHANNELCLOSED:
-    return snprintf_through(dest, n, "<" tGAB_CHANNEL " %p>", GAB_VAL_TO_CHANNEL(self));
+    return snprintf_through(dest, n, "<" tGAB_CHANNEL " %p>",
+                            GAB_VAL_TO_CHANNEL(self));
   case kGAB_FIBER:
   case kGAB_FIBERRUNNING:
   case kGAB_FIBERDONE: {
@@ -520,7 +522,8 @@ gab_value gab_tnstring(struct gab_triple gab, uint64_t len, const char *data) {
 }
 
 /*
- * TODO @cgab @runtime @bug: can be interrupted by TERM, which can break a lot of things.
+ * TODO @cgab @runtime @bug: can be interrupted by TERM, which can break a lot
+ * of things.
  */
 gab_value gab_nstring(struct gab_triple gab, uint64_t len, const char *data) {
   for (;;) {
@@ -1486,18 +1489,20 @@ gab_value gab_nreccat(struct gab_triple gab, uint64_t len, gab_value *records) {
   return gab_gcunlock(gab), res;
 }
 
-gab_value gab_list(struct gab_triple gab, uint64_t size, gab_value *values) {
+gab_value gab_list(struct gab_triple gab, uint64_t stride, uint64_t size,
+                   gab_value *values) {
+  if (!size)
+    return gab_record(gab, 0, 0, nullptr, nullptr);
+
   gab_gclock(gab);
 
-  if (!size)
-    return gab_gcunlock(gab), gab_record(gab, 0, 0, nullptr, nullptr);
+  gab_value keys[size * stride] = {};
 
-  gab_value keys[size];
-  for (uint64_t i = 0; i < size; i++) {
-    keys[i] = gab_number(i);
-  }
+  for (uint64_t i = 0; i < size; i++)
+    keys[i * stride] = gab_number(i);
 
-  gab_value v = gab_record(gab, 1, size, keys, values);
+  gab_value v = gab_record(gab, stride, size, keys, values);
+
   return gab_gcunlock(gab), v;
 }
 

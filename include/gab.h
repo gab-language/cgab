@@ -30,6 +30,7 @@
 #define GAB_H
 
 #include <errno.h>
+#include <float.h>
 #include <inttypes.h>
 #include <stdarg.h>
 #include <stdatomic.h>
@@ -38,7 +39,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <wchar.h>
-#include <float.h>
 
 #include "core.h"
 
@@ -207,8 +207,8 @@ typedef uint64_t gab_uint;
  * errors at compile time.
  *
  * However, it does have a runtime cost. For example, adding two gab_ints
- * (when they are defined as 53 bits) will emit additional shl and shr instructions
- * to shift off the upper 11 bits.
+ * (when they are defined as 53 bits) will emit additional shl and shr
+ * instructions to shift off the upper 11 bits.
  */
 typedef signed _BitInt(GAB_INTWIDTH) gab_int;
 typedef unsigned _BitInt(GAB_INTWIDTH) gab_uint;
@@ -503,6 +503,10 @@ struct gab_obj {
 #define T gab_value
 #include "vector.h"
 
+#define T char *
+#define NAME cstr
+#include "slice.h"
+
 // If this configuration macro is defined, try to use the native threads. If not
 // available, this will fall back to our threads wrapper compat layer. If it is
 // not defined, always use the compat layer.
@@ -626,8 +630,9 @@ struct gab_create_argt {
    * @brief A setting for the number of nanoseconds to *busywait*, at points
    * when the engine needs to *spin*.
    */
-  uint32_t flags, jobs, wait;
+  uint32_t flags, jobs, wait, nargs;
 
+  const char **args;
   /*
    * A list of resources. At each root, these
    * will be tested (in reverse order), until
@@ -2204,14 +2209,32 @@ GAB_API_INLINE gab_value gab_erecord(struct gab_triple gab) {
  * @param vals The vals
  * @return The new record
  */
-GAB_API_INLINE gab_value gab_srecord(struct gab_triple gab, uint64_t len,
-                                     const char **keys, gab_value *vals) {
-  gab_value vkeys[len];
+GAB_API_INLINE gab_value gab_mrecord(struct gab_triple gab, uint64_t stride,
+                                     uint64_t len, const char **keys,
+                                     gab_value *vals) {
+  gab_value vkeys[len * stride] = {};
 
   gab_gclock(gab);
 
   for (uint64_t i = 0; i < len; i++)
-    vkeys[i] = gab_message(gab, keys[i]);
+    vkeys[i * stride] = gab_message(gab, keys[i * stride]);
+
+  gab_value rec = gab_record(gab, 1, len, vkeys, vals);
+
+  gab_gcunlock(gab);
+
+  return rec;
+}
+
+GAB_API_INLINE gab_value gab_brecord(struct gab_triple gab, uint64_t stride,
+                                     uint64_t len, const char **keys,
+                                     gab_value *vals) {
+  gab_value vkeys[len * stride] = {};
+
+  gab_gclock(gab);
+
+  for (uint64_t i = 0; i < len; i++)
+    vkeys[i * stride] = gab_binary(gab, keys[i * stride]);
 
   gab_value rec = gab_record(gab, 1, len, vkeys, vals);
 
@@ -2808,7 +2831,7 @@ GAB_API gab_value gab_snative(struct gab_triple gab, const char *name,
 #define gab_listof(gab, ...)                                                   \
   ({                                                                           \
     gab_value items[] = {__VA_ARGS__};                                         \
-    gab_list(gab, sizeof(items) / sizeof(gab_value), items);                   \
+    gab_list(gab, 1, sizeof(items) / sizeof(gab_value), items);                \
   })
 
 /**
@@ -2819,13 +2842,33 @@ GAB_API gab_value gab_snative(struct gab_triple gab, const char *name,
  * @param values The values of the record to bundle.
  * @return The new record.
  */
-GAB_API gab_value gab_list(struct gab_triple gab, uint64_t len,
+GAB_API gab_value gab_list(struct gab_triple gab, uint64_t stride, uint64_t len,
                            gab_value *values);
+
+GAB_API_INLINE gab_value gab_slist(struct gab_triple gab, uint64_t stride,
+                                   uint64_t len, const char **values) {
+  if (!len)
+    return gab_erecord(gab);
+
+  gab_value vals[len * stride] = {};
+
+  gab_gclock(gab);
+
+  for (uint64_t i = 0; i < len; i++)
+    vals[i * stride] = gab_string(gab, values[i * stride]);
+
+  gab_value rec = gab_list(gab, 1, len, vals);
+
+  gab_gcunlock(gab);
+
+  return rec;
+}
 
 /**
  * @brief Get the practical runtime type of a value.
  *
- * TODO @perf: Allow this function to be completely inlined. Lets be done with engine.h
+ * TODO @perf: Allow this function to be completely inlined. Lets be done with
+ * engine.h
  *
  * @param gab The engine
  * @param value The value

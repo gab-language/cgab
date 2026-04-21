@@ -1,5 +1,5 @@
-'core' .use 'Bencode'
-'core' .use 'cgab'
+'github.com/gab-language/cgab@0.0.5' .use 'Bencode'
+'github.com/gab-language/cgab@0.0.5' .use 'cgab'
 Streams = 'github.com/gab-language/cgab@0.0.5' .use 'Transducers'
 IO      = 'github.com/gab-language/cgab@0.0.5' .use 'Io'
 
@@ -59,7 +59,7 @@ serve\code: .defcase {
       'id' req.id
       'session' session.or 'none'
       'status' 'ok'
-      'result' res.to\s
+      'result' res.to\string
     })
   end
   err: (err, server, req) => do
@@ -69,7 +69,7 @@ serve\code: .defcase {
       'id' req.id
       'session' session.or 'none'
       'status' 'err'
-      'msg' err.to\s
+      'msg' err.to\string
     })
   end
 }
@@ -135,6 +135,8 @@ Server = nrepl\server: .defclass (
         .bind(nil: port)
         .unwrap
 
+      'Server bound to port $'.sprintf port .println
+
       sock
         .listen(5)
         .unwrap
@@ -144,14 +146,17 @@ Server = nrepl\server: .defclass (
   # Methods
   {
     serve: (req) => do
-      req.op.to\m.server\serve(self req)
+      req.op.to\message.server\serve(self req)
     end
     listen: () => do
       server = self
 
+      'Server listening!'.println
+
       Fibers.make () => do
         # Accept out client
         client = server.sock.accept.unwrap
+        'Client accepted!'.println
 
         # Construct a BencodeStream from the client.
         stream = BencodeStream.make(ByteStream.make(client))
@@ -161,7 +166,7 @@ Server = nrepl\server: .defclass (
         # Handle the requests and place the response in server.response.
         stream.pipe(
           client
-          Streams.map(request => request.zip(Streams.map (v k) => (v k.to\m)))
+          Streams.map(request => request.zip(Streams.map (v k) => (v k.to\message)))
           |> Streams.reduce(server (server, request) => server.serve(request))
           |> Streams.map(server => server.response.to\bencode)
         )

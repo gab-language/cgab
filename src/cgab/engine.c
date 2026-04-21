@@ -828,6 +828,8 @@ union gab_value_pair gab_create(struct gab_create_argt args,
   eg->hash_seed = time(nullptr);
   atomic_init(&eg->sig, (struct gab_sig){0, -1, 0});
 
+  eg->args = gab_nil;
+
   // The only non-zero initialization that jobs need is epoch = 1
   for (uint64_t i = 0; i < eg->len; i++)
     eg->jobs[i].epoch = 1;
@@ -891,8 +893,9 @@ union gab_value_pair gab_create(struct gab_create_argt args,
   eg->shapes = __gab_shape(gab, 0);
   atomic_init(&eg->messages, gab_erecord(gab));
 
-  eg->work_channel = gab_channel(gab);
-  gab_iref(gab, eg->work_channel);
+  eg->work_channel = gab_iref(gab, gab_channel(gab));
+
+  eg->args = gab_iref(gab, gab_slist(gab, 1, args.nargs, args.args));
 
   int nroots = 0;
   for (int i = 0; args.roots[i] != nullptr; i++) {
@@ -964,14 +967,15 @@ union gab_value_pair gab_create(struct gab_create_argt args,
   gab_value vargs[len + 1];
   const char *sargs[len + 1];
 
-  vargs[nargs] = gab_ok;
   sargs[nargs] = "";
+  vargs[nargs] = gab_ok;
   nargs++;
 
   // Use each module that's asked for, in order.
   // Build up an array of names and values.
   for (int i = 0; i < len; i++) {
     struct gab_package *pkg = args.packages + i;
+
     union gab_value_pair res = gab_use(gab, (struct gab_use_argt){
                                                 .spackage_name = pkg->package,
                                                 .smodule_name = pkg->module,
@@ -1029,6 +1033,7 @@ void gab_destroy(struct gab_triple gab) {
     gab_busywait(gab);
 
   gab_dref(gab, gab.eg->work_channel);
+  gab_dref(gab, gab.eg->args);
   gab_ndref(gab, 1, gab.eg->scratch.len, gab.eg->scratch.data);
 
   // for (uint64_t i = 0; i < gab.eg->strings.cap; i++)
@@ -2349,6 +2354,8 @@ union gab_value_pair gab_use(struct gab_triple gab, struct gab_use_argt args) {
   if (gab_valkind(args.env) == kGAB_RECORD) {
     args.len = gab_reclen(args.env);
   }
+
+  gab_assert(args.len != 0, "Args must not be zero. This is usually a bug.");
 
   const char *env_sargv[args.len];
   gab_value env_vsargv[args.len];

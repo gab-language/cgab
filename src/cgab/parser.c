@@ -426,7 +426,7 @@ gab_value node_stealinfo(struct gab_src *src, gab_value from, gab_value to) {
 }
 
 gab_value node_value(struct gab_triple gab, gab_value node) {
-  return gab_list(gab, 1, &node);
+  return gab_list(gab, 1, 1, &node);
 }
 
 gab_value node_empty(struct gab_triple gab, struct parser *parser) {
@@ -535,7 +535,7 @@ gab_value node_send(struct gab_triple gab, gab_value lhs, gab_value msg,
       rhs,
   };
 
-  return node_value(gab, gab_srecord(gab, 3, keys, vals));
+  return node_value(gab, gab_mrecord(gab, 1, 3, keys, vals));
 }
 
 static gab_value parse_expressions_body(struct gab_triple gab,
@@ -2369,7 +2369,7 @@ union gab_value_pair gab_build(struct gab_triple gab,
     for (int i = 0; i < args.len; i++)
       vargs[i] = gab_binary(gab, args.argv[i]);
 
-    bindings = gab_list(gab, args.len, vargs);
+    bindings = gab_list(gab, 1, args.len, vargs);
   }
 
   node_storeinfo(src, bindings, 0, 0);

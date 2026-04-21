@@ -10,7 +10,12 @@
 #define CONCAT(a, b) CONCAT_(a, b)
 #define CONCAT_(a, b) a##b
 
+#ifndef NAME
 #define TYPENAME CONCAT(s_, T)
+#else
+#define TYPENAME CONCAT(s_, NAME)
+#endif
+
 #define PREFIX TYPENAME
 #define LINKAGE static inline
 #define METHOD(name) CONCAT(PREFIX, CONCAT(_, name))
@@ -43,3 +48,4 @@ LINKAGE size_t METHOD(hash)(TYPENAME self) {
 #undef METHOD
 #undef CONCAT
 #undef CONCAT_
+#undef NAME

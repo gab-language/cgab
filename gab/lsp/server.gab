@@ -1,6 +1,10 @@
-'Json'.use
+'github.com/gab-language/cgab@0.0.5'.use 'Json'
 
-log\row\t = 'gab/lsp/logs'.use
+Streams = 'github.com/gab-language/cgab@0.0.5' .use 'Streams'
+
+IO = 'github.com/gab-language/cgab@0.0.5' .use 'Io'
+
+log\row\t = 'gab/lsp' .use 'logs'
 
 diag\job\t = Shapes.make(
   server:

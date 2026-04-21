@@ -480,6 +480,9 @@ struct gab_eg {
 
   gab_value types[kGAB_NKINDS];
 
+  // The arguments to the engine.
+  gab_value args;
+
   // An atomic struct which tracks the state of
   // scheduling/aliveness in the workers.
   // These are swapped/compared as a whole.

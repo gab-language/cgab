@@ -503,7 +503,7 @@ gab_value sprint_stacktrace(struct gab_triple gab, struct gab_vm *vm,
   }
 
   if (nframes)
-    return gab_list(gab, nframes, vframes);
+    return gab_list(gab, 1, nframes, vframes);
   else
     return gab_cinvalid;
 }
@@ -1533,13 +1533,14 @@ extern void putcs(char *arg);
     } else {                                                                   \
       /*                                                                       \
        * TODO @cgab @api: Really fix this, Its rough in a lot of ways chief.   \
-       * This pulling in of args/values to pass on to use'd module             \
-       * is a little scuffed. I'd rather do it a different way.                \
+       * This is a better way of pulling arguments, off the fiber itself.      \
+       * I don't see why *instead* of this I couldn't just store an            \
+       * environment on the fiber that I can forward instead.                  \
        */                                                                      \
       gab_value shp = gab_prtshp(BLOCK()->p);                                  \
                                                                                \
-      gab_value rec =                                                          \
-          gab_recordfrom(GAB(), shp, 1, gab_shplen(shp), FB() + 1, nullptr);   \
+      gab_value rec = gab_record(GAB(), 1, FIBER()->len - 2, gab_shpdata(shp), \
+                                 FIBER()->data + 2);                           \
                                                                                \
       bool should_reload = have > 1 ? PEEK_N(have - 1) == gab_true : false;    \
                                                                                \
@@ -1754,7 +1755,7 @@ extern void putcs(char *arg);
 #define MICRO_OP_LIST(n, len)                                                  \
   ({                                                                           \
     STORE_SP();                                                                \
-    gab_list(GAB(), (len), SP() - ((n) + (len)));                              \
+    gab_list(GAB(), 1, (len), SP() - ((n) + (len)));                           \
   })
 
 #define MICRO_OP_CHANNEL()                                                     \
@@ -1779,7 +1780,7 @@ extern void putcs(char *arg);
                                                                                \
     STORE_SP();                                                                \
                                                                                \
-    gab_value rec = gab_list(GAB(), len, ap - len);                            \
+    gab_value rec = gab_list(GAB(), 1, len, ap - len);                         \
                                                                                \
     DROP_N(len - 1);                                                           \
                                                                                \
