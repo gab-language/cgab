@@ -51,7 +51,7 @@ int push_value(struct gab_triple gab, struct bencode *bncd,
 
     stack->len -= i;
 
-    v_gab_value_push(stack, gab_list(gab, i, stack->data + save));
+    v_gab_value_push(stack, gab_list(gab, 1, i, stack->data + save));
     break;
   }
   case BENCODE_DICT_BEGIN: {

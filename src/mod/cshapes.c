@@ -100,7 +100,7 @@ GAB_DYNLIB_NATIVE_FN(shp, slice) {
     vs[i] = gab_ushpat(shp, start + i);
   }
 
-  gab_vmpush(gab_thisvm(gab), gab_list(gab, size, vs));
+  gab_vmpush(gab_thisvm(gab), gab_list(gab, 1, size, vs));
 
   return gab_union_cvalid(gab_nil);
 }

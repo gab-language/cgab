@@ -213,7 +213,7 @@ gab_value build_path(struct gab_triple gab, furi_sv path) {
                      furi_sv_to_value(gab, furi_path_iter_get_value(iter)));
   }
   if (elems.len) {
-  gab_value vpath = gab_list(gab, elems.len, elems.data);
+  gab_value vpath = gab_list(gab, 1, elems.len, elems.data);
   v_gab_value_destroy(&elems);
   return vpath;
   } else {

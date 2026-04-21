@@ -86,7 +86,7 @@ GAB_DYNLIB_NATIVE_FN(rec, slice) {
   for (uint64_t i = 0; i < size; i++)
     vs[i] = gab_uvrecat(rec, start + i);
 
-  return gab_vmpush(gab_thisvm(gab), gab_list(gab, size, vs)),
+  return gab_vmpush(gab_thisvm(gab), gab_list(gab, 1, size, vs)),
          gab_union_cvalid(gab_nil);
 }
 
@@ -275,7 +275,7 @@ GAB_DYNLIB_NATIVE_FN(rec, keys) {
 
   gab_value shp = gab_recshp(rec);
 
-  gab_value keys = gab_list(gab, gab_shplen(shp), gab_shpdata(shp));
+  gab_value keys = gab_list(gab, 1, gab_shplen(shp), gab_shpdata(shp));
 
   gab_vmpush(gab_thisvm(gab), keys);
 
@@ -295,7 +295,7 @@ GAB_DYNLIB_NATIVE_FN(rec, vals) {
     vals[i] = gab_uvrecat(rec, i);
   }
 
-  gab_value keys = gab_list(gab, nvals, vals);
+  gab_value keys = gab_list(gab, 1, nvals, vals);
 
   gab_vmpush(gab_thisvm(gab), keys);
 
