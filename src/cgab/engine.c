@@ -436,7 +436,8 @@ int32_t gc_job(void *data) {
     }
 
     /*
-     * TODO @cgab @runtime: Coordinate work stealing here, where we are guaranteed to *not* be collecting.
+     * TODO @cgab @runtime: Coordinate work stealing here, where we are
+     * guaranteed to *not* be collecting.
      *
      * if we have spare jobs:
      *  look for the first worker
@@ -1165,7 +1166,8 @@ bool repl_check_res(struct gab_triple gab, union gab_value_pair res) {
         puts(errstr);
 
       // TODO @cgab @bug: Do something else if errtocs fails
-      gab_assert(errstr, "gab_errtocs should not produce nil. This happens if you try to create strings while signalling.");
+      gab_assert(errstr, "gab_errtocs should not produce nil. This happens if "
+                         "you try to create strings while signalling.");
     };
 
     free(err);
@@ -1238,18 +1240,6 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
   v_char source = {};
 
   for (;;) {
-    // There may be signals hanging for worker 1 to handle.
-    // Take care of those at the top of each loop.
-    switch (gab_yield(gab)) {
-    case sGAB_COLL:
-      gab_gcepochnext(gab);
-      // Fallthrough
-    case sGAB_TERM:
-      gab_sigpropagate(gab);
-      // Fallthrough
-    default:
-      break;
-    }
 
   readmore:
     char *line;
@@ -1272,6 +1262,7 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
 
     iterations++;
 
+  retry:
     // Skip self
     size_t reclen = env == gab_cinvalid ? 0 : (gab_reclen(env) - 1);
 
@@ -1282,9 +1273,9 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
     gab_value keyvals[len + 1];
     gab_value vals[len + 1];
 
-    // Process signals so that we can make strings.
-    // I'm not sure if there is still a gap where we *start signaling*
-    // somewhere after we process and need to make strings.
+    // TODO @engine @bug: The calls to string below need to have signals handled
+    // This *kind* of works, but a fiber can signal us *after* we pass this
+    // point.
     while (gab_signaling(gab))
       switch (gab_yield(gab)) {
       case sGAB_TERM:
@@ -1310,8 +1301,11 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
     // otherwise, add an element for this.
     size_t n = reclen;
     for (size_t i = 0; i < args.len; i++) {
-      if (env != gab_cinvalid &&
-          gab_rechas(env, gab_string(gab, args.sargv[i])))
+      gab_value vkey = gab_string(gab, args.sargv[i]);
+      if (vkey == gab_cinvalid)
+        goto retry;
+
+      if (env != gab_cinvalid && gab_rechas(env, vkey))
         continue;
 
       keys[n] = args.sargv[i];
@@ -2321,9 +2315,11 @@ struct gab_module_res gab_mresolve(const char **roots,
           .path = module_path,
           .resource = res,
           .root_path = root,
-          // Skip the root. This should resolve to the full package + module path.
+          // Skip the root. This should resolve to the full package + module
+          // path.
           .package_path = module_path->data + strlen(root),
-          // Skip the root and package. This should resolve to the module path, relative to the package.
+          // Skip the root and package. This should resolve to the module path,
+          // relative to the package.
           .module_path = module_path->data + strlen(root) + strlen(package) + 1,
       };
     }
@@ -2443,7 +2439,8 @@ union gab_value_pair gab_tarun(struct gab_triple gab, size_t tries,
   gab_iref(gab, fb);
   gab_egkeep(gab.eg, fb);
 
-  // TODO @runtime @perf: Push to local queue instead of always deferring globally.
+  // TODO @runtime @perf: Push to local queue instead of always deferring
+  // globally.
 
   // If we're *in* a valid worker we can push to the local queue.
   //   if (gab.wkid) {
@@ -2463,14 +2460,14 @@ union gab_value_pair gab_tarun(struct gab_triple gab, size_t tries,
   // Somehow check if the put will block, and create a job in that case.
   // Should check to see if the channel has takers waiting already.
 
-  // TODO @cgab @runtime: When spawning a worker thread, try to donate all queued fibers which have *never* been run.
-  // This is safe with our GC strategy Fibers should not
-  // change type *back* to kGAB_FIBER after yielding. They should remain
-  // kGAB_FIBERRUNNING, so that we know if a fiber has *ever* been run on a
-  // thread. In order for our GC to be sound, VM Stacks *cannot* migrate from
-  // thread to thread (After they may have been seen by the gc (ie, run). We
-  // should also *skip* incrementing/decrementing stacks for Fibers which have
-  // never been run in GC.
+  // TODO @cgab @runtime: When spawning a worker thread, try to donate all
+  // queued fibers which have *never* been run. This is safe with our GC
+  // strategy Fibers should not change type *back* to kGAB_FIBER after yielding.
+  // They should remain kGAB_FIBERRUNNING, so that we know if a fiber has *ever*
+  // been run on a thread. In order for our GC to be sound, VM Stacks *cannot*
+  // migrate from thread to thread (After they may have been seen by the gc (ie,
+  // run). We should also *skip* incrementing/decrementing stacks for Fibers
+  // which have never been run in GC.
 
   if (!gab_wkspawn(gab, fb))
     if (gab_tchnput(gab, gab.eg->work_channel, fb, tries) == gab_ctimeout)
@@ -2647,7 +2644,6 @@ property:
 
   return (struct gab_impl_rest){.messages = messages, .status = kGAB_IMPL_NONE};
 }
-
 
 GAB_API gab_value gab_type(struct gab_triple gab, enum gab_kind k) {
   assert(k < kGAB_NKINDS);
