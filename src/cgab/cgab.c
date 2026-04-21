@@ -22,14 +22,14 @@
  *  IN THE SOFTWARE.
  */
 
+#include "gab.h"
 #include "core.h"
 #include "engine.h"
-#include "gab.h"
+
 #include <stdatomic.h>
-#include <threads.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <ctype.h>
-#include <stddef.h>
 
 // -- EG --
 
