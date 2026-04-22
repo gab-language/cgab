@@ -124,7 +124,7 @@ bool putevent(struct gab_triple gab, struct gui *gui, const char *type,
 }
 
 #define RGFW_KEY_CASE(keyname, str)                                            \
-  case RGFW_key##keyname:                                                         \
+  case RGFW_key##keyname:                                                      \
     return putevent(gab, gui, "key", #str, gab_number(ev->key.mod),            \
                     gab_bool(ev->type == RGFW_keyPressed), gab_cundefined);
 
@@ -848,8 +848,8 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
     switch (res) {
     case TB_ERR_NOT_INIT:
     case TB_ERR_NO_EVENT:
-      if (putevent(gab, gui, "tick", "tick", gab_number(0), gab_false,
-                   clayGetTopmostId(gab)))
+      if (putevent(gab, gui, "tick", "tick", clayGetTopmostId(gab),
+                   gab_cundefined, gab_cundefined))
         goto fin;
 
       goto put_event;
@@ -1266,8 +1266,8 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_event) {
     // Clear the event we put
     gab_fibclear(gab_thisfiber(gab));
   } else {
-    if (putevent(gab, gui, "tick", "tick", gab_number(0), gab_false,
-                 clayGetTopmostId(gab)))
+    if (putevent(gab, gui, "tick", "tick", clayGetTopmostId(gab),
+                 gab_cundefined, gab_cundefined))
       goto fin;
 
     goto put_event;

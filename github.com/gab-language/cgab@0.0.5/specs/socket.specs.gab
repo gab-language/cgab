@@ -1,4 +1,5 @@
 s = 'github.com/gab-language/cgab@0.0.5'.use 'Specs'
+'github.com/gab-language/cgab@0.0.5/specs'.use 'streamable.specs'
 
 socket\spec = socket: .defspec {
   help:
@@ -113,4 +114,26 @@ socket\connect: .defspec {
     )
     output:   s.result(nil:, s.string())
   }
+}
+
+socket\stream\send: .defspec {
+  help:
+  "
+  Write bytes to a socket.
+
+  This is part of the `streamable` protocool.
+  "
+  spec: streamable\stream\send:.spec
+}
+
+socket\stream\recv: .defspec {
+  help:
+  "
+  Read 'amount' bytes from a socket.
+
+  If you omit 'amount', then will return whatever bytes are immediately available.
+
+  This is part of the `streamable` protocool.
+  "
+  spec: streamable\stream\recv:.spec
 }

@@ -1,5 +1,7 @@
 s = 'github.com/gab-language/cgab@0.0.5'.use 'Specs'
 
+'github.com/gab-language/cgab@0.0.5/specs'.use 'seqable.specs'
+
 record\spec = record: .defspec {
   help:  "
   An immutable set of key,value pairs. This is the core datastructure of the language.
@@ -50,6 +52,21 @@ record\at: .defspec {
     message:    at:,
     input:      s.unknown,
     output:     s.option(s.unknown),
+    semantics:  nil:,
+  },
+}
+
+record\has: .defspec {
+  help:
+  "
+  Check if the receiver has the given key. Returns true: if it does, and false otherwise.
+  ```
+  ",
+  spec:  s.message {
+    receiver:   record\spec,
+    message:    has:,
+    input:      KEY,
+    output:     s.boolean,
     semantics:  nil:,
   },
 }
@@ -230,6 +247,30 @@ record\is\record: .defspec {
   }
 }
 
+record\is\list: .defspec {
+  help: "
+  Returns `true:` if the receiving record is a list, and false otherwise.
+  "
+  spec: s.message {
+    receiver: record\spec
+    message:  is\list:
+    input: s.cat
+    output: s.boolean
+  }
+}
+
+record\is\dict: .defspec {
+  help: "
+  Returns `true:` if the receiving record is a dict, and false otherwise.
+  "
+  spec: s.message {
+    receiver: record\spec
+    message:  is\dict:
+    input: s.cat
+    output: s.boolean
+  }
+}
+
 record\keys: .defspec {
   help: "
   Return a list of all the keys in the record, in order.
@@ -256,6 +297,45 @@ record\vals: .defspec {
   }
 }
 
+record\plus: .defspec {
+  help:
+  "
+  Concatenate the argment record onto self.
+  "
+  spec: s.message {
+    receiver:  record\spec
+    message:   +:
+    input:     s.cat('other' record\spec)
+    output:    record\spec
+    semantics: nil:
+  }
+}
+
+record\slice: .defspec {
+  help:
+  "
+  Return a new record with only the key-value pairs in the range
+  (0, end) or (begin, end).
+  "
+  spec: s.message {
+    receiver: record\spec
+    message:  slice:
+    input:    s.alt(
+      'end'
+      s.cat (
+        'end' s.int
+      )
+      'both'
+      s.cat (
+        'begin' s.int
+        'end'   s.int
+      )
+    )
+    output: record\spec
+    semantics: nil:
+  }
+}
+
 record\: .defspec {
   help: "
   Return the value at the key given by the argument. If the key doesn't exist, panic.
@@ -277,6 +357,39 @@ record\: .defspec {
     output:     VALUE
     semantics: nil:
   }
+}
+
+record\take: .defspec {
+  help:
+  "
+  Given a key, return a tuple of a new record *without* the given key, and whatever value was found at that key (if any).
+  "
+  spec: s.message {
+    receiver:  record\spec
+    message:   take:
+    input:     KEY
+    output:    s.cat('remaining' s.record, 'value' VALUE)
+  }
+}
+
+record\seq\init: .defspec {
+  help:
+  "
+  Begin iterating the key-value pairs in the record.
+
+  See the seqable protocol for details.
+  "
+  spec: seqable\seq\init:.spec
+}
+
+record\seq\next: .defspec {
+  help:
+  "
+  Continue iterating the key-value pairs in the record.
+
+  See the seqable protocol for details.
+  "
+  spec: seqable\seq\next:.spec
 }
 
 record\spec

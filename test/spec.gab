@@ -1,4 +1,4 @@
-s = 'Specs'.use true:
+s = 'github.com/gab-language/cgab@0.0.5' .use 'Specs'
 
 test = s.cat(
   'status' s.int
@@ -44,4 +44,4 @@ nested = s.cat(
 
 nested.spec\fits(12 'hello')
 
-nested.spec\fits(12 21 32 'hello' 21 22)
+[nested.spec\fits(12 21 32 'hello' 21 22)].println

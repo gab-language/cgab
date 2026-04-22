@@ -1,0 +1,70 @@
+s = 'github.com/gab-language/cgab@0.0.5'.use 'Specs'
+
+'github.com/gab-language/cgab@0.0.5/specs'.use 'seqable.specs'
+
+shape\spec = shape: .defspec {
+  help:
+  "
+  An immutable set of keys.
+  "
+  spec:  s.shape
+}
+
+shape\push: .defspec {
+  help:
+  "
+  Push additional keys to the end of a shape.
+  "
+  spec: s.message {
+    receiver:  shape\spec
+    message:   push:
+    input:     s.unknown
+    output:    s.shape
+  }
+}
+
+shape\pop: .defspec {
+  help:
+  "
+  Pop a key off the back of the shape
+  "
+  spec: s.message {
+    receiver:  shape\spec
+    message:   pop:
+    input:     s.unknown
+    output:    s.cat('remaining' s.shape)
+  }
+}
+
+shape\len: .defspec {
+  help:
+  "
+  Return the numbers of keys in the shape.
+  "
+  spec: s.message {
+    receiver:  shape\spec
+    message:   len:
+    input:     s.unknown
+    output:    s.int
+  }
+}
+
+shape\seq\init: .defspec {
+  help:
+  "
+  Begin iterating the keys in the shape.
+
+  See the seqable protocol for details.
+  "
+  spec: seqable\seq\init:.spec
+}
+
+shape\seq\next: .defspec {
+  help:
+  "
+  Continue iterating the keys in the shape.
+
+  See the seqable protocol for details.
+  "
+  spec: seqable\seq\next:.spec
+}

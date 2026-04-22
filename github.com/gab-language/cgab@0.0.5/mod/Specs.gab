@@ -410,7 +410,8 @@ stringify_forms = (forms, sep)
   => "($)".sprintf(forms.map(f => f.re\debug).join ("" Streams.interpose sep))
 
 collapse_path = (path) => do
-  path.reduce({} (col elem) => do
+  path .reduce({} (col elem) => do
+
     via = elem.at 0 .unwrap
     status = elem.at 1 .unwrap
     pred = elem.at 2 .unwrap .at 0 .unwrap
@@ -439,7 +440,6 @@ make: .defcase {
     result = forms .cond {
       f => f.any(f => f.re\null)
       () => do
-
         newpath = forms.join(
           []
           Streams.filter(f => f.re\null)
@@ -506,7 +506,7 @@ make: .defcase {
       () => nonnull
         .at 0
         .unwrap
-        .put_by(path: x => path .cons x)
+        .put_by(path: x => path + x)
 
       else:                       
       () => do

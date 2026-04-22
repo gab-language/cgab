@@ -1,11 +1,10 @@
 s = 'github.com/gab-language/cgab@0.0.5'.use 'Specs'
+'github.com/gab-language/cgab@0.0.5/specs'.use 'streamable.specs'
 
 file\spec = file: .defspec {
   help:
   "
   A native file handle.
-
-  Implements the `streamable` protocol.
   "
   spec: s.box "io\file"
 }
@@ -36,4 +35,28 @@ file\len: .defspec {
     input:      s.cat
     output:     s.int
   }
+}
+
+file\stream\send: .defspec {
+  help:
+  "
+  Write bytes to a file.
+
+  See the streamable protocol for details.
+  "
+  spec: streamable\stream\send:.spec
+}
+
+file\stream\recv: .defspec {
+  help:
+  "
+  Read bytes from a file.
+
+  If you omit 'amount', then will return whatever bytes are immediately available.
+
+  Even for files on disk, `recv` with no `amount` isn't guaranteed to return the whole file.
+
+  See the streamable protocol for details.
+  "
+  spec: streamable\stream\recv:.spec
 }

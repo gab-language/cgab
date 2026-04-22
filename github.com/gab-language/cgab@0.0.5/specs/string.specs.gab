@@ -1,14 +1,18 @@
 s = 'github.com/gab-language/cgab@0.0.5'.use 'Specs'
 
+'github.com/gab-language/cgab@0.0.5/specs'.use 'seqable.specs'
+
 string\spec = string: .defspec {
-  help:"
+  help:
+  "
   A valid UTF-8 encoded sequence of bytes.
   "
   spec: s.string
 }
 
 string\is\blank: .defspec {
-  help: "
+  help:
+  "
   Returns `true:` if the string contains only blank characters. Returns `false:` otherwise.
   "
   spec: s.message {
@@ -166,4 +170,24 @@ string\trim: .defspec {
     input:    s.cat('trimset' s.string)
     output:   s.string
   }
+}
+
+string\seq\init: .defspec {
+  help:
+  "
+  Begin iterating the graphemes in the string.
+
+  See the seqable protocol for details.
+  "
+  spec: seqable\seq\init:.spec
+}
+
+string\seq\next: .defspec {
+  help:
+  "
+  Continue iterating the graphemes in the string.
+
+  See the seqable protocol for details.
+  "
+  spec: seqable\seq\next:.spec
 }

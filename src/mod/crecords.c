@@ -125,14 +125,14 @@ GAB_DYNLIB_NATIVE_FN(rec, pop) {
   if (gab_valkind(rec) != kGAB_RECORD)
     return gab_pktypemismatch(gab, rec, kGAB_RECORD);
 
-  if (gab_reclen(rec)) {
-    gab_vmpush(gab_thisvm(gab), gab_none, gab_erecord(gab));
+  if (!gab_reclen(rec)) {
+    gab_vmpush(gab_thisvm(gab), gab_erecord(gab));
     return gab_union_cvalid(gab_nil);
   }
 
   gab_value value, key;
   gab_value result = gab_recpop(gab, rec, &value, &key);
-  gab_vmpush(gab_thisvm(gab), gab_ok, result, value, key);
+  gab_vmpush(gab_thisvm(gab), result, value, key);
 
   return gab_union_cvalid(gab_nil);
 }

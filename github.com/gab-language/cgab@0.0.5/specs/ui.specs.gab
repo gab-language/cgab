@@ -1,0 +1,92 @@
+s = 'github.com/gab-language/cgab@0.0.5'.use 'Specs'
+
+ui\run: .defspec {
+  help:
+  "
+  Begin running an application.
+
+  The platform argument defines how the application renders.
+  - `gui:` Render in a new, native operating system window
+  - `tui:` Render in the terminal
+
+  The *events* and *frames* arguments are the entry/exit points for interacting with the running app.
+
+  Every frame, a new event will arrive on the *events* channel. For more on events, see `ui\event`.
+
+  It is the program's task to pull events off the `events` channel, process them, and put corresponding views onto the `frames` channel.
+  
+  A *view* is a data structure which describes the layout of the app. The `ui` library takes each view off the `frames` channel, walks the
+  data structure, and renders a new frame. The cycle then repeats.
+
+  For more information on views, see `ui\view`.
+  "
+  spec: s.message {
+    receiver: ui:
+    message:  run:
+    input: s.cat(
+      'platform' s.any(gui: tui:)
+      'events' s.channel
+      'frames' s.channel
+    )
+    output: s.cat()
+  }
+}
+
+ui\event: .defspec {
+  help:
+  "
+  An *event* is a tuple of values describing some user interaction, or simply the passage of time.
+  "
+  spec: s.alt(
+    'mouse' s.cat(
+      'kind'    'mouse'
+      'button'  s.any('left' 'right')
+      'target'  s.message
+    )
+    'key'   s.cat(
+      'kind'    'key'
+      'key'     s.string
+      'val'     s.int
+      'pressed' s.boolean
+    )
+    'tick'  s.cat(
+      'kind'    'tick'
+      'tick'    'tick'
+      'hovered' s.message
+    )
+  )
+}
+
+ui\component = ui\component: .defspec {
+  help:
+  "
+  A component is UI element, drawable to the screen.
+  "
+  spec: s.alt(
+    'text' s.pat(
+      'kind' text:
+      'opts' s.record
+    )
+    'rect' s.pat(
+      'kind' rect:
+      'opts' s.record
+    )
+    'img' s.pat(
+      'kind' img:
+      'opts' s.record
+    )
+    'box' s.pat(
+      'kind' box:
+      'opts' s.record
+      'children' ui\view:
+    )
+  )
+}
+
+ui\view: .defspec {
+  help:
+  "
+  A list of UI components.
+  "
+  spec: s.list(ui\component)
+}

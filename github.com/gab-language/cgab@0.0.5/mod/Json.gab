@@ -16,10 +16,10 @@ to\json: .defcase {
   true:         'true'
   false:        'false'
   Numbers.t
-  () => self.to\s
+  () => self.to\string
 
   Strings.t
-  () => '"' + self.to\s + '"'
+  () => '"' + self.to\string + '"'
 
   Records.t
   () => self.is\list.json\do_encode_record self

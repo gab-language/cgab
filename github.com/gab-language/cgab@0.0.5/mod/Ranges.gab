@@ -4,7 +4,7 @@ t:.def(
   Ranges
   Shapes.make(from: to:))
 
-range\into: .defcase {
+to\range: .defcase {
   nil: to => { from: 0, to: to }
   (Numbers.t) from => { from: from, to: self }
 }
