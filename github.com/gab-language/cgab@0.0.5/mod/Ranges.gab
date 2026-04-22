@@ -12,7 +12,7 @@ to\range: .defcase {
 make:.def(
   Ranges
   (from to) => do
-    (to from) .range\into
+    (to from) .to\range
   end)
 
 [Ranges.t] .defmodule {

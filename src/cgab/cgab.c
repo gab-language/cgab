@@ -22,14 +22,14 @@
  *  IN THE SOFTWARE.
  */
 
-#include "gab.h"
 #include "core.h"
 #include "engine.h"
+#include "gab.h"
 
+#include <ctype.h>
 #include <stdatomic.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <ctype.h>
 
 // -- EG --
 
@@ -897,6 +897,7 @@ union gab_value_pair gab_create(struct gab_create_argt args,
 
   eg->shapes = __gab_shape(gab, 0);
   atomic_init(&eg->messages, gab_erecord(gab));
+  atomic_init(&eg->macros, gab_erecord(gab));
 
   eg->work_channel = gab_iref(gab, gab_channel(gab));
 
@@ -1342,7 +1343,7 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
     if (repl_check_res(gab, block))
       goto fin;
 
-    gab_value before_env = gab_blkshp(block.vresult);
+    // gab_value before_env = gab_blkshp(block.vresult);
 
     union gab_value_pair fiber = gab_arun(gab, (struct gab_run_argt){
                                                    .flags = args.flags,
@@ -1359,7 +1360,9 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
     union gab_value_pair res = gab_fibawait(gab, fiber.vresult);
 
     /* Setup env regardless of run failing/succeeding */
-    gab_value new_env = gab_fibawaite(gab, fiber.vresult);
+    // TODO @bug: replace awaite - thats gross.
+    // how else can I get variables to work in the repl?
+    // gab_value new_env = gab_fibawaite(gab, fiber.vresult);
 
     /* Sometimes the env that is returned from here is
      *  an env from a ~different~ block. This is because
@@ -1367,15 +1370,15 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
      *  it belongs to throughout execution.
      **/
 
-    if (env == gab_cinvalid || new_env == gab_cinvalid)
-      env = new_env;
+    // if (env == gab_cinvalid || new_env == gab_cinvalid)
+    // env = new_env;
     // If the block's environment is equal to the fiber's final environment
     // then we know we *didn't* tailcall out of the block.
     // TODO @cgab @bug: Don't leak this reccat below
-    else if (before_env == gab_recshp(new_env))
-      env = gab_iref(gab, gab_reccat(gab, env, new_env));
+    // else if (before_env == gab_recshp(new_env))
+    // env = gab_iref(gab, gab_reccat(gab, env, new_env));
 
-    assert(env != gab_cinvalid);
+    // assert(env != gab_cinvalid);
 
     flockfile(stdout);
 
@@ -1478,6 +1481,21 @@ gab_value dodef(struct gab_triple gab, gab_value messages, uint64_t len,
   return gab_gcunlock(gab), messages;
 }
 
+gab_value dodefmacro(struct gab_triple gab, gab_value messages, uint64_t len,
+                     struct gab_def_argt args[static len]) {
+
+  gab_gclock(gab);
+
+  for (uint64_t i = 0; i < len; i++) {
+    struct gab_def_argt arg = args[i];
+
+    messages = gab_recput(gab, messages, arg.message, arg.specialization);
+  }
+
+  return gab_gcunlock(gab), messages;
+}
+
+// TODO @feat: Implement macro equivalent
 bool gab_ndef(struct gab_triple gab, uint64_t len,
               struct gab_def_argt args[static len]) {
   gab_value messages = atomic_load(&gab.eg->messages);
@@ -1486,6 +1504,21 @@ bool gab_ndef(struct gab_triple gab, uint64_t len,
     if (atomic_compare_exchange_weak(&gab.eg->messages, &messages,
                                      dodef(gab, messages, len, args)))
       return atomic_fetch_add(&gab.eg->messages_epoch, 1), true;
+
+    gab_busywait(gab);
+  }
+
+  return false;
+}
+
+bool gab_ndefmacro(struct gab_triple gab, uint64_t len,
+                   struct gab_def_argt args[static len]) {
+  gab_value messages = atomic_load(&gab.eg->macros);
+
+  for (;;) {
+    if (atomic_compare_exchange_weak(&gab.eg->macros, &messages,
+                                     dodefmacro(gab, messages, len, args)))
+      return atomic_fetch_add(&gab.eg->macros_epoch, 1), true;
 
     gab_busywait(gab);
   }
@@ -2584,9 +2617,23 @@ bool gab_sigcoll(struct gab_triple gab) {
   return true;
 }
 
+// TODO @feat: Include *macros* as the first lookup here.
+// TODO @bug: Macros can resolve at runtime. No bueno.
+// I think that should be sufficient for executing macros.
 struct gab_impl_rest gab_impl(struct gab_triple gab, gab_value message,
                               gab_value receiver) {
-  gab_value messages = gab_thisfibmsg(gab);
+  gab_value messages = atomic_load(&gab.eg->macros);
+  gab_value macro = gab_recat(messages, message);
+
+  if (macro != gab_cundefined)
+    return (struct gab_impl_rest){
+        .messages = messages,
+        .type = gab_cundefined,
+        .as.spec = macro,
+        .status = kGAB_IMPL_MACRO,
+    };
+
+  messages = gab_thisfibmsg(gab);
   gab_value specs = gab_recat(messages, message);
 
   // There are no specs for this message.
@@ -3558,6 +3605,7 @@ void gab_gcdocollect(struct gab_triple gab) {
    * as we're collecting. Just save the snapshot
    * of it now.
    */
+  // TODO @bug: Repeat this for macros
   gab.eg->gc.msg[epoch] = atomic_load(&gab.eg->messages);
 
   gab_value messages = gab.eg->gc.msg[epoch];
@@ -4121,7 +4169,6 @@ uint64_t gab_tsrcline(struct gab_src *src, uint64_t tok_offset) {
 #undef CURSOR
 #undef NEXT_CURSOR
 #undef ADVANCE
-
 
 // -- object --
 
@@ -7976,6 +8023,20 @@ gab_value parse_exp_send_op(struct gab_triple gab, struct parser *parser,
   return node;
 }
 
+/*
+ * TODO @feat: What would macros look like?
+ *
+ * I want to implement '=' and '=>' in userspace somehow if I can.
+ *
+ * I also want to get rid of OP_BLOCK for the purity of it all - but thats hard.
+ * I suppose a macro would sort of solve it, as it could rewrite the () => do
+ * ... end Into a Blocks.make(proto) call. This would involve first compiling
+ * the rhs do with the lhs binding.
+ *
+ * The Blocks.make(proto) message would need safeguards somehow.
+ * Is there a way it could check that its at the correct spot in the bytecode?
+ *
+ */
 gab_value parse_exp_send_special(struct gab_triple gab, struct parser *parser,
                                  gab_value lhs) {
   size_t begin = parser->offset;
@@ -8948,6 +9009,110 @@ gab_value compile_symbol(struct gab_triple gab, struct bc *bc, gab_value tuple,
   }
 };
 
+union gab_value_pair expand_value(struct gab_triple gab, gab_value tuple,
+                                  size_t n, gab_value env);
+
+union gab_value_pair expand_tuple(struct gab_triple gab, gab_value node,
+                                  gab_value env) {
+  // Map the tuple, expanding each element.
+  size_t len = gab_reclen(node);
+
+  gab_value tuple = gab_erecord(gab);
+
+  for (size_t i = 0; i < len; i++) {
+    union gab_value_pair res = expand_value(gab, node, i, env);
+
+    if (res.status == gab_cinvalid)
+      return res;
+
+    env = res.data[0];
+    tuple = gab_lstpush(gab, tuple, res.data[1]);
+  }
+
+  return (union gab_value_pair){{env, tuple}};
+};
+
+union gab_value_pair expand_record(struct gab_triple gab, gab_value tuple,
+                                   gab_value node, gab_value env) {
+  switch (gab_valkind(gab_recshp(node))) {
+  case kGAB_SHAPE: {
+    // We have a send node!
+    // We can actually try to expand a macro.
+    gab_value lhs_node = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_LHS);
+    gab_value rhs_node = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_RHS);
+    gab_value msg = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_MSG);
+
+    gab_value args[] = {rhs_node, env};
+
+    // TODO @bug: The impl can change between here and the actual send.
+    if (gab_impl(gab, msg, lhs_node).status != kGAB_IMPL_MACRO)
+      return (union gab_value_pair){{env, node}};
+
+    // TODO @bug: Non-macro sends still expand here.
+    // Send the message to the receiver.
+    // OOF I just noticed a bug.
+    // What if the lhs_node type implements `msg`, but with
+    // a runtime component and not a macro?
+    // Maybe we should check for a macro impl before trying this?
+    // TODO @bug: Possible GC while locked.
+    union gab_value_pair res = gab_send(gab, (struct gab_send_argt){
+                                                 .receiver = lhs_node,
+                                                 .argv = args,
+                                                 .len = LEN_CARRAY(args),
+                                                 .message = msg,
+                                             });
+
+    // TODO @bug: Report macro execution error
+    if (res.status != gab_cvalid)
+      return (union gab_value_pair){{gab_cinvalid}};
+
+    gab_fprintf(stderr, "$ $\n", res.aresult->data[0], res.aresult->data[1]);
+    gab_assert(res.aresult->len >= 3,
+               "Macro should return a new node and environment, not %u.",
+               res.aresult->len);
+    if (res.aresult->len < 3)
+      return (union gab_value_pair){{gab_cinvalid}};
+
+    // TODO @bug: Report macro error
+    if (res.aresult->data[0] != gab_ok)
+      return (union gab_value_pair){{gab_cinvalid}};
+
+    env = res.aresult->data[2];
+    node = res.aresult->data[1];
+
+    return (union gab_value_pair){{env, node}};
+  }
+  case kGAB_SHAPELIST:
+    return expand_tuple(gab, node, env);
+  default:
+    assert(false && "INVALID SHAPE KIND");
+  }
+
+  return (union gab_value_pair){{env, tuple}};
+}
+
+union gab_value_pair expand_value(struct gab_triple gab, gab_value tuple,
+                                  size_t n, gab_value env) {
+  gab_value node = gab_uvrecat(tuple, n);
+
+  switch (gab_valkind(node)) {
+    // do no macro expanding
+  case kGAB_NUMBER:
+  case kGAB_STRING:
+  case kGAB_MESSAGE:
+  case kGAB_BINARY:
+    return (union gab_value_pair){{env, node}};
+
+    // may macro expand
+  case kGAB_RECORD:
+    return expand_record(gab, tuple, node, env);
+
+  default:
+    assert(false && "UN-UNQUOATABLE VALUE");
+    return (union gab_value_pair){{gab_cinvalid}};
+  }
+}
+
 gab_value compile_tuple(struct gab_triple gab, struct bc *bc, gab_value node,
                         gab_value env);
 
@@ -8977,6 +9142,8 @@ gab_value compile_value(struct gab_triple gab, struct bc *bc, gab_value tuple,
   }
 }
 
+// TODO @feat: Destructuring
+// It would be quite useful to automagically do some de-structuring here.
 gab_value unpack_binding(struct gab_triple gab, struct bc *bc,
                          gab_value bindings, size_t i, gab_value ctx,
                          v_gab_value *targets, int *listpack_at_n,
@@ -9503,12 +9670,21 @@ union gab_value_pair gab_build(struct gab_triple gab,
   gab_value env =
       gab_listof(gab, gab_recordof(gab, gab_binary(gab, "self"), gab_nil));
 
-  union gab_value_pair res = gab_compile(gab, (struct gab_compile_argt){
-                                                  .ast = ast.vresult,
-                                                  .env = env,
-                                                  .mod = mod,
-                                                  .bindings = bindings,
-                                              });
+  // TODO @bug: Repeatedly expand until we get no new expansions.
+  union gab_value_pair res = expand_tuple(gab, ast.vresult, env);
+
+  if (res.status == gab_cinvalid)
+    return gab_gcunlock(gab), res;
+
+  gab_value expanded_env = res.data[0];
+  gab_value expanded_ast = res.data[1];
+
+  res = gab_compile(gab, (struct gab_compile_argt){
+                             .ast = expanded_ast,
+                             .env = expanded_env,
+                             .mod = mod,
+                             .bindings = bindings,
+                         });
   assert(res.vresult != gab_cundefined);
 
   if (res.status == gab_cinvalid)
@@ -9672,7 +9848,7 @@ static handler handlers[] = {
 #define RESET_BUMP() (FIBER()->allocator.len = 0)
 #define GC() (GAB().eg->gc)
 #define VM() (__vm)
-#define SET_BLOCK(b) (FB()[-(1 + FRAME_BK)] = (uintptr_t)(b));
+#define SET_BLOCK(b) ({ FB()[-(1 + FRAME_BK)] = (uintptr_t)(b); });
 #define BLOCK() ((struct gab_oblock *)(uintptr_t)FB()[-(1 + FRAME_BK)])
 #define BLOCK_PROTO() (GAB_VAL_TO_PROTOTYPE(BLOCK()->p))
 #define IP() (__ip)
@@ -10027,8 +10203,8 @@ union gab_value_pair vvm_terminate(struct gab_triple gab, const char *fmt,
     return GAB_VAL_TO_FIBER(fiber)->res_values;
 
   gab_assert(gab_valkind(fiber) == kGAB_FIBERRUNNING,
-             "Terminating fiber must be running, not: %d. Terminating.",
-             gab_valkind(fiber));
+             "(%i) Terminating fiber %p must be running, not: %d. Terminating.",
+             gab.wkid, GAB_VAL_TO_FIBER(fiber), gab_valkind(fiber));
 
   gab_assert(GAB_VAL_TO_FIBER(fiber)->res_env == gab_cinvalid,
              "Terminating fiber res_env shall be uninitialized.");
@@ -10064,8 +10240,10 @@ union gab_value_pair vvm_terminate(struct gab_triple gab, const char *fmt,
   GAB_VAL_TO_FIBER(fiber)->res_values = res;
   GAB_VAL_TO_FIBER(fiber)->res_env = env;
   GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERDONE;
-  // gab_fprintf(stderr, "($) VMTERM finished fiber $.\n", gab_number(gab.wkid),
-  //             __gab_obj(fiber));
+#if cGAB_LOG_VM
+  gab_fprintf(stderr, "($) VMTERM finished fiber $.\n", gab_number(gab.wkid),
+              __gab_obj(fiber));
+#endif
 
   return res;
 }
@@ -10082,8 +10260,8 @@ union gab_value_pair vm_givenerr(struct gab_triple gab,
     return GAB_VAL_TO_FIBER(fiber)->res_values;
 
   gab_assert(gab_valkind(fiber) == kGAB_FIBERRUNNING,
-             "Terminating fiber must be running, not: %d. Given err.",
-             gab_valkind(fiber));
+             "Terminating fiber %p must be running, not: %d. Given err.",
+             GAB_VAL_TO_FIBER(fiber), gab_valkind(fiber));
 
   gab_assert(GAB_VAL_TO_FIBER(fiber)->res_env == gab_cinvalid,
              "Terminating fiber res_env shall be uninitialized.");
@@ -10107,6 +10285,10 @@ union gab_value_pair vm_givenerr(struct gab_triple gab,
   }
 
   GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERDONE;
+#if cGAB_LOG_VM
+  gab_fprintf(stderr, "($) VVMGIVEN ERR finished fiber $.\n",
+              gab_number(gab.wkid), __gab_obj(fiber));
+#endif
 
   return given;
 }
@@ -10115,9 +10297,10 @@ union gab_value_pair vvm_error(struct gab_triple gab, enum gab_status s,
                                const char *fmt, va_list va) {
   gab_value fiber = gab_thisfiber(gab);
 
-  gab_assert(gab_valkind(fiber) == kGAB_FIBERRUNNING,
-             "Terminating fiber must be running, not: %d. Error status %s.",
-             gab_valkind(fiber), gab_status_names[s]);
+  gab_assert(
+      gab_valkind(fiber) == kGAB_FIBERRUNNING,
+      "(%i) Terminating fiber must be running, not: %d. Error status %s.",
+      gab.wkid, gab_valkind(fiber), gab_status_names[s]);
 
   gab_assert(GAB_VAL_TO_FIBER(fiber)->res_env == gab_cinvalid,
              "Terminating fiber res_env shall be uninitialized.");
@@ -10161,8 +10344,10 @@ union gab_value_pair vvm_error(struct gab_triple gab, enum gab_status s,
     GAB_VAL_TO_FIBER(fiber)->res_env = env;
   }
   GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERDONE;
-  // gab_fprintf(stderr, "($) VVMERR finished fiber $.\n", gab_number(gab.wkid),
-  //             __gab_obj(fiber));
+#if cGAB_LOG_VM
+  gab_fprintf(stderr, "($) VVMERR finished fiber $.\n", gab_number(gab.wkid),
+              __gab_obj(fiber));
+#endif
 
   return res;
 }
@@ -10402,6 +10587,13 @@ cGAB_VM_OPCODE_ATTRIBUTES union gab_value_pair vm_ok(OP_HANDLER_ARGS) {
   uint64_t have = *VM()->sp;
   gab_value *from = VM()->sp - have;
 
+  // TODO @bug: When gab_sending just a send constant call, we hit a seg fault.
+  // This catches the issue - we overwrite the frame here without updating fb
+  // I think.
+  // assert(FB() < SP());
+  // Once the fiber has returned, the local values have been overwritten
+  // with return values. This makes extracting new locals impossible.
+
   a_gab_value *results = a_gab_value_empty(have + 1);
   results->data[0] = gab_ok;
   memcpy(results->data + 1, from, have * sizeof(gab_value));
@@ -10418,16 +10610,16 @@ cGAB_VM_OPCODE_ATTRIBUTES union gab_value_pair vm_ok(OP_HANDLER_ARGS) {
 
   struct gab_ofiber *fiber = FIBER();
 
-  if (fiber->header.kind == kGAB_FIBERDONE) {
-    // gab_fprintf(stderr, "($) OK'd finished fiber $.\n",
-    // gab_number(GAB().wkid),
-    //             __gab_obj(fiber));
-    // gab_fprintf(stderr, "STATUS: $\n", fiber->res_values.status);
-    // gab_fprintf(stderr, "VRESULT: $\n", fiber->res_values.vresult);
-  }
+  // if (fiber->header.kind == kGAB_FIBERDONE) {
+  //   gab_fprintf(stderr, "($) OK'd finished fiber $.\n",
+  //   gab_number(GAB().wkid),
+  //               __gab_obj(fiber));
+  //   gab_fprintf(stderr, "STATUS: $\n", fiber->res_values.status);
+  //   gab_fprintf(stderr, "VRESULT: $\n", fiber->res_values.vresult);
+  // }
   gab_assert(fiber->header.kind == kGAB_FIBERRUNNING,
-             "(%i) Terminating fiber must be running, not: %d. OK!", GAB().wkid,
-             fiber->header.kind);
+             "(%i) Terminating fiber %p must be running, not: %d. OK!",
+             GAB().wkid, fiber, fiber->header.kind);
 
   gab_assert(fiber->res_env == gab_cinvalid,
              "Terminating fiber res_env shall be uninitialized.");
@@ -10437,21 +10629,25 @@ cGAB_VM_OPCODE_ATTRIBUTES union gab_value_pair vm_ok(OP_HANDLER_ARGS) {
 
   fiber->res_values = res;
 
-  if (frame_block(VM()->fp)) {
-    gab_value p = frame_block(VM()->fp)->p;
-    gab_value shape = gab_prtshp(p);
-
-    gab_value env =
-        gab_recordfrom(GAB(), shape, 1, gab_shplen(shape), VM()->fp, nullptr);
-
-    gab_egkeep(EG(), gab_iref(GAB(), env));
-
-    fiber->res_env = env;
-  }
+  // TODO @bug: Find some way to pull the env out of a fiber.
+  // if (frame_block(VM()->fp)) {
+  //   gab_value p = frame_block(VM()->fp)->p;
+  //   gab_value shape = gab_prtshp(p);
+  //
+  //   gab_value env =
+  //       gab_recordfrom(GAB(), shape, 1, gab_shplen(shape), VM()->fp,
+  //       nullptr);
+  //
+  //   gab_egkeep(EG(), gab_iref(GAB(), env));
+  //
+  //   fiber->res_env = env;
+  // }
 
   fiber->header.kind = kGAB_FIBERDONE;
-  // gab_fprintf(stderr, "($) VMOK finished fiber $.\n", gab_number(GAB().wkid),
-  //             __gab_obj(fiber));
+#if cGAB_LOG_VM
+  gab_fprintf(stderr, "($) VMOK finished fiber $.\n", gab_number(GAB().wkid),
+              __gab_obj(fiber));
+#endif
 
   return res;
 }
@@ -10708,6 +10904,8 @@ extern void putcs(char *arg);
     RESET_REENTRANT();                                                         \
                                                                                \
     SP() = VM()->sp;                                                           \
+                                                                               \
+    CHECK_SIGNAL();                                                            \
                                                                                \
     if (__gab_unlikely(res.status == gab_ctimeout))                            \
       assert(res.bresult != 0), VM_YIELD(res.bresult);                         \
@@ -11355,6 +11553,11 @@ extern void putcs(char *arg);
                                                                                \
     if (__gab_unlikely(RETURN_FB_DELTA() == 0)) {                              \
       STORE();                                                                 \
+                                                                               \
+      gmoved(to, from, have);                                                  \
+      SP() = to + have;                                                        \
+      SET_HV(have + below_have);                                               \
+                                                                               \
       [[clang::musttail]] return vm_ok(DISPATCH_ARGS());                       \
     }                                                                          \
                                                                                \
@@ -11363,7 +11566,6 @@ extern void putcs(char *arg);
     LOAD_FRAME();                                                              \
                                                                                \
     gmoved(to, from, have);                                                    \
-                                                                               \
     SP() = to + have;                                                          \
     SET_HV(have + below_have);                                                 \
                                                                                \
@@ -12242,18 +12444,6 @@ CASE_CODE(BLOCK) {
   NEXT();
 }
 
-CASE_CODE(FRAME) {
-  uint64_t have = HV();
-  SP() += FRAME_SIZE;
-
-  SP()[-1] = FRAME_IP;
-  SP()[-2] = FRAME_BK;
-
-  SET_HV(have);
-
-  NEXT();
-}
-
 CASE_CODE(TUPLE) {
   uint64_t have = HV();
 
@@ -12588,6 +12778,8 @@ CASE_CODE(SEND_PRIMITIVE_FIBER) {
   PANIC_GUARD_KIND(block, kGAB_BLOCK);
 
   MICRO_OP_FIBER(block);
+
+  NEXT();
 }
 
 CASE_CODE(SEND_PRIMITIVE_CHANNEL) {

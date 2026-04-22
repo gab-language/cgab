@@ -910,6 +910,12 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
   }
 
 yield:
+  if (gab_chnisclosed(gui->appch))
+    goto fin;
+
+  if (gab_chnisclosed(gui->evch))
+    goto fin;
+
   switch (gab_yield(gab)) {
   case sGAB_TERM:
     goto fin;
@@ -959,13 +965,13 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
   union gab_value_pair res;
 
   for (;;) {
+    gab_value app = gab_tchntake(gab, gui->appch, 1000);
+
     if (gab_chnisclosed(gui->appch))
       goto fin;
 
     if (gab_chnisclosed(gui->evch))
       goto fin;
-
-    gab_value app = gab_tchntake(gab, gui->appch, 1000);
 
     if (app == gab_cundefined)
       goto fin;

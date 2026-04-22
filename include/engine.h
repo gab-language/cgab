@@ -512,6 +512,10 @@ struct gab_eg {
   // A value incremented whenever the messages record is changed.
   // Used to check inline caches.
   _Atomic uint64_t messages_epoch;
+
+  _Atomic gab_value macros;
+  _Atomic uint64_t macros_epoch;
+
   // The global work queue, where jobs push fibers to other jobs.
   gab_value work_channel;
 

@@ -944,6 +944,11 @@ struct gab_impl_rest {
      * The receiver is a record with a matching property.
      */
     kGAB_IMPL_PROPERTY,
+
+    /*
+     * The implementation is a macro
+     */
+    kGAB_IMPL_MACRO,
   } status;
 };
 
@@ -1509,6 +1514,15 @@ struct gab_def_argt {
  * @return true on a success
  */
 GAB_API bool gab_ndef(struct gab_triple gab, uint64_t len,
+                      struct gab_def_argt *args);
+
+#define gab_defmacro(gab, ...)                                                      \
+  ({                                                                           \
+    struct gab_def_argt defs[] = {__VA_ARGS__};                                \
+    gab_ndefmacro(gab, sizeof(defs) / sizeof(struct gab_def_argt), defs);           \
+  })
+
+GAB_API bool gab_ndefmacro(struct gab_triple gab, uint64_t len,
                       struct gab_def_argt *args);
 
 /**
