@@ -422,6 +422,9 @@ static struct gab_package default_modules[] = {
     {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Fibers"},
     {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Channels"},
     {"github.com/gab-language/cgab@" GAB_VERSION_TAG},
+    {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Ranges"},
+    {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Transducers"},
+    {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Io"},
     {}, // List terminator.
 };
 static const size_t ndefault_modules = LEN_CARRAY(default_modules) - 1;

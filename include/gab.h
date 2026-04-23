@@ -1828,6 +1828,7 @@ GAB_API_INLINE gab_value gab_string(struct gab_triple gab, const char *data) {
   return gab_nstring(gab, strlen(data), data);
 }
 
+
 /**
  * @brief Concatenate two gab strings
  *

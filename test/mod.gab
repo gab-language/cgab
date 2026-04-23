@@ -1,5 +1,3 @@
-Ranges = 'github.com/gab-language/cgab@0.0.5' .use 'Ranges'
-
 variables\new_variables\test: .def (t => do
   a = 2
   t.expect(a ==: 2)
