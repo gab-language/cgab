@@ -1,17 +1,17 @@
 'github.com/gab-language/cgab@0.0.5'.use 'Json'
 
-Streams = 'github.com/gab-language/cgab@0.0.5' .use 'Streams'
+Streams := 'github.com/gab-language/cgab@0.0.5' .use 'Streams'
 
-IO = 'github.com/gab-language/cgab@0.0.5' .use 'Io'
+IO := 'github.com/gab-language/cgab@0.0.5' .use 'Io'
 
-log\row\t = 'gab/lsp' .use 'logs'
+log\row\t := 'gab/lsp' .use 'logs'
 
-diag\job\t = Shapes.make(
+diag\job\t := Shapes.make(
   server:
   uri:
   text:)
 
-lsp\server\t = Shapes.make(
+lsp\server\t := Shapes.make(
   server\in:
   server\out:
   server\open_ch:
@@ -21,32 +21,32 @@ lsp\server\t = Shapes.make(
 
 position:.def(
   Strings.t
-  (row col) => do
-    xf = Streams.map(x => x)
+  (row col) :: do
+    xf := Streams.map(x :: x)
       |> Streams.split '\n'
       |> Streams.drop row
       |> Streams.take 1
-      |> Streams.map((l r) => l.join r)
+      |> Streams.map((l r) :: l.join r)
 
-    line = self.collect xf .at 0 .unwrap
+    line := self.collect xf .at 0 .unwrap
 
     line
   end)
 
 # TODO @lsp: Some code for computing Position -> Byte Offset.
 [lsp\server\t].defmodule {
-  document\sync\full: (uri text) => do
-    lines = [text.split '\n']
+  document\sync\full: (uri text) :: do
+    lines := [text.split '\n']
     self.put_via(lines server\data: uri)
   end
-  document\sync\inc: (uri changes) => do
-    (ok, lines) = self.server\data.at 'uri'
-    lines = ok .and lines .or []
+  document\sync\inc: (uri changes) :: do
+    (ok, lines) := self.server\data.at 'uri'
+    lines := ok .and lines .or []
 
-    lines = changes.reduce(lines (sofar change) => do
-      str = change.at 'text' .unwrap
-      range = change.at 'range' .unwrap
-      (start, fin) = (range.at 'start' .unwrap, range.at 'end' .unwrap)
+    lines := changes.reduce(lines (sofar change) :: do
+      str := change.at 'text' .unwrap
+      range := change.at 'range' .unwrap
+      (start, fin) := (range.at 'start' .unwrap, range.at 'end' .unwrap)
     end)
 
     self.put_via(lines server\data: uri)
@@ -55,41 +55,41 @@ position:.def(
 
 diagnostics\queue_all:.def(
   lsp\server\t
-  () => do
-    server = self
+  () :: do
+    server := self
 
     server
       .server\data
-      .each (text uri) => do
+      .each (text uri) :: do
         server.diagnostics\queue(text uri)
       end
   end)
 
 diagnostics\queue:.def(
   lsp\server\t
-  (text uri) => do
+  (text uri) :: do
       self.log("Queueing Diagnostics" uri)
       self.server\diagnostics <! diag\job\t.make(self uri text)
   end)
 
 [lsp\server\t].defmodule {
-  log: data* => do
+  log: data* :: do
     self.info data
   end
-  info: (data*) => do
+  info: (data*) :: do
     self.server\logs <! log\row\t.make(info: data)
   end
-  warn: (data*) => do
+  warn: (data*) :: do
     self.server\logs <! log\row\t.make(warn: data)
   end
-  error: (data*) => do
+  error: (data*) :: do
     self.server\logs <! log\row\t.make(err: data)
   end
 }
 
 make:.def(
   lsp\server:
-  (in out) => lsp\server\t.make(
+  (in out) :: lsp\server\t.make(
     in .or (IO.stdin)
     out .or (IO.stdout)
     Channels.make
@@ -100,8 +100,8 @@ make:.def(
 t:.def(lsp\server: lsp\server\t)
 
 _read_header:.defcase {
-  ok: (lsp m) => do
-    next_header = lsp
+  ok: (lsp m) :: do
+    next_header := lsp
       .server\in
       .until('\n'.to\b)
       .unwrap
@@ -109,59 +109,59 @@ _read_header:.defcase {
       .unwrap
       .trim '\n'
 
-    (blank name value) = (next_header.is\blank, next_header.split ':')
+    (blank name value) := (next_header.is\blank, next_header.split ':')
     
-    m = blank .and m .or(m.put(name, value))
+    m := blank .and m .or(m.put(name, value))
 
     option:.make(blank!, lsp, m)._read_header
   end
-  none: (lsp m) => m
+  none: (lsp m) :: m
 }
 
 _read_request:.defcase {
-  true: (lsp) => (ok: nil: lsp._read_request)
+  true: (lsp) :: (ok: nil: lsp._read_request)
   false: none:
 }
 
 [lsp\server\t].defmodule {
-  _read_headers: () => do
+  _read_headers: () :: do
     ok:._read_header(self, [])
   end
-  _read_request: () => do
-    headers = self._read_headers
+  _read_request: () :: do
+    headers := self._read_headers
 
     self.log(headers: headers)
 
-    len = headers
+    len := headers
       .at "Content-Length"
       .unwrap
       .trim
       .as\n
 
-    body = self
+    body := self
       .server\in
       .read len
       .unwrap
       .as\s
       .unwrap
 
-    msg = body
+    msg := body
       .as\json
       .unwrap
 
     msg
   end,
   # Implement the lazy-sequence protocol
-  seq\init: () => do
-    server = self
+  seq\init: () :: do
+    server := self
 
     self
       .server\open_ch
       .is\open
       ._read_request self
   end
-  seq\next: () => do
-    server = self
+  seq\next: () :: do
+    server := self
 
     self
       .server\open_ch
@@ -169,12 +169,12 @@ _read_request:.defcase {
       ._read_request self
   end
   # Helpers for sending data to client
-  respond: (id result) => do
-    msg = { "id" id "result" result } .to\json
+  respond: (id result) :: do
+    msg := { "id" id "result" result } .to\json
 
-    content\length = msg.len
+    content\length := msg.len
 
-    res = Strings.make(
+    res := Strings.make(
       'Content-Length:'content\length
       '\r\n\r\n'msg)
       .to\b
@@ -183,16 +183,16 @@ _read_request:.defcase {
 
     self.server\out.write res .unwrap
   end
-  notify: (method params) => do 
+  notify: (method params) :: do 
     self.log("Notification" method params?)
 
-    msg = { "method" method "params" params } .to\json
+    msg := { "method" method "params" params } .to\json
 
     self.log("Notification" msg)
 
-    content\length = msg.len
+    content\length := msg.len
 
-    notif = Strings.make(
+    notif := Strings.make(
       'Content-Length:'content\length
       '\r\n\r\n'msg)
       .to\b
@@ -200,39 +200,39 @@ _read_request:.defcase {
     self.server\out.write notif .unwrap
   end
   # Run the server
-  run: () => do
-    server = self
+  run: () :: do
+    server := self
 
 # Service for completing and publishing diagnostics
     Fibers
-      .make () => server
+      .make () :: server
         .server\diagnostics
         .each diag\complete:
 
 # Service for logging to file (/tmp/gablsp.log)
     Fibers
-      .make () => server
+      .make () :: server
         .server\logs
-        .each(m => m.log\tofile)
+        .each(m :: m.log\tofile)
 
     self.log "Server started!"
 
-    self.reduce(self (lsp req) => do
-      msg = req .lsp\messages\into
+    self.reduce(self (lsp req) :: do
+      msg := req .lsp\messages\into
 
       lsp.log("Received Msg", msg)
 
-      (ok new_lsp) = msg .lsp\dispatch lsp
+      (ok new_lsp) := msg .lsp\dispatch lsp
 
-      ok .else () => do
+      ok .else () :: do
         lsp.log("No handler found.")
       end
 
-      (new_lsp? == lsp\server\t) .else () => do
+      (new_lsp? == lsp\server\t) .else () :: do
         lsp.error("Invalid new_lsp", ok, new_lsp)
       end
 
-      ok .then () => lsp.log("Successfully processed msg")
+      ok .then () :: lsp.log("Successfully processed msg")
 
       ok.== ok: .and new_lsp .or lsp
     end)

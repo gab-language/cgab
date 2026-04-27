@@ -1,4 +1,4 @@
-s = 'github.com/gab-language/cgab@0.0.5'.use 'Specs'
+s := 'github.com/gab-language/cgab@0.0.5'.use 'Specs'
 
 ui\run: .defspec {
   help:
@@ -57,7 +57,7 @@ ui\event: .defspec {
   )
 }
 
-ui\component = ui\component: .defspec {
+ui\component := ui\component: .defspec {
   help:
   "
   A component is UI element, drawable to the screen.

@@ -1,6 +1,6 @@
-sqlite = 'github.com/gab-language/cgab@0.0.5'.use 'csqlite'
+sqlite := 'github.com/gab-language/cgab@0.0.5'.use 'csqlite'
 
-db = sqlite.make('test.sqlite').unwrap
+db := sqlite.make('test.sqlite').unwrap
 
 "Opened $.".sprintf(db).println
 
@@ -17,12 +17,12 @@ db.eval "INSERT INTO Employees (EmployeeID, FirstName, LastName, HireDate) VALUE
 (1, 'John', 'Doe', '2023-01-15'),
 (2, 'Jane', 'Smith', '2023-02-20');"
 
-res = [db.eval "SELECT * FROM Employees;"]
+res := [db.eval "SELECT * FROM Employees;"]
 res.println
 
-res = [
+res := [
   db.eval(
-    "SELECT * FROM Employees WHERE EmployeeID = 1;"
+    "SELECT * FROM Employees WHERE EmployeeID := 1;"
   )
 ]
 res.println

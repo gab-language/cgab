@@ -1,4 +1,4 @@
-s = 'github.com/gab-language/cgab@0.0.5'.use 'Specs'
+s := 'github.com/gab-language/cgab@0.0.5'.use 'Specs'
 
 json\to\json: .defspec {
   help:

@@ -1,24 +1,24 @@
-Blocks = gab\block:
+Blocks := gab\block:
 
 is\block: .def false:
 is\block: .def (Blocks.t, true:)
 
 |>: .def (
   Blocks.t,
-  (second) => do
-    first = self
-    (args*) => second.(first.(args*))
+  (second) :: do
+    first := self
+    (args*) :: second.(first.(args*))
   end)
 
 # Implement the reducer protocol for blocks
 [Blocks.t] .defmodule {
-  reduce\step: (acc, xs*) => do
+  reduce\step: (acc, xs*) :: do
     (next:, self, self.(acc, xs*))
   end
-  reduce\done: acc => acc
+  reduce\done: acc :: acc
 
 # Implement the transducer protocol for blocks.
-  transduce\step: (r acc xs s) => self.(r acc xs s)
+  transduce\step: (r acc xs s) :: self.(r acc xs s)
 }
 
 Blocks

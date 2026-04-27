@@ -1,20 +1,20 @@
 'github.com/gab-language/cgab@0.0.5' .use 'Bencode'
 'github.com/gab-language/cgab@0.0.5' .use 'cgab'
-Streams = 'github.com/gab-language/cgab@0.0.5' .use 'Transducers'
-IO      = 'github.com/gab-language/cgab@0.0.5' .use 'Io'
+Streams := 'github.com/gab-language/cgab@0.0.5' .use 'Transducers'
+IO      := 'github.com/gab-language/cgab@0.0.5' .use 'Io'
 
-Session = nrepl\session: .defclass (default: {})
+Session := nrepl\session: .defclass (default: {})
 
-ByteStream = stream\byte: .defclass (
+ByteStream := stream\byte: .defclass (
   stream\source:
   default:
   {
-    seq\next: _ => do
-      (ok byte) = self.stream\source.read 1
+    seq\next: _ :: do
+      (ok byte) := self.stream\source.read 1
       (ok nil: byte)
     end
-    seq\init: _ => do
-      (ok byte) = self.stream\source.read 1
+    seq\init: _ :: do
+      (ok byte) := self.stream\source.read 1
       (ok nil: byte)
     end
   })
@@ -22,25 +22,25 @@ ByteStream = stream\byte: .defclass (
 # Transforms a stream of input byte-data
 # Into a single bencode object.
 # Pulls bytes until a valid bencode value can be parsed.
-bencode\stream\xf = Streams.map(b => b.as\s.unwrap)
-  |> Streams.reduce("" (l r) => l + r)
-  |> Streams.drop_while(s => s.as\bencode.ok.!)
-  |> Streams.map(s => s.as\bencode.unwrap)
+bencode\stream\xf := Streams.map(b :: b.as\s.unwrap)
+  |> Streams.reduce("" (l r) :: l + r)
+  |> Streams.drop_while(s :: s.as\bencode.ok.!)
+  |> Streams.map(s :: s.as\bencode.unwrap)
   |> Streams.take(1)
 
-BencodeStream = stream\bencode:.defclass(
+BencodeStream := stream\bencode:.defclass(
   stream\byte:
   default: {
-    seq\init: _ => do
-      (ok, bencode) = self
+    seq\init: _ :: do
+      (ok, bencode) := self
         .stream\byte
         .collect(bencode\stream\xf)
         .at 0
 
       (ok nil: bencode)
     end
-    seq\next: _ => do
-      (ok, bencode) = self
+    seq\next: _ :: do
+      (ok, bencode) := self
         .stream\byte
         .collect(bencode\stream\xf)
         .at 0
@@ -50,10 +50,10 @@ BencodeStream = stream\bencode:.defclass(
   })
 
 serve\code: .defcase {
-  ok: (fiber, server, req) => do
-    (res*, env) = fiber.await
+  ok: (fiber, server, req) :: do
+    (res*, env) := fiber.await
 
-    (ok, session) = req.at session:
+    (ok, session) := req.at session:
 
     server.put(response: {
       'id' req.id
@@ -62,8 +62,8 @@ serve\code: .defcase {
       'result' res.to\string
     })
   end
-  err: (err, server, req) => do
-    (ok, session) = req.at session:
+  err: (err, server, req) :: do
+    (ok, session) := req.at session:
 
     server.put(response: {
       'id' req.id
@@ -76,9 +76,9 @@ serve\code: .defcase {
 
 # Handled requests
 server\serve: .defcase {
-  clone: (server req) => do
+  clone: (server req) :: do
 
-    session = Messages.gen "nrepl/session"
+    session := Messages.gen "nrepl/session"
     
     server
       .put_via(sessions: session {})
@@ -88,13 +88,13 @@ server\serve: .defcase {
         'status' 'done'
       })
   end
-  eval: (server req) => do
+  eval: (server req) :: do
     req
       .code
       .as\gab
       .serve\code(server req)
   end
-  describe: (server req) => do
+  describe: (server req) :: do
     server.put(response: {
       'id' req.id
       'status' 'done'
@@ -122,14 +122,14 @@ server\serve: .defcase {
 }
 
 # Unhandled requests
-server\serve: .def (server req) => server
+server\serve: .def (server req) :: server
 
-Server = nrepl\server: .defclass (
+Server := nrepl\server: .defclass (
   # Fields
   sessions: sock: response:
   # Constructor
-  (t, port) => do
-      sock = IO.Sockets.make tcp: .unwrap
+  (t, port) :: do
+      sock := IO.Sockets.make tcp: .unwrap
 
       sock
         .bind(nil: port)
@@ -145,37 +145,37 @@ Server = nrepl\server: .defclass (
     end
   # Methods
   {
-    serve: (req) => do
+    serve: (req) :: do
       req.op.to\message.server\serve(self req)
     end
-    listen: () => do
-      server = self
+    listen: () :: do
+      server := self
 
       'Server listening!'.println
 
-      Fibers.make () => do
+      Fibers.make () :: do
         # Accept out client
-        client = server.sock.accept.unwrap
+        client := server.sock.accept.unwrap
         'Client accepted!'.println
 
         # Construct a BencodeStream from the client.
-        stream = BencodeStream.make(ByteStream.make(client))
+        stream := BencodeStream.make(ByteStream.make(client))
 
         # Start the pipeline.
         # Replace IO.stdout with the client to actually send the responses.
         # Handle the requests and place the response in server.response.
         stream.pipe(
           client
-          Streams.map(request => request.zip(Streams.map (v k) => (v k.to\message)))
-          |> Streams.reduce(server (server, request) => server.serve(request))
-          |> Streams.map(server => server.response.to\bencode)
+          Streams.map(request :: request.zip(Streams.map (v k) :: (v k.to\message)))
+          |> Streams.reduce(server (server, request) :: server.serve(request))
+          |> Streams.map(server :: server.response.to\bencode)
         )
       end
     end
   })
 
 # Spawn a server that listens to one client
-fb = Server
+fb := Server
   .make(8888)
   .listen
 

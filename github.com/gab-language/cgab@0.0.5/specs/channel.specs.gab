@@ -1,6 +1,6 @@
-s = 'github.com/gab-language/cgab@0.0.5'.use 'Specs'
+s := 'github.com/gab-language/cgab@0.0.5'.use 'Specs'
 
-channel\spec = channel: .defspec {
+channel\spec := channel: .defspec {
   help:
   "
   Channels allow data to be shared between fibers.

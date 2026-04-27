@@ -1,6 +1,6 @@
-s = 'github.com/gab-language/cgab@0.0.5'.use 'Specs'
+s := 'github.com/gab-language/cgab@0.0.5'.use 'Specs'
 
-seqable\spec = seqable: .defspec {
+seqable\spec := seqable: .defspec {
   help:
   "
   The `seqable` protocol defines how a value can produce a lazy sequence of other values.
@@ -8,7 +8,7 @@ seqable\spec = seqable: .defspec {
   To use the `seqable` protocol, begin by sending `seq\init`:
 
   ```gab
-    (ok next values*) = ['1' '2' '3' '4'].seq\init
+    (ok next values*) := ['1' '2' '3' '4'].seq\init
   ```
 
   *ok* will contain `ok:` or `none:`. This determines whether or not the sequence had an initial value.
@@ -20,9 +20,9 @@ seqable\spec = seqable: .defspec {
   The run of values can be any number of values. Records return `(value, key)`, so for the above example:
 
   ```gab
-    ok     # => ok:
-    next   # => 1
-    values # => ['1', 0] (values collects the tuple into a list)
+    ok     # :: ok:
+    next   # :: 1
+    values # :: ['1', 0] (values collects the tuple into a list)
   ```
 
   The *next* value is a key which the user can pass to `seq\next:` to receive the *next* iteration in the sequence.
@@ -30,11 +30,11 @@ seqable\spec = seqable: .defspec {
   This is what makes the sequence lazy - the user computes the next value only when they need it.
 
   ```gab
-    (ok next values*) = ['1' '2' '3' '4'].seq\next 1
+    (ok next values*) := ['1' '2' '3' '4'].seq\next 1
 
-    ok     # => ok: 
-    next   # => 2
-    values # => ['2', 1]
+    ok     # :: ok: 
+    next   # :: 2
+    values # :: ['2', 1]
   ```
   "
   spec: s.protocol (

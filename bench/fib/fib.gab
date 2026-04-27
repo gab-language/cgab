@@ -7,11 +7,11 @@
 # Compare against: lua, python3, ruby
 
 do_fib: .defcase {
-  true:  n => n
-  false: n => (n - 1).fib + (n - 2).fib
+  true:  n :: n
+  false: n :: (n - 1).fib + (n - 2).fib
 }
 
-fib: .def (Numbers.t, () => do
+fib: .def (Numbers.t, () :: do
   (self < 2) .do_fib self
 end)
 

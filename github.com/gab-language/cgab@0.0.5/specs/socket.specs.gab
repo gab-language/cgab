@@ -1,7 +1,7 @@
-s = 'github.com/gab-language/cgab@0.0.5'.use 'Specs'
+s := 'github.com/gab-language/cgab@0.0.5'.use 'Specs'
 'github.com/gab-language/cgab@0.0.5/specs'.use 'streamable.specs'
 
-socket\spec = socket: .defspec {
+socket\spec := socket: .defspec {
   help:
   "
   A native socket handle.

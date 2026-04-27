@@ -1,6 +1,6 @@
-s = 'github.com/gab-language/cgab@0.0.5' .use 'Specs'
+s := 'github.com/gab-language/cgab@0.0.5' .use 'Specs'
 
-test = s.cat(
+test := s.cat(
   'status' s.int
   'name'   s+(s.string))
 
@@ -14,9 +14,9 @@ test.spec\fits(42 'hello' 'world' 'world' 'world')
 
 test.spec\fits(42 'hello' 12)
 
-ints = s+(s.int)
-atleastoneString = s+(s.string)
-nextest = s.cat(
+ints := s+(s.int)
+atleastoneString := s+(s.string)
+nextest := s.cat(
   'ints' ints
   'strings' atleastoneString)
 
@@ -38,7 +38,7 @@ nextest.spec\fits('hello')
 
 nextest.spec\fits(1)
 
-nested = s.cat(
+nested := s.cat(
   'nextest' nextest
   'ints2' ints)
 

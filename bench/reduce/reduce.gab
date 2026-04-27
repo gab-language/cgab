@@ -3,7 +3,7 @@
 # The simplest possible workload that exercises the core eval loop.
 # A slow result here means everything else will be slow.
 
-result = Ranges.make(0, 10000000).reduce(0, (acc, n) => acc + n)
+result := Ranges.make(0, 10000000).reduce(0, (acc, n) :: acc + n)
 
 result.println
-# => 49999995000000
+# :: 49999995000000

@@ -5,10 +5,10 @@
 # structural sharing.
 
 # Build an initial record with 100 keys
-initial = Ranges.make(0, 100).reduce({ }, (rec, i) => rec.put(i, i))
+initial := Ranges.make(0, 100).reduce({ }, (rec, i) :: rec.put(i, i))
 
 # Repeatedly update a single key one million times, threading the result
-result = Ranges.make(0, 1000000).reduce(initial, (rec, i) => rec.put(0, i))
+result := Ranges.make(0, 1000000).reduce(initial, (rec, i) :: rec.put(0, i))
 
 [result.at(0)].println
-# => (ok: 999999)
+# :: (ok: 999999)

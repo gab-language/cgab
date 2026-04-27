@@ -1,4 +1,3 @@
-#include "core.h"
 #include "miniz/amalgamation/miniz.c"
 #include "miniz/amalgamation/miniz.h"
 

@@ -22,7 +22,6 @@
  * IN THE SOFTWARE.
  */
 
-#include "core.h"
 #include <stdint.h>
 
 // GL/gl.h won't work because some OS's have files which override.

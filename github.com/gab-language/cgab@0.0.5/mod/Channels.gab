@@ -1,15 +1,15 @@
-Channels = 'github.com/gab-language/cgab@0.0.5' .use 'cchannels'
+Channels := 'github.com/gab-language/cgab@0.0.5' .use 'cchannels'
 
 [Channels.t] .defmodule {
-  seq\init: _ => do
-    (ok, xs*) = self >!
+  seq\init: _ :: do
+    (ok, xs*) := self >!
     (ok, nil:, xs*)
   end
-  seq\next: _ => do
-    (ok, xs*) = self >!
+  seq\next: _ :: do
+    (ok, xs*) := self >!
     (ok, nil:, xs*)
   end
-  is\open: _ => self.is\closed!
+  is\open: _ :: self.is\closed!
 }
 
 Channels

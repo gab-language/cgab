@@ -1,6 +1,6 @@
-s = 'github.com/gab-language/cgab@0.0.5'.use 'Specs'
+s := 'github.com/gab-language/cgab@0.0.5'.use 'Specs'
 
-fiber\spec = fiber: .defspec {
+fiber\spec := fiber: .defspec {
   help:
   "
   Fibers execute gab code.

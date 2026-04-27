@@ -1,6 +1,6 @@
-s = 'github.com/gab-language/cgab@0.0.5'.use 'Specs'
+s := 'github.com/gab-language/cgab@0.0.5'.use 'Specs'
 
-number\spec = number: .defspec {
+number\spec := number: .defspec {
   help:
   "
   A 64-bit floating number.

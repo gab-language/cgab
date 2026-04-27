@@ -1,8 +1,8 @@
-s = 'github.com/gab-language/cgab@0.0.5'.use 'Specs'
+s := 'github.com/gab-language/cgab@0.0.5'.use 'Specs'
 
-reduceable\spec = reduceable:
+reduceable\spec := reduceable:
 
-transduceable\spec = transduceable: .defspec {
+transduceable\spec := transduceable: .defspec {
   help:
   "
   The `transduceable` protocol defines how a value serves as a *transducer*.

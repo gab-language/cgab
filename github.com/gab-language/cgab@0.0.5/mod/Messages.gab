@@ -1,20 +1,20 @@
-Messages = 'github.com/gab-language/cgab@0.0.5'.use 'cmessages'
+Messages := 'github.com/gab-language/cgab@0.0.5'.use 'cmessages'
 
 to\class_cxtor: .defcase {
   default:
-  () => (t) => (args*) => t.make(args*)
+  () :: (t) :: (args*) :: t.make(args*)
 
   "gab\block"
-  () => do
-    block = self
-    (t) => (args*) => block.(t args*)
+  () :: do
+    block := self
+    (t) :: (args*) :: block.(t args*)
   end
 }
 
 # Helper message for defining 'class'-esque types.
-defclass: .def (fields*, cxtor, module) => do
+defclass: .def (fields*, cxtor, module) :: do
 # Combine the fields into a shape to get our class type.
-  t = Shapes.make(fields*)
+  t := Shapes.make(fields*)
 
 # Define t: for this message, returning our class type.
   t: .def(self t)

@@ -4,33 +4,33 @@
 # to each in a loop. Measures how shape resolution scales with
 # specialization count.
 
-A = Shapes.make(a:)
-B = Shapes.make(b:)
-C = Shapes.make(c:)
-D = Shapes.make(d:)
+A := Shapes.make(a:)
+B := Shapes.make(b:)
+C := Shapes.make(c:)
+D := Shapes.make(d:)
 
-describe: .def (A, () => 'a')
-describe: .def (B, () => 'b')
-describe: .def (C, () => 'c')
-describe: .def (D, () => 'd')
+describe: .def (A, () :: 'a')
+describe: .def (B, () :: 'b')
+describe: .def (C, () :: 'c')
+describe: .def (D, () :: 'd')
 
-a = { a: 0 }
-b = { b: 0 }
-c = { c: 0 }
-d = { d: 0 }
+a := { a: 0 }
+b := { b: 0 }
+c := { c: 0 }
+d := { d: 0 }
 
 do_loop: .defcase {
-  true:  n => n
-  false: n => do
+  true:  n :: n
+  false: n :: do
     a.describe
     b.describe
     c.describe
     d.describe
-    n = n - 1
+    n := n - 1
     (n == 0) .do_loop n
   end
 }
 
-loop: .def (Numbers.t, () => (self == 0) .do_loop self)
+loop: .def (Numbers.t, () :: (self == 0) .do_loop self)
 
 1000000.loop

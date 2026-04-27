@@ -22,7 +22,6 @@
  *  IN THE SOFTWARE.
  */
 
-#include "core.h"
 #include "engine.h"
 #include "gab.h"
 
@@ -3605,12 +3604,14 @@ void gab_gcdocollect(struct gab_triple gab) {
    * as we're collecting. Just save the snapshot
    * of it now.
    */
-  // TODO @bug: Repeat this for macros
   gab.eg->gc.msg[epoch] = atomic_load(&gab.eg->messages);
+  gab.eg->gc.mac[epoch] = atomic_load(&gab.eg->macros);
 
   gab_value messages = gab.eg->gc.msg[epoch];
+  gab_value macros = gab.eg->gc.mac[epoch];
 
   gab_value last_messages = gab.eg->gc.msg[last];
+  gab_value last_macros = gab.eg->gc.mac[last];
 
 #if cGAB_LOG_GC
   fprintf(stderr, "CEPOCH %i (last: %i, raw: %i)\n", epoch, last,
@@ -3623,10 +3624,16 @@ void gab_gcdocollect(struct gab_triple gab) {
   if (gab_valiso(messages))
     inc_obj_ref(gab, gab_valtoo(messages));
 
+  if (gab_valiso(macros))
+    inc_obj_ref(gab, gab_valtoo(macros));
+
   processincrements(gab, epoch);
 
   if (gab_valiso(last_messages))
     dec_obj_ref(gab, gab_valtoo(last_messages));
+
+  if (gab_valiso(last_macros))
+    dec_obj_ref(gab, gab_valtoo(last_macros));
 
   processdecrements(gab, last);
 
@@ -3805,16 +3812,6 @@ gab_token string(gab_lx *self) {
   return start == '"' ? TOKEN_DOUBLESTRING : TOKEN_SINGLESTRING;
 }
 
-gab_token check_special_operator(gab_lx *self) {
-  if (s_char_match(self->current_token_src, s_char_cstr("=")))
-    return TOKEN_SPECIAL_SEND;
-
-  if (s_char_match(self->current_token_src, s_char_cstr("=>")))
-    return TOKEN_SPECIAL_SEND;
-
-  return TOKEN_OPERATOR;
-}
-
 gab_token operator(gab_lx *self) {
   while (can_continue_operator(peek(self)))
     advance(self);
@@ -3822,7 +3819,7 @@ gab_token operator(gab_lx *self) {
   if (peek(self) == ':')
     return advance(self), TOKEN_MESSAGE;
 
-  return check_special_operator(self);
+  return TOKEN_OPERATOR;
 }
 
 gab_token symbol(gab_lx *self) {
@@ -3918,8 +3915,14 @@ gab_token other(gab_lx *self) {
     advance(self);
     return TOKEN_RBRACK;
   case ':':
-    // Empty message
     advance(self);
+
+    if (peek(self) == ':')
+      return advance(self), TOKEN_COLONCOLON;
+
+    if (peek(self) == '=')
+      return advance(self), TOKEN_COLONEQUAL;
+
     return TOKEN_MESSAGE;
   case '\\':
     advance(self);
@@ -7310,7 +7313,7 @@ struct bc {
   gab_value err;
 };
 
-enum prec_k { kNONE, kEXP, kBINARY_SEND, kSEND, kSPECIAL_SEND, kPRIMARY };
+enum prec_k { kNONE, kEXP, kBINARY_SEND, kSEND, kBUILTIN, kPRIMARY };
 
 typedef gab_value (*parse_f)(struct gab_triple gab, struct parser *,
                              gab_value lhs);
@@ -7349,11 +7352,14 @@ static gab_value prev_id(struct gab_triple gab, struct parser *parser) {
   return gab_nstring(gab, s.len, s.data);
 }
 
-bool msg_is_specialform(struct gab_triple gab, gab_value msg) {
-  if (msg == gab_message(gab, mGAB_ASSIGN))
+bool msg_is_builtin(struct gab_triple gab, gab_value msg) {
+  if (gab_valkind(msg) != kGAB_BINARY)
+    return false;
+
+  if (msg == gab_binary(gab, mGAB_ASSIGN))
     return true;
 
-  if (msg == gab_message(gab, mGAB_BLOCK))
+  if (msg == gab_binary(gab, mGAB_BLOCK))
     return true;
 
   return false;
@@ -7600,7 +7606,7 @@ gab_value node_stealinfo(struct gab_src *src, gab_value from, gab_value to) {
 }
 
 gab_value node_value(struct gab_triple gab, gab_value node) {
-  return gab_list(gab, 1, 1, &node);
+  return gab_listof(gab, node);
 }
 
 gab_value node_empty(struct gab_triple gab, struct parser *parser) {
@@ -7621,8 +7627,7 @@ bool node_issend(struct gab_triple gab, gab_value node) {
   if (gab_recisl(node))
     return false;
 
-  return !msg_is_specialform(gab,
-                             gab_mrecat(gab, node, mGAB_AST_NODE_SEND_MSG));
+  return !msg_is_builtin(gab, gab_mrecat(gab, node, mGAB_AST_NODE_SEND_MSG));
 }
 
 bool node_ismulti(struct gab_triple gab, gab_value node) {
@@ -7631,8 +7636,7 @@ bool node_ismulti(struct gab_triple gab, gab_value node) {
 
   switch (gab_valkind(gab_recshp(node))) {
   case kGAB_SHAPE:
-    return !msg_is_specialform(gab,
-                               gab_mrecat(gab, node, mGAB_AST_NODE_SEND_MSG));
+    return !msg_is_builtin(gab, gab_mrecat(gab, node, mGAB_AST_NODE_SEND_MSG));
   case kGAB_SHAPELIST: {
     size_t len = gab_reclen(node);
 
@@ -7680,8 +7684,9 @@ size_t node_len(struct gab_triple gab, gab_value node) {
   if (gab_valkind(node) != kGAB_RECORD)
     return 0;
 
-  assert(gab_valkind(node) == kGAB_RECORD);
-  assert(gab_valkind(gab_recshp(node)) == kGAB_SHAPELIST);
+  gab_assert(gab_valkind(node) == kGAB_RECORD, "Unreachable sanity check");
+  gab_assert(gab_valkind(gab_recshp(node)) == kGAB_SHAPELIST,
+             "Tried to get length of non-list record node.");
 
   size_t len = gab_reclen(node);
   size_t total_len = 0;
@@ -8036,9 +8041,60 @@ gab_value parse_exp_send_op(struct gab_triple gab, struct parser *parser,
  * The Blocks.make(proto) message would need safeguards somehow.
  * Is there a way it could check that its at the correct spot in the bytecode?
  *
+ * Should we expand macros at this point?
+ *
+ * It would kind of make sense otherwise the only difference between a macro
+ * and a send is the precedence.
+ *
+ * :> and := each affect *environments*. They're not very good candidates for
+ * macros either. (For example, clojure's let and fn are special forms, not
+ * macros or functions)
+ *
+ * Maybe this is a reason to have more of a :let kind of struscture?
+ *
+ * (a b) :fn  do
+ * end
+ *
+ * (a 1 c 2) :in do
+ * end
+ *
+ * This would allow macro impl to not include env.
+ *
+ * a := 2
+ *
+ * How does this make it any easier?
+ *
+ * The :fn or :> macro would be able to compile the rhs with the lhs bindings,
+ * and then emit a Blocks.make(proto).
+ *
+ * But the := or :in *can't* be just macros, because they *compile* differently.
+ * They have to emit a bunch of store-local instructions.
+ *
+ * This happens completely with the `unpack_binding_into_env` function.
+ *
+ * The notion of ENV is completely at *compile* time, not *parse* time. Macros
+ * should be between *parse* and *compile* - so should not intersect.
+ *
+ * Lisps and Schemes have special forms `let` and `fn`, they do not handle this
+ * in userspace. And I don't see a way to do so reasonably.
+ *
+ * This leaves the options of either creating special syntax for let and fn, or
+ * using special sends (as is currently, with = and =>)
+ *
+ * a := 2
+ *
+ * (a, z*, b) :> do
+ *    z*
+ * end
+ *
+ * I think I am deciding against adding macros. I don't mind leaving some
+ * infrastructure for them, but I think they are mostly a bad/unnecessary idea.
+ *
+ * I need to decide on a specific syntax for blocks though, I don't love :>
+ *
  */
-gab_value parse_exp_send_special(struct gab_triple gab, struct parser *parser,
-                                 gab_value lhs) {
+gab_value parse_exp_builtin(struct gab_triple gab, struct parser *parser,
+                            gab_value lhs) {
   size_t begin = parser->offset;
 
   gab_value msg = prev_id(gab, parser);
@@ -8048,7 +8104,7 @@ gab_value parse_exp_send_special(struct gab_triple gab, struct parser *parser,
   if (rhs == gab_cinvalid)
     return gab_cinvalid;
 
-  gab_value node = node_send(gab, lhs, gab_strtomsg(msg), rhs);
+  gab_value node = node_send(gab, lhs, gab_strtobin(msg), rhs);
 
   size_t end = parser->offset;
 
@@ -8059,26 +8115,27 @@ gab_value parse_exp_send_special(struct gab_triple gab, struct parser *parser,
 }
 
 const struct parse_rule parse_rules[] = {
-    {parse_exp_blk, nullptr, kNONE},                  // DO
-    {nullptr, nullptr, kNONE},                        // END
-    {parse_exp_lst, nullptr, kNONE},                  // LBRACE
-    {nullptr, nullptr, kNONE},                        // RBRACE
-    {parse_exp_rec, nullptr, kNONE},                  // LBRACK
-    {nullptr, nullptr, kNONE},                        // RBRACK
-    {parse_exp_tup, nullptr, kNONE},                  // LPAREN
-    {nullptr, nullptr, kNONE},                        // RPAREN
-    {nullptr, parse_exp_send, kSEND},                 // SEND
-    {nullptr, parse_exp_send_op, kBINARY_SEND},       // OPERATOR
-    {nullptr, parse_exp_send_special, kSPECIAL_SEND}, // SPECIAL
-    {parse_exp_sym, nullptr, kNONE},                  // SYMBOL
-    {parse_exp_msg, nullptr, kNONE},                  // MESSAGE
-    {parse_exp_sstr, nullptr, kNONE},                 // STRING
-    {parse_exp_dstr, nullptr, kNONE},                 // STRING
-    {parse_exp_num, nullptr, kNONE},                  // NUMBER
-    {parse_exp_shp, nullptr, kNONE},                  // SLASH
-    {nullptr, nullptr, kNONE},                        // NEWLINE
-    {nullptr, nullptr, kNONE},                        // EOF
-    {nullptr, nullptr, kNONE},                        // ERROR
+    {parse_exp_blk, nullptr, kNONE},            // DO
+    {nullptr, nullptr, kNONE},                  // END
+    {nullptr, parse_exp_builtin, kBUILTIN},     // LAMBDA
+    {nullptr, parse_exp_builtin, kBUILTIN},     // IN
+    {parse_exp_lst, nullptr, kNONE},            // LBRACE
+    {nullptr, nullptr, kNONE},                  // RBRACE
+    {parse_exp_rec, nullptr, kNONE},            // LBRACK
+    {nullptr, nullptr, kNONE},                  // RBRACK
+    {parse_exp_tup, nullptr, kNONE},            // LPAREN
+    {nullptr, nullptr, kNONE},                  // RPAREN
+    {nullptr, parse_exp_send, kSEND},           // SEND
+    {nullptr, parse_exp_send_op, kBINARY_SEND}, // OPERATOR
+    {parse_exp_sym, nullptr, kNONE},            // SYMBOL
+    {parse_exp_msg, nullptr, kNONE},            // MESSAGE
+    {parse_exp_sstr, nullptr, kNONE},           // STRING
+    {parse_exp_dstr, nullptr, kNONE},           // STRING
+    {parse_exp_num, nullptr, kNONE},            // NUMBER
+    {parse_exp_shp, nullptr, kNONE},            // SLASH
+    {nullptr, nullptr, kNONE},                  // NEWLINE
+    {nullptr, nullptr, kNONE},                  // EOF
+    {nullptr, nullptr, kNONE},                  // ERROR
 };
 
 struct parse_rule get_parse_rule(gab_token k) { return parse_rules[k]; }
@@ -9066,7 +9123,9 @@ union gab_value_pair expand_record(struct gab_triple gab, gab_value tuple,
     if (res.status != gab_cvalid)
       return (union gab_value_pair){{gab_cinvalid}};
 
-    gab_fprintf(stderr, "$ $\n", res.aresult->data[0], res.aresult->data[1]);
+    for (int i = 0; i < res.aresult->len; i++)
+      gab_fprintf(stderr, "$ $\n", gab_number(i), res.aresult->data[i]);
+
     gab_assert(res.aresult->len >= 3,
                "Macro should return a new node and environment, not %u.",
                res.aresult->len);
@@ -9077,8 +9136,8 @@ union gab_value_pair expand_record(struct gab_triple gab, gab_value tuple,
     if (res.aresult->data[0] != gab_ok)
       return (union gab_value_pair){{gab_cinvalid}};
 
-    env = res.aresult->data[2];
     node = res.aresult->data[1];
+    env = res.aresult->data[2];
 
     return (union gab_value_pair){{env, node}};
   }
@@ -9086,9 +9145,8 @@ union gab_value_pair expand_record(struct gab_triple gab, gab_value tuple,
     return expand_tuple(gab, node, env);
   default:
     assert(false && "INVALID SHAPE KIND");
+    return (union gab_value_pair){{env, node}};
   }
-
-  return (union gab_value_pair){{env, tuple}};
 }
 
 union gab_value_pair expand_value(struct gab_triple gab, gab_value tuple,
@@ -9318,8 +9376,8 @@ gab_value unpack_bindings_into_env(struct gab_triple gab, struct bc *bc,
   return v_gab_value_destroy(&targets), env;
 }
 
-gab_value compile_block(struct gab_triple gab, struct bc *bc, gab_value node,
-                        gab_value env) {
+gab_value compile_lambda(struct gab_triple gab, struct bc *bc, gab_value node,
+                         gab_value env) {
   gab_value LHS = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_LHS);
   gab_value RHS = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_RHS);
 
@@ -9352,7 +9410,7 @@ gab_value compile_block(struct gab_triple gab, struct bc *bc, gab_value node,
 }
 
 gab_value compile_assign(struct gab_triple gab, struct bc *bc, gab_value node,
-                         gab_value env) {
+                     gab_value env) {
   gab_value lhs_node = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_LHS);
   gab_value rhs_node = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_RHS);
 
@@ -9373,11 +9431,11 @@ gab_value compile_specialform(struct gab_triple gab, struct bc *bc,
                               gab_value tuple, gab_value node, gab_value env) {
   gab_value msg = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_MSG);
 
-  if (msg == gab_message(gab, mGAB_ASSIGN))
+  if (msg == gab_binary(gab, mGAB_ASSIGN))
     return compile_assign(gab, bc, node, env);
 
-  if (msg == gab_message(gab, mGAB_BLOCK))
-    return compile_block(gab, bc, node, env);
+  if (msg == gab_binary(gab, mGAB_BLOCK))
+    return compile_lambda(gab, bc, node, env);
 
   assert(false && "UNHANDLED SPECIAL FORM");
   return gab_cinvalid;
@@ -9396,7 +9454,7 @@ gab_value compile_record(struct gab_triple gab, struct bc *bc, gab_value tuple,
     gab_value rhs_node = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_RHS);
     gab_value msg = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_MSG);
 
-    if (msg_is_specialform(gab, msg))
+    if (msg_is_builtin(gab, msg))
       return compile_specialform(gab, bc, tuple, node, env);
 
     push_inst(bc, (struct inst_arg){OP_TUPLE}, node);
@@ -9850,7 +9908,11 @@ static handler handlers[] = {
 #define VM() (__vm)
 #define SET_BLOCK(b) ({ FB()[-(1 + FRAME_BK)] = (uintptr_t)(b); });
 #define BLOCK() ((struct gab_oblock *)(uintptr_t)FB()[-(1 + FRAME_BK)])
-#define BLOCK_PROTO() (GAB_VAL_TO_PROTOTYPE(BLOCK()->p))
+#define BLOCK_PROTO()                                                          \
+  ({                                                                           \
+    gab_assert(BLOCK(), "Null block while accessing block prototype");         \
+    GAB_VAL_TO_PROTOTYPE(BLOCK()->p);                                          \
+  })
 #define IP() (__ip)
 #define SP() (__sp)
 #define SB() (VM()->sb)
@@ -12718,7 +12780,7 @@ CASE_CODE(SEND) {
     struct gab_oblock *b = GAB_VAL_TO_BLOCK(spec);
     struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(b->p);
 
-    uint8_t local = (GAB_VAL_TO_PROTOTYPE(b->p)->src == BLOCK_PROTO()->src);
+    uint8_t local = (BLOCK() && BLOCK_PROTO()->src == p->src);
     adjust |= (local << 1);
 
     if (local) {

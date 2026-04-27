@@ -1,6 +1,6 @@
-s = 'github.com/gab-language/cgab@0.0.5'.use 'Specs'
+s := 'github.com/gab-language/cgab@0.0.5'.use 'Specs'
 
-streamable\spec = streamable: .defspec {
+streamable\spec := streamable: .defspec {
   help:
   "
   The `streamable` protocol defines an interface for a value to stream bytes in or out as a **side effect**.

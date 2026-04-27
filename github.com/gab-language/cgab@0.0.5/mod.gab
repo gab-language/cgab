@@ -1,50 +1,50 @@
 int\between: .def (
   gab\number:,
-  (floor, ceil) => self.float\between(floor, ceil).floor)
+  (floor, ceil) :: self.float\between(floor, ceil).floor)
 
-truthy_values = []
-falsey_values = [nil:, false:, none:, err:]
+truthy_values := []
+falsey_values := [nil:, false:, none:, err:]
 
-self: .def _ => self
-first: .def x => x
-second: .def (_, x) => x
-all: .def (xs*) => xs
+self: .def _ :: self
+first: .def x :: x
+second: .def (_, x) :: x
+all: .def (xs*) :: xs
 
-is: .def other => self? == other
+is: .def other :: self? == other
 
 to\n: .def (falsey_values, 0)
 to\n: .def (truthy_values, 1)
 
 truthy_values .defmodule {
-  and: (alt*) => alt*
-  then: (args*, f) => f.(args*)
-  or: _ => self
-  else: _ => self
-  assert: _ => self
-  dowhen: (f r args) => f.to\block.(r args*)
+  and: (alt*) :: alt*
+  then: (args*, f) :: f.(args*)
+  or: _ :: self
+  else: _ :: self
+  assert: _ :: self
+  dowhen: (f r args) :: f.to\block.(r args*)
   !: false:
 }
 
 falsey_values .defmodule {
-  and: _ => self
-  then: _ => self
-  or: (alt*) => alt*
-  else: (args*, f) => f.(args*)
-  assert: msg => 'Assertion ($) failed: $'.panicf(self, msg .or "")
+  and: _ :: self
+  then: _ :: self
+  or: (alt*) :: alt*
+  else: (args*, f) :: f.(args*)
+  assert: msg :: 'Assertion ($) failed: $'.panicf(self, msg .or "")
   to\option: none:,
   to\result: err:,
-  dowhen: (_ r) => r
+  dowhen: (_ r) :: r
   !: true:
 }
 
 to\condition: .defcase {
   Blocks.t
   (args*)
-    => self.(args*)
+    :: self.(args*)
 
   Messages.t
   (args*)
-    => self.to\block.(args*)
+    :: self.to\block.(args*)
 
   true: true:
 
@@ -57,141 +57,141 @@ to\condition: .defcase {
 to\condition: .def true:
 
 [] .defmodule {
-  to\option: (args*) => (ok:, self, args*)
-  to\result: (args*) => (ok:, self, args*)
+  to\option: (args*) :: (ok:, self, args*)
+  to\result: (args*) :: (ok:, self, args*)
 
   when: (cond, f, args*)
-    => cond
+    :: cond
       .to\condition(self)
       .dowhen(f self args)
 }
 
 cond\check: .defcase {
-  Blocks.t,   (args*) => self.(args*)
+  Blocks.t,   (args*) :: self.(args*)
   else: ok:
 }
 
-docond: .def (fs*) => do
-  args = self
+docond: .def (fs*) :: do
+  args := self
   fs.reduce(
     nil:
-    (acc, f) => acc.else () => f.cond\check(args*).and f)
+    (acc, f) :: acc.else () :: f.cond\check(args*).and f)
 end
 
 cond\eval: .defcase {
   Blocks.t
-  (v) => self.(v)
+  (v) :: self.(v)
 }
-cond\eval: .def () => self
+cond\eval: .def () :: self
 
-cond: .def (vs*, branches) => do
-  args = [self, vs*]
+cond: .def (vs*, branches) :: do
+  args := [self, vs*]
 
-  k = args.docond(branches ? *)
+  k := args.docond(branches ? *)
 
-  v = branches .at k .unwrap
+  v := branches .at k .unwrap
 
   v.cond\eval(self)
 end
 
 make:.def(
   option:
-  (cond, data*) => do
-    status = cond.to\option
+  (cond, data*) :: do
+    status := cond.to\option
 
     (status, data*)
   end)
 
 make:.def(
   result:
-  (cond, data*) => (cond.to\result, data*))
+  (cond, data*) :: (cond.to\result, data*))
 
 [ok:] .defmodule {
   ok: true:
-  unwrap: (args*) => args*
-  unwrap_or: (args*, default) => args*
+  unwrap: (args*) :: args*
+  unwrap_or: (args*, default) :: args*
 }
 
 [] .defmodule {
   ok: false:
-  unwrap: args* => 'Failed to unwrap $ $'.panicf(self args)
-  unwrap_or: (args*, default) => default
+  unwrap: args* :: 'Failed to unwrap $ $'.panicf(self args)
+  unwrap_or: (args*, default) :: default
 }
 
-cons: .def (nil:, o => [o])
+cons: .def (nil:, o :: [o])
 
 doreduce: .defcase {
   ## The sequence continues
-  ok: (seq\i, seq\v, acc, r, xs) => do
+  ok: (seq\i, seq\v, acc, r, xs) :: do
     # Apply the reducer
-    (cmd, r, acc) = r.reduce\step(acc, xs*)
+    (cmd, r, acc) := r.reduce\step(acc, xs*)
     # proceed to the next sep
     cmd.doreduce(seq\i, seq\v, acc, r)
   end
   ## The sequence is done
-  none: (seq\i, seq\v, acc, r) => do
+  none: (seq\i, seq\v, acc, r) :: do
     r.reduce\done(acc)
   end
   ## The reducer continues
-  next: (seq\i, seq\v, acc, r) => do
+  next: (seq\i, seq\v, acc, r) :: do
     # Apply the producer resolving new values for the next step
-    (ok, seq\v, xs*) = seq\i .seq\next seq\v
+    (ok, seq\v, xs*) := seq\i .seq\next seq\v
     # Tailcall to the next step
     ok.doreduce(seq\i, seq\v, acc, r, xs)
   end
   ## The reducer is done
-  stop: (seq\i, seq\v, acc, r) => do
+  stop: (seq\i, seq\v, acc, r) :: do
     r.reduce\done(acc)
   end
 }
 
 defseq: .def do
-  _ => [self] .defmodule {
-    reduce: (acc, r) => do
-      (ok, seq\v, xs*) = self.seq\init
+  _ :: [self] .defmodule {
+    reduce: (acc, r) :: do
+      (ok, seq\v, xs*) := self.seq\init
       ok.doreduce(self, seq\v, acc, r, xs)
     end,
-    transduce: (acc, r, td) => do
+    transduce: (acc, r, td) :: do
       self.reduce(acc, td .transduce\wrap r)
     end,
-    each: f => do
-      self.transduce(nil:, () => nil:, transducer:.tap f)
+    each: f :: do
+      self.transduce(nil:, () :: nil:, transducer:.tap f)
     end,
-    map: f => do
+    map: f :: do
       self.collect([] transducer:.map f)
     end,
-    filter: f => do
+    filter: f :: do
       self.collect([] transducer:.filter f)
     end,
-    mapfilter: f => do
+    mapfilter: f :: do
       self.collect([] transducer:.mapfilter f)
     end,
-    skip: f => do
+    skip: f :: do
       self.collect([] transducer:.skip f)
     end,
-    every: f => do
-      xf = transducer:.drop_while f
+    every: f :: do
+      xf := transducer:.drop_while f
         |> transducer:.take 1
 
       self.collect([] xf).is\empty
     end,
-    any: f => do
-      xf = transducer:.filter f
+    any: f :: do
+      xf := transducer:.filter f
         |> transducer:.take 1
 
       self.collect([] xf).is\empty.!
     end,
-    join: (start xf) => do
-      self.transduce(start (acc x) => acc + x, xf)
+    join: (start xf) :: do
+      self.transduce(start (acc x) :: acc + x, xf)
     end,
-    collect: (into xf) => do
-      self.transduce(into (acc x) => acc.cons x,  xf)
+    collect: (into xf) :: do
+      self.transduce(into (acc x) :: acc.cons x,  xf)
     end,
-    zip: (into xf) => do
-      self.transduce(into (acc v k) => acc.put(k v), xf)
+    zip: (into xf) :: do
+      self.transduce(into (acc v k) :: acc.put(k v), xf)
     end,
-    pipe: (into xf) =>do
-      self.transduce(into (acc x) => acc <! x, xf)
+    pipe: (into xf) :: do
+      self.transduce(into (acc x) :: acc <! x, xf)
     end
   }
 end

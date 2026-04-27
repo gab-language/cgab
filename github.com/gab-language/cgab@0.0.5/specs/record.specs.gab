@@ -1,8 +1,8 @@
-s = 'github.com/gab-language/cgab@0.0.5'.use 'Specs'
+s := 'github.com/gab-language/cgab@0.0.5'.use 'Specs'
 
 'github.com/gab-language/cgab@0.0.5/specs'.use 'seqable.specs'
 
-record\spec = record: .defspec {
+record\spec := record: .defspec {
   help:  "
   An immutable set of key,value pairs. This is the core datastructure of the language.
 
@@ -11,15 +11,15 @@ record\spec = record: .defspec {
   spec:  s.record
 }
 
-KEY   = s.unknown
-VALUE = s.unknown
+KEY   := s.unknown
+VALUE := s.unknown
 
 record\len: .defspec {
   help: "
   Return the number of key-value pairs in the record.
 
   ```gab
-  [1 2 3].len # => 3
+  [1 2 3].len # :: 3
   ```
   ",
   spec: s.message {
@@ -36,15 +36,15 @@ record\at: .defspec {
 
   Returns a tuple with the result of the check, and the value if it was found.
   ```gab
-  (ok value) = { name: 'John Doe' } .at (name:)
+  (ok value) := { name: 'John Doe' } .at (name:)
 
-  ok    # => ok:
-  value # => 'John Doe'
+  ok    # :: ok:
+  value # :: 'John Doe'
 
-  (ok value) = { name: 'John Doe' } .at (age:)
+  (ok value) := { name: 'John Doe' } .at (age:)
 
-  ok    # => none:
-  value # => nil:
+  ok    # :: none:
+  value # :: nil:
   ```
   ",
   spec:  s.message {
@@ -76,12 +76,12 @@ record\put: .defspec {
   Return a new record with the additional key-value pair, or an updated value for an existing key.
 
   ```gab
-  person = { name: 'John Doe' }
+  person := { name: 'John Doe' }
 
-  person = person.put(age: 30)
+  person := person.put(age: 30)
 
-  person.name # => 'John Doe'
-  person.age  # => 30
+  person.name # :: 'John Doe'
+  person.age  # :: 30
   ```
   ",
   spec: s.message {
@@ -98,15 +98,15 @@ record\put_via: .defspec {
   Traverse nested records with the given `key_path`, eventually performing a final put.
 
   ```gab
-  person = {
-    mother: = {
+  person := {
+    mother: := {
       name: 'Jane Doe' 
     }
   }
 
-  person = person.put_via(mother: age: 60)
+  person := person.put_via(mother: age: 60)
 
-  person.mother.age # => 60
+  person.mother.age # :: 60
   ```
 
   This message will create records along the path where none exist.
@@ -114,7 +114,7 @@ record\put_via: .defspec {
   ```gab
   {}.put_via(mother: sister: daugher: relation: 'cousin')
 
-  # => { mother: { sister: { daughter: { relation: 'cousin' } } } }
+  # :: { mother: { sister: { daughter: { relation: 'cousin' } } } }
   ```
   "
   spec: s.message {
@@ -132,7 +132,7 @@ record\at_via: .defspec {
   If any key along the path is missing, returns `none:`
 
   ```gab
-  (ok, value) = record.at_via(a: long: run: of: keys:)
+  (ok, value) := record.at_via(a: long: run: of: keys:)
   ```
   "
   spec: s.message {
@@ -149,11 +149,11 @@ record\put_by: .defspec {
   Apply a function to the value at key, returning a new record with the returned value from that function at key.
 
   ```gab
-  person = { age: 30 }
+  person := { age: 30 }
 
-  person = person.put_by(age: age => age + 1)
+  person := person.put_by(age: age :: age + 1)
 
-  person.age # => 30
+  person.age # :: 30
   ```
 
   If the key does not exist in the record, then the argument to the block will be `nil:`.
@@ -187,9 +187,9 @@ record\push: .defspec {
   Return a new record with the given value at the *end* of the record. The key will be the length of the record *before* inserting.
 
   ```gab
-  arr = [1 2 3] .push 4
+  arr := [1 2 3] .push 4
 
-  arr # => [1 2 3 4]
+  arr # :: [1 2 3 4]
   ```
   "
   spec: s.message {
@@ -207,17 +207,17 @@ record\pop: .defspec {
 
   ```gab
 
-  (ok rec val key) = [1 2 3 4].pop
+  (ok rec val key) := [1 2 3 4].pop
 
-  ok  # => ok:
-  rec # => [1 2 3]
-  val # => 4
-  key # => 3
+  ok  # :: ok:
+  rec # :: [1 2 3]
+  val # :: 4
+  key # :: 3
   ```
 
   If the record was empty, returns `none:` and an empty record.
   ```gab
-  [].pop # => none: []
+  [].pop # :: none: []
   ```
   "
   spec: s.message {
@@ -341,11 +341,11 @@ record\: .defspec {
   Return the value at the key given by the argument. If the key doesn't exist, panic.
 
   ```gab
-  map = { 'id' 1234 }
+  map := { 'id' 1234 }
 
-  map.('id') # => 1234
+  map.('id') # :: 1234
 
-  map.('name') # => panic
+  map.('name') # :: panic
   ```
 
   This allows for records to serve as functions of their keys.

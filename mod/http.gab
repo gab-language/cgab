@@ -1,10 +1,10 @@
-Http = 'github.com/gab-language/cgab@0.0.5'.use'chttp'
+Http := 'github.com/gab-language/cgab@0.0.5'.use'chttp'
 
 http\req: .defclass(
   http\method: http\endpoint: http\headers: http\body:
   default:
   {
-    as\b: () => do
+    as\b: () :: do
      Strings
       .make (
           self.http\method.to\s,
@@ -13,7 +13,7 @@ http\req: .defclass(
           ' HTTP/1.1\r\n'
           self.http\headers.join(
             Streams.map(
-              (v, k) => Strings.make(k, ":", v ))
+              (v, k) :: Strings.make(k, ":", v ))
             |> Streams.interpose '\r\n')
           '\r\n'
           self.http\body
@@ -24,22 +24,22 @@ http\req: .defclass(
 )
 
 _doget: .defcase {
-  ok: (uri) => do
-    (host, path*) = uri.uri\path*
+  ok: (uri) :: do
+    (host, path*) := uri.uri\path*
 
-    req = http\req:.make(
+    req := http\req:.make(
       GET:
       "/" + path.join
       { Host: host }
       ""      
     )
 
-    (ok, conn) = IO.connect(tcp\tls: host 443)
+    (ok, conn) := IO.connect(tcp\tls: host 443)
 
-    data = req.as\b
+    data := req.as\b
 
     ok
-      .then () => do
+      .then () :: do
         conn
           .write(data)
           .unwrap
@@ -52,11 +52,11 @@ _doget: .defcase {
           .as\http
       end
   end
-  err: (msg) => (err: msg)
+  err: (msg) :: (err: msg)
 }
 
 [http:] .defmodule {
-  get: url => url.as\uri._doget
+  get: url :: url.as\uri._doget
 }
 
 http:

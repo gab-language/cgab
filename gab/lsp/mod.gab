@@ -1,4 +1,4 @@
-lsp\server = 'gab/lsp' .use 'server'
+lsp\server := 'gab/lsp' .use 'server'
 'gab/lsp:messages'.use
 'gab/lsp:diagnostics'.use
 

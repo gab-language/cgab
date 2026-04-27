@@ -1,14 +1,14 @@
 'github.com/gab-language/cgab@0.0.5' .use 'cjson'
 
-array_xf = Streams.map to\json:
+array_xf := Streams.map to\json:
         |> Streams.interpose ","
 
-object_xf = Streams.map((v k) => k.to\json + ":" + v.to\json)
+object_xf := Streams.map((v k) :: k.to\json + ":" + v.to\json)
          |> Streams.interpose ","
 
 json\do_encode_record: .defcase {
-  true: array => Strings.make("[", array.join array_xf, "]")
-  false: object => Strings.make("{", object.join object_xf, "}")
+  true: array :: Strings.make("[", array.join array_xf, "]")
+  false: object :: Strings.make("{", object.join object_xf, "}")
 }
 
 to\json: .defcase {
@@ -16,11 +16,11 @@ to\json: .defcase {
   true:         'true'
   false:        'false'
   Numbers.t
-  () => self.to\string
+  () :: self.to\string
 
   Strings.t
-  () => '"' + self.to\string + '"'
+  () :: '"' + self.to\string + '"'
 
   Records.t
-  () => self.is\list.json\do_encode_record self
+  () :: self.is\list.json\do_encode_record self
 }

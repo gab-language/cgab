@@ -1,6 +1,6 @@
-s = 'github.com/gab-language/cgab@0.0.5'.use 'Specs'
+s := 'github.com/gab-language/cgab@0.0.5'.use 'Specs'
 
-binary\spec = binary: .defspec {
+binary\spec := binary: .defspec {
   help:
   "
   A sequence of bytes, with no encoding.
