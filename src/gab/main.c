@@ -256,6 +256,7 @@ union gab_value_pair gab_use_dynlib(struct gab_triple gab, const char *path,
   }
 #endif
 
+  fprintf(stderr, "RUNNING DYNLIB\n");
   union gab_value_pair res = mod(gab);
 
   gab_fprintf(stderr, "DYNLIB RES: $\n", res.status);
