@@ -111,7 +111,7 @@ $(BUILD_PREFIX)/mod/%.cgab-$(GAB_VERSION_TAG)-$(GAB_TARGETS)$(GAB_DYNLIB_FILEEND
 							$(BUILD_PREFIX)/libbearssl.a 	\
 							$(BUILD_PREFIX)/libllhttp.a  	\
 							$(BUILD_PREFIX)/libgrapheme.a \
-							$(VENDOR_PREFIX)/sqlite3.c    \
+							$(VENDOR_PREFIX)/sqlite3.c
 	$(TARGETCC) $(CFLAGS) $(CSHARED_FLAGS) $($(basename $(notdir $<))_FLAGS) $< -o $@
 
 # This rule builds each c++ module shared library. Repeats above, but for c++.
