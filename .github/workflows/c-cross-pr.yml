@@ -246,10 +246,25 @@ jobs:
         with:
           name: test.cgab-${{ env.version }}-${{ matrix.target }}.exe
 
-      - name: Unzip & Install Modules
+      # Linux and Macos install identically
+      - name: Unzip & Install Modules (LINUX)
+        if: ${{ contains(matrix.target, 'linux') }}
         run: |
           mkdir -p ~/gab/${{ env.version }}-${{ matrix.target }}/github.com/gab-language/cgab@${{ env.version }}/mod
           unzip -o cgab-${{ env.version }}-${{ matrix.target }} -d ~/gab/${{ env.version }}-${{ matrix.target }}
+
+      - name: Unzip & Install Modules (MACOS)
+        if: ${{ contains(matrix.target, 'macos') }}
+        run: |
+          mkdir -p ~/gab/${{ env.version }}-${{ matrix.target }}/github.com/gab-language/cgab@${{ env.version }}/mod
+          unzip -o cgab-${{ env.version }}-${{ matrix.target }} -d ~/gab/${{ env.version }}-${{ matrix.target }}
+
+      # Windows installs into AppData/Local
+      - name: Unzip & Install Modules (WINDOWS)
+        if: ${{ contains(matrix.target, 'windows') }}
+        run: |
+          mkdir -p ~/AppData/Local/gab/${{ env.version }}-${{ matrix.target }}/github.com/gab-language/cgab@${{ env.version }}/mod
+          unzip -o cgab-${{ env.version }}-${{ matrix.target }} -d ~/AppData/Local/gab/${{ env.version }}-${{ matrix.target }}
 
       - name: Make the binary executable (win)
         if: ${{ contains(matrix.target, 'windows') }}
