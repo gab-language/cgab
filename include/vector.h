@@ -48,7 +48,7 @@ struct TYPENAME {
 LINKAGE void METHOD(create)(TYPENAME *self, uint64_t cap) {
   self->cap = cap;
   self->len = 0;
-  self->data = malloc(sizeof(T) * cap);
+  self->data = (T*) malloc(sizeof(T) * cap);
   INIT_LOCK(self);
 }
 

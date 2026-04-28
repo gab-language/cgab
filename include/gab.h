@@ -2163,7 +2163,7 @@ GAB_API uint64_t gab_tsrcline(struct gab_src *src, uint64_t token_offset);
  */
 GAB_API_INLINE enum gab_kind gab_valkind(gab_value value) {
   if (gab_valiso(value))
-    return gab_valtoo(value)->kind + __GAB_VAL_TAG(value);
+    return (enum gab_kind)(gab_valtoo(value)->kind + __GAB_VAL_TAG(value));
 
   return __GAB_VAL_TAG(value);
 }
@@ -2629,7 +2629,7 @@ GAB_API_INLINE gab_value gab_erecord(struct gab_triple gab) {
 GAB_API_INLINE gab_value gab_mrecord(struct gab_triple gab, uint64_t stride,
                                      uint64_t len, const char **keys,
                                      gab_value *vals) {
-  gab_value vkeys[len * stride] = {};
+  gab_value vkeys[len * stride];
 
   gab_gclock(gab);
 
@@ -2646,7 +2646,7 @@ GAB_API_INLINE gab_value gab_mrecord(struct gab_triple gab, uint64_t stride,
 GAB_API_INLINE gab_value gab_brecord(struct gab_triple gab, uint64_t stride,
                                      uint64_t len, const char **keys,
                                      gab_value *vals) {
-  gab_value vkeys[len * stride] = {};
+  gab_value vkeys[len * stride];
 
   gab_gclock(gab);
 
@@ -3267,7 +3267,7 @@ GAB_API_INLINE gab_value gab_slist(struct gab_triple gab, uint64_t stride,
   if (!len)
     return gab_erecord(gab);
 
-  gab_value vals[len * stride] = {};
+  gab_value vals[len * stride];
 
   gab_gclock(gab);
 
@@ -3434,7 +3434,7 @@ GAB_API_INLINE gab_value gab_valintos(struct gab_triple gab, gab_value value) {
     return value;
   default:
     for (size_t len = 4096;; len *= 2) {
-      char *buffer = malloc(len);
+      char *buffer = (char*) malloc(len);
       assert(buffer);
 
       char *cursor = buffer;
@@ -3458,7 +3458,7 @@ GAB_API_INLINE gab_value gab_valintos(struct gab_triple gab, gab_value value) {
 GAB_API_INLINE gab_value gab_pvalintos(struct gab_triple gab, gab_value value,
                                        const char *prefix) {
   for (size_t len = 4096;; len *= 2) {
-    char *buffer = malloc(len);
+    char *buffer = (char*) malloc(len);
     assert(buffer);
 
     char *cursor = buffer;

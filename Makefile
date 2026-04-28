@@ -1,6 +1,6 @@
 NATIVECC    = zig cc
 TARGETCC	  = zig cc --target=$(GAB_TARGETS)
-TARGETCXX   = zig c++
+TARGETCXX   = zig c++ --target=$(GAB_TARGETS)
 AR          = zig ar
 CLIDE       = clide
 
@@ -30,9 +30,11 @@ CFLAGS = -std=c23 \
 CXXFLAGS =  -std=c++23 \
 						-fPIC \
 						-Wall \
-						--target=$(GAB_TARGETS) \
+						-MMD  \
+						-fomit-frame-pointer \
 						-DGAB_TARGET_TRIPLE=\"$(GAB_TARGETS)\"\
 						-DGAB_DYNLIB_FILEENDING=\"$(GAB_DYNLIB_FILEENDING)\" \
+						-DGAB_BUILDTYPE=\"$(GAB_BUILDTYPE)\"\
 						$(INCLUDE) \
 						$(GAB_CCFLAGS)
 
@@ -77,7 +79,7 @@ CMOD_SRC 	 = $(wildcard src/mod/*.c)
 CMOD_SHARED = $(CMOD_SRC:src/mod/%.c=$(BUILD_PREFIX)/mod/%.cgab-$(GAB_VERSION_TAG)-$(GAB_TARGETS)$(GAB_DYNLIB_FILEENDING))
 
 CXXMOD_SRC 	 = $(wildcard src/mod/*.cc)
-CXXMOD_SHARED = $(CXXMOD_SRC:src/mod/%.cc=$(BUILD_PREFIX)/mod/%$(GAB_DYNLIB_FILEENDING))
+CXXMOD_SHARED = $(CXXMOD_SRC:src/mod/%.cc=$(BUILD_PREFIX)/mod/%.cgab-$(GAB_VERSION_TAG)-$(GAB_TARGETS)$(GAB_DYNLIB_FILEENDING))
 
 all: gab cmodules cxxmodules
 
@@ -101,10 +103,6 @@ $(BUILD_PREFIX)/libcgab.a: $(CGAB_OBJ)
 $(BUILD_PREFIX)/gab/gab: $(GAB_OBJ) $(BUILD_PREFIX)/libcgab.a
 	$(TARGETCC) $(CFLAGS) $(BINARY_FLAGS) -o $@ $^
 
-# This rule builds each c++ module shared library.
-$(BUILD_PREFIX)/mod/%$(GAB_DYNLIB_FILEENDING): $(SRC_PREFIX)/%.cc
-	$(TARGETCXX) $(CXXFLAGS) $(CXXSHARED_FLAGS) $< -o $@
-
 # This rule builds each c module shared library.
 # per-library flags are declared in the configuration.
 # They are passed through the funky basename-notdir call.
@@ -114,8 +112,12 @@ $(BUILD_PREFIX)/mod/%.cgab-$(GAB_VERSION_TAG)-$(GAB_TARGETS)$(GAB_DYNLIB_FILEEND
 							$(BUILD_PREFIX)/libllhttp.a  	\
 							$(BUILD_PREFIX)/libgrapheme.a \
 							$(VENDOR_PREFIX)/sqlite3.c    \
-							$(VENDOR_PREFIX)/duckdb.cc
 	$(TARGETCC) $(CFLAGS) $(CSHARED_FLAGS) $($(basename $(notdir $<))_FLAGS) $< -o $@
+
+# This rule builds each c++ module shared library. Repeats above, but for c++.
+$(BUILD_PREFIX)/mod/%.cgab-$(GAB_VERSION_TAG)-$(GAB_TARGETS)$(GAB_DYNLIB_FILEENDING): $(MOD_SRC_PREFIX)/%.cc \
+							$(VENDOR_PREFIX)/duckdb.cpp
+	$(TARGETCXX) $(CXXFLAGS) $(CXXSHARED_FLAGS) $< -o $@
 
 # This curls a mozilla cert used for TLS clients.
 cacert.pem:
@@ -135,10 +137,11 @@ $(VENDOR_PREFIX)/sqlite3.c:
 	make -C $(VENDOR_PREFIX)/sqlite/$(BUILD_PREFIX) sqlite3.c
 	cp $(VENDOR_PREFIX)/sqlite/$(BUILD_PREFIX)/sqlite3.c $(VENDOR_PREFIX)/
 
-$(VENDOR_PREFIX)/duckdb.cc:
+$(VENDOR_PREFIX)/duckdb.cpp:
 	cd $(VENDOR_PREFIX)/duckdb && \
 		python scripts/amalgamation.py
-	cp $(VENDOR_PREFIX)/duckdb/src/amalgamation/duckdb.cpp $(VENDOR_PREFIX)/duckdb.cc
+	cp $(VENDOR_PREFIX)/duckdb/src/amalgamation/duckdb.cpp $(VENDOR_PREFIX)/duckdb.cpp
+	cp $(VENDOR_PREFIX)/duckdb/src/amalgamation/duckdb.hpp $(VENDOR_PREFIX)/duckdb.hpp
 
 # These rules generates header files for libgrapheme
 $(VENDOR_PREFIX)/libgrapheme/gen/%.h: 

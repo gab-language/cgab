@@ -41,7 +41,7 @@ LINKAGE uint64_t METHOD(len)(TYPENAME *self) { return self->tail - self->head; }
 LINKAGE void METHOD(cap)(TYPENAME *self, uint32_t cap) {
   assert((cap > 0) && ((cap & (cap - 1)) == 0));
 
-  T *newdata = malloc(sizeof(T) * cap);
+  T *newdata = (T*)malloc(sizeof(T) * cap);
 
   uint32_t len = METHOD(len)(self);
 
