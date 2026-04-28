@@ -168,7 +168,7 @@ jobs:
         os: 
           - ubuntu-latest
           - macos-latest
-          # - windows-latest
+          - windows-latest
         include:
           - os: ubuntu-latest
             target: x86_64-linux-gnu
@@ -176,9 +176,9 @@ jobs:
           - os: macos-latest
             target: aarch64-macos-none
             cmd: ./build-aarch64-macos-none/gab/gab
-          # - os: windows-latest
-          #   target: x86_64-windows-gnu
-          #   cmd: .\build-x86_64-windows-gnu\gab
+          - os: windows-latest
+            target: x86_64-windows-gnu
+            cmd: .\build-x86_64-windows-gnu\gab
 
     runs-on: ${{ matrix.os }}
     needs: build_artifacts
@@ -206,12 +206,11 @@ jobs:
         run: |
           mkdir -p ~/gab/${{ env.version }}-${{ matrix.target }}/github.com/gab-language/cgab@${{ env.version }}/mod
           unzip -o cgab-${{ env.version }}-${{ matrix.target }} -d ~/gab/${{ env.version }}-${{ matrix.target }}
-      # - name: Make the binary executable (win)
-      #   if: ${{ contains(matrix.target, 'windows') }}
-      #   run: |
-      #     move gab gab.exe
-      #     where.exe "gab"
-      #     Get-Command ".\gab"
+
+      - name: Make the binary executable (win)
+        if: ${{ contains(matrix.target, 'windows') }}
+        run: |
+          move .\build-${{ matrix.target}}\gab\gab .\build-${{ matrix.target }}\gab\gab.exe
 
       - name: DEBUG - List files
         run: ls -al

@@ -1379,8 +1379,6 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
 
     // assert(env != gab_cinvalid);
 
-    flockfile(stdout);
-
     if (repl_check_res(gab, res))
       goto fin;
 
@@ -1398,7 +1396,6 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
     putc('\n', stdout);
 
   fin:
-    funlockfile(stdout);
 
     source.len = 0;
   }

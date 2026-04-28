@@ -581,13 +581,6 @@ union gab_value_pair render_rect(struct gab_triple gab, struct gui *gui,
  * TODO @cui @api @qol: Provide an API for loading images into some gab_box,
  * and then expect that as an argument here.
  *
- * TODO @cgab @api: Allow user to pin fibers to a certain thread.
- * This is required for some OS apis which have to run on the main thread.
- *
- * TODO @cgab @api: Allow arguments to be passed to use:, and therefore to
- * GAB_DYNLIB_MAIN_FN This would allow 'ui'.use gui: or 'ui'.use tui:, which
- * would let us know at load time which implementation to instantiate
- *
  * TODO @cgab @api: Also - I want all the numbers that are "pixels" to translate
  * to "cells" in the TUI api.  This means we need to wrap them up with some
  * conversions.
@@ -624,30 +617,30 @@ union gab_value_pair render_image(struct gab_triple gab, struct gui *gui,
   if (vid != gab_cundefined && gab_valkind(vid) != kGAB_MESSAGE)
     return gab_pktypemismatch(gab, vid, kGAB_MESSAGE);
 
-  // Leak this
-  clay_tb_image *img = malloc(sizeof(clay_tb_image));
-  *img =
-      Clay_Termbox_Image_Load_Memory(gab_strdata(&vimage), gab_strlen(vimage));
-
-  CLAY(vid == gab_cundefined ? CLAY_IDI("", gui->n++)
-                             : CLAY_SID(((Clay_String){
-                                   .length = gab_strlen(vid),
-                                   .chars = gab_strdata(&vid),
-                               })),
-       {
-           .layout =
-               {
-                   .sizing =
-                       {
-                           .width = CLAY_SIZING_FIT(w),
-                           .height = CLAY_SIZING_FIT(h),
-                       },
-               },
-           .image =
-               {
-                   .imageData = img,
-               },
-       }, );
+  // clay_tb_image *img = malloc(sizeof(clay_tb_image));
+  // *img =
+  //     Clay_Termbox_Image_Load_Memory(gab_strdata(&vimage),
+  //     gab_strlen(vimage));
+  //
+  // CLAY(vid == gab_cundefined ? CLAY_IDI("", gui->n++)
+  //                            : CLAY_SID(((Clay_String){
+  //                                  .length = gab_strlen(vid),
+  //                                  .chars = gab_strdata(&vid),
+  //                              })),
+  //      {
+  //          .layout =
+  //              {
+  //                  .sizing =
+  //                      {
+  //                          .width = CLAY_SIZING_FIT(w),
+  //                          .height = CLAY_SIZING_FIT(h),
+  //                      },
+  //              },
+  //          .image =
+  //              {
+  //                  .imageData = img,
+  //              },
+  //      }, );
 
   return gab_union_cvalid(gab_nil);
 }
@@ -1309,11 +1302,13 @@ GAB_DYNLIB_NATIVE_FN(ui, run) {
     render_rec_target = gab_mod_ui_gui_render;
     event_rec_name = "ui\\gui\\loop\\event";
     event_rec_target = gab_mod_ui_gui_event;
+#if GAB_PLATFORM_UNIX
   } else if (kind == gab_message(gab, "tui")) {
     render_rec_name = "ui\\tui\\loop\\render";
     render_rec_target = gab_mod_ui_tui_render;
     event_rec_name = "ui\\tui\\loop\\event";
     event_rec_target = gab_mod_ui_tui_event;
+#endif
   } else {
     return gab_panicf(gab, "Expected @ or @, found @", gab_message(gab, "gui"),
                       gab_message(gab, "tui"), kind);

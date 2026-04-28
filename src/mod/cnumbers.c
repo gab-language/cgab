@@ -23,6 +23,9 @@
  */
 
 #include "gab.h"
+
+// Required for windows
+#define _USE_MATH_DEFINES
 #include <math.h>
 
 typedef struct {

@@ -1971,7 +1971,11 @@ int init_modules(v_pkg *modules, struct command_arguments *args) {
   // Append modules requested by user.
   for (int i = 0; i < args->packages.len; i++) {
     s_char pkg = v_s_char_val_at(&args->packages, i);
-    v_pkg_push(modules, (struct gab_package){strndup(pkg.data, pkg.len)});
+
+    char *str = calloc(pkg.len + 1, 1);
+    memcpy(str, pkg.data, pkg.len);
+
+    v_pkg_push(modules, (struct gab_package){str});
   }
 
   // Push a terminator module to the list
