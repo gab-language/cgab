@@ -403,7 +403,7 @@ bool file_exister(const char *path) {
   if (f)
     fclose(f);
 
-  fprintf(stderr, "CHECKEXISTS %s: %b\n", path, f != nullptr);
+  fprintf(stderr, "CHECKEXISTS %s: %i\n", path, f != nullptr);
 
   return f != nullptr;
 }
