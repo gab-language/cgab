@@ -160,8 +160,8 @@ queue_tests := (filter_by_suite) :: do
     fibers.map f :: f.await
 
     #TODO @Tests @api: Make this configurable from the cmdline
-#events.close
-#app.close
+events.close
+app.close
   end
 end
 

@@ -68,7 +68,7 @@
 
 #define gab_osproc(cmd, ...)                                                   \
   ({                                                                           \
-    const char *_args[] = {__VA_ARGS__};                                             \
+    const char *_args[] = {__VA_ARGS__};                                       \
     gab_nosproc(cmd, sizeof(_args) / sizeof(char *), _args);                   \
   })
 
@@ -177,7 +177,7 @@ GAB_API_INLINE const char *gab_osexepath() {
 
 #define gab_osdynlib void *
 #define gab_oslibopen(path) dlopen(path, RTLD_NOW)
-#define gab_oslibfind(dynlib, name) (void (*)(void)) dlsym(dynlib, name)
+#define gab_oslibfind(dynlib, name) (void *)dlsym(dynlib, name)
 
 GAB_API_INLINE const int gab_osmkdirp(const char *path) {
   char *dup = strdup(path);
@@ -300,6 +300,7 @@ GAB_API_INLINE int gab_nosproc(char *cmd, size_t nargs, const char *args[]) {
 }
 
 #elifdef GAB_PLATFORM_WIN
+#include <direct.h>
 #include <io.h>
 #include <shlobj.h>
 #include <signal.h>
@@ -307,7 +308,6 @@ GAB_API_INLINE int gab_nosproc(char *cmd, size_t nargs, const char *args[]) {
 #include <tchar.h>
 #include <wchar.h>
 #include <windows.h>
-#include <direct.h>
 
 #define gab_ossignal(sig, handler) signal(sig, handler)
 
@@ -316,8 +316,7 @@ GAB_API_INLINE int gab_nosproc(char *cmd, size_t nargs, const char *args[]) {
 
 #define gab_osdynlib HMODULE
 #define gab_oslibopen(path) LoadLibraryA(path)
-#define gab_oslibfind(dynlib, name)                                            \
-  ((void (*)(void))GetProcAddress(dynlib, name))
+#define gab_oslibfind(dynlib, name) ((PVOID)GetProcAddress(dynlib, name))
 
 GAB_API_INLINE const int gab_osmkdirp(const char *path) {
   char *dup = strdup(path);
@@ -364,7 +363,6 @@ GAB_API_INLINE const bool gab_osrm(const char *path) {
 
   return 0;
 }
-
 
 GAB_API_INLINE const char *gab_osexepath() {
   DWORD len = GetModuleFileNameA(NULL, _exepath, GAB_MAXEXEPATH);

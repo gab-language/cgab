@@ -201,6 +201,8 @@ int copy_file(FILE *in, FILE *out) {
  *   -> Or Maybe: 'github.com/gab-language/cgab@0.0.5' .use 'cstrings'
  */
 
+typedef union gab_value_pair (__cdecl *dynlib_fn)(struct gab_triple);
+
 union gab_value_pair gab_use_dynlib(struct gab_triple gab, const char *path,
                                     size_t len, const char **sargs,
                                     gab_value *vargs) {
@@ -230,8 +232,7 @@ union gab_value_pair gab_use_dynlib(struct gab_triple gab, const char *path,
 #endif
   }
 
-  union gab_value_pair (*mod)(struct gab_triple) = (union gab_value_pair (*)(
-      struct gab_triple))gab_oslibfind(lib, GAB_DYNLIB_MAIN);
+  dynlib_fn mod = gab_oslibfind(lib, GAB_DYNLIB_MAIN);
 
   fprintf(stderr, "DYNLIB FIND %p\n", mod);
 
