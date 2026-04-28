@@ -234,6 +234,8 @@ fin:
 }
 
 GAB_DYNLIB_MAIN_FN {
+  printf("IN SHAPES LIB\n");
+
   gab_value t = gab_type(gab, kGAB_SHAPE);
 
   gab_def(gab,
