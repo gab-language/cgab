@@ -4008,8 +4008,21 @@ gab_token gab_lexnext(gab_lx *self) {
     return tok;
   }
 
-  // Treat LF and CRLF as the same.
-  if (peek(self) == '\n' || (peek(self) == '\r' && peek_next(self) == '\n')) {
+  if (peek(self) == '\r' && peek_next(self) == '\n') {
+    advance(self);
+    advance(self);
+    tok = TOKEN_NEWLINE;
+
+    v_gab_token_push(&self->source->tokens, tok);
+    v_s_char_push(&self->source->token_srcs, self->current_token_src);
+    v_uint64_t_push(&self->source->token_lines, self->row);
+
+    finish_row(self);
+
+    return tok;
+  }
+
+  if (peek(self) == '\n') {
     advance(self);
     tok = TOKEN_NEWLINE;
 
