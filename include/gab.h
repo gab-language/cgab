@@ -455,7 +455,7 @@ static inline void __gab_assert_fail(const char *expr, const char *file,
 #endif
 
 #ifdef GAB_PLATFORM_WIN
-#define GAB_DYNLIB_MAIN_FN __declspec(dllexport) union gab_value_pair __cdecl gab_lib(struct gab_triple gab)
+#define GAB_DYNLIB_MAIN_FN __declspec(dllexport) union gab_value_pair gab_lib(struct gab_triple gab)
 #else
 #define GAB_DYNLIB_MAIN_FN union gab_value_pair gab_lib(struct gab_triple gab)
 #endif

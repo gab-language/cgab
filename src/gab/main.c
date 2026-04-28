@@ -201,7 +201,11 @@ int copy_file(FILE *in, FILE *out) {
  *   -> Or Maybe: 'github.com/gab-language/cgab@0.0.5' .use 'cstrings'
  */
 
-typedef union gab_value_pair (__cdecl *dynlib_fn)(struct gab_triple);
+#ifdef GAB_PLATFORM_WIN
+typedef union gab_value_pair (WINAPI*dynlib_fn)(struct gab_triple);
+#else
+typedef union gab_value_pair (*dynlib_fn)(struct gab_triple);
+#endif
 
 union gab_value_pair gab_use_dynlib(struct gab_triple gab, const char *path,
                                     size_t len, const char **sargs,
