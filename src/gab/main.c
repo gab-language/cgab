@@ -397,10 +397,13 @@ union gab_value_pair gab_use_source(struct gab_triple gab, const char *path,
 }
 
 bool file_exister(const char *path) {
+
   FILE *f = fopen(path, "r");
 
   if (f)
     fclose(f);
+
+  fprintf(stderr, "CHECKEXISTS %s: %b\n", path, f != nullptr);
 
   return f != nullptr;
 }
