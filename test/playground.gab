@@ -1,4 +1,4 @@
-ui := 'cgui'.use
+ui := 'cui'.use
 
 (events, app) := (Channels.make, Channels.make)
 

@@ -340,7 +340,7 @@ GAB_API_INLINE const int gab_osmkdirp(const char *path) {
     if (!strlen(dup))
       goto next;
 
-    int res = _mkdir(dup, 0755);
+    int res = _mkdir(dup);
 
     if (res < 0 && errno != EEXIST)
       return free(dup), errno;

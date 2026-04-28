@@ -64,7 +64,7 @@
 #define FONTSTASH_IMPLEMENTATION
 #include "fontstash/src/fontstash.h"
 
-// TODO @cgui @qol: This font isn't great, replace it
+// TODO @cui @qol: This font isn't great, replace it
 unsigned char fontData[] = {
 #embed "resources/JetBrainsMonoNLNerdFontMono-Regular.ttf"
 };
@@ -578,7 +578,7 @@ union gab_value_pair render_rect(struct gab_triple gab, struct gui *gui,
 }
 
 /*
- * TODO @cgui @api @qol: Provide an API for loading images into some gab_box,
+ * TODO @cui @api @qol: Provide an API for loading images into some gab_box,
  * and then expect that as an argument here.
  *
  * TODO @cgab @api: Allow user to pin fibers to a certain thread.

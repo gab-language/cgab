@@ -1,4 +1,4 @@
-ui      := 'github.com/gab-language/cgab@0.0.5' .use 'cgui'
+ui      := 'github.com/gab-language/cgab@0.0.5' .use 'cui'
 Atoms   := 'github.com/gab-language/cgab@0.0.5' .use 'Atoms'
 Streams := 'github.com/gab-language/cgab@0.0.5' .use 'Transducers'
 
