@@ -66,27 +66,35 @@ jobs:
           mkdir -p ~/gab/${{ env.version }}-aarch64-linux-gnu
           mkdir -p ~/gab/${{ env.version }}-x86_64-macos-none
           mkdir -p ~/gab/${{ env.version }}-aarch64-macos-none
+          mkdir -p ~/gab/${{ env.version }}-x86_64-windows-gnu
+          mkdir -p ~/gab/${{ env.version }}-aarch64-windows-gnu
 
           cp build-x86_64-linux-gnu/gab/gab ~/gab/${{ env.version }}-x86_64-linux-gnu
           cp build-aarch64-linux-gnu/gab/gab ~/gab/${{ env.version }}-aarch64-linux-gnu
           cp build-x86_64-macos-none/gab/gab ~/gab/${{ env.version }}-x86_64-macos-none
           cp build-aarch64-macos-none/gab/gab ~/gab/${{ env.version }}-aarch64-macos-none
+          cp build-x86_64-windows-gnu/gab/gab ~/gab/${{ env.version }}-x86_64-windows-gnu
+          cp build-aarch64-windows-gnu/gab/gab ~/gab/${{ env.version }}-aarch64-windows-gnu
 
     - name: Create bundles
       run: |
          ./build-x86_64-linux-gnu/gab/gab build -n -t x86_64-linux-gnu   < bundle
-         ./build-x86_64-linux-gnu/gab/gab build -n -t x86_64-macos-none  < bundle
          ./build-x86_64-linux-gnu/gab/gab build -n -t aarch64-linux-gnu  < bundle
+         ./build-x86_64-linux-gnu/gab/gab build -n -t x86_64-macos-none  < bundle
          ./build-x86_64-linux-gnu/gab/gab build -n -t aarch64-macos-none < bundle
+         ./build-x86_64-linux-gnu/gab/gab build -n -t x86_64-windows-gnu  < bundle
+         ./build-x86_64-linux-gnu/gab/gab build -n -t aarch64-windows-gnu < bundle
 
     # For this step, gab needs to know where the binaries are to cross-compile
     # the executables.
     - name: Create Cross-Compiled Test binary
       run: |
          ./build-x86_64-linux-gnu/gab/gab build -n -t x86_64-linux-gnu test < bundle
-         ./build-x86_64-linux-gnu/gab/gab build -n -t x86_64-macos-none test < bundle
          ./build-x86_64-linux-gnu/gab/gab build -n -t aarch64-linux-gnu test < bundle
+         ./build-x86_64-linux-gnu/gab/gab build -n -t x86_64-macos-none test < bundle
          ./build-x86_64-linux-gnu/gab/gab build -n -t aarch64-macos-none test < bundle
+         ./build-x86_64-linux-gnu/gab/gab build -n -t x86_64-windows-gnu test < bundle
+         ./build-x86_64-linux-gnu/gab/gab build -n -t aarch64-windows-gnu test < bundle
 
     - name: Upload x86_64-linux-gnu Binary Artifact
       uses: pyTooling/upload-artifact@v4
@@ -159,6 +167,42 @@ jobs:
       with:
         name: 'test.cgab-${{ env.version }}-aarch64-macos-none.exe' 
         path: 'test.cgab-${{ env.version }}-aarch64-macos-none.exe'
+
+    - name: Upload x86_64-windows-gnu Binary Artifact
+      uses: pyTooling/upload-artifact@v4
+      with:
+        name: 'gab-x86_64-windows-gnu-release'
+        path: 'build-x86_64-windows-gnu/gab'
+
+    - name: Upload x86_64-windows-gnu Bundle Artifact
+      uses: pyTooling/upload-artifact@v4
+      with:
+        name: 'cgab-${{ env.version }}-x86_64-windows-gnu'
+        path: 'cgab-${{ env.version }}-x86_64-windows-gnu'
+
+    - name: Upload x86_64-windows-gnu Test Executable Artifact
+      uses: pyTooling/upload-artifact@v4
+      with:
+        name: 'test.cgab-${{ env.version }}-x86_64-windows-gnu.exe'
+        path: 'test.cgab-${{ env.version }}-x86_64-windows-gnu.exe'
+
+    - name: Upload aarch64-windows-gnu Binary Artifact
+      uses: pyTooling/upload-artifact@v4
+      with:
+        name: 'gab-aarch64-windows-gnu-release'
+        path: 'build-aarch64-windows-gnu/gab'
+
+    - name: Upload aarch64-windows-gnu Bundle Artifact
+      uses: pyTooling/upload-artifact@v4
+      with:
+        name: 'cgab-${{ env.version }}-aarch64-windows-gnu'
+        path: 'cgab-${{ env.version }}-aarch64-windows-gnu'
+
+    - name: Upload aarch64-windows-gnu Test Executable Artifact
+      uses: pyTooling/upload-artifact@v4
+      with:
+        name: 'test.cgab-${{ env.version }}-aarch64-windows-gnu.exe'
+        path: 'test.cgab-${{ env.version }}-aarch64-windows-gnu.exe'
 
   run_tests:
     strategy:
