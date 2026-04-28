@@ -4008,7 +4008,8 @@ gab_token gab_lexnext(gab_lx *self) {
     return tok;
   }
 
-  if (peek(self) == '\n') {
+  // Treat LF and CRLF as the same.
+  if (peek(self) == '\n' || (peek(self) == '\r' && peek_next(self) == '\n')) {
     advance(self);
     tok = TOKEN_NEWLINE;
 
@@ -7207,34 +7208,35 @@ int gab_psvalinspect(char **dest, size_t *n, gab_value value,
   "  " GAB_YELLOW "-1.23" GAB_MAGENTA "\t\t\t# A number \n" GAB_RESET          \
   "  " GAB_GREEN "'hello, Joe!'" GAB_MAGENTA "\t\t# A string \n" GAB_RESET     \
   "  " GAB_RED "greet:" GAB_MAGENTA "\t\t# A message\n" GAB_RESET              \
-  "  " GAB_BLUE "x :: x + 1" GAB_MAGENTA "\t\t# A block \n" GAB_RESET            \
+  "  " GAB_BLUE "x :: x + 1" GAB_MAGENTA "\t\t# A block \n" GAB_RESET          \
   "  " GAB_CYAN "{ key: value }" GAB_MAGENTA "\t# A record\n" GAB_RESET "  "   \
   "(" GAB_YELLOW "0x22" GAB_RESET ", " GAB_GREEN "true:" GAB_RESET             \
-  ")" GAB_MAGENTA "\t\t# A tuple\n" GAB_RESET "  "                               \
+  ")" GAB_MAGENTA "\t\t# A tuple\n" GAB_RESET "  "                             \
   "a_variable" GAB_MAGENTA "\t\t# Or a variable!" GAB_RESET
 
 #define FMT_ID_NOT_FOUND                                                       \
-  "Symbol @ is not yet bound in this scope, nor in parent scopes.\n\n"             \
+  "Symbol @ is not yet bound in this scope, nor in parent scopes.\n\n"         \
   "Assignment expressions bind values to symbols.\n\n"                         \
-  "  a := " GAB_CYAN "true:" GAB_RESET "\n\n"                                   \
+  "  a := " GAB_CYAN "true:" GAB_RESET "\n\n"                                  \
   "Symbols within local scope may be rebound at any time.\n\n"                 \
-  "  name := " GAB_GREEN "\"Bob\"" GAB_RESET "\n\n"                             \
-  "  name := " GAB_GREEN "\"Uncle Bob\"" GAB_RESET "\n\n"                       \
+  "  name := " GAB_GREEN "\"Bob\"" GAB_RESET "\n\n"                            \
+  "  name := " GAB_GREEN "\"Uncle Bob\"" GAB_RESET "\n\n"                      \
   "Symbols captured from parent scopes may not be rebound.\n\n"                \
-  "  name := " GAB_GREEN "\"Uncle Bob\"" GAB_RESET "\n\n"                       \
+  "  name := " GAB_GREEN "\"Uncle Bob\"" GAB_RESET "\n\n"                      \
   "  () :: name := " GAB_GREEN "\"Old Bob\"" GAB_MAGENTA " # Not allowed"
 
 #define FMT_MALFORMED_ASSIGNMENT                                               \
   "This assignment is malformed - a valid assignment looks like:\n\n"          \
-  "  a := " GAB_YELLOW "1" GAB_MAGENTA                                          \
-  "\t\t# A single variable and expression\n" GAB_RESET " " GAB_BLACK         \
-  "=> a := 1\n" GAB_RESET "  (a, b) := (" GAB_YELLOW "1" GAB_RESET ", " GAB_RED  \
-  "bark:" GAB_RESET ")" GAB_MAGENTA                                            \
+  "  a := " GAB_YELLOW "1" GAB_MAGENTA                                         \
+  "\t\t# A single variable and expression\n" GAB_RESET " " GAB_BLACK           \
+  "=> a := 1\n" GAB_RESET "  (a, b) := (" GAB_YELLOW "1" GAB_RESET             \
+  ", " GAB_RED "bark:" GAB_RESET ")" GAB_MAGENTA                               \
   "\t# A tuple of variables and expressions\n" GAB_RESET " " GAB_BLACK         \
-  "=> a := 1, b := bark:\n" GAB_RESET "  (a*, b) := (" GAB_YELLOW "1" GAB_RESET   \
-  ", " GAB_YELLOW "2" GAB_RESET ", " GAB_YELLOW "3" GAB_RESET ")" GAB_MAGENTA  \
+  "=> a := 1, b := bark:\n" GAB_RESET "  (a*, b) := (" GAB_YELLOW              \
+  "1" GAB_RESET ", " GAB_YELLOW "2" GAB_RESET ", " GAB_YELLOW "3" GAB_RESET    \
+  ")" GAB_MAGENTA                                                              \
   "\t# Specify one variable to collect extra values with '*'\n" GAB_RESET      \
-  " " GAB_BLACK "=> a := [1, 2], b := 3\n" GAB_RESET "  (a**) := (" GAB_RED       \
+  " " GAB_BLACK "=> a := [1, 2], b := 3\n" GAB_RESET "  (a**) := (" GAB_RED    \
   "num:" GAB_RESET ", " GAB_YELLOW "2" GAB_RESET ")" GAB_MAGENTA               \
   "\t# Specify one variable to zip extra values with '**'\n" GAB_RESET         \
   " " GAB_BLACK "=> a := { num: 2 }\n" GAB_RESET
@@ -9407,7 +9409,7 @@ gab_value compile_lambda(struct gab_triple gab, struct bc *bc, gab_value node,
 }
 
 gab_value compile_assign(struct gab_triple gab, struct bc *bc, gab_value node,
-                     gab_value env) {
+                         gab_value env) {
   gab_value lhs_node = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_LHS);
   gab_value rhs_node = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_RHS);
 
