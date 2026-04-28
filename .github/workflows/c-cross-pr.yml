@@ -256,9 +256,6 @@ jobs:
         run: |
           move .\build-${{ matrix.target}}\gab\gab .\build-${{ matrix.target }}\gab\gab.exe
 
-      - name: DEBUG - List files
-        run: ls -al
-
       - name: Welcome
         run: ${{ matrix.cmd }}
 
