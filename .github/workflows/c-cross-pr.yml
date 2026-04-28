@@ -222,7 +222,7 @@ jobs:
             cmd: ./build-aarch64-macos-none/gab/gab
           - os: windows-latest
             target: x86_64-windows-gnu
-            cmd: .\build-x86_64-windows-gnu\gab
+            cmd: .\build-x86_64-windows-gnu\gab\gab.exe
 
     runs-on: ${{ matrix.os }}
     needs: build_artifacts
