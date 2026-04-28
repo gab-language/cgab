@@ -26,8 +26,8 @@
 
 // GL/gl.h won't work because some OS's have files which override.
 // Use glad/gl.h instead.
-#define GLAD_GL
 #define GLAD_GL_IMPLEMENTATION
+#define GLAD_GLX_IMPLEMENTATION
 #include "glad/gl.h"
 
 // GL/gl.h points to our glad directory. Therefore it is necessary
@@ -35,9 +35,11 @@
 // should not define implementations.
 #undef GLAD_GL
 #undef GLAD_GL_IMPLEMENTATION
+#undef GLAD_GLX_IMPLEMENTATION
 
 #define RGFW_IMPLEMENTATION
 #define RGFW_OPENGL
+#define RGFW_USE_XDL
 #define RGFW_PRINT_ERRORS
 #include "RGFW/RGFW.h"
 
