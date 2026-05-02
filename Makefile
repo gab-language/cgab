@@ -100,7 +100,7 @@ $(BUILD_PREFIX)/libcgab.a: $(CGAB_OBJ)
 	$(AR) rcs $@ $^
 
 # This rule builds the gab executable, linking with libcgab.a
-$(BUILD_PREFIX)/gab/gab.exe: $(GAB_OBJ) $(BUILD_PREFIX)/libcgab.a
+$(BUILD_PREFIX)/gab/gab: $(GAB_OBJ) $(BUILD_PREFIX)/libcgab.a
 	$(TARGETCC) $(CFLAGS) $(BINARY_FLAGS) -DGAB_CORE -o $@ $^
 
 # This rule builds each c module shared library.
@@ -197,7 +197,7 @@ $(BUILD_PREFIX)/libbearssl.a:
 
 # These are some convenience rules for making the cli simpler.
 
-gab: $(BUILD_PREFIX)/gab/gab.exe
+gab: $(BUILD_PREFIX)/gab/gab
 
 lib: $(BUILD_PREFIX)/libcgab.a
 
