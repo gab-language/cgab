@@ -300,6 +300,7 @@ GAB_API_INLINE int gab_nosproc(char *cmd, size_t nargs, const char *args[]) {
 }
 
 #elifdef GAB_PLATFORM_WIN
+#include <delayimp.h>
 #include <direct.h>
 #include <io.h>
 #include <shlobj.h>
@@ -309,14 +310,62 @@ GAB_API_INLINE int gab_nosproc(char *cmd, size_t nargs, const char *args[]) {
 #include <wchar.h>
 #include <windows.h>
 
+FARPROC WINAPI gab_delayload(unsigned dliNotify, PDelayLoadInfo pdli) {
+  // dliNotePreLoadLibrary is called right before the helper calls LoadLibrary
+  if (dliNotify == dliNotePreLoadLibrary) {
+    // Check if the helper is looking for our specific "virtual" library name
+    printf("DELAYLOAD %s\n", pdli->szDll);
+    if (_stricmp(pdli->szDll, "gab") == 0) {
+      // GetModuleHandle(NULL) returns the handle of the .exe that started the
+      // process.
+      HMODULE hHost = GetModuleHandle(NULL);
+
+      if (hHost) {
+        return (FARPROC)hHost;
+      }
+    }
+  }
+
+  // Proceed with its default behavior
+  return NULL;
+}
+
+// You MUST assign your function to this specific pointer name
+// for the delay-load helper to pick it up.
+PfnDliHook __pfnDliNotifyHook2 = gab_delayload;
+
+// This is the function the linker looks for when /DELAYLOAD is used.
+// It is called the first time any delay-loaded function is invoked.
+FARPROC WINAPI __delayLoadHelper2(PDelayLoadInfo pdli, PfnDliHook pfnBefore) {
+  // 1. Fire the hook we defined in plugin.c
+  // This allows our redirector to return the handle to the current EXE
+  if (pfnBefore) {
+    FARPROC res = pfnBefore(dliNotePreLoadLibrary, (PDelayLoadInfo)pdli);
+    if (res) {
+      // We found the host! Now resolve the specific function being called.
+      return GetProcAddress((HMODULE)res, pdli->dlp.szProcName);
+    }
+  }
+
+  // 2. Fallback: Standard loading (will likely fail if renamed)
+  HMODULE h = LoadLibraryA(pdli->szDll);
+  if (!h)
+    return NULL;
+  return GetProcAddress(h, pdli->dlp.szProcName);
+}
+
 #define gab_ossignal(sig, handler) signal(sig, handler)
 
 #define gab_osfileno(f) (_fileno(f))
 #define gab_osfisatty(f) _isatty(_fileno(f))
 
 #define gab_osdynlib HMODULE
-#define gab_oslibopen(path) LoadLibraryA(path)
 #define gab_oslibfind(dynlib, name) ((PVOID)GetProcAddress(dynlib, name))
+
+static inline void *gab_oslibopen(const char *path) {
+  HMODULE hPlugin = LoadLibraryA(path);
+  return hPlugin;
+}
 
 GAB_API_INLINE const int gab_osmkdirp(const char *path) {
   char *dup = strdup(path);

@@ -2,7 +2,6 @@ NATIVECC    = zig cc
 TARGETCC	  = zig cc --target=$(GAB_TARGETS)
 TARGETCXX   = zig c++ --target=$(GAB_TARGETS)
 AR          = zig ar
-CLIDE       = clide
 
 CGAB_SRC_PREFIX     = src/cgab
 GAB_SRC_PREFIX      = src/gab
@@ -41,9 +40,8 @@ CXXFLAGS =  -std=c++23 \
 # A binary executable needs to keep all cgab symbols,
 # in case they are used by a dynamically loaded c-module.
 # This is why -rdynamic is used.
-#
-GAB_LINK_DEPS = 
-BINARY_FLAGS 	= -rdynamic -Wl,--no-gc-sections -DGAB_CORE $(GAB_LINK_DEPS) $(GAB_BINARYFLAGS)
+GAB_LINK_DEPS =
+BINARY_FLAGS 	= -rdynamic -Wl,--no-gc-sections $(GAB_LINK_DEPS) $(GAB_BINARYFLAGS)
 
 # A shared module needs undefined dynamic lookup
 # As it is not linked with cgab. The symbols from cgab
@@ -52,11 +50,13 @@ BINARY_FLAGS 	= -rdynamic -Wl,--no-gc-sections -DGAB_CORE $(GAB_LINK_DEPS) $(GAB
 # Best way to conditionally link in dynamic stuff like -framework Cocoa?
 #
 # These below are static, and so are optimized out if not used.
+# TODO: Linking here is necessary only on windows.
 CMOD_LINK_DEPS   =
 
 CXXMOD_LINK_DEPS = 
 CXXMOD_INCLUDE   = 
 
+# TODO: Only use -undefined dynamic_lookup on macos
 CSHARED_FLAGS 	= -shared -undefined dynamic_lookup $(CMOD_LINK_DEPS)
 CXXSHARED_FLAGS = -shared -undefined dynamic_lookup $(CXXMOD_LINK_DEPS) $(CXXMOD_INCLUDE)
 
@@ -90,18 +90,18 @@ all: gab cmodules cxxmodules
 # but that is because the main *object file* is created before the executable,
 # and the object file cannot compile without the header and impl from this.
 $(BUILD_PREFIX)/gab/%.o: $(GAB_SRC_PREFIX)/%.c $(VENDOR_PREFIX)/miniz/amalgamation/miniz.c
-	$(TARGETCC) $(CFLAGS) $< -c -o $@
+	$(TARGETCC) $(CFLAGS) -DGAB_CORE $< -c -o $@
 
 $(BUILD_PREFIX)/cgab/%.o: $(CGAB_SRC_PREFIX)/%.c
-	$(TARGETCC) $(CFLAGS) $< -c -o $@
+	$(TARGETCC) $(CFLAGS) -DGAB_CORE $< -c -o $@
 
 # This rule builds libcgab by archiving the cgab object files together.
 $(BUILD_PREFIX)/libcgab.a: $(CGAB_OBJ)
 	$(AR) rcs $@ $^
 
 # This rule builds the gab executable, linking with libcgab.a
-$(BUILD_PREFIX)/gab/gab: $(GAB_OBJ) $(BUILD_PREFIX)/libcgab.a
-	$(TARGETCC) $(CFLAGS) $(BINARY_FLAGS) -o $@ $^
+$(BUILD_PREFIX)/gab/gab.exe: $(GAB_OBJ) $(BUILD_PREFIX)/libcgab.a
+	$(TARGETCC) $(CFLAGS) $(BINARY_FLAGS) -DGAB_CORE -o $@ $^
 
 # This rule builds each c module shared library.
 # per-library flags are declared in the configuration.
@@ -197,7 +197,7 @@ $(BUILD_PREFIX)/libbearssl.a:
 
 # These are some convenience rules for making the cli simpler.
 
-gab: $(BUILD_PREFIX)/gab/gab
+gab: $(BUILD_PREFIX)/gab/gab.exe
 
 lib: $(BUILD_PREFIX)/libcgab.a
 

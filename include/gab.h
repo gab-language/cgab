@@ -449,9 +449,17 @@ static inline void __gab_assert_fail(const char *expr, const char *file,
 #define GAB_API_INLINE static inline
 
 #ifdef GAB_CORE
+#if GAB_PLATFORM_WIN
+#define GAB_API __declspec(dllexport)
+#else
 #define GAB_API [[gnu::used]]
+#endif
+#else
+#if GAB_PLATFORM_WIN
+#define GAB_API __declspec(dllimport) extern
 #else
 #define GAB_API extern
+#endif
 #endif
 
 #ifdef GAB_PLATFORM_WIN
