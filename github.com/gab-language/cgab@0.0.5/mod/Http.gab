@@ -1,0 +1,33 @@
+# Native module which uses the LLHTTP library to implement HTTP parsing.
+Http := 'github.com/gab-language/cgab@0.0.5' .use 'chttp'
+
+Http\Req := http\req: .defclass(
+  http\method: http\endpoint: http\headers: http\body:
+  default:
+  {})
+
+Http\Res := http\res: .defclass(
+  http\status: http\headers: http\body:
+  default:
+  {})
+
+to\http\code: .defcase {
+  http\ok: 200
+  http\not_found: 404
+  http\not_authorized: 401
+  http\server_error: 500
+}
+
+to\http\codename: .defcase {
+  http\ok: 'OK'
+  http\not_found: 'NOT_FOUND'
+  http\not_authorized: 'UNAUTHORIZED'
+  http\server_error: 'SERVER_ERROR'
+}
+
+[Http] .defmodule {
+  Req: Http\Req
+  Res: Http\Res
+}
+
+Http

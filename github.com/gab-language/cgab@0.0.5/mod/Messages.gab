@@ -4,6 +4,7 @@ to\class_cxtor: .defcase {
   default:
   () :: (t) :: (args*) :: t.make(args*)
 
+# Blocks.t can't really work here unfortunately.
   "gab\block"
   () :: do
     block := self

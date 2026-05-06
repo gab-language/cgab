@@ -1,0 +1,23 @@
+Http := 'github.com/gab-language/cgab@0.0.5' .use 'Http'
+Uri  := 'github.com/gab-language/cgab@0.0.5' .use 'Uri'
+
+req := Http.Req.make('GET' '/' {} '')
+
+req.println
+
+res := Http.Res.make(http\ok: {} 'Result')
+
+res.println
+
+query_params := {
+  name: 'Benjamin Franklin' 
+  age:  100
+}.to\uri\query
+
+uri := '/name +this'.to\uri
+
+query_params.println
+
+uri.println
+
+"https://abc.com@auth/na%20me/age/other?test=this#smth".as\uri.unwrap.println

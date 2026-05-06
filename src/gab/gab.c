@@ -212,8 +212,6 @@ union gab_value_pair gab_use_dynlib(struct gab_triple gab, const char *path,
                                     gab_value *vargs) {
   gab_osdynlib lib = gab_oslibopen(path);
 
-  fprintf(stderr, "OPEN DYNLIB %p\n", lib);
-
   if (lib == nullptr) {
 #ifdef GAB_PLATFORM_UNIX
     return gab_panicf(gab, "Failed to load module '$': $",
@@ -238,8 +236,6 @@ union gab_value_pair gab_use_dynlib(struct gab_triple gab, const char *path,
 
   dynlib_fn mod = gab_oslibfind(lib, GAB_DYNLIB_MAIN);
 
-  fprintf(stderr, "DYNLIB FIND %p\n", mod);
-
   if (mod == nullptr)
 #ifdef GAB_PLATFORM_UNIX
     return gab_panicf(gab, "Failed to load module '$': $",
@@ -260,10 +256,7 @@ union gab_value_pair gab_use_dynlib(struct gab_triple gab, const char *path,
   }
 #endif
 
-  fprintf(stderr, "RUNNING DYNLIB\n");
   union gab_value_pair res = mod(gab);
-
-  gab_fprintf(stderr, "DYNLIB RES: $\n", res.status);
 
   // At this point, mod should have reported any errors.
   /*gab.flags |= fGAB_ERR_QUIET;*/

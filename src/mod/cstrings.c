@@ -544,6 +544,25 @@ GAB_DYNLIB_NATIVE_FN(string, ton) {
   return gab_union_cvalid(gab_nil);
 };
 
+GAB_DYNLIB_NATIVE_FN(string, toint) {
+  const char *str = gab_strdata(argv + 0);
+
+  gab_value vbase = gab_arg(1);
+  int base = 0;
+
+  if (vbase != gab_nil) {
+    if (gab_valkind(vbase) != kGAB_NUMBER)
+      return gab_pktypemismatch(gab, vbase, kGAB_NUMBER);
+
+    base = gab_valtou(vbase);
+  }
+
+  gab_value res = gab_number(strtol(str, nullptr, base));
+
+  gab_vmpush(gab_thisvm(gab), res);
+  return gab_union_cvalid(gab_nil);
+};
+
 GAB_DYNLIB_NATIVE_FN(string, pop) {
   const char *str = gab_strdata(argv + 0);
   uint64_t len = gab_strlen(gab_arg(0));
@@ -703,6 +722,11 @@ GAB_DYNLIB_MAIN_FN {
               gab_message(gab, "as\\number"),
               t,
               gab_snative(gab, "as\\number", gab_mod_string_ton),
+          },
+          {
+              gab_message(gab, "as\\integer"),
+              t,
+              gab_snative(gab, "as\\integer", gab_mod_string_toint),
           },
           {
               gab_message(gab, "as\\string"),

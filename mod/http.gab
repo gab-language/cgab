@@ -4,24 +4,7 @@ http\req: .defclass(
   http\method: http\endpoint: http\headers: http\body:
   default:
   {
-    as\b: () :: do
-     Strings
-      .make (
-          self.http\method.to\s,
-          ' '
-          self.http\endpoint,
-          ' HTTP/1.1\r\n'
-          self.http\headers.join(
-            Streams.map(
-              (v, k) :: Strings.make(k, ":", v ))
-            |> Streams.interpose '\r\n')
-          '\r\n'
-          self.http\body
-        )
-      .to\b
-    end,
-  }
-)
+  })
 
 _doget: .defcase {
   ok: (uri) :: do
