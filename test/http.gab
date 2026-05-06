@@ -14,10 +14,18 @@ query_params := {
   age:  100
 }.to\uri\query
 
-uri := '/name +this'.to\uri
-
 query_params.println
 
-uri.println
+(ok, parsed) := "https://me:ps@abc.com:8181/na%20me/age/other?te%20st=this#smth".as\uri
+(ok, parsed) := "https://me%20smth:pass@abc.com/na%20me/age/other?te%20st=this#smth".as\uri
 
-"https://abc.com@auth/na%20me/age/other?test=this#smth".as\uri.unwrap.println
+[ok, parsed].println
+
+parsed.to\uri.println
+
+encoded := 'test of?some/stuff'.to\uri\encoded
+
+encoded.println
+
+[encoded.as\uri\encoded].println
+['%^$'.as\uri\encoded].println

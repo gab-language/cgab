@@ -1,118 +1,67 @@
 # Native module which uses the FURI library to implement URI parsing.
+# Supports uri percent-encoding and decoding.
+# Will automatically decode each segment of the url when as\uri is sent.
 Uri := 'github.com/gab-language/cgab@0.0.5' .use 'curi'
 
-SPACE_MESSAGE := ' '.to\message
-HASH_MESSAGE  := '#'.to\message
-LBRK_MESSAGE  := '{'.to\message
-RBRK_MESSAGE  := '}'.to\message
-LBRC_MESSAGE  := '['.to\message
-RBRC_MESSAGE  := ']'.to\message
-SLSH_MESSAGE  := '\'.to\message
-TICK_MESSAGE  := '`'.to\message
-SCLN_MESSAGE  := ';'.to\message
-CLN_MESSAGE  := ':'.to\message
 
-# Encode a utf8-codepoint into a url.
-uri\encode_string: .defcase {
-  # Default case, just self as a string is fine
-  Messages.t
-  () :: self.to\string
-
-  SPACE_MESSAGE '$20'
-  HASH_MESSAGE  '$23'
-  LBRK_MESSAGE  '$7B'
-  RBRK_MESSAGE  '$7D'
-  LBRC_MESSAGE  '$5B'
-  RBRC_MESSAGE  '$5D'
-  SLSH_MESSAGE  '$5C'
-  TICK_MESSAGE  '$7E'
-  SCLN_MESSAGE  '$3B'
-  CLN_MESSAGE   '$3A'
-  <:            '$3c'
-  >:            '$3E'
-  %:            '$25'
-  +:            '$2B'
-  |:            '$7C'
-  ^:            '$5E'
-  ~:            '$7E'
-  /:            '$2F'
-  ?:            '$3F'
-  @:            '$40'  
-  =:            '$3D'
-  &:            '$26'
-  $:            '$24'
-}
-
-# Encode a utf8-codepoint into a url.
-uri\encode: .defcase {
-  # Default case, just self as a string is fine
-  Messages.t
-  () :: self.to\string
-
-  SPACE_MESSAGE '%20'
-  HASH_MESSAGE  '%23'
-  LBRK_MESSAGE  '%7B'
-  RBRK_MESSAGE  '%7D'
-  LBRC_MESSAGE  '%5B'
-  RBRC_MESSAGE  '%5D'
-  SLSH_MESSAGE  '%5C'
-  TICK_MESSAGE  '%7E'
-  SCLN_MESSAGE  '%3B'
-  CLN_MESSAGE   '%3A'
-  <:            '%3c'
-  >:            '%3E'
-  %:            '%25'
-  +:            '%2B'
-  |:            '%7C'
-  ^:            '%5E'
-  ~:            '%7E'
-  /:            '%2F'
-  ?:            '%3F'
-  @:            '%40'  
-  =:            '%3D'
-  &:            '%26'
-  $:            '%24'
-}
-
-escape_codepoint := Transducers.map(c :: c.to\message.uri\encode)
-stringescape_codepoint := Transducers.map(c :: c.to\message.uri\encode_string)
-
-uri\escape_string: .def(
-  Strings.t
-  () :: do
-    self.join("" stringescape_codepoint)
-  end)
-
-uri\escape: .def(
-  Strings.t
-  () :: do
-    self.join("" escape_codepoint)
-  end)
-
-# TODO @Uri: Fix how query parameters are encoded
-# Inside string literals, we need to escape with escape_string.
 join_query_params := Transducers.map(
-  (v k) :: Strings
-    .make(
-      k.to\string.to\uri\encoded
-      "="
-      v.to\string.to\uri\encoded
-    )) |> Transducers.interpose '&'
+                        (v k) :: Strings
+                          .make(
+                            k.to\string.to\uri\encoded
+                            "="
+                            v.to\string.to\uri\encoded
+                          ))
+                  |> Transducers.interpose '&'
+
+join_path := Transducers.map(seg :: seg.to\uri\encoded)
+          |> Transducers.interpose '/'
+
+to\uri\authority: .def (
+  Records.t
+  () :: do
+    (hostok, host) := self.at uri\host:
+    (portok, port) := self.at uri\port:
+    (userok, user) := self.at uri\username:
+    (passok, pass) := self.at uri\password:
+
+    host := hostok .then(()::(host.to\uri\encoded)) .or ''
+    port := portok .then(()::(Strings.make(':' port.to\uri\encoded))) .or ''
+    user := userok .then(()::(user.to\uri\encoded)) .or ''
+    pass := passok .then(()::(Strings.make(':' pass.to\uri\encoded))) .or ''
+
+    userinfook := userok .or passok
+    userinfo := userinfook .and (Strings.make(user pass '@')) .or ''
+
+    Strings.make(userinfo host port)
+  end)
 
 to\uri\query: .def (
   Records.t
-  () :: do
-    self.join('?' join_query_params)    
-  end)
+  () :: self.join('?' join_query_params))
 
-# TODO @uri: When does Uri encoding need to happen?
-# Does a path itself need to be escaped? It of course naturally has '/' in it.
-# Is it just the parameters that need to be escaped?
-# It seems that according to the RFC, each *segment* of a path should be url encoded
-to\uri: .def(
+to\uri\path: .def (
+  Records.t
+  () :: self.join('/' join_path))
+
+to\uri\fragment: .def (
   Strings.t
+  () :: '#' + self.to\uri\encoded)
+
+to\uri: .def(
+  Uri.t
   () :: do
-    self.join('' escape_codepoint)
+    auth     := self.uri\authority.to\uri\authority
+    path     := self.uri\path.to\uri\path
+    query    := self.uri\query.to\uri\query 
+    fragment := self.uri\fragment.to\uri\fragment
+
+    Strings.make(
+      self.uri\scheme
+      '://'
+      auth
+      path
+      query
+      fragment)
   end)
 
 Uri
