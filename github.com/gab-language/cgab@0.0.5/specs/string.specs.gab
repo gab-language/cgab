@@ -48,26 +48,26 @@ string\has\sub: .defspec {
   }
 }
 
-string\has\ending: .defspec {
+string\has\suffix: .defspec {
   help:
   "
   Returns `true:` if the receiver ends with the argument string.
   "
   spec: s.message {
     receiver: string\spec
-    message:  has\ending:
+    message:  has\suffix:
     input:    s.cat('substring' s.string)
     output:   s.boolean
   }
 }
 
-string\has\beginning: .defspec {
+string\has\prefix: .defspec {
   help: "
   Returns `true` if the receiver string begins with the argument string.
   "
   spec: s.message {
     receiver: string\spec
-    message:  has\beginning:
+    message:  has\prefix:
     input:    s.cat('substring' s.string)
     output:   s.boolean
   }

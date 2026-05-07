@@ -3,7 +3,6 @@
 # Will automatically decode each segment of the url when as\uri is sent.
 Uri := 'github.com/gab-language/cgab@0.0.5' .use 'curi'
 
-
 join_query_params := Transducers.map(
                         (v k) :: Strings
                           .make(

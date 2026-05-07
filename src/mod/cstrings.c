@@ -297,12 +297,12 @@ GAB_DYNLIB_NATIVE_FN(string, ends) {
 GAB_DYNLIB_NATIVE_FN(string, begins) {
   gab_value vstr = gab_arg(0);
   gab_value vpat = gab_arg(1);
+
+  if (gab_valkind(vpat) != kGAB_STRING)
+    return gab_pktypemismatch(gab, vpat, kGAB_STRING);
+
   switch (argc) {
   case 2: {
-    if (gab_valkind(argv[1]) != kGAB_STRING) {
-      return gab_panicf(gab, "&:begins? expects 1 string argument");
-    }
-
     const char *pat = gab_strdata(&vpat);
     const char *str = gab_strdata(&vstr);
 
@@ -310,12 +310,8 @@ GAB_DYNLIB_NATIVE_FN(string, begins) {
     return gab_union_cvalid(gab_nil);
   }
   case 3: {
-    if (gab_valkind(argv[1]) != kGAB_STRING) {
-      return gab_panicf(gab, "&:begins? expects 1 string argument");
-    }
-
     if (gab_valkind(argv[2]) != kGAB_NUMBER) {
-      return gab_panicf(gab, "&:begins? expects an optinal number argument");
+      return gab_pktypemismatch(gab, argv[2], kGAB_NUMBER);
     }
     const char *pat = gab_strdata(&vpat);
     const char *str = gab_strdata(&vstr);
@@ -684,14 +680,14 @@ GAB_DYNLIB_MAIN_FN {
               gab_snative(gab, "has\\sub", gab_mod_string_has),
           },
           {
-              gab_message(gab, "has\\ending"),
+              gab_message(gab, "has\\suffix"),
               t,
-              gab_snative(gab, "has\\ending", gab_mod_string_ends),
+              gab_snative(gab, "has\\suffix", gab_mod_string_ends),
           },
           {
-              gab_message(gab, "has\\beginning"),
+              gab_message(gab, "has\\prefix"),
               t,
-              gab_snative(gab, "has\\beginning", gab_mod_string_begins),
+              gab_snative(gab, "has\\prefix", gab_mod_string_begins),
           },
           {
               gab_message(gab, "seq\\init"),

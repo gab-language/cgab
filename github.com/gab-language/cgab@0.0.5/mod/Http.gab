@@ -12,17 +12,73 @@ Http\Res := http\res: .defclass(
   {})
 
 to\http\code: .defcase {
-  http\ok: 200
-  http\not_found: 404
-  http\not_authorized: 401
-  http\server_error: 500
-}
+  http\continue: 100
+  http\switching_protocols: 101
+  http\processing: 102
+  http\early_hints: 103
 
-to\http\codename: .defcase {
-  http\ok: 'OK'
-  http\not_found: 'NOT_FOUND'
-  http\not_authorized: 'UNAUTHORIZED'
-  http\server_error: 'SERVER_ERROR'
+  http\ok: 200
+  http\created: 201
+  http\accepted: 202
+  http\non_authoritative_information: 203
+  http\no_content: 204
+  http\reset_content: 205
+  http\partial_content: 206
+  http\multi_status: 207
+  http\already_reported: 208
+  http\IM_used: 226
+
+  http\multiple_choice: 300
+  http\moved_permanently: 301
+  http\found: 302
+  http\see_other: 303
+  http\not_modified: 304
+  http\use_proxy: 305
+  http\unused: 306
+  http\temporary_redirect: 307
+  http\permanent_redirect: 308
+
+  http\bad_request: 400
+  http\unauthorized: 401
+  http\payment_required: 402
+  http\forbidden: 403
+  http\not_found: 404
+  http\method_not_allowed: 405
+  http\not_acceptable: 406
+  http\proxy_authentication_required: 407
+  http\request_timeout: 408
+  http\conflict: 409
+  http\gone: 410
+  http\length_required: 411
+  http\precondition_failed: 412
+  http\content_too_large: 413
+  http\uri_too_long: 414
+  http\unsupported_media_type: 415
+  http\range_not_satisfiable: 416
+  http\expectation_failed: 417
+  http\im_a_teapot: 418
+  http\misdirected_request: 421
+  http\unprocessable_content: 422
+  http\locked: 423
+  http\failed_dependency: 424
+  http\too_early: 425
+  http\upgrade_required: 426
+  http\precondition_required: 428
+  http\too_many_requests: 429
+  http\request_header_fields_too_large: 431
+  http\unavailable_for_legal_reasons: 451
+
+  http\internal_server_error: 500
+  http\not_implemented: 501
+  http\bad_gateway: 502
+  http\service_unavailable: 503
+  http\gateway_timeout: 504
+  http\http_version_not_supported: 505
+  http\variant_also_negotiates: 506
+  http\insufficient_storage: 507
+  http\loop_detected: 508
+  http\not_extended: 510
+  http\network_authentication_required: 511
 }
 
 [Http] .defmodule {

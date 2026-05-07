@@ -112,10 +112,18 @@ bool putevent(struct gab_triple gab, struct gui *gui, const char *type,
       gab_message(gab, type), gab_message(gab, event), data1, data2, data3,
   };
 
-  size_t len = sizeof(ev) / sizeof(gab_value) - (data3 == gab_cundefined) -
-               (data2 == gab_cundefined);
+  size_t len = 2;
+  if (data1 != gab_cundefined)
+    len++;
+  if (data2 != gab_cundefined)
+    len++;
+  if (data3 != gab_cundefined)
+    len++;
 
   gab_niref(gab, 1, len, ev);
+
+  // for (size_t i = 0; i < len; i++)
+  //   gab_fprintf(stderr, "PUTEVENT $: $\n", gab_number(i), ev[i]);
 
   for (size_t i = 0; i < len; i++)
     gab_wfibpush(gab_thisfiber(gab), ev[i]);
@@ -826,8 +834,28 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
   if (!gui->ready)
     goto yield;
 
-  if (reentrant && gab_fibsize(gab_thisfiber(gab)))
-    goto put_event;
+  gab_value res = 0;
+
+  if (reentrant && gab_fibsize(gab_thisfiber(gab))) {
+    gab_value *ev = gab_fibat(gab_thisfiber(gab), 0);
+    size_t len = gab_fibsize(gab_thisfiber(gab)) / sizeof(gab_value);
+
+    if (gab_chnmatches(gui->evch, ev)) {
+      res = gab_cvalid;
+      goto yield;
+    } else if (reentrant != gab_cvalid) {
+      res = gab_ctimeout;
+      goto put_event;
+    } else {
+      res = gab_cundefined;
+      // Otherwise we succeeded, and can deref the values and go to next
+      // event
+      gab_ndref(gab, 1, len, ev);
+
+      // Clear the event we put
+      gab_fibclear(gab_thisfiber(gab));
+    }
+  }
 
   for (;;) {
     if (gab_chnisclosed(gui->appch))
@@ -837,9 +865,9 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
       goto fin;
 
     struct tb_event e;
-    int res = tb_peek_event(&e, 0);
+    int event_result = tb_peek_event(&e, 0);
 
-    switch (res) {
+    switch (event_result) {
     case TB_ERR_NOT_INIT:
     case TB_ERR_NO_EVENT:
       if (putevent(gab, gui, "tick", "tick", clayGetTopmostId(gab),
@@ -855,7 +883,7 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
     put_event:
       // Our event did not yield a value.
       if (!gab_fibsize(gab_thisfiber(gab)))
-        goto yield;
+        continue;
 
       // Assert we have a number of bytes which is reasonable for a list of
       // gab_values
@@ -865,12 +893,28 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
       // Get the ptr
       gab_value *ev = gab_fibat(gab_thisfiber(gab), 0);
 
-      // If we're already putting, and we match this event, then yield.
-      if (reentrant && gab_chnmatches(gui->evch, ev))
-        goto yield;
+      // fprintf(stderr, "REENTRANT: %lu, MATCH: %b\n", reentrant,
+      //         gab_chnmatches(gui->evch, ev));
 
-      // Try the put
-      gab_value res = gab_untchnput(gab, gui->evch, len, ev, 1000);
+      // If we are are resuming a put, but it has been taken since last check
+      // we accidentally re-put the same event
+      // We can yield with some value if we did put something on the channel
+      // successfully
+      // If we're already putting, and we match this event, then yield.
+      if (reentrant && gab_chnmatches(gui->evch, ev)) {
+        res = gab_ctimeout;
+        goto yield;
+      }
+
+      // for (size_t i = 0; i < len; i++)
+      //   gab_fprintf(stderr, "CHNPUT $: $\n", gab_number(i), ev[i]);
+
+      // We need to retry this put until we get cvalid - that is how
+      // we know the put is on the channel.
+      // we can do this by yielding a specific value, instead of just undefined.
+      res = gab_untchnput(gab, gui->evch, len, ev, 1000);
+
+      // gab_fprintf(stderr, "CHNPUT->$\n", res);
 
       // Check for error and timeout
       if (res == gab_cundefined)
@@ -879,17 +923,8 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
       if (res == gab_cinvalid)
         goto fin;
 
-      if (res == gab_ctimeout)
-        goto yield;
-
-      // Otherwise we succeeded, and can deref the values and go to next
-      // event
-      gab_ndref(gab, 1, len, ev);
-
-      // Clear the event we put
-      gab_fibclear(gab_thisfiber(gab));
-
-      break;
+      // If we timedout on the put or successfully put, we yield
+      goto yield;
     case TB_ERR:
     case TB_ERR_READ:
     case TB_ERR_POLL:
@@ -910,11 +945,14 @@ yield:
   if (gab_chnisclosed(gui->evch))
     goto fin;
 
+  // fprintf(stderr, "YIELD\n");
+  assert(res != 0);
+
   switch (gab_yield(gab)) {
   case sGAB_TERM:
     goto fin;
   default:
-    return gab_union_ctimeout(gab_cundefined);
+    return gab_union_ctimeout(res);
   }
 
 fin:

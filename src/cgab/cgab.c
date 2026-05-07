@@ -10963,7 +10963,7 @@ extern void putcs(char *arg);
                                                                                \
     gab_value *returnptr = RETURN_FB();                                        \
                                                                                \
-    gab_value *to = SP() - (have + message + FRAME_SIZE);                      \
+    gab_value *to = SP() - (have + 1 + FRAME_SIZE);                            \
     gab_assert(to >= FB() - 3,                                                 \
                "EXPECTED DEST TO BE GREATER THAN FRAME BASE. DIST: %li\n",     \
                to - FB());                                                     \
@@ -12910,7 +12910,7 @@ CASE_CODE(SEND_PRIMITIVE_MAKE_SHAPE) {
   gab_value shape = PEEK_N(have);
   uint64_t len = have - 1;
 
-  PANIC_GUARD_SHAPE_LEN(shape, len);
+  NILPAD_GUARD_ARGS_GTE(len);
 
   gab_value record = MICRO_OP_RECORDFROM(shape, len);
 
