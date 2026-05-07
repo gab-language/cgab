@@ -1,0 +1,105 @@
+s := 'github.com/gab-language/cgab@0.0.5'.use 'Specs'
+
+uri\scheme: .defspec {
+  help:
+  "A URI scheme. Common examples are `http:` or `file:`"
+  spec: s.string
+}
+
+uri\host: .defspec {
+  help: "The host"
+  spec: s.string
+}
+
+uri\port: .defspec {
+  help: "The port"
+  spec: s.string
+}
+
+uri\username: .defspec {
+  help: "The username"
+  spec: s.string
+}
+
+uri\password: .defspec {
+  help: "The password"
+  spec: s.string
+}
+
+uri\authority: .defspec {
+  help: "A record containing any number of the following"
+  spec: s.protocol(uri\host: uri\port: uri\username: uri\password:)
+}
+
+uri\path: .defspec {
+  help: "A list of path segments" 
+  spec: s.list(s.string)
+}
+
+uri\query: .defspec {
+  help:
+  "A record of the query parameters from the URI."
+  spec: s.dict(s.string, s.string)
+}
+
+uri\fragment: .defspec {
+  help:
+  "A URI fragment."
+  spec: s.string
+}
+
+uri\spec := uri: .defspec {
+  help:
+  "
+  A fully-parsed uri. Each component is percent-decoded as part of parsing.
+  "
+  spec: s.protocol(uri\scheme: uri\authority: uri\path: uri\query: uri\fragment:)
+}
+
+uri\as\uri: .defspec {
+  help:
+  "Parse a string as a URI. Returns an error if parsing fails."
+  spec: s.message {
+    receiver: s.string
+    message: as\uri:
+    input: s.cat()
+    output: s.result(uri\spec)
+  }
+}
+
+uri\to\uri: .defspec {
+  help:
+  "Convert a uri into its string form. Performs percent-encoding on each component."
+  spec: s.message {
+    receiver: uri\spec
+    message: to\uri:
+    input: s.cat()
+    output: s.string
+  }
+}
+
+uri\to\uri\encoded: .defspec {
+  help:
+  "
+  URI-encodes the string.
+  "
+  spec: s.message {
+    receiver: s.string
+    message: to\uri\encoded:
+    input: s.cat()
+    output: s.string
+  }
+}
+
+uri\as\uri\encoded: .defspec {
+  help:
+  "
+  URI-decodes a string. Will fail if an invalid percent-encoded value is encountered.
+  "
+  spec: s.message {
+    receiver: s.string
+    message: to\uri\encoded:
+    input: s.cat()
+    output: s.result(s.string)
+  }
+}

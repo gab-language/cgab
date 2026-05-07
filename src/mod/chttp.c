@@ -234,7 +234,7 @@ gab_value build_http(llhttp_t *parser) {
         gab_nstring(pd->gab, pd->url.len, pd->url.ptr),
 
         gab_message(pd->gab, M_HTTP_BODY),
-        gab_nstring(pd->gab, pd->body.len, pd->body.ptr),
+        gab_nbinary(pd->gab, pd->body.len, (const uint8_t*)pd->body.ptr),
     };
 
     gab_value rec = gab_record(
@@ -255,7 +255,7 @@ gab_value build_http(llhttp_t *parser) {
         build_headers(pd),
 
         gab_message(pd->gab, M_HTTP_BODY),
-        gab_nstring(pd->gab, pd->body.len, pd->body.ptr),
+        gab_nbinary(pd->gab, pd->body.len, (const uint8_t*) pd->body.ptr),
     };
 
     gab_value rec = gab_record(
@@ -303,7 +303,7 @@ GAB_DYNLIB_MAIN_FN {
 
   gab_def(gab, {
                    gab_message(gab, "as\\http"),
-                   gab_type(gab, kGAB_STRING),
+                   gab_type(gab, kGAB_BINARY),
                    gab_snative(gab, "as\\http", gab_mod_http_decode),
                });
 

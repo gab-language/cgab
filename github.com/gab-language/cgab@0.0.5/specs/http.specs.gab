@@ -1,0 +1,91 @@
+s := 'github.com/gab-language/cgab@0.0.5'.use 'Specs'
+
+http\status :=  http\status: .defspec {
+  help:
+  "
+  An HTTP status code.
+  "
+# TODO @http @spec: Specify more than any number.
+  spec: s.int
+}
+
+http\method := http\method: .defspec {
+  help:
+  "
+  An HTTP method.
+  "
+# TODO @http @spec: Put more here.
+  spec: s.any (GET: PUT: POST: HEAD: DELETE:)
+}
+
+http\endpoint := http\endpoint: .defspec {
+  help:
+  "
+  An HTTP path.
+  "
+  spec: s.string
+}
+
+http\headers := http\headers: .defspec {
+  help:
+  "
+  A record of HTTP header -> value.
+
+  HTTP headers must contain only ASCII characters. For this reason, we choose the string type over binary.
+  "
+  spec: s.dict(s.string, s.string)
+}
+
+http\body := http\body: .defspec {
+  help:
+  "
+  The body of an HTTP request or response. Opaque bytes.
+  "
+  spec: s.binary
+}
+
+http\req\spec := http\request: .defspec {
+  help:
+  "
+  An HTTP request. This is a protocol. See `as\http`.
+  "
+  spec: s.protocol ( http\method: http\endpoint: http\headers: http\body: )
+}
+
+http\res\spec := http\response: .defspec {
+  help:
+  "
+  An HTTP Response. This is a protocol. See `as\http`.
+  "
+  spec: s.protocol ( http\status: http\headers: http\body: )
+}
+
+http\to\http\code: .defspec {
+  help:
+  "
+  Convert an http status code to its integer representation.
+
+  Will crash if the receiver is not a recognized http status.
+  "
+  spec: s.message {
+    message:  to\http\code:
+    receiver: s.message
+    input:    s.cat()
+    output:   s.int
+  }
+}
+
+http\as\http: .defspec {
+  help:
+  "
+  Attempt to parse a binary as an HTTP request *or* response.
+
+  Implemented for binaries, because a request/response body *may not be* valid utf8.
+  "
+  spec: s.message {
+    message:  as\http:
+    receiver: s.binary
+    input:    s.cat()
+    output:   s.result(s.any(http\res\spec http\req\spec))
+  }
+}

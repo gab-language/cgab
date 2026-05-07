@@ -35,7 +35,7 @@ ui\run: .defspec {
 ui\event: .defspec {
   help:
   "
-  An *event* is a tuple of values describing some user interaction, or simply the passage of time.
+  A *ui\event* is a tuple of values describing some user interaction, or simply the passage of time.
   "
   spec: s.alt(
     'mouse' s.cat(

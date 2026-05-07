@@ -28,18 +28,18 @@ defspec: .def (
       opts.spec)
 
     spec\help:.def(
-      opts.spec
+      self
       () :: opts.at help:)
 
     spec\name:.def(
-      opts.spec
+      self
       self.to\string)
 
     to\spec:.def(
       self
       opts.spec)
 
-    opts.spec
+    self
   end)
 
 to\spec: .def () :: self
@@ -588,14 +588,14 @@ re\debug: .defcase {
       .or ""
   end
 }
-re\debug: .def () :: self.to\spec.spec\name
+re\debug: .def () :: self.spec\name
 
 # Get the user-supplied name of a RE
 re\name: .defcase {
   RE\Atom.t
   () :: do
     (_, name) := self.meta.at name:
-    (ok: name.or(self.forms.to\spec.spec\name))
+    (ok: name.or(self.forms.spec\name))
   end
 
   RE\Seq.t
@@ -609,7 +609,7 @@ re\name: .defcase {
   RE\Rep.t
   () :: self.meta.at name:
 }
-re\name: .def () :: (ok: self.to\spec.spec\name)
+re\name: .def () :: (ok: self.spec\name)
 
 # Construct a path (array of triples) taken to *get to* this RE state
 re\path: .defcase {
@@ -1495,7 +1495,7 @@ end
       |> Streams.map ((v m k) :: do
         e := k.to\spec.spec\explain
 
-        (ok, h) := k.to\spec.spec\help
+        (ok, h) := k.spec\help
         h := ok.and(h).or ''
 
         name := (k == mod)
@@ -1510,7 +1510,7 @@ end
 
         kind := k.to\spec.spec\type
 
-        '## $\n```gab\n$\n```\n$'.sprintf(name e h)
+        '### $\n```gab\n$\n```\n$'.sprintf(name e h)
       end)
       |> Streams.interpose '\n\n'
 
