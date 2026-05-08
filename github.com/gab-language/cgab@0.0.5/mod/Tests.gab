@@ -22,7 +22,7 @@ Colors := {
 
 Spacer := [ box: { width\grow: 10 } [] ]
 
-ui
+Ui
   .run(tui: events app)
   .unwrap
 
