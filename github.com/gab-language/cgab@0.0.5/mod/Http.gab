@@ -18,7 +18,7 @@ Http\Req := http\req: .defclass(
   {
     to\http:
     () :: do
-      Strings.make(
+      Binaries.make(
         self.http\method
         ' '
         self.http\endpoint,
@@ -36,7 +36,7 @@ Http\Res := http\res: .defclass(
   {
     to\http:
     () :: do
-      Strings.make(
+      Binaries.make(
         self.http\status.to\http\status
         ' HTTP/1.1\r\n'
         self.http\headers.to\http\headers,
