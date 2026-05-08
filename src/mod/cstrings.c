@@ -208,20 +208,6 @@ GAB_DYNLIB_NATIVE_FN(string, len) {
   return gab_union_cvalid(gab_nil);
 };
 
-GAB_DYNLIB_NATIVE_FN(string, make) {
-  if (argc <= 1)
-    return gab_vmpush(gab_thisvm(gab), gab_string(gab, "")),
-           gab_union_cvalid(gab_nil);
-
-  gab_value str = gab_valintos(gab, gab_arg(1));
-
-  for (size_t i = 2; i < argc; i++) {
-    str = gab_strcat(gab, str, gab_valintos(gab, gab_arg(i)));
-  }
-
-  return gab_vmpush(gab_thisvm(gab), str), gab_union_cvalid(gab_nil);
-}
-
 static inline bool begins(const char *str, const char *pat, uint64_t offset) {
   uint64_t len = strlen(pat);
 
@@ -505,7 +491,7 @@ GAB_DYNLIB_NATIVE_FN(string, has) {
 }
 
 GAB_DYNLIB_NATIVE_FN(string, tos) {
-  gab_vmpush(gab_thisvm(gab), gab_valintos(gab, gab_arg(0)));
+  gab_vmpush(gab_thisvm(gab), gab_valintostr(gab, gab_arg(0)));
 
   return gab_union_cvalid(gab_nil);
 }
@@ -758,11 +744,6 @@ GAB_DYNLIB_MAIN_FN {
               gab_message(gab, "slice"),
               t,
               gab_snative(gab, "slice", gab_mod_string_slice),
-          },
-          {
-              gab_message(gab, "make"),
-              gab_strtomsg(t),
-              gab_snative(gab, "make", gab_mod_string_make),
           },
           {
               gab_message(gab, "sprintf"),

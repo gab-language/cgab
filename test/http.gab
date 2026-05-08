@@ -5,9 +5,12 @@ req := Http.Req.make('GET' '/' {} '')
 
 req.println
 
-res := Http.Res.make(http\ok: {} 'Result')
+res := Http.Res.make(http\OK: {} 'Result')
 
 res.println
+
+res.to\http.println
+req.to\http.println
 
 query_params := {
   name: 'Benjamin Franklin' 
@@ -16,7 +19,9 @@ query_params := {
 
 query_params.println
 
-(ok, parsed) := "https://me:ps@abc.com:8181/na%20me/age/other?te%20st=this#smth".as\uri
+(ok, parsed) := "https://me:ps@abc.com:8181/name/age/other?te%20st=this#smth".as\uri
+[ok, parsed].println
+
 (ok, parsed) := "https://me%20smth:pass@abc.com/na%20me/age/other?te%20st=this#smth".as\uri
 
 [ok, parsed].println

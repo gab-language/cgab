@@ -211,6 +211,18 @@ gab_value build_headers(struct ParserData *pd) {
   }
 }
 
+#define switch_status_to_message(code, name, desc)                             \
+  case code:                                                                   \
+    return gab_message(gab, #name);
+
+gab_value build_codemessage(struct gab_triple gab, int code) {
+  switch (code) {
+    HTTP_STATUS_MAP(switch_status_to_message);
+  default:
+    return gab_cundefined;
+  }
+}
+
 gab_value build_http(llhttp_t *parser) {
   struct ParserData *pd = parser->data;
   gab_gclock(pd->gab);
@@ -232,9 +244,8 @@ gab_value build_http(llhttp_t *parser) {
 
         gab_message(pd->gab, M_HTTP_URL),
         gab_nstring(pd->gab, pd->url.len, pd->url.ptr),
-
         gab_message(pd->gab, M_HTTP_BODY),
-        gab_nbinary(pd->gab, pd->body.len, (const uint8_t*)pd->body.ptr),
+        gab_nbinary(pd->gab, pd->body.len, (const uint8_t *)pd->body.ptr),
     };
 
     gab_value rec = gab_record(
@@ -249,13 +260,13 @@ gab_value build_http(llhttp_t *parser) {
                    llhttp_get_http_minor(parser) / 10.0),
 
         gab_message(pd->gab, M_HTTP_STATUS),
-        gab_number(llhttp_get_status_code(parser)),
+        build_codemessage(pd->gab, llhttp_get_status_code(parser)),
 
         gab_message(pd->gab, M_HTTP_HEADERS),
         build_headers(pd),
 
         gab_message(pd->gab, M_HTTP_BODY),
-        gab_nbinary(pd->gab, pd->body.len, (const uint8_t*) pd->body.ptr),
+        gab_nbinary(pd->gab, pd->body.len, (const uint8_t *)pd->body.ptr),
     };
 
     gab_value rec = gab_record(
@@ -267,6 +278,18 @@ gab_value build_http(llhttp_t *parser) {
 
   assert(false && "UNREACHABLE");
 }
+
+#define defstatus_handlers(code, name, desc)                                   \
+  GAB_DYNLIB_NATIVE_FN(http, to_http_code_##name) {                            \
+    gab_push(gab, gab_number(code));                                           \
+    return gab_union_cvalid(gab_nil);                                          \
+  }                                                                            \
+  GAB_DYNLIB_NATIVE_FN(http, to_http_status_##name) {                          \
+    gab_push(gab, gab_string(gab, #name));                                     \
+    return gab_union_cvalid(gab_nil);                                          \
+  }
+
+HTTP_STATUS_MAP(defstatus_handlers);
 
 GAB_DYNLIB_NATIVE_FN(http, decode) {
   gab_value vreq = gab_arg(0);
@@ -298,10 +321,23 @@ GAB_DYNLIB_NATIVE_FN(http, decode) {
   return gab_union_cvalid(gab_nil);
 };
 
+#define defstatus_impls(code, name, desc)                                      \
+  {                                                                            \
+      gab_message(gab, "to\\http\\code"),                                      \
+      gab_message(gab, "http\\" #name),                                         \
+      gab_snative(gab, "to\\http\\code", gab_mod_http_to_http_code_##name),    \
+  },                                                                           \
+      {                                                                        \
+          gab_message(gab, "to\\http\\status"),                                \
+          gab_message(gab, "http\\" #name),                                     \
+          gab_snative(gab, "to\\http\\status",                                 \
+                      gab_mod_http_to_http_status_##name),                     \
+      },
+
 GAB_DYNLIB_MAIN_FN {
   gab_value mod = gab_message(gab, "http");
 
-  gab_def(gab, {
+  gab_def(gab, HTTP_STATUS_MAP(defstatus_impls){
                    gab_message(gab, "as\\http"),
                    gab_type(gab, kGAB_BINARY),
                    gab_snative(gab, "as\\http", gab_mod_http_decode),

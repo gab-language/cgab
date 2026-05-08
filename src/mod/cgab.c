@@ -110,7 +110,7 @@ GAB_DYNLIB_NATIVE_FN(gab, aeval) {
 
     for (size_t i = 0; i < len; i++) {
       size_t index = i + 1;
-      keyvals[i] = gab_valintos(gab, gab_ukrecat(env, index));
+      keyvals[i] = gab_valintostr(gab, gab_ukrecat(env, index));
       vals[i] = gab_uvrecat(env, index);
       keys[i] = gab_strdata(keyvals + i);
     }

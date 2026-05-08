@@ -1,24 +1,243 @@
 s := 'github.com/gab-language/cgab@0.0.5'.use 'Specs'
 
-http\status :=  http\status: .defspec {
+http\to\http: .defspec {
   help:
   "
-  An HTTP status code.
+  Construct a binary http request or response. `gab/binary` is the chosen type because the body of a request/response can be an arbitrary encoding, not strictly utf8.
   "
-# TODO @http @spec: Specify more than any number.
-  spec: s.int
+  spec: s.message {
+    message:  as\http:
+    receiver: s.any(http\response: http\request:)
+    input:    s.cat()
+    output:   s.binary
+  }
 }
 
-http\method := http\method: .defspec {
+http\as\http: .defspec {
   help:
   "
-  An HTTP method.
+  Attempt to parse a binary as an HTTP request *or* response.
+
+  Implemented for binaries, because a request or response body *may not be* valid utf8.
   "
-# TODO @http @spec: Put more here.
-  spec: s.any (GET: PUT: POST: HEAD: DELETE:)
+  spec: s.message {
+    message:  as\http:
+    receiver: s.binary
+    input:    s.cat()
+    output:   s.result(s.any(http\request: http\response:))
+  }
 }
 
-http\endpoint := http\endpoint: .defspec {
+http\to\http\code: .defspec {
+  help:
+  "
+  Return the integer status code corresponding to `self`.
+  "
+  spec: s.message {
+    message:  to\http\code:
+    receiver: http\status:
+    input:    s.cat()
+    output:   s.int
+  }
+}
+
+http\to\http\status: .defspec {
+  help:
+  "
+  Return the string representation of the status.
+  "
+  spec: s.message {
+    message:  to\http\status:
+    receiver: http\status:
+    input:    s.cat()
+    output:   s.string
+  }
+}
+
+http\req\spec := http\request: .defspec {
+  help:
+  "
+  An HTTP request. See `as\http`, as well as `method`, `endpoint`, `headers`, and `body`.
+  "
+  spec: s.protocol ( http\method: http\endpoint: http\headers: http\body: )
+}
+
+http\res\spec := http\response: .defspec {
+  help:
+  "
+  An HTTP request. See `status`, `headers`, and `body`.
+  "
+  spec: s.protocol ( http\status: http\headers: http\body: )
+}
+
+http\status: .defspec {
+  help:
+  "
+  An HTTP status code. These are defined as `http\<HTTP STATUS>`.
+  
+  ```gab
+  http\OK:        # The '200 OK' status.
+  http\NOT_FOUND: # The '404 NOT FOUND' status.
+  ```
+  "
+  spec: s.any(
+    http\CONTINUE:
+    http\SWITCHING_PROTOCOLS:
+    http\PROCESSING:
+    http\EARLY_HINTS:
+    http\RESPONSE_IS_STALE:
+    http\REVALIDATION_FAILED:
+    http\DISCONNECTED_OPERATION:
+    http\HEURISTIC_EXPIRATION:
+    http\MISCELLANEOUS_WARNING:
+    http\OK:
+    http\CREATED:
+    http\ACCEPTED:
+    http\NON_AUTHORITATIVE_INFORMATION:
+    http\NO_CONTENT:
+    http\RESET_CONTENT:
+    http\PARTIAL_CONTENT:
+    http\MULTI_STATUS:
+    http\ALREADY_REPORTED:
+    http\TRANSFORMATION_APPLIED:
+    http\IM_USED:
+    http\MISCELLANEOUS_PERSISTENT_WARNING:
+    http\MULTIPLE_CHOICES:
+    http\MOVED_PERMANENTLY:
+    http\FOUND:
+    http\SEE_OTHER:
+    http\NOT_MODIFIED:
+    http\USE_PROXY:
+    http\SWITCH_PROXY:
+    http\TEMPORARY_REDIRECT:
+    http\PERMANENT_REDIRECT:
+    http\BAD_REQUEST:
+    http\UNAUTHORIZED:
+    http\PAYMENT_REQUIRED:
+    http\FORBIDDEN:
+    http\NOT_FOUND:
+    http\METHOD_NOT_ALLOWED:
+    http\NOT_ACCEPTABLE:
+    http\PROXY_AUTHENTICATION_REQUIRED:
+    http\REQUEST_TIMEOUT:
+    http\CONFLICT:
+    http\GONE:
+    http\LENGTH_REQUIRED:
+    http\PRECONDITION_FAILED:
+    http\PAYLOAD_TOO_LARGE:
+    http\URI_TOO_LONG:
+    http\UNSUPPORTED_MEDIA_TYPE:
+    http\RANGE_NOT_SATISFIABLE:
+    http\EXPECTATION_FAILED:
+    http\IM_A_TEAPOT:
+    http\PAGE_EXPIRED:
+    http\ENHANCE_YOUR_CALM:
+    http\MISDIRECTED_REQUEST:
+    http\UNPROCESSABLE_ENTITY:
+    http\LOCKED:
+    http\FAILED_DEPENDENCY:
+    http\TOO_EARLY:
+    http\UPGRADE_REQUIRED:
+    http\PRECONDITION_REQUIRED:
+    http\TOO_MANY_REQUESTS:
+    http\REQUEST_HEADER_FIELDS_TOO_LARGE_UNOFFICIAL:
+    http\REQUEST_HEADER_FIELDS_TOO_LARGE:
+    http\LOGIN_TIMEOUT:
+    http\NO_RESPONSE:
+    http\RETRY_WITH:
+    http\BLOCKED_BY_PARENTAL_CONTROL:
+    http\UNAVAILABLE_FOR_LEGAL_REASONS:
+    http\CLIENT_CLOSED_LOAD_BALANCED_REQUEST:
+    http\INVALID_X_FORWARDED_FOR:
+    http\REQUEST_HEADER_TOO_LARGE:
+    http\SSL_CERTIFICATE_ERROR:
+    http\SSL_CERTIFICATE_REQUIRED:
+    http\HTTP_REQUEST_SENT_TO_HTTPS_PORT:
+    http\INVALID_TOKEN:
+    http\CLIENT_CLOSED_REQUEST:
+    http\INTERNAL_SERVER_ERROR:
+    http\NOT_IMPLEMENTED:
+    http\BAD_GATEWAY:
+    http\SERVICE_UNAVAILABLE:
+    http\GATEWAY_TIMEOUT:
+    http\HTTP_VERSION_NOT_SUPPORTED:
+    http\VARIANT_ALSO_NEGOTIATES:
+    http\INSUFFICIENT_STORAGE:
+    http\LOOP_DETECTED:
+    http\BANDWIDTH_LIMIT_EXCEEDED:
+    http\NOT_EXTENDED:
+    http\NETWORK_AUTHENTICATION_REQUIRED:
+    http\WEB_SERVER_UNKNOWN_ERROR:
+    http\WEB_SERVER_IS_DOWN:
+    http\CONNECTION_TIMEOUT:
+    http\ORIGIN_IS_UNREACHABLE:
+    http\TIMEOUT_OCCURED:
+    http\SSL_HANDSHAKE_FAILED:
+    http\INVALID_SSL_CERTIFICATE:
+    http\RAILGUN_ERROR:
+    http\SITE_IS_OVERLOADED:
+    http\SITE_IS_FROZEN:
+    http\IDENTITY_PROVIDER_AUTHENTICATION_ERROR:
+    http\NETWORK_READ_TIMEOUT:
+    http\NETWORK_CONNECT_TIMEOUT:
+  )
+}
+
+http\method: .defspec {
+  help:
+  "
+  An HTTP method, as a message.
+  "
+  spec: s.any (
+    DELETE:
+    GET:
+    HEAD:
+    POST:
+    PUT:
+    CONNECT:
+    OPTIONS:
+    TRACE:
+    COPY:
+    LOCK:
+    MKCOL:
+    PROPFIND:
+    PROPPATCH:
+    SEARCH:
+    UNLOCK:
+    BIND:
+    REBIND:
+    ACL:
+    REPORT:
+    MKACTIVITY:
+    CHECKOUT:
+    MERGE:
+    MSEARCH:
+    NOTIFY:
+    SUBSCRIBE:
+    UNSUBSCRIBE:
+    PATCH:
+    PURGE:
+    MKCALENDAR:
+    LINK:
+    UNLINK:
+    SOURCE:
+    PRI:
+    DESCRIBE:
+    ANNOUNCE:
+    SETUP:
+    PLAY:
+    PAUSE:
+    TEARDOWN:
+    GET_PARAMETER:
+    SET_PARAMETER:
+    REDIRECT:
+    RECORD:
+    FLUSH:
+    QUERY:
+  )
+}
+
+http\endpoint: .defspec {
   help:
   "
   An HTTP path.
@@ -26,7 +245,7 @@ http\endpoint := http\endpoint: .defspec {
   spec: s.string
 }
 
-http\headers := http\headers: .defspec {
+http\headers: .defspec {
   help:
   "
   A record of HTTP header -> value.
@@ -36,56 +255,10 @@ http\headers := http\headers: .defspec {
   spec: s.dict(s.string, s.string)
 }
 
-http\body := http\body: .defspec {
+http\body: .defspec {
   help:
   "
   The body of an HTTP request or response. Opaque bytes.
   "
   spec: s.binary
-}
-
-http\req\spec := http\request: .defspec {
-  help:
-  "
-  An HTTP request. This is a protocol. See `as\http`.
-  "
-  spec: s.protocol ( http\method: http\endpoint: http\headers: http\body: )
-}
-
-http\res\spec := http\response: .defspec {
-  help:
-  "
-  An HTTP Response. This is a protocol. See `as\http`.
-  "
-  spec: s.protocol ( http\status: http\headers: http\body: )
-}
-
-http\to\http\code: .defspec {
-  help:
-  "
-  Convert an http status code to its integer representation.
-
-  Will crash if the receiver is not a recognized http status.
-  "
-  spec: s.message {
-    message:  to\http\code:
-    receiver: s.message
-    input:    s.cat()
-    output:   s.int
-  }
-}
-
-http\as\http: .defspec {
-  help:
-  "
-  Attempt to parse a binary as an HTTP request *or* response.
-
-  Implemented for binaries, because a request/response body *may not be* valid utf8.
-  "
-  spec: s.message {
-    message:  as\http:
-    receiver: s.binary
-    input:    s.cat()
-    output:   s.result(s.any(http\res\spec http\req\spec))
-  }
 }

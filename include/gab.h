@@ -403,8 +403,8 @@ static inline void v_uint8_t_npush(v_uint8_t *self, size_t n, uint8_t *buff) {
 #define GAB_RESET "\x1b[0m"
 #define GAB_CLEAR "\x1b[2J"
 
-#include <stdio.h>
 #include <stdarg.h>
+#include <stdio.h>
 
 // TODO @cgab: Better 'asserts' which are self-describing.
 #ifdef NDEBUG
@@ -426,10 +426,10 @@ static inline void __gab_assert_fail(const char *expr, const char *file,
   va_end(va);
 };
 
-#define gab_assert(expr, format, ...)                                               \
+#define gab_assert(expr, format, ...)                                          \
   ((expr) ? (void)(0)                                                          \
-          : __gab_assert_fail(#expr, __FILE__, __FUNCTION__, __LINE__,  \
-                              format __VA_OPT__(,) __VA_ARGS__))
+          : __gab_assert_fail(#expr, __FILE__, __FUNCTION__, __LINE__,         \
+                              format __VA_OPT__(, ) __VA_ARGS__))
 
 #endif
 
@@ -463,7 +463,8 @@ static inline void __gab_assert_fail(const char *expr, const char *file,
 #endif
 
 #ifdef GAB_PLATFORM_WIN
-#define GAB_DYNLIB_MAIN_FN __declspec(dllexport) union gab_value_pair gab_lib(struct gab_triple gab)
+#define GAB_DYNLIB_MAIN_FN                                                     \
+  __declspec(dllexport) union gab_value_pair gab_lib(struct gab_triple gab)
 #else
 #define GAB_DYNLIB_MAIN_FN union gab_value_pair gab_lib(struct gab_triple gab)
 #endif
@@ -1931,14 +1932,14 @@ struct gab_def_argt {
 GAB_API bool gab_ndef(struct gab_triple gab, uint64_t len,
                       struct gab_def_argt *args);
 
-#define gab_defmacro(gab, ...)                                                      \
+#define gab_defmacro(gab, ...)                                                 \
   ({                                                                           \
     struct gab_def_argt defs[] = {__VA_ARGS__};                                \
-    gab_ndefmacro(gab, sizeof(defs) / sizeof(struct gab_def_argt), defs);           \
+    gab_ndefmacro(gab, sizeof(defs) / sizeof(struct gab_def_argt), defs);      \
   })
 
 GAB_API bool gab_ndefmacro(struct gab_triple gab, uint64_t len,
-                      struct gab_def_argt *args);
+                           struct gab_def_argt *args);
 
 /**
  * @brief Get the runtime value that corresponds to the given kind.
@@ -2243,9 +2244,11 @@ GAB_API_INLINE gab_value gab_string(struct gab_triple gab, const char *data) {
   return gab_nstring(gab, strlen(data), data);
 }
 
-
 /**
- * @brief Concatenate two gab strings
+ * @brief Concatenate two gab strings.
+ *
+ * TODO @cgab @api: Implement 'nstrcat' which concatenates n strings
+ * efficiently.
  *
  * @param gab The engine.
  * @param a The first string.
@@ -2265,6 +2268,16 @@ GAB_API gab_value gab_strcat(struct gab_triple gab, gab_value a, gab_value b);
  */
 GAB_API gab_value gab_tstrcat(struct gab_triple gab, gab_value a, gab_value b);
 
+/**
+ * @brief Create a string by concatenating n values. (Converting them to strings
+ * in the process).
+ */
+GAB_API gab_value gab_nvstring(struct gab_triple gab, uint64_t n,
+                               gab_value *data);
+
+/**
+ * @brief Concatenate a cstring to a gab string.
+ */
 GAB_API_INLINE gab_value gab_sstrcat(struct gab_triple gab, gab_value a,
                                      const char *b) {
   return gab_strcat(gab, a, gab_string(gab, b));
@@ -2404,17 +2417,15 @@ GAB_API_INLINE gab_value gab_bintostr(gab_value bin) {
 
 GAB_API_INLINE gab_value gab_bincat(struct gab_triple gab, gab_value a,
                                     gab_value b) {
+  if (a == gab_cinvalid || b == gab_cinvalid)
+    return gab_cinvalid;
+
   assert(gab_valkind(a) == kGAB_BINARY);
   assert(gab_valkind(b) == kGAB_BINARY);
-  assert(gab_valkind(gab_ubintostr(a)) == kGAB_STRING);
-  assert(gab_valkind(gab_ubintostr(b)) == kGAB_STRING);
 
   gab_value astr = gab_ubintostr(a);
   gab_value bstr = gab_ubintostr(b);
   gab_value abstr = gab_strcat(gab, astr, bstr);
-
-  if (abstr == gab_cinvalid)
-    return abstr;
 
   return gab_strtobin(abstr);
 }
@@ -3323,7 +3334,7 @@ GAB_API_INLINE gab_value gab_valtype(struct gab_triple gab, gab_value value) {
 
 GAB_API struct gab_gc *gab_gc(struct gab_triple gab);
 
-GAB_API_INLINE gab_value gab_valintos(struct gab_triple gab, gab_value value);
+GAB_API_INLINE gab_value gab_valintostr(struct gab_triple gab, gab_value value);
 
 /**
  * @brief Get the running fiber of the current job.
@@ -3439,7 +3450,8 @@ GAB_API_INLINE bool gab_valintob(gab_value value) {
  * @param value The value to convert
  * @return The string representation of the value.
  */
-GAB_API_INLINE gab_value gab_valintos(struct gab_triple gab, gab_value value) {
+GAB_API_INLINE gab_value gab_valintostr(struct gab_triple gab,
+                                        gab_value value) {
   switch (gab_valkind(value)) {
   case kGAB_MESSAGE:
     return gab_msgtostr(value);
@@ -3447,7 +3459,7 @@ GAB_API_INLINE gab_value gab_valintos(struct gab_triple gab, gab_value value) {
     return value;
   default:
     for (size_t len = 4096;; len *= 2) {
-      char *buffer = (char*) malloc(len);
+      char *buffer = (char *)malloc(len);
       assert(buffer);
 
       char *cursor = buffer;
@@ -3457,6 +3469,31 @@ GAB_API_INLINE gab_value gab_valintos(struct gab_triple gab, gab_value value) {
         continue;
 
       return gab_string(gab, buffer);
+    }
+  }
+}
+
+GAB_API_INLINE gab_value gab_valintobin(struct gab_triple gab,
+                                        gab_value value) {
+  switch (gab_valkind(value)) {
+  case kGAB_MESSAGE:
+    return gab_strtobin(gab_msgtostr(value));
+  case kGAB_STRING:
+    return gab_strtobin(value);
+  case kGAB_BINARY:
+    return value;
+  default:
+    for (size_t len = 4096;; len *= 2) {
+      char *buffer = (char *)malloc(len);
+      assert(buffer);
+
+      char *cursor = buffer;
+      size_t remaining = len;
+
+      if (gab_svalinspect(&cursor, &remaining, value, -1) < 0)
+        continue;
+
+      return gab_binary(gab, buffer);
     }
   }
 }
@@ -3471,7 +3508,7 @@ GAB_API_INLINE gab_value gab_valintos(struct gab_triple gab, gab_value value) {
 GAB_API_INLINE gab_value gab_pvalintos(struct gab_triple gab, gab_value value,
                                        const char *prefix) {
   for (size_t len = 4096;; len *= 2) {
-    char *buffer = (char*) malloc(len);
+    char *buffer = (char *)malloc(len);
     assert(buffer);
 
     char *cursor = buffer;

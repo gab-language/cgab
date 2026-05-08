@@ -89,7 +89,7 @@ Behavior := test\behavior:.defclass(
 
     meta := { lhs: lhs, cmp: cmp, rhs: rhs }
 
-    Suites.swap (suites) :: do
+    Suites.atom\swap (suites) :: do
       suite := path.at 0 .unwrap
       bhv := path.at 1 .unwrap
 
@@ -207,7 +207,7 @@ select\down: .defcase {
 handle\keydown: .defcase {
   r: (ev model) :: do
     queue_tests.()
-    Suites.reset {}
+    Suites.atom\reset {}
   end
   k: (ev model) :: do
     model.focus.select\up(model)
@@ -479,7 +479,7 @@ events
       model
       (model, args*)
         :: model
-            .put(test\suites: Suites.deref)
+            .put(test\suites: Suites.atom\deref)
             .app\controller (args*))
     |> Streams.map(app :: app.app\view)
   )

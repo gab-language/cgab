@@ -1,6 +1,6 @@
-Atom := gab\atom:
+Atoms := gab\atom:
 
-make: .def (Atom, (initial) :: do
+make: .def (Atoms, (initial) :: do
   ch := Channels.make
 
   loop := (state) :: do
@@ -17,22 +17,22 @@ make: .def (Atom, (initial) :: do
   ch
 end)
 
-t: .def (Atom, Channels.t)
+t: .def (Atoms, Channels.t)
 
-[Atom.t] .defmodule {
-  deref: () :: do
+[Atoms.t] .defmodule {
+  atom\deref: () :: do
     reply := Channels.make
     self <! (reply, (x) :: x)
     reply.>!.unwrap
   end
 
-  swap: (f) :: do
+  atom\swap: (f) :: do
     reply := Channels.make
     self <! (reply, f)
     reply.>!.unwrap
   end
 
-  reset: (val) :: self.swap(() :: val)
+  atom\reset: (val) :: self.swap(() :: val)
 }
 
-Atom
+Atoms

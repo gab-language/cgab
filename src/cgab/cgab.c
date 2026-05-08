@@ -113,6 +113,16 @@ struct primitive msg_primitives[] = {
     },
     {
         .name = mGAB_MAKE,
+        .message = tGAB_STRING,
+        .primitive = gab_primitive(OP_SEND_PRIMITIVE_STRING),
+    },
+    {
+        .name = mGAB_MAKE,
+        .message = tGAB_BINARY,
+        .primitive = gab_primitive(OP_SEND_PRIMITIVE_BINARY),
+    },
+    {
+        .name = mGAB_MAKE,
         .message = tGAB_CHANNEL,
         .primitive = gab_primitive(OP_SEND_PRIMITIVE_CHANNEL),
     },
@@ -4656,6 +4666,8 @@ gab_value gab_tnstring(struct gab_triple gab, uint64_t len, const char *data) {
    * *could* insert the string we want into the dict.
    * In that case, we'd stomp over the old value
    * and leak its memory.
+   *
+   * If this is a big deal, we can simply perform another check after locking.
    */
 
   switch (mtx_trylock(&gab.eg->gc_mtx)) {
@@ -4705,6 +4717,10 @@ gab_value gab_nstring(struct gab_triple gab, uint64_t len, const char *data) {
 };
 
 gab_value gab_strcat(struct gab_triple gab, gab_value _a, gab_value _b) {
+  // Helpfully forward cinvalid. This helps strings flow through this code.
+  if (_a == gab_cinvalid || _b == gab_cinvalid)
+    return gab_cinvalid;
+
   for (;;) {
     switch (gab_yield(gab)) {
     case sGAB_IGN:
@@ -5641,6 +5657,31 @@ gab_value gab_nreccat(struct gab_triple gab, uint64_t len, gab_value *records) {
 
   return gab_gcunlock(gab), res;
 }
+
+gab_value gab_nvstring(struct gab_triple gab, uint64_t n, gab_value *data) {
+  if (n == 0)
+    return gab_string(gab, "");
+
+  gab_value str = gab_valintostr(gab, data[0]);
+
+  for (uint64_t i = 1; i < n; i++)
+    str = gab_strcat(gab, str, gab_valintostr(gab, data[i]));
+
+  return str;
+}
+
+gab_value gab_nvbinary(struct gab_triple gab, uint64_t n, gab_value *data) {
+  if (n == 0)
+    return gab_binary(gab, "");
+
+  gab_value str = gab_valintobin(gab, data[0]);
+
+  for (uint64_t i = 1; i < n; i++)
+    str = gab_bincat(gab, str, gab_valintobin(gab, data[i]));
+
+  return str;
+}
+
 
 gab_value gab_list(struct gab_triple gab, uint64_t stride, uint64_t size,
                    gab_value *values) {
@@ -11521,6 +11562,19 @@ extern void putcs(char *arg);
     gab_list(GAB(), 1, (len), SP() - ((n) + (len)));                           \
   })
 
+#define MICRO_OP_STRING(n, len)                                                \
+  ({                                                                           \
+    STORE_SP();                                                                \
+    gab_nvstring(GAB(), (len), SP() - ((n) + (len)));                          \
+  })
+
+#define MICRO_OP_BINARY(n, len)                                                \
+  ({                                                                           \
+    STORE_SP();                                                                \
+    gab_nvbinary(GAB(), (len), SP() - ((n) + (len)));                          \
+  })
+
+
 #define MICRO_OP_CHANNEL()                                                     \
   ({                                                                           \
     STORE_SP();                                                                \
@@ -12959,6 +13013,48 @@ CASE_CODE(SEND_PRIMITIVE_LIST) {
   DROP_N(have + 1 + FRAME_SIZE);
 
   PUSH(rec);
+
+  SET_HV(below_have + 1);
+
+  NEXT();
+}
+
+CASE_CODE(SEND_PRIMITIVE_STRING) {
+  gab_value *ks = READ_SENDCONSTANTS;
+
+  uint64_t have = HV();
+  uint64_t below_have = BELOW_HV();
+
+  SEND_GUARD_CACHED_RECEIVER_TYPE(PEEK_N(have));
+
+  uint64_t len = have - 1;
+
+  gab_value str = MICRO_OP_STRING(0, len);
+
+  DROP_N(have + 1 + FRAME_SIZE);
+
+  PUSH(str);
+
+  SET_HV(below_have + 1);
+
+  NEXT();
+}
+
+CASE_CODE(SEND_PRIMITIVE_BINARY) {
+  gab_value *ks = READ_SENDCONSTANTS;
+
+  uint64_t have = HV();
+  uint64_t below_have = BELOW_HV();
+
+  SEND_GUARD_CACHED_RECEIVER_TYPE(PEEK_N(have));
+
+  uint64_t len = have - 1;
+
+  gab_value str = MICRO_OP_BINARY(0, len);
+
+  DROP_N(have + 1 + FRAME_SIZE);
+
+  PUSH(str);
 
   SET_HV(below_have + 1);
 

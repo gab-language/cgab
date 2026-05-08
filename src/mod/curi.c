@@ -263,8 +263,19 @@ size_t uri_encode(const char *src, const size_t len, char *dst) {
   while (i < len) {
     const char octet = src[i++];
     const int32_t code = ((int32_t *)uri_encode_tbl)[(unsigned char)octet];
+
     if (code) {
-      *((int32_t *)&dst[j]) = code;
+      // Is a memcpy okay here?
+      // It could be kinda slow.
+      // It could be optimized out.
+      memcpy(dst + j, &code, sizeof(code) - 1);
+
+      // The issue with just using a store like below
+      // Is that our destination address within dst
+      // isn't guaranteed to be aligned on 4 bytes
+      // like an int32_t* needs to be.
+
+      // *((int32_t *)&dst[j]) = code;
       j += 3;
     } else
       dst[j++] = octet;
@@ -278,7 +289,10 @@ size_t uri_decode(const char *src, const size_t len, char *dst) {
   size_t i = 0, j = 0;
 
   while (i < len) {
-    if (src[i] == '%' && i + 2 < len) {
+    if (src[i] == '%') {
+      if (i + 2 >= len)
+        return -1;
+
       const unsigned char v1 = hexval[(unsigned char)src[i + 1]];
       const unsigned char v2 = hexval[(unsigned char)src[i + 2]];
 
@@ -301,13 +315,13 @@ size_t uri_decode(const char *src, const size_t len, char *dst) {
 
 gab_value furi_sv_to_value(struct gab_triple gab, furi_sv sv) {
   size_t len = furi_sv_length(sv);
-  char buf[len + 1];
-  len = uri_decode(sv.begin, len, buf);
+  char buf[len + 1] = {};
+  size_t result_len = uri_decode(sv.begin, len, buf);
 
-  if (len == (size_t)-1)
+  if (result_len == (size_t)-1)
     return gab_cundefined;
   else
-    return gab_nstring(gab, len, buf);
+    return gab_nstring(gab, result_len, buf);
 }
 
 gab_value build_path(struct gab_triple gab, furi_sv path) {
@@ -351,7 +365,6 @@ gab_value build_auth(struct gab_triple gab, furi_sv auth) {
     v_gab_value_push(&elems, v);
   }
 
-
   if (!furi_sv_is_empty(port)) {
     gab_value v = furi_sv_to_value(gab, port);
 
@@ -383,7 +396,8 @@ gab_value build_auth(struct gab_triple gab, furi_sv auth) {
   }
 
   if (elems.len) {
-    gab_value vpath = gab_record(gab, 2, elems.len / 2, elems.data, elems.data + 1);
+    gab_value vpath =
+        gab_record(gab, 2, elems.len / 2, elems.data, elems.data + 1);
     v_gab_value_destroy(&elems);
     return vpath;
   } else {
@@ -398,8 +412,18 @@ gab_value build_query(struct gab_triple gab, furi_sv query) {
        !furi_query_iter_is_done(iter); furi_query_iter_next(&iter)) {
 
     furi_query_iter_value elem = furi_query_iter_get_value(iter);
-    v_gab_value_push(&elems, furi_sv_to_value(gab, elem.key));
-    v_gab_value_push(&elems, furi_sv_to_value(gab, elem.value));
+
+    gab_value key = furi_sv_to_value(gab, elem.key);
+    if (key == gab_cundefined)
+      return key;
+
+    v_gab_value_push(&elems, key);
+
+    gab_value value = furi_sv_to_value(gab, elem.value);
+    if (value == gab_cundefined)
+      return value;
+
+    v_gab_value_push(&elems, value);
   }
 
   if (elems.len) {
@@ -455,7 +479,7 @@ gab_value build_url(struct gab_triple gab, const char *ptr, size_t len) {
 
   v_gab_value_push(&kvps, gab_message(gab, M_URL_FRAGMENT));
 
-   v = furi_sv_to_value(gab, split.fragment);
+  v = furi_sv_to_value(gab, split.fragment);
   if (v == gab_cundefined)
     return v;
 

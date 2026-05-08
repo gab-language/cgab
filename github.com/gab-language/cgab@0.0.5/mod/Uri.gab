@@ -55,7 +55,7 @@ to\uri: .def(
     fragment := self.uri\fragment.to\uri\fragment
 
     Strings.make(
-      self.uri\scheme
+      self.uri\scheme.to\uri\encoded
       '://'
       auth
       path
