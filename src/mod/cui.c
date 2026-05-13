@@ -1342,12 +1342,17 @@ GAB_DYNLIB_NATIVE_FN(ui, run) {
     render_rec_target = gab_mod_ui_gui_render;
     event_rec_name = "ui\\gui\\loop\\event";
     event_rec_target = gab_mod_ui_gui_event;
-#if GAB_PLATFORM_UNIX
   } else if (kind == gab_message(gab, "tui")) {
+#if GAB_PLATFORM_UNIX
     render_rec_name = "ui\\tui\\loop\\render";
     render_rec_target = gab_mod_ui_tui_render;
     event_rec_name = "ui\\tui\\loop\\event";
     event_rec_target = gab_mod_ui_tui_event;
+#else
+    render_rec_name = "ui\\gui\\loop\\render";
+    render_rec_target = gab_mod_ui_gui_render;
+    event_rec_name = "ui\\gui\\loop\\event";
+    event_rec_target = gab_mod_ui_gui_event;
 #endif
   } else {
     return gab_panicf(gab, "Expected @ or @, found @", gab_message(gab, "gui"),
