@@ -201,7 +201,7 @@ int copy_file(FILE *in, FILE *out) {
  */
 
 #ifdef GAB_PLATFORM_WIN
-typedef union gab_value_pair (WINAPI*dynlib_fn)(struct gab_triple);
+typedef union gab_value_pair(WINAPI *dynlib_fn)(struct gab_triple);
 #else
 typedef union gab_value_pair (*dynlib_fn)(struct gab_triple);
 #endif
@@ -857,6 +857,9 @@ int step(struct step *step) {
       if (!f && step->as.archive_open.initial_data_fallback_path)
         f = fopen(step->as.archive_open.initial_data_fallback_path, "r");
 
+      printf("PATH: %s\nFALLBACKPATH: %s\n",
+             step->as.archive_open.initial_data_path,
+             step->as.archive_open.initial_data_fallback_path);
       if (!f)
         return 1;
 
@@ -2154,6 +2157,7 @@ int help(struct command_arguments *args) {
 
 #define MODULE_NAME_MAX 2048
 
+// TODO @build @bug: On windows, the executable is gab.exe, not gab.
 int build_exe(struct command_arguments *args, const char *module) {
   v_char bundle = {};
   v_char_spush(&bundle, s_char_cstr(module));
@@ -2175,6 +2179,12 @@ int build_exe(struct command_arguments *args, const char *module) {
   v_char_destroy(&exepath);
   v_char_spush(&exepath, s_char_cstr(path));
   v_char_spush(&exepath, s_char_cstr("gab"));
+
+  // On windows, the executable has `.exe` on the end.
+  if (!strcmp(platform, "x86_64-windows-gnu") ||
+      !strcmp(platform, "aarch64-windows-gnu"))
+    v_char_spush(&exepath, s_char_cstr(".exe"));
+
   v_char_push(&exepath, '\0');
 
   v_s_char_push(&args->packages, s_char_cstr(module));

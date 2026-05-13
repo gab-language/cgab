@@ -54,6 +54,7 @@ jobs:
     - name: Configure
       run: clide configure -t='x86_64-linux-gnu x86_64-macos-none aarch64-linux-gnu aarch64-macos-none x86_64-windows-gnu aarch64-windows-gnu' -b='release'
 
+    # TODO: Select correct dlltool based on target arch.
     - name: Build
       run: DLLTOOL=x86_64-w64-mingw32-dlltool clide build
 
