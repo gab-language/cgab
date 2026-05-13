@@ -1523,7 +1523,7 @@ union gab_value_pair resume_filesend(struct gab_triple gab, struct gab_io *io,
                              len - result);
 
   // We wrote len bytes!)
-  assert(result == len);
+  gab_assert(result == len, "We should have written exactly %li bytes, result is %li.", len, result);
   gab_vmpush(gab_thisvm(gab), gab_ok);
   return gab_union_cvalid(gab_nil);
 }

@@ -72,7 +72,7 @@ function configure_target() {
     echo "export cio_FLAGS=\"-lbearssl -DQIO_LINUX\"" >> "$1.configuration"
   elif [[ "$1" =~ "windows" ]]; then
     echo "export cgui_FLAGS=\"\"" >> "$1.configuration"
-    echo "export cio_FLAGS=\"-lbearssl -DQIO_WINDOWS\"" >> "$1.configuration"
+    echo "export cio_FLAGS=\"-lbearssl -DQIO_WINDOWS -lws2_32\"" >> "$1.configuration"
   elif [[ "$1" =~ "mac" ]]; then
     echo "export cgui_FLAGS=\"-DRGFW_NO_IOKIT -framework Cocoa\"" >> "$1.configuration"
     echo "export cio_FLAGS=\"-lbearssl -DQIO_MACOS\"" >> "$1.configuration"

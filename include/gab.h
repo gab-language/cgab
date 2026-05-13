@@ -230,6 +230,8 @@
 #define fHAVE_VAR (1 << 0)
 #define fHAVE_TAIL (1 << 7)
 
+// TODO @cgab @qol: Replace these include-based xmacros with just xmacros.
+
 enum gab_status {
 #define STATUS(name, message) GAB_##name,
 #include "status_code.h"
@@ -462,15 +464,23 @@ static inline void __gab_assert_fail(const char *expr, const char *file,
 #endif
 #endif
 
+#ifdef __cplusplus
+#define GAB_PROMISE_CLINKAGE extern "C"
+#else
+#define GAB_PROMISE_CLINKAGE
+#endif
+
 #ifdef GAB_PLATFORM_WIN
 #define GAB_DYNLIB_MAIN_FN                                                     \
-  __declspec(dllexport) union gab_value_pair gab_lib(struct gab_triple gab)
+  __declspec(dllexport) GAB_PROMISE_CLINKAGE union gab_value_pair gab_lib(     \
+      struct gab_triple gab)
 #else
-#define GAB_DYNLIB_MAIN_FN union gab_value_pair gab_lib(struct gab_triple gab)
+#define GAB_DYNLIB_MAIN_FN                                                     \
+  GAB_PROMISE_CLINKAGE union gab_value_pair gab_lib(struct gab_triple gab)
 #endif
 
 #define GAB_DYNLIB_NATIVE_FN(module, name)                                     \
-  union gab_value_pair gab_mod_##module##_##name(                              \
+  GAB_PROMISE_CLINKAGE union gab_value_pair gab_mod_##module##_##name(         \
       struct gab_triple gab, uint64_t argc, gab_value *argv,                   \
       uintptr_t reentrant)
 
@@ -2100,9 +2110,9 @@ GAB_API void gab_ndref(struct gab_triple gab, uint64_t stride, uint64_t len,
  */
 #if cGAB_LOG_GC
 #define gab_gcepochnext(gab) (__gab_gcepochnext(gab, __FUNCTION__, __LINE__))
-void __gab_gcepochnext(struct gab_triple gab, const char *func, int line);
+GAB_API void __gab_gcepochnext(struct gab_triple gab, const char *func, int line);
 #else
-void gab_gcepochnext(struct gab_triple gab);
+GAB_API void gab_gcepochnext(struct gab_triple gab);
 #endif
 
 /**
@@ -2274,6 +2284,12 @@ GAB_API gab_value gab_tstrcat(struct gab_triple gab, gab_value a, gab_value b);
  */
 GAB_API gab_value gab_nvstring(struct gab_triple gab, uint64_t n,
                                gab_value *data);
+
+#define gab_stringof(gab, ...)                                                 \
+  ({                                                                           \
+    gab_value items[] = {__VA_ARGS__};                                         \
+    gab_nvstring(gab, sizeof(items) / sizeof(gab_value), items);               \
+  })
 
 /**
  * @brief Concatenate a cstring to a gab string.
@@ -3173,7 +3189,7 @@ GAB_API gab_value gab_box(struct gab_triple gab, struct gab_box_argt args);
  * @param box The box.
  * @return The user data.
  */
-GAB_API inline uint64_t gab_boxlen(gab_value box);
+GAB_API uint64_t gab_boxlen(gab_value box);
 
 /**
  * @brief Get the user data from a boxed value.
@@ -3568,5 +3584,7 @@ GAB_API bool gab_signal(struct gab_triple gab, enum gab_signal s, int wkid);
 #ifdef __cplusplus
 }
 #endif
+
+#include "platform.h"
 
 #endif

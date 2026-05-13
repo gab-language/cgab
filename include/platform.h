@@ -310,49 +310,60 @@ GAB_API_INLINE int gab_nosproc(char *cmd, size_t nargs, const char *args[]) {
 #include <wchar.h>
 #include <windows.h>
 
-FARPROC WINAPI gab_delayload(unsigned dliNotify, PDelayLoadInfo pdli) {
-  // dliNotePreLoadLibrary is called right before the helper calls LoadLibrary
-  if (dliNotify == dliNotePreLoadLibrary) {
-    // Check if the helper is looking for our specific "virtual" library name
-    printf("DELAYLOAD %s\n", pdli->szDll);
+#ifndef GAB_CORE
+thread_local static DWORD g_oldProtect = 0;
+ExternC FARPROC gab_delayload(unsigned dliNotify, PDelayLoadInfo pdli) {
+  switch (dliNotify) {
+  case dliNotePreLoadLibrary:
+    // 1. Alias "gab" to the current running process (the .exe)
     if (_stricmp(pdli->szDll, "gab") == 0) {
-      // GetModuleHandle(NULL) returns the handle of the .exe that started the
-      // process.
-      HMODULE hHost = GetModuleHandle(NULL);
+      return (FARPROC)GetModuleHandle(NULL);
+    }
+    break;
 
-      if (hHost) {
-        return (FARPROC)hHost;
+  case dliNotePreGetProcAddress:
+    // 2. This is called right before the helper tries to resolve the symbol
+    // and write to the IAT. We make the IAT entry writable here.
+    if (pdli->ppfn) {
+      if (!VirtualProtect(pdli->ppfn, sizeof(void *), PAGE_READWRITE,
+                          &g_oldProtect)) {
+        printf("GAB_DELAY: Failed to unprotect IAT at %p (Error: %lu)\n",
+               pdli->ppfn, GetLastError());
       }
     }
+    break;
+
+  case dliNoteEndProcessing:
+    // 3. This is called after the helper has successfully written the address
+    // to *pdli->ppfn. We restore the original Read-Only protection now.
+    if (g_oldProtect != 0 && pdli->ppfn) {
+      DWORD dummy;
+      if (!VirtualProtect(pdli->ppfn, sizeof(void *), g_oldProtect, &dummy)) {
+        printf("GAB_DELAY: Failed to restore protection at %p\n", pdli->ppfn);
+      }
+      g_oldProtect = 0; // Reset state
+    }
+    break;
+
+  case dliFailLoadLib:
+    printf("GAB_DELAY: Critical Failure - Could not load library %s\n",
+           pdli->szDll);
+    break;
+
+  case dliFailGetProc:
+    printf("GAB_DELAY: Critical Failure - Could not find function %s\n",
+           pdli->dlp.szProcName);
+    break;
+
+  default:
+    return NULL;
   }
 
-  // Proceed with its default behavior
   return NULL;
 }
-
-// You MUST assign your function to this specific pointer name
-// for the delay-load helper to pick it up.
-PfnDliHook __pfnDliNotifyHook2 = gab_delayload;
-
-// This is the function the linker looks for when /DELAYLOAD is used.
-// It is called the first time any delay-loaded function is invoked.
-FARPROC WINAPI __delayLoadHelper2(PDelayLoadInfo pdli, PfnDliHook pfnBefore) {
-  // 1. Fire the hook we defined in plugin.c
-  // This allows our redirector to return the handle to the current EXE
-  if (pfnBefore) {
-    FARPROC res = pfnBefore(dliNotePreLoadLibrary, (PDelayLoadInfo)pdli);
-    if (res) {
-      // We found the host! Now resolve the specific function being called.
-      return GetProcAddress((HMODULE)res, pdli->dlp.szProcName);
-    }
-  }
-
-  // 2. Fallback: Standard loading (will likely fail if renamed)
-  HMODULE h = LoadLibraryA(pdli->szDll);
-  if (!h)
-    return NULL;
-  return GetProcAddress(h, pdli->dlp.szProcName);
-}
+ExternC PfnDliHook __pfnDliNotifyHook2 = gab_delayload;
+ExternC PfnDliHook __pfnDliFailureHook2 = gab_delayload;
+#endif
 
 #define gab_ossignal(sig, handler) signal(sig, handler)
 
@@ -363,8 +374,7 @@ FARPROC WINAPI __delayLoadHelper2(PDelayLoadInfo pdli, PfnDliHook pfnBefore) {
 #define gab_oslibfind(dynlib, name) ((PVOID)GetProcAddress(dynlib, name))
 
 static inline void *gab_oslibopen(const char *path) {
-  HMODULE hPlugin = LoadLibraryA(path);
-  return hPlugin;
+  return LoadLibraryA(path);
 }
 
 GAB_API_INLINE const int gab_osmkdirp(const char *path) {

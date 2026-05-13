@@ -1,7 +1,9 @@
-NATIVECC    = zig cc
-TARGETCC	  = zig cc --target=$(GAB_TARGETS)
-TARGETCXX   = zig c++ --target=$(GAB_TARGETS)
-AR          = zig ar
+ZIG         = zig
+DLLTOOL     = x86_64-w64-mingw32-dlltool
+NATIVECC    = $(ZIG) cc
+TARGETCC	  = $(ZIG) cc --target=$(GAB_TARGETS)
+TARGETCXX   = $(ZIG) c++ --target=$(GAB_TARGETS)
+AR          = $(ZIG) ar
 
 CGAB_SRC_PREFIX     = src/cgab
 GAB_SRC_PREFIX      = src/gab
@@ -12,6 +14,15 @@ INCLUDE_PREFIX 	= -Iinclude -I$(BUILD_PREFIX)
 VENDOR_PREFIX   = vendor
 
 GAB_VERSION_TAG = 0.0.5
+
+GAB_ISWINDOWS   = $(findstring windows,$(GAB_TARGETS))
+
+# TODO @build: Only do windows stuff when detect windows build.
+ifneq (,$(GAB_ISWINDOWS))
+BINARY_NAME = gab.exe
+else
+BINARY_NAME = gab
+endif
 
 INCLUDE		= $(INCLUDE_PREFIX) -isystem$(VENDOR_PREFIX) -L$(BUILD_PREFIX)
 
@@ -26,7 +37,7 @@ CFLAGS = -std=c23 \
 				 $(INCLUDE) \
 				 $(GAB_CCFLAGS)
 
-CXXFLAGS =  -std=c++23 \
+CXXFLAGS =  -std=c++17 \
 						-fPIC \
 						-Wall \
 						-MMD  \
@@ -50,8 +61,12 @@ BINARY_FLAGS 	= -rdynamic -Wl,--no-gc-sections $(GAB_LINK_DEPS) $(GAB_BINARYFLAG
 # Best way to conditionally link in dynamic stuff like -framework Cocoa?
 #
 # These below are static, and so are optimized out if not used.
-# TODO: Linking here is necessary only on windows.
+# On windows, we must link with the delay-loaded gab.lib.
+ifneq (,$(GAB_ISWINDOWS))
+CMOD_LINK_DEPS   = -lgab/gab
+else
 CMOD_LINK_DEPS   =
+endif
 
 CXXMOD_LINK_DEPS = 
 CXXMOD_INCLUDE   = 
@@ -99,9 +114,15 @@ $(BUILD_PREFIX)/cgab/%.o: $(CGAB_SRC_PREFIX)/%.c
 $(BUILD_PREFIX)/libcgab.a: $(CGAB_OBJ)
 	$(AR) rcs $@ $^
 
+$(BUILD_PREFIX)/cgab/cgab.def: $(CGAB_OBJ)
+	x86_64-w64-mingw32-dlltool --output-def $@ $<
+
 # This rule builds the gab executable, linking with libcgab.a
-$(BUILD_PREFIX)/gab/gab: $(GAB_OBJ) $(BUILD_PREFIX)/libcgab.a
+$(BUILD_PREFIX)/gab/$(BINARY_NAME): $(GAB_OBJ) $(BUILD_PREFIX)/libcgab.a $(BUILD_PREFIX)/cgab/cgab.def
 	$(TARGETCC) $(CFLAGS) $(BINARY_FLAGS) -DGAB_CORE -o $@ $^
+ifneq (,$(GAB_ISWINDOWS))
+	$(DLLTOOL) --input-def $(BUILD_PREFIX)/cgab/cgab.def --output-delaylib $(BUILD_PREFIX)/gab/gab.lib --dllname gab/gab
+endif
 
 # This rule builds each c module shared library.
 # per-library flags are declared in the configuration.
@@ -197,7 +218,7 @@ $(BUILD_PREFIX)/libbearssl.a:
 
 # These are some convenience rules for making the cli simpler.
 
-gab: $(BUILD_PREFIX)/gab/gab
+gab: $(BUILD_PREFIX)/gab/$(BINARY_NAME)
 
 lib: $(BUILD_PREFIX)/libcgab.a
 
@@ -230,5 +251,3 @@ compile_commands:
 	bear -- make
 
 .PHONY: clean
-
-

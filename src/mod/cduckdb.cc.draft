@@ -22,10 +22,10 @@
  * IN THE SOFTWARE.
  */
 
-#include "duckdb.hpp"
-#include "gab.h"
-
 #include "duckdb.cpp"
+#include "duckdb.hpp"
+
+#include "gab.h"
 
 /*
  * The strategy for multithreading SQLITE here is as follows:
@@ -91,7 +91,7 @@ int get_conn(struct gab_triple gab, gab_value conn,
 GAB_DYNLIB_NATIVE_FN(row, open) {
   gab_value path = gab_arg(1);
 
-  gab_value conn = gab_nil;
+  gab_value conn = gab_cinvalid;
 
   // TODO @bug: This seems like kind of a bad way to check for errors.
 
@@ -102,6 +102,11 @@ GAB_DYNLIB_NATIVE_FN(row, open) {
     conn = make_conn(gab, gab_strdata(&path));
   else
     return gab_pktypemismatch(gab, path, kGAB_STRING);
+
+  if (conn == gab_cinvalid)
+    return gab_push(gab, gab_err,
+                    gab_string(gab, "Error obtaining duckdb connection")),
+           gab_union_cvalid(gab_nil);
 
   // Test the connection by eagerly spawning one
   // for the current worker.
@@ -219,9 +224,11 @@ GAB_DYNLIB_NATIVE_FN(row, exec) {
   gab_gclock(gab);
 
   duckdb_result result = {};
-  if (duckdb_execute_prepared(stmts, &result) == DuckDBSuccess)
-    return gab_vmpush(gab_thisvm(gab), gab_err,
-                      gab_string(gab, "Could not execute prepared")),
+
+  if (duckdb_execute_prepared(stmts, &result) != DuckDBSuccess)
+    return gab_gcunlock(gab),
+           gab_vmpush(gab_thisvm(gab), gab_err,
+                      gab_string(gab, duckdb_prepare_error(stmts))),
            gab_union_cvalid(gab_nil);
 
   duckdb_data_chunk chunk;
@@ -243,14 +250,24 @@ GAB_DYNLIB_NATIVE_FN(row, exec) {
         }
 
         switch (duckdb_column_type(&result, i)) {
-        case DUCKDB_TYPE_INTEGER:
-          gab_wfibpush(gab_thisfiber(gab), gab_number(((int *)data)[i]));
+        case DUCKDB_TYPE_INTEGER: {
+          gab_wfibpush(gab_thisfiber(gab), gab_number(((int *)data)[j]));
           break;
-        case DUCKDB_TYPE_FLOAT:
-          gab_wfibpush(gab_thisfiber(gab), gab_number(((float *)data)[i]));
+        }
+        case DUCKDB_TYPE_FLOAT: {
+          gab_wfibpush(gab_thisfiber(gab), gab_number(((float *)data)[j]));
           break;
+        }
+        case DUCKDB_TYPE_DATE: {
+          duckdb_date_struct date = duckdb_from_date(((duckdb_date *)data)[j]);
+          char buf[100];
+          int len = snprintf(buf, sizeof(buf), "%i-%i-%i", date.year,
+                             date.month, date.day);
+          gab_wfibpush(gab_thisfiber(gab), gab_nstring(gab, len, buf));
+          break;
+        }
         case DUCKDB_TYPE_VARCHAR: {
-          duckdb_string_t str = ((duckdb_string_t *)data)[i];
+          duckdb_string_t str = ((duckdb_string_t *)data)[j];
           if (duckdb_string_is_inlined(str))
             gab_wfibpush(gab_thisfiber(gab),
                          gab_nstring(gab, str.value.inlined.length,
@@ -262,7 +279,7 @@ GAB_DYNLIB_NATIVE_FN(row, exec) {
           break;
         }
         case DUCKDB_TYPE_BLOB: {
-          duckdb_string_t str = ((duckdb_string_t *)data)[i];
+          duckdb_string_t str = ((duckdb_string_t *)data)[j];
           if (duckdb_string_is_inlined(str))
             gab_wfibpush(gab_thisfiber(gab),
                          gab_nbinary(gab, str.value.inlined.length,
@@ -274,8 +291,10 @@ GAB_DYNLIB_NATIVE_FN(row, exec) {
           break;
         }
         default:
-          return gab_vmpush(gab_thisvm(gab), gab_err,
-                            gab_string(gab, "Unhandled DuckDB Type")),
+          return gab_gcunlock(gab),
+                 gab_vmpush(gab_thisvm(gab), gab_err,
+                            gab_string(gab, "Unhandled DuckDB Type"),
+                            gab_number(duckdb_column_type(&result, i))),
                  gab_union_cvalid(gab_nil);
         }
       }

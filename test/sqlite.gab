@@ -1,6 +1,6 @@
-sqlite := 'github.com/gab-language/cgab@0.0.5'.use 'csqlite'
+sqlite := 'github.com/gab-language/cgab@0.0.5'.use 'cduckdb'
 
-db := sqlite.make('test.sqlite').unwrap
+db := sqlite.make.unwrap
 
 "Opened $.".sprintf(db).println
 
@@ -22,7 +22,7 @@ res.println
 
 res := [
   db.eval(
-    "SELECT * FROM Employees WHERE EmployeeID := 1;"
+    "SELECT * FROM Employees WHERE EmployeeID = 1;"
   )
 ]
 res.println
