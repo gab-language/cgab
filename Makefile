@@ -116,13 +116,17 @@ $(BUILD_PREFIX)/libcgab.a: $(CGAB_OBJ)
 	$(AR) rcs $@ $^
 
 $(BUILD_PREFIX)/cgab/cgab.def: $(CGAB_OBJ)
-	x86_64-w64-mingw32-dlltool --output-def $@ $<
+	$(DLLTOOL) --output-def $@ $<
 
 # This rule builds the gab executable, linking with libcgab.a
+# On windows, it also creates a .def file, and then creates a delay-loaded gab.lib.
+ifneq (,$(GAB_ISWINDOWS))
 $(BUILD_PREFIX)/gab/$(BINARY_NAME): $(GAB_OBJ) $(BUILD_PREFIX)/libcgab.a $(BUILD_PREFIX)/cgab/cgab.def
 	$(TARGETCC) $(CFLAGS) $(BINARY_FLAGS) -DGAB_CORE -o $@ $^
-ifneq (,$(GAB_ISWINDOWS))
 	$(DLLTOOL) --input-def $(BUILD_PREFIX)/cgab/cgab.def --output-delaylib $(BUILD_PREFIX)/gab/gab.lib --dllname gab/gab
+else
+$(BUILD_PREFIX)/gab/$(BINARY_NAME): $(GAB_OBJ) $(BUILD_PREFIX)/libcgab.a
+	$(TARGETCC) $(CFLAGS) $(BINARY_FLAGS) -DGAB_CORE -o $@ $^
 endif
 
 # This rule builds each c module shared library.
