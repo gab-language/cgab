@@ -273,6 +273,9 @@ jobs:
       - name: Welcome
         run: ${{ matrix.cmd }}
 
+      - name: DEBUG
+        run: ls -al
+
       - name: Run Smallest Hello World
         run: ${{ matrix.cmd }} exec "'hello world!'"
 
