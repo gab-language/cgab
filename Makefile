@@ -1,5 +1,6 @@
-ZIG         = zig
-DLLTOOL     = x86_64-w64-mingw32-dlltool
+ZIG         ?= zig
+DLLTOOL     ?= dlltool
+#x86_64-w64-mingw32-dlltool
 NATIVECC    = $(ZIG) cc
 TARGETCC	  = $(ZIG) cc --target=$(GAB_TARGETS)
 TARGETCXX   = $(ZIG) c++ --target=$(GAB_TARGETS)
@@ -58,10 +59,10 @@ BINARY_FLAGS 	= -rdynamic -Wl,--no-gc-sections $(GAB_LINK_DEPS) $(GAB_BINARYFLAG
 # As it is not linked with cgab. The symbols from cgab
 # that these modules require will already exist,
 # as they will be in the gab executable
-# Best way to conditionally link in dynamic stuff like -framework Cocoa?
 #
-# These below are static, and so are optimized out if not used.
-# On windows, we must link with the delay-loaded gab.lib.
+# On windows, this is implemented with a delay-loaded gab.lib (linked below.)
+#
+# A custom delay-load hook handles resolving gab's symbols in native modules.
 ifneq (,$(GAB_ISWINDOWS))
 CMOD_LINK_DEPS   = -lgab/gab
 else
