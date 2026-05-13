@@ -76,8 +76,8 @@ jobs:
           cp build-aarch64-linux-gnu/gab/gab ~/gab/${{ env.version }}-aarch64-linux-gnu
           cp build-x86_64-macos-none/gab/gab ~/gab/${{ env.version }}-x86_64-macos-none
           cp build-aarch64-macos-none/gab/gab ~/gab/${{ env.version }}-aarch64-macos-none
-          cp build-x86_64-windows-gnu/gab/gab ~/gab/${{ env.version }}-x86_64-windows-gnu
-          cp build-aarch64-windows-gnu/gab/gab ~/gab/${{ env.version }}-aarch64-windows-gnu
+          cp build-x86_64-windows-gnu/gab/gab.exe ~/gab/${{ env.version }}-x86_64-windows-gnu
+          cp build-aarch64-windows-gnu/gab/gab.exe ~/gab/${{ env.version }}-aarch64-windows-gnu
 
     - name: Create bundles
       run: |
@@ -175,7 +175,7 @@ jobs:
       uses: pyTooling/upload-artifact@v4
       with:
         name: 'gab-x86_64-windows-gnu-release'
-        path: 'build-x86_64-windows-gnu/gab'
+        path: 'build-x86_64-windows-gnu/gab.exe'
 
     - name: Upload x86_64-windows-gnu Bundle Artifact
       uses: pyTooling/upload-artifact@v4
@@ -193,7 +193,7 @@ jobs:
       uses: pyTooling/upload-artifact@v4
       with:
         name: 'gab-aarch64-windows-gnu-release'
-        path: 'build-aarch64-windows-gnu/gab'
+        path: 'build-aarch64-windows-gnu/gab.exe'
 
     - name: Upload aarch64-windows-gnu Bundle Artifact
       uses: pyTooling/upload-artifact@v4
@@ -215,7 +215,7 @@ jobs:
         os: 
           - ubuntu-latest
           - macos-latest
-          #- windows-latest
+          - windows-latest
         include:
           - os: ubuntu-latest
             target: x86_64-linux-gnu
@@ -268,11 +268,6 @@ jobs:
         run: |
           mkdir -p ~/AppData/Local/gab/${{ env.version }}-${{ matrix.target }}/github.com/gab-language/cgab@${{ env.version }}/mod
           unzip -o cgab-${{ env.version }}-${{ matrix.target }} -d ~/AppData/Local/gab/${{ env.version }}-${{ matrix.target }}
-
-      - name: Make the binary executable (win)
-        if: ${{ contains(matrix.target, 'windows') }}
-        run: |
-          move .\build-${{ matrix.target}}\gab\gab .\build-${{ matrix.target }}\gab\gab.exe
 
       - name: Welcome
         run: ${{ matrix.cmd }}

@@ -361,8 +361,8 @@ ExternC FARPROC gab_delayload(unsigned dliNotify, PDelayLoadInfo pdli) {
 
   return NULL;
 }
-ExternC PfnDliHook __pfnDliNotifyHook2 = gab_delayload;
-ExternC PfnDliHook __pfnDliFailureHook2 = gab_delayload;
+PfnDliHook __pfnDliNotifyHook2 = gab_delayload;
+PfnDliHook __pfnDliFailureHook2 = gab_delayload;
 #endif
 
 #define gab_ossignal(sig, handler) signal(sig, handler)
