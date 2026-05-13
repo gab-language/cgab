@@ -52,7 +52,7 @@ jobs:
       run: clide configure -t='x86_64-linux-gnu x86_64-macos-none aarch64-linux-gnu aarch64-macos-none x86_64-windows-gnu aarch64-windows-gnu' -b='release'
 
     - name: Build
-      run: DLLTOOL=dlltool clide build
+      run: clide build
 
     - name: Move native modules
       run: |
