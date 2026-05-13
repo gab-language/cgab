@@ -271,7 +271,7 @@ jobs:
           unzip -o cgab-${{ env.version }}-${{ matrix.target }} -d ~/AppData/Local/gab/${{ env.version }}-${{ matrix.target }}
 
       - name: DEBUG
-        run: ls -al
+        run: ls
 
       - name: Welcome
         run: ${{ matrix.cmd }}
