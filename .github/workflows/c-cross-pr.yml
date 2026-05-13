@@ -49,13 +49,13 @@ jobs:
       run: go install github.com/TeddyRandby/clide@latest
 
     - name: Install binutils
-      run: sudo apt-get install binutils-mingw-w64
+      run: sudo apt-get -y install binutils-mingw-w64
 
     - name: Configure
       run: clide configure -t='x86_64-linux-gnu x86_64-macos-none aarch64-linux-gnu aarch64-macos-none x86_64-windows-gnu aarch64-windows-gnu' -b='release'
 
     - name: Build
-      run: DLLTOOL=x86_64-mingw-w64-dlltool clide build
+      run: DLLTOOL=x86_64-w64-mingw32-dlltool clide build
 
     - name: Move native modules
       run: |
