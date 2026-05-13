@@ -176,7 +176,7 @@ jobs:
       uses: pyTooling/upload-artifact@v4
       with:
         name: 'gab-x86_64-windows-gnu-release'
-        path: 'build-x86_64-windows-gnu/gab.exe'
+        path: 'build-x86_64-windows-gnu/gab'
 
     - name: Upload x86_64-windows-gnu Bundle Artifact
       uses: pyTooling/upload-artifact@v4
@@ -194,7 +194,7 @@ jobs:
       uses: pyTooling/upload-artifact@v4
       with:
         name: 'gab-aarch64-windows-gnu-release'
-        path: 'build-aarch64-windows-gnu/gab.exe'
+        path: 'build-aarch64-windows-gnu/gab'
 
     - name: Upload aarch64-windows-gnu Bundle Artifact
       uses: pyTooling/upload-artifact@v4
