@@ -48,6 +48,9 @@ jobs:
     - name: Install Clide
       run: go install github.com/TeddyRandby/clide@latest
 
+    - name: Install binutils
+      run: sudo apt-get install binutils
+
     - name: Configure
       run: clide configure -t='x86_64-linux-gnu x86_64-macos-none aarch64-linux-gnu aarch64-macos-none x86_64-windows-gnu aarch64-windows-gnu' -b='release'
 
