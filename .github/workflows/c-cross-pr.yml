@@ -270,11 +270,11 @@ jobs:
           mkdir -p ~/AppData/Local/gab/${{ env.version }}-${{ matrix.target }}/github.com/gab-language/cgab@${{ env.version }}/mod
           unzip -o cgab-${{ env.version }}-${{ matrix.target }} -d ~/AppData/Local/gab/${{ env.version }}-${{ matrix.target }}
 
-      - name: Welcome
-        run: ${{ matrix.cmd }}
-
       - name: DEBUG
         run: ls -al
+
+      - name: Welcome
+        run: ${{ matrix.cmd }}
 
       - name: Run Smallest Hello World
         run: ${{ matrix.cmd }} exec "'hello world!'"
