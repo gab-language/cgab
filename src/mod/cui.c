@@ -912,7 +912,7 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
       // We need to retry this put until we get cvalid - that is how
       // we know the put is on the channel.
       // we can do this by yielding a specific value, instead of just undefined.
-      res = gab_untchnput(gab, gui->evch, len, ev, 1000);
+      res = gab_untchnput(gab, gui->evch, len, ev, 1);
 
       // gab_fprintf(stderr, "CHNPUT->$\n", res);
 
@@ -997,7 +997,7 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
   union gab_value_pair res;
 
   for (;;) {
-    gab_value app = gab_tchntake(gab, gui->appch, 1000);
+    gab_value app = gab_tchntake(gab, gui->appch, 1);
 
     if (gab_chnisclosed(gui->appch))
       goto fin;
@@ -1151,7 +1151,7 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_render) {
     if (gab_chnisclosed(gui->evch))
       goto fin;
 
-    gab_value app = gab_tchntake(gab, gui->appch, 10000);
+    gab_value app = gab_tchntake(gab, gui->appch, 1);
 
     if (app == gab_cundefined)
       goto fin;
@@ -1286,7 +1286,7 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_event) {
     // Get the ptr
     gab_value *ev = gab_fibat(gab_thisfiber(gab), 0);
     // Try the put
-    gab_value res = gab_ntchnput(gab, gui->evch, len, ev, 10000);
+    gab_value res = gab_ntchnput(gab, gui->evch, len, ev, 1);
 
     // Check for error and timeout
     if (res == gab_cundefined)
