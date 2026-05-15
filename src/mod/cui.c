@@ -822,6 +822,88 @@ union gab_value_pair render_componentlist(struct gab_triple gab,
 
 sclay_font_t fonts[1];
 
+/**
+ * These are headless render/event loops, useful for testing.
+ */
+GAB_DYNLIB_NATIVE_FN(ui, hui_event) {
+  gab_value vgui = gab_arg(0);
+
+  if (gab_valtype(gab, vgui) != gab_string(gab, "gab\\gui"))
+    return gab_ptypemismatch(gab, vgui, gab_string(gab, "gab\\gui"));
+
+  struct gui *gui = gab_boxdata(vgui);
+  union gab_value_pair res;
+
+  for (;;) {
+    if (gab_chnisclosed(gui->appch))
+      goto fin;
+
+    if (gab_chnisclosed(gui->evch))
+      goto fin;
+
+    // Try to put on the channel.
+    gab_value ev[] = { gab_message(gab, "tick"), gab_message(gab, "tick") };
+    gab_value app = gab_ntchnput(gab, gui->evch, LEN_CARRAY(ev), ev, 100);
+
+    if (app == gab_cundefined)
+      goto fin;
+
+    if (app == gab_cinvalid) {
+      res = gab_panicf(gab, "Crashed UI thrd due to some error");
+      goto err;
+    }
+  }
+
+err:
+  gab_chnclose(gui->appch);
+  gab_chnclose(gui->evch);
+  return res;
+
+fin:
+  gab_chnclose(gui->appch);
+  gab_chnclose(gui->evch);
+  return gab_union_cinvalid;
+}
+
+// Just pull apps out and don't do anything with the values.
+GAB_DYNLIB_NATIVE_FN(ui, hui_render) {
+  gab_value vgui = gab_arg(0);
+
+  if (gab_valtype(gab, vgui) != gab_string(gab, "gab\\gui"))
+    return gab_ptypemismatch(gab, vgui, gab_string(gab, "gab\\gui"));
+
+  struct gui *gui = gab_boxdata(vgui);
+  union gab_value_pair res;
+
+  for (;;) {
+    if (gab_chnisclosed(gui->appch))
+      goto fin;
+
+    if (gab_chnisclosed(gui->evch))
+      goto fin;
+
+    gab_value app = gab_tchntake(gab, gui->appch, 1);
+
+    if (app == gab_cundefined)
+      goto fin;
+
+    if (app == gab_cinvalid) {
+      res = gab_panicf(gab, "Crashed UI thrd due to some error");
+      goto err;
+    }
+  }
+
+err:
+  gab_chnclose(gui->appch);
+  gab_chnclose(gui->evch);
+  return res;
+
+fin:
+  gab_chnclose(gui->appch);
+  gab_chnclose(gui->evch);
+  return gab_union_cinvalid;
+}
+
 #ifdef GAB_PLATFORM_UNIX
 
 GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
@@ -1342,18 +1424,18 @@ GAB_DYNLIB_NATIVE_FN(ui, run) {
     render_rec_target = gab_mod_ui_gui_render;
     event_rec_name = "ui\\gui\\loop\\event";
     event_rec_target = gab_mod_ui_gui_event;
-  } else if (kind == gab_message(gab, "tui")) {
 #if GAB_PLATFORM_UNIX
+  } else if (kind == gab_message(gab, "tui")) {
     render_rec_name = "ui\\tui\\loop\\render";
     render_rec_target = gab_mod_ui_tui_render;
     event_rec_name = "ui\\tui\\loop\\event";
     event_rec_target = gab_mod_ui_tui_event;
-#else
-    render_rec_name = "ui\\gui\\loop\\render";
-    render_rec_target = gab_mod_ui_gui_render;
-    event_rec_name = "ui\\gui\\loop\\event";
-    event_rec_target = gab_mod_ui_gui_event;
 #endif
+  } else if (kind == gab_message(gab, "hui")) {
+    render_rec_name = "ui\\hui\\loop\\render";
+    render_rec_target = gab_mod_ui_hui_render;
+    event_rec_name = "ui\\hui\\loop\\event";
+    event_rec_target = gab_mod_ui_hui_event;
   } else {
     return gab_panicf(gab, "Expected @ or @, found @", gab_message(gab, "gui"),
                       gab_message(gab, "tui"), kind);

@@ -2023,17 +2023,17 @@ GAB_DYNLIB_MAIN_FN {
           {
               gab_message(gab, "stdin"),
               mod,
-              wrap_qfdsock(gab, gab_osfileno(stdin), IO_FILE, false),
+              wrap_qfdsock(gab, qfd_stdin(), IO_FILE, false),
           },
           {
               gab_message(gab, "stdout"),
               mod,
-              wrap_qfdsock(gab, gab_osfileno(stdout), IO_FILE, false),
+              wrap_qfdsock(gab, qfd_stdout(), IO_FILE, false),
           },
           {
               gab_message(gab, "stderr"),
               mod,
-              wrap_qfdsock(gab, gab_osfileno(stderr), IO_FILE, false),
+              wrap_qfdsock(gab, qfd_stderr(), IO_FILE, false),
           },
           {
               gab_message(gab, "make"),

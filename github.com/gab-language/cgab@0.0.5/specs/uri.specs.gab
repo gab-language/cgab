@@ -89,7 +89,7 @@ uri\as\uri\encoded: .defspec {
   "
   spec: s.message {
     receiver: s.string
-    message: to\uri\encoded:
+    message: as\uri\encoded:
     input: s.cat()
     output: s.result(s.string, s.string)
   }
