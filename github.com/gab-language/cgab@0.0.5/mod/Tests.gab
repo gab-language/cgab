@@ -23,7 +23,7 @@ Colors := {
 Spacer := [ box: { width\grow: 10 } [] ]
 
 Ui
-  .run(tui: events app)
+  .run(hui: events app)
   .unwrap
 
 is\unittest:.def(

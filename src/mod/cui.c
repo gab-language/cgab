@@ -39,7 +39,6 @@
 
 #define RGFW_IMPLEMENTATION
 #define RGFW_OPENGL
-#define RGFW_USE_XDL
 #define RGFW_PRINT_ERRORS
 #include "RGFW/RGFW.h"
 
@@ -833,6 +832,12 @@ GAB_DYNLIB_NATIVE_FN(ui, hui_event) {
 
   struct gui *gui = gab_boxdata(vgui);
   union gab_value_pair res;
+  static gab_value ev[2] = {};
+
+  if (!reentrant) {
+    ev[0] = gab_message(gab, "tick");
+    ev[1] = gab_message(gab, "tick");
+  }
 
   for (;;) {
     if (gab_chnisclosed(gui->appch))
@@ -842,8 +847,7 @@ GAB_DYNLIB_NATIVE_FN(ui, hui_event) {
       goto fin;
 
     // Try to put on the channel.
-    gab_value ev[] = { gab_message(gab, "tick"), gab_message(gab, "tick") };
-    gab_value app = gab_ntchnput(gab, gui->evch, LEN_CARRAY(ev), ev, 100);
+    gab_value app = gab_untchnput(gab, gui->evch, LEN_CARRAY(ev), ev, 1);
 
     if (app == gab_cundefined)
       goto fin;
@@ -852,6 +856,22 @@ GAB_DYNLIB_NATIVE_FN(ui, hui_event) {
       res = gab_panicf(gab, "Crashed UI thrd due to some error");
       goto err;
     }
+
+    goto yield;
+  }
+
+yield:
+  if (gab_chnisclosed(gui->appch))
+    goto fin;
+
+  if (gab_chnisclosed(gui->evch))
+    goto fin;
+
+  switch (gab_yield(gab)) {
+  case sGAB_TERM:
+    goto fin;
+  default:
+    return gab_union_ctimeout(gab_cinvalid);
   }
 
 err:
@@ -887,10 +907,27 @@ GAB_DYNLIB_NATIVE_FN(ui, hui_render) {
     if (app == gab_cundefined)
       goto fin;
 
+    if (app == gab_ctimeout)
+      goto yield;
+
     if (app == gab_cinvalid) {
       res = gab_panicf(gab, "Crashed UI thrd due to some error");
       goto err;
     }
+  }
+
+yield:
+  if (gab_chnisclosed(gui->appch))
+    goto fin;
+
+  if (gab_chnisclosed(gui->evch))
+    goto fin;
+
+  switch (gab_yield(gab)) {
+  case sGAB_TERM:
+    goto fin;
+  default:
+    return gab_union_ctimeout(gab_cinvalid);
   }
 
 err:
