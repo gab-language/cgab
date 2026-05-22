@@ -295,7 +295,7 @@ union gab_value_pair gab_use_zip_dynlib(struct gab_triple gab, const char *path,
 
   char *dst = gab_osprefix_temp(temppath.data);
 
-  FILE *tried = fopen(dst, "r");
+  FILE *tried = fopen(dst, "rb");
   if (tried) {
     fclose(tried);
     goto exists;
@@ -847,16 +847,17 @@ int step(struct step *step) {
   }
   case kSTEP_ARCHIVE_OPEN: {
     // The 'b' in the string has no effect on posix systems, but is necessary on windows.
+
     FILE *archive = fopen(step->as.archive_open.path, "wb");
 
     if (!archive)
       return 1;
 
     if (step->as.archive_open.initial_data_path) {
-      FILE *f = fopen(step->as.archive_open.initial_data_path, "r");
+      FILE *f = fopen(step->as.archive_open.initial_data_path, "rb");
 
       if (!f && step->as.archive_open.initial_data_fallback_path)
-        f = fopen(step->as.archive_open.initial_data_fallback_path, "r");
+        f = fopen(step->as.archive_open.initial_data_fallback_path, "rb");
 
       if (!f)
         return 2;
