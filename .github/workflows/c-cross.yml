@@ -90,14 +90,14 @@ jobs:
       uses: pyTooling/upload-artifact@v4
       with:
         name: 'gab-${{ matrix.build_type }}-${{ matrix.target }}'
-        path: 'build-${{ matrix.target }}/gab'
+        path: 'build-${{ matrix.target }}/gab/gab'
 
     - name: Upload Binary Artifact (WINDOWS)
       if: ${{ contains(matrix.target, 'windows') }}
       uses: pyTooling/upload-artifact@v4
       with:
         name: 'gab-${{ matrix.build_type }}-${{ matrix.target }}'
-        path: 'build-${{ matrix.target }}/gab.exe'
+        path: 'build-${{ matrix.target }}/gab/gab.exe'
 
     # TODO: Support windows properly here.
     - name: Upload Static Library
@@ -116,7 +116,7 @@ jobs:
       run: cp build-${{ matrix.target }}/mod/* mod
 
     - name: Create bundle
-      run: ./build-${{matrix.target}}/gab build < bundle
+      run: ${{ matrix.cmd }} build < bundle
 
     - name: Upload Module Artifacts
       uses: pyTooling/upload-artifact@v4
