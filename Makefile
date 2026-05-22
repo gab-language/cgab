@@ -14,7 +14,7 @@ BUILD_PREFIX 	 	= build-$(GAB_TARGETS)
 INCLUDE_PREFIX 	= -Iinclude -I$(BUILD_PREFIX)
 VENDOR_PREFIX   = vendor
 
-GAB_VERSION_TAG = 0.0.5
+GAB_VERSION_TAG = 0.1.0
 
 GAB_ISWINDOWS   = $(findstring windows,$(GAB_TARGETS))
 

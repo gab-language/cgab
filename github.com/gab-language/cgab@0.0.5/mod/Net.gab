@@ -1,5 +1,5 @@
-Http := 'github.com/gab-language/cgab@0.0.5' .use 'Http'
-Uri  := 'github.com/gab-language/cgab@0.0.5' .use 'Uri'
+Http := 'github.com/gab-language/cgab@0.1.0' .use 'Http'
+Uri  := 'github.com/gab-language/cgab@0.1.0' .use 'Uri'
 
 Net := net:
 

@@ -1,4 +1,4 @@
-io := 'github.com/gab-language/cgab@0.0.5'.use 'cio'
+io := 'github.com/gab-language/cgab@0.1.0'.use 'cio'
 
 eprintln:.def () :: io.stderr.stream\send('$\n'.sprintf(self).to\binary)
 println:.def () :: io.stdout.stream\send('$\n'.sprintf(self).to\binary)

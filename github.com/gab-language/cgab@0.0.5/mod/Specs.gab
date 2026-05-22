@@ -1,7 +1,7 @@
 spec\t := spec:
-Streams := 'github.com/gab-language/cgab@0.0.5' .use 'Transducers'
-Ranges  := 'github.com/gab-language/cgab@0.0.5' .use 'Ranges'
-IO      := 'github.com/gab-language/cgab@0.0.5' .use 'Io'
+Streams := 'github.com/gab-language/cgab@0.1.0' .use 'Transducers'
+Ranges  := 'github.com/gab-language/cgab@0.1.0' .use 'Ranges'
+IO      := 'github.com/gab-language/cgab@0.1.0' .use 'Io'
 
 explain_specs := (specs separator)
   :: specs

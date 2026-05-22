@@ -1,7 +1,7 @@
-'github.com/gab-language/cgab@0.0.5' .use 'Bencode'
-'github.com/gab-language/cgab@0.0.5' .use 'cgab'
-Streams := 'github.com/gab-language/cgab@0.0.5' .use 'Transducers'
-IO      := 'github.com/gab-language/cgab@0.0.5' .use 'Io'
+'github.com/gab-language/cgab@0.1.0' .use 'Bencode'
+'github.com/gab-language/cgab@0.1.0' .use 'cgab'
+Streams := 'github.com/gab-language/cgab@0.1.0' .use 'Transducers'
+IO      := 'github.com/gab-language/cgab@0.1.0' .use 'Io'
 
 Session := nrepl\session: .defclass (default: {})
 

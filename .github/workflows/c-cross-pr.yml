@@ -16,7 +16,7 @@ on:
     branches: [ "main" ]
 
 env:
-  version: 0.0.5
+  version: 0.1.0
   GH_TOKEN: ${{ github.token }}
 
 jobs:
@@ -280,7 +280,7 @@ jobs:
         run: ${{ matrix.cmd }} exec "'hello world!'"
 
       - name: Run Hello World
-        run: ${{ matrix.cmd }} exec -m github.com/gab-language/cgab@0.0.5:Io "'hello world!' .println"
+        run: ${{ matrix.cmd }} exec "'hello world!' .println"
 
       - name: Run tests
         run: ${{ matrix.cmd }} run test

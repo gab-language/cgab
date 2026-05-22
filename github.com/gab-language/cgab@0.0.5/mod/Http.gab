@@ -1,5 +1,5 @@
 # Native module which uses the LLHTTP library to implement HTTP parsing.
-Http := 'github.com/gab-language/cgab@0.0.5' .use 'chttp'
+Http := 'github.com/gab-language/cgab@0.1.0' .use 'chttp'
 
 to_http_headers := Transducers.map((v k) :: Strings.make(k ':' v))
                 |> Transducers.interpose('\r\n')

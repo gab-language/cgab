@@ -1,6 +1,6 @@
-s := 'github.com/gab-language/cgab@0.0.5'.use 'Specs'
+s := 'github.com/gab-language/cgab@0.1.0'.use 'Specs'
 
-'github.com/gab-language/cgab@0.0.5/specs'.use 'seqable.specs'
+'github.com/gab-language/cgab@0.1.0/specs'.use 'seqable.specs'
 
 record\spec := record: .defspec {
   help:  "

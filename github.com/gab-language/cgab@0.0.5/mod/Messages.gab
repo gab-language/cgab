@@ -1,4 +1,4 @@
-Messages := 'github.com/gab-language/cgab@0.0.5'.use 'cmessages'
+Messages := 'github.com/gab-language/cgab@0.1.0'.use 'cmessages'
 
 to\class_cxtor: .defcase {
   default:
