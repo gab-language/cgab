@@ -846,7 +846,8 @@ int step(struct step *step) {
     return 0;
   }
   case kSTEP_ARCHIVE_OPEN: {
-    FILE *archive = fopen(step->as.archive_open.path, "w");
+    // The 'b' in the string has no effect on posix systems, but is necessary on windows.
+    FILE *archive = fopen(step->as.archive_open.path, "wb");
 
     if (!archive)
       return 1;
@@ -857,11 +858,8 @@ int step(struct step *step) {
       if (!f && step->as.archive_open.initial_data_fallback_path)
         f = fopen(step->as.archive_open.initial_data_fallback_path, "r");
 
-      printf("PATH: %s\nFALLBACKPATH: %s\n",
-             step->as.archive_open.initial_data_path,
-             step->as.archive_open.initial_data_fallback_path);
       if (!f)
-        return 1;
+        return 2;
 
       int res = copy_file(f, archive);
 
@@ -1397,8 +1395,8 @@ static struct command commands[] = {
         "Multiple platforms are supported:\n\t"
         "\tx86_64-linux-gnu    (Linux Intel)\n\t"
         "\taarch64-linux-gnu   (Linux ARM)\n\t"
-        // "\tx86_64-windows-gnu  (Windows Intel)\n"
-        // "\taarch64-windows-gnu (Windows ARM)\n"
+        "\tx86_64-windows-gnu  (Windows Intel)\n"
+        "\taarch64-windows-gnu (Windows ARM)\n"
         "\tx86_64-macos-none   (MacOS Intel)\n\t"
         "\taarch64-macos-none  (MacOS ARM)\n\n\t"
         "The executable produced will be named <arg>.exe. When invoked, will "
