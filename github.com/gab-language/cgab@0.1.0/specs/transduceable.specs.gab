@@ -1,0 +1,82 @@
+s := 'github.com/gab-language/cgab@0.1.0'.use 'Specs'
+
+reduceable\spec := reduceable:
+
+transduceable\spec := transduceable: .defspec {
+  help:
+  "
+  The `transduceable` protocol defines how a value serves as a *transducer*.
+
+  *Reduce* means *to lead back*.
+  Think of a reducer as a function which *leads* a sequence of values back towards a single value.
+
+  *Transduce* is an invented word (by Rich Hickey afaik), and the root *trans* means *across*,
+  changing the meaning of the word to *to bring across*. Think of a transducer as leading a
+  sequence of values *across* or *through* some transformation.
+
+  Therefore, a transducer's job is to *wrap* a reducer, and manipulate the values passed *through*
+  to the reducer, without it ever having to know.
+
+  The fundamental utility of a transducer is that it defines *when a reducing function is called*.
+
+  For example, the `filter:` transducer ensures that the reducing function is only called when
+  values meet a certain condition.
+
+  To accomplish this, a transduceable must implement two messages, `wrap` and `step`.
+
+  `transduce\wrap:` wraps the argument *reducing function* with the `self` transducer.
+
+  This gives the transducer somewhere to *send* the values it brings across.
+
+  In order to transduce values, the transducer should implement `transduce\step:`.
+
+  This is conceptually similar to `reduce\step:` for the `reduceable:` protocol, but has a different signature.
+
+  In addition to receiving an accumulator and tuple of values from the sequence, `transduce\step:` receives
+  a *reduceable* and a *state* argument as well.
+  "
+  spec: s.protocol(
+    transduce\wrap:
+    transduce\step:
+  )
+}
+
+transduceable\transduce\wrap: .defspec {
+  help:
+  "
+  Wrap a `reduceable` with some behavior, returning a new `reduceable`.
+  "
+  spec: s.message {
+    receiver:   transduceable\spec,
+    message:    transduce\wrap:,
+    input:      s.cat(
+      'reducer'     reduceable\spec,
+    ),
+    output:     reduceable\spec,
+  }
+}
+
+transduceable\transduce\step: .defspec {
+  help:
+  "
+  Step the transducer. This may call the wrapped `reduceable` any number of times per step.
+  "
+  spec: s.message {
+    receiver:   transduceable\spec,
+    message:    transduce\step:,
+    input:      s.cat(
+      'reducer'     reduceable\spec,
+      'accumulator' s.unknown
+      'sequence'    s.list(s.unknown)
+      'state'       s.unknown
+    ),
+    output:     s.cat(
+      'state'       s.unknown
+      'command'     s.any(next: stop:)
+      'reducer'     reduceable\spec
+      'accumulator' s.unknown
+    ),
+  }
+}
+
+transduceable\spec

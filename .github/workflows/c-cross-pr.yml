@@ -16,30 +16,11 @@ on:
     branches: [ "main" ]
 
 env:
-  version: 0.0.5
+  version: 0.1.0
   GH_TOKEN: ${{ github.token }}
 
 jobs:
   build_artifacts:
-    strategy:
-      matrix:
-        build_type:
-          - release
-        os: 
-          - ubuntu-latest
-          - macos-latest
-          # - windows-latest
-        include:
-          - os: ubuntu-latest
-            target: x86_64-linux-gnu
-            cmd: ./build-x86_64-linux-gnu/gab
-          - os: macos-latest
-            target: aarch64-macos-none
-            cmd: ./build-aarch64-macos-none/gab
-          # - os: windows-latest
-          #   target: x86_64-windows-gnu
-          #   cmd: .\build-x86_64-windows-gnu\gab
-    
     runs-on: ubuntu-latest
 
     steps:
@@ -67,26 +48,165 @@ jobs:
     - name: Install Clide
       run: go install github.com/TeddyRandby/clide@latest
 
+    - name: Install binutils
+      run: sudo apt-get -y install binutils-mingw-w64
+
     - name: Configure
-      run: clide configure -b='${{ matrix.build_type }}' -t='${{ matrix.target }}'
+      run: clide configure -t='x86_64-linux-gnu x86_64-macos-none aarch64-linux-gnu aarch64-macos-none x86_64-windows-gnu aarch64-windows-gnu' -b='release'
 
+    # TODO: Select correct dlltool based on target arch.
     - name: Build
-      run: clide build
+      run: DLLTOOL=x86_64-w64-mingw32-dlltool clide build
 
-    - name: Upload Binary Artifact
+    - name: Move native modules
+      run: |
+        mkdir -p github.com/gab-language/cgab@${{ env.version }}/mod
+        cp build-*/mod/*.cgab-* github.com/gab-language/cgab@${{ env.version }}/mod
+
+    - name: Move built gab binaries into install directory
+      run: |
+          mkdir -p ~/gab
+          mkdir -p ~/gab/${{ env.version }}-x86_64-linux-gnu
+          mkdir -p ~/gab/${{ env.version }}-aarch64-linux-gnu
+          mkdir -p ~/gab/${{ env.version }}-x86_64-macos-none
+          mkdir -p ~/gab/${{ env.version }}-aarch64-macos-none
+          mkdir -p ~/gab/${{ env.version }}-x86_64-windows-gnu
+          mkdir -p ~/gab/${{ env.version }}-aarch64-windows-gnu
+
+          cp build-x86_64-linux-gnu/gab/gab ~/gab/${{ env.version }}-x86_64-linux-gnu
+          cp build-aarch64-linux-gnu/gab/gab ~/gab/${{ env.version }}-aarch64-linux-gnu
+          cp build-x86_64-macos-none/gab/gab ~/gab/${{ env.version }}-x86_64-macos-none
+          cp build-aarch64-macos-none/gab/gab ~/gab/${{ env.version }}-aarch64-macos-none
+          cp build-x86_64-windows-gnu/gab/gab.exe ~/gab/${{ env.version }}-x86_64-windows-gnu
+          cp build-aarch64-windows-gnu/gab/gab.exe ~/gab/${{ env.version }}-aarch64-windows-gnu
+
+    - name: Create bundles
+      run: |
+         ./build-x86_64-linux-gnu/gab/gab build -n -t x86_64-linux-gnu   < bundle
+         ./build-x86_64-linux-gnu/gab/gab build -n -t aarch64-linux-gnu  < bundle
+         ./build-x86_64-linux-gnu/gab/gab build -n -t x86_64-macos-none  < bundle
+         ./build-x86_64-linux-gnu/gab/gab build -n -t aarch64-macos-none < bundle
+         ./build-x86_64-linux-gnu/gab/gab build -n -t x86_64-windows-gnu  < bundle
+         ./build-x86_64-linux-gnu/gab/gab build -n -t aarch64-windows-gnu < bundle
+
+    # For this step, gab needs to know where the binaries are to cross-compile
+    # the executables.
+    - name: Create Cross-Compiled Test binary
+      run: |
+         ./build-x86_64-linux-gnu/gab/gab build -n -t x86_64-linux-gnu test < bundle
+         ./build-x86_64-linux-gnu/gab/gab build -n -t aarch64-linux-gnu test < bundle
+         ./build-x86_64-linux-gnu/gab/gab build -n -t x86_64-macos-none test < bundle
+         ./build-x86_64-linux-gnu/gab/gab build -n -t aarch64-macos-none test < bundle
+         ./build-x86_64-linux-gnu/gab/gab build -n -t x86_64-windows-gnu test < bundle
+         ./build-x86_64-linux-gnu/gab/gab build -n -t aarch64-windows-gnu test < bundle
+
+    - name: Upload x86_64-linux-gnu Binary Artifact
       uses: pyTooling/upload-artifact@v4
       with:
-        name: 'gab-${{ matrix.build_type }}-${{ matrix.target }}'
-        path: 'build-${{ matrix.target }}/gab'
+        name: 'gab-x86_64-linux-gnu-release'
+        path: 'build-x86_64-linux-gnu/gab'
 
-    - name: Collect modules
-      run: cp build-${{ matrix.target }}/mod/* mod
-
-    - name: Upload Module Artifacts
+    - name: Upload x86_64-linux-gnu Bundle Artifact
       uses: pyTooling/upload-artifact@v4
       with:
-        name: 'gab-${{ matrix.build_type }}-${{ matrix.target }}-modules'
-        path: mod
+        name: 'cgab-${{ env.version }}-x86_64-linux-gnu'
+        path: 'cgab-${{ env.version }}-x86_64-linux-gnu'
+
+    - name: Upload x86_64-linux-gnu Test Executable Artifact
+      uses: pyTooling/upload-artifact@v4
+      with:
+        name: 'test.cgab-${{ env.version }}-x86_64-linux-gnu.exe'
+        path: 'test.cgab-${{ env.version }}-x86_64-linux-gnu.exe'
+
+    - name: Upload aarch64-linux-gnu Binary Artifact
+      uses: pyTooling/upload-artifact@v4
+      with:
+        name: 'gab-aarch64-linux-gnu-release'
+        path: 'build-aarch64-linux-gnu/gab'
+
+    - name: Upload aarch64-linux-gnu Bundle Artifact
+      uses: pyTooling/upload-artifact@v4
+      with:
+        name: 'cgab-${{ env.version }}-aarch64-linux-gnu'
+        path: 'cgab-${{ env.version }}-aarch64-linux-gnu'
+
+    - name: Upload aarch64-linux-gnu Test Executable Artifact
+      uses: pyTooling/upload-artifact@v4
+      with:
+        name: 'test.cgab-${{ env.version }}-aarch64-linux-gnu.exe'
+        path: 'test.cgab-${{ env.version }}-aarch64-linux-gnu.exe'
+
+    - name: Upload x86_64-macos-none Binary Artifact
+      uses: pyTooling/upload-artifact@v4
+      with:
+        name: 'gab-x86_64-macos-none-release'
+        path: 'build-x86_64-macos-none/gab'
+
+    - name: Upload x86_64-macos-none Bundle Artifact
+      uses: pyTooling/upload-artifact@v4
+      with:
+        name: 'cgab-${{ env.version }}-x86_64-macos-none'
+        path: 'cgab-${{ env.version }}-x86_64-macos-none'
+
+    - name: Upload x86_64-macos-none Test Executable Artifact
+      uses: pyTooling/upload-artifact@v4
+      with:
+        name: 'test.cgab-${{ env.version }}-x86_64-macos-none.exe' 
+        path: 'test.cgab-${{ env.version }}-x86_64-macos-none.exe'
+
+    - name: Upload aarch64-macos-none Binary Artifact
+      uses: pyTooling/upload-artifact@v4
+      with:
+        name: 'gab-aarch64-macos-none-release'
+        path: 'build-aarch64-macos-none/gab'
+
+    - name: Upload aarch64-macos-none Bundle Artifact
+      uses: pyTooling/upload-artifact@v4
+      with:
+        name: 'cgab-${{ env.version }}-aarch64-macos-none' 
+        path: 'cgab-${{ env.version }}-aarch64-macos-none'
+
+    - name: Upload aarch64-macos-none Test Executable Artifact
+      uses: pyTooling/upload-artifact@v4
+      with:
+        name: 'test.cgab-${{ env.version }}-aarch64-macos-none.exe' 
+        path: 'test.cgab-${{ env.version }}-aarch64-macos-none.exe'
+
+    - name: Upload x86_64-windows-gnu Binary Artifact
+      uses: pyTooling/upload-artifact@v4
+      with:
+        name: 'gab-x86_64-windows-gnu-release'
+        path: 'build-x86_64-windows-gnu/gab'
+
+    - name: Upload x86_64-windows-gnu Bundle Artifact
+      uses: pyTooling/upload-artifact@v4
+      with:
+        name: 'cgab-${{ env.version }}-x86_64-windows-gnu'
+        path: 'cgab-${{ env.version }}-x86_64-windows-gnu'
+
+    - name: Upload x86_64-windows-gnu Test Executable Artifact
+      uses: pyTooling/upload-artifact@v4
+      with:
+        name: 'test.cgab-${{ env.version }}-x86_64-windows-gnu.exe'
+        path: 'test.cgab-${{ env.version }}-x86_64-windows-gnu.exe'
+
+    - name: Upload aarch64-windows-gnu Binary Artifact
+      uses: pyTooling/upload-artifact@v4
+      with:
+        name: 'gab-aarch64-windows-gnu-release'
+        path: 'build-aarch64-windows-gnu/gab'
+
+    - name: Upload aarch64-windows-gnu Bundle Artifact
+      uses: pyTooling/upload-artifact@v4
+      with:
+        name: 'cgab-${{ env.version }}-aarch64-windows-gnu'
+        path: 'cgab-${{ env.version }}-aarch64-windows-gnu'
+
+    - name: Upload aarch64-windows-gnu Test Executable Artifact
+      uses: pyTooling/upload-artifact@v4
+      with:
+        name: 'test.cgab-${{ env.version }}-aarch64-windows-gnu.exe'
+        path: 'test.cgab-${{ env.version }}-aarch64-windows-gnu.exe'
 
   run_tests:
     strategy:
@@ -96,17 +216,17 @@ jobs:
         os: 
           - ubuntu-latest
           - macos-latest
-          # - windows-latest
+          - windows-latest
         include:
           - os: ubuntu-latest
             target: x86_64-linux-gnu
-            cmd: ./build-x86_64-linux-gnu/gab
+            cmd: ./build-x86_64-linux-gnu/gab/gab
           - os: macos-latest
             target: aarch64-macos-none
-            cmd: ./build-aarch64-macos-none/gab
-          # - os: windows-latest
-          #   target: x86_64-windows-gnu
-          #   cmd: .\build-x86_64-windows-gnu\gab
+            cmd: ./build-aarch64-macos-none/gab/gab
+          - os: windows-latest
+            target: x86_64-windows-gnu
+            cmd: .\build-x86_64-windows-gnu\gab\gab.exe
 
     runs-on: ${{ matrix.os }}
     needs: build_artifacts
@@ -118,26 +238,43 @@ jobs:
       - name: Download Binary
         uses: pyTooling/download-artifact@v4
         with:
-          name: 'gab-${{ matrix.build_type }}-${{ matrix.target }}'
+          name: 'gab-${{ matrix.target }}-${{ matrix.build_type }}'
 
       - name: Download Modules
         uses: pyTooling/download-artifact@v4
         with:
-          name: gab-${{ matrix.build_type }}-${{ matrix.target }}-modules
+          name: cgab-${{ env.version }}-${{ matrix.target }}
 
-      - name: Gab Build Bundle
+      - name: Download Cross-Compiled Binary
+        uses: pyTooling/download-artifact@v4
+        with:
+          name: test.cgab-${{ env.version }}-${{ matrix.target }}.exe
+
+      # Linux and Macos install identically
+      - name: Unzip & Install Modules (LINUX)
+        if: ${{ contains(matrix.target, 'linux') }}
         run: |
-          ${{ matrix.cmd }} build -m cgui,cgab,tests test
+          mkdir -p ~/gab/${{ env.version }}-${{ matrix.target }}/github.com/gab-language/cgab@${{ env.version }}/mod
+          unzip -o cgab-${{ env.version }}-${{ matrix.target }} -d ~/gab/${{ env.version }}-${{ matrix.target }}
 
-      # - name: Make the binary executable (win)
-      #   if: ${{ contains(matrix.target, 'windows') }}
-      #   run: |
-      #     move gab gab.exe
-      #     where.exe "gab"
-      #     Get-Command ".\gab"
+      - name: Unzip & Install Modules (MACOS)
+        if: ${{ contains(matrix.target, 'macos') }}
+        run: |
+          mkdir -p ~/gab/${{ env.version }}-${{ matrix.target }}/github.com/gab-language/cgab@${{ env.version }}/mod
+          unzip -o cgab-${{ env.version }}-${{ matrix.target }} -d ~/gab/${{ env.version }}-${{ matrix.target }}
 
-      - name: Run help
-        run: ${{ matrix.cmd }} help
+      # Windows installs into AppData/Local
+      - name: Unzip & Install Modules (WINDOWS)
+        if: ${{ contains(matrix.target, 'windows') }}
+        run: |
+          mkdir -p ~/AppData/Local/gab/${{ env.version }}-${{ matrix.target }}/github.com/gab-language/cgab@${{ env.version }}/mod
+          unzip -o cgab-${{ env.version }}-${{ matrix.target }} -d ~/AppData/Local/gab/${{ env.version }}-${{ matrix.target }}
+
+      - name: DEBUG
+        run: ls
+
+      - name: Welcome
+        run: ${{ matrix.cmd }}
 
       - name: Run Smallest Hello World
         run: ${{ matrix.cmd }} exec "'hello world!'"
@@ -148,5 +285,18 @@ jobs:
       - name: Run tests
         run: ${{ matrix.cmd }} run test
 
+      - name: Run cross-compiled tests bundle
+        run: ./test.cgab-${{ env.version }}-${{ matrix.target }}.exe
+
+      - name: Gab Build Bundle (WINDOWS)
+        if: ${{ contains(matrix.target, 'windows') }}
+        run: |
+          Get-Content bundle | ${{ matrix.cmd }} build test
+
+      - name: Gab Build Bundle (NON WINDOWS)
+        if: ${{ !contains(matrix.target, 'windows') }}
+        run: |
+          ${{ matrix.cmd }} build test < bundle
+
       - name: Run tests bundle
-        run: ./test.exe
+        run: ./test.cgab-${{ env.version }}-${{ matrix.target }}.exe

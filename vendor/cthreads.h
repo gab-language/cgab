@@ -496,7 +496,7 @@ static int mtx_trylock_acquire_win32(mtx_t *mtx) {
 #endif
 
 /* Attempts to lock a given mutex. */
-int mtx_trylock(mtx_t *mtx) {
+static int mtx_trylock(mtx_t *mtx) {
 #if defined(_CTHREADS_WIN32_)
   int ret = mtx_trylock_acquire_win32(mtx);
   if ((!mtx->mRecursive) && (ret == thrd_success)) {

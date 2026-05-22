@@ -1,23 +1,66 @@
 'chttp'.use
-Socket = IO.Sockets
+Socket := IO.Sockets
 
-req = 'GET / HTTP/1.0\r\nHost:www.google.com\r\n\r\n'
+cert := IO.Files.make("MyCertificate.crt" "r").unwrap
+pkey := IO.Files.make("MyKey.key" "r").unwrap
 
-sock = Socket
+(ok, cert) := cert.read(cert.len)
+
+ok.else () :: 'Invalid cert: $ ($)'.panicf(cert, cert.len)
+
+(ok, pkey) := pkey.read(pkey.len)
+
+ok.else () :: 'Invalid pkey: $ ($)'.panicf(cert, cert.len)
+
+server_fiber := Fibers.make () :: do
+
+  server := Socket.make tcp\tls: .unwrap
+
+  server
+    .bind("::1" 443 cert pkey)
+    .unwrap
+
+  server
+    .listen 5
+    .unwrap
+
+  'SERVER LISTENING ON ::1 443'.println
+
+  Fibers.make () :: do
+    client := server
+      .accept
+      .unwrap
+
+    'Accepted client: $\n'.sprintf(client).println
+
+    req := client.until('\n'.to\b).unwrap
+
+    'CLIENT SENT: "$"\n'.sprintf(req.as\s.unwrap).println
+
+    client.write(req)
+    client.write('\0'.to\b)
+  end
+end
+
+server_fiber.await
+
+req := 'GET / HTTP/1.0\r\nHost:www.google.com\r\n\r\n'
+
+sock := Socket
   .make tcp\tls:
   .unwrap
 
 sock
-  .connect("www.google.com" 443)
+  .connect("::1" 443 cert)
   .unwrap
 
 sock
   .write(req.to\b)
   .unwrap
 
-data = sock.until('\0'.to\b).unwrap.as\s.unwrap
+data := sock.until('\0'.to\b).unwrap.as\s.unwrap
 
-#sock = Socket
+#sock := Socket
 #  .make tcp:
 #  .unwrap
 #
@@ -30,9 +73,9 @@ data = sock.until('\0'.to\b).unwrap.as\s.unwrap
 #  .unwrap
 
 # In practice, this reads until the socket is closed.
-#data = sock.until('\0'.to\b).unwrap.as\s.unwrap
+#data := sock.until('\0'.to\b).unwrap.as\s.unwrap
 
-http_res = data
+http_res := data
   .as\http
   .unwrap
 
@@ -40,7 +83,8 @@ http_res = data
   .sprintf(
     http_res.http\status
     http_res.http\headers.join(
-      Streams.map((value field) => do
+      ""
+      Streams.map((value field) :: do
         '$: $'.sprintf(field value)
       end)
       |> Streams.interpose '\n')

@@ -1,4 +1,26 @@
 /**
+ *  MIT License
+ *
+ *  Copyright (c) 2023 Teddy Randby
+ *
+ *  Permission is hereby granted, free of charge, to any person obtaining a copy
+ *  of this software and associated documentation files (the "Software"), to
+ * deal in the Software without restriction, including without limitation the
+ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+ * sell copies of the Software, and to permit persons to whom the Software is
+ *  furnished to do so, subject to the following conditions:
+ *
+ *  The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ *  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ *  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ *  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ *  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ *  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+ * IN THE SOFTWARE.
+ *
  * @file
  * @brief A small, fast, and portable implementation of the gab programming
  * language
@@ -7,7 +29,414 @@
 #ifndef GAB_H
 #define GAB_H
 
+// The default number of working jobs Gab will spawn.
+#ifndef cGAB_DEFAULT_NJOBS
+#define cGAB_DEFAULT_NJOBS 8
+#endif
+
+// The number of cache slots, mostly used for
+#ifndef cGAB_SEND_CACHE_LEN
+#define cGAB_SEND_CACHE_LEN 4
+#endif
+
+#if cGAB_SEND_CACHE_LEN % 2 != 0
+#error "cGAB_SEND_CACHE_LEN must be a power of 2"
+#endif
+
+#if cGAB_SEND_CACHE_LEN < 4
+#error "cGAB_SEND_CACHE_LEN must be at least 4"
+#endif
+
+// Use __builtin_expect to aid the compiler
+// in choosing hot/cold code paths in the interpreter.
+#ifndef cGAB_LIKELY
+#define cGAB_LIKELY 1
+#endif
+
+// Limit the prefix length of a string that gab will hash.
+// This means that strings with an identical prefix of length
+// cGAB_STRING_HASHLEN will hash to the same value - even if they are different
+// *after* that prefix. This puts a cap on how *much* time gab will spend
+// hashing strings - but it is a tradeoff, because all strings that share that
+// prefix will basically be in a linked-list. (hash-bucket-chaining, etc) If
+// this macro is 0, then gab will not limit hashing.
+#ifndef cGAB_STRING_HASHLEN
+#define cGAB_STRING_HASHLEN 0
+#endif
+
+// Combine common consecutive instruction patterns into one superinstruction
+#ifndef cGAB_SUPERINSTRUCTIONS
+#define cGAB_SUPERINSTRUCTIONS 1
+#endif
+
+// Emit tailcalls where possible
+#ifndef cGAB_TAILCALL
+#define cGAB_TAILCALL 1
+#endif
+
+// Workers (os threads that can actually run gab code)
+// will wait this long before exiting, if they haven't received work.
+// New workers are spawned as needed up until a maximum is reached (specified at
+// runtime)
+#ifndef cGAB_WORKER_IDLE_TRIES
+#define cGAB_WORKER_IDLE_TRIES 2
+#endif
+
+#ifndef cGAB_VM_CHANNEL_PUT_TRIES
+#define cGAB_VM_CHANNEL_PUT_TRIES 0
+#endif
+
+#ifndef cGAB_VM_CHANNEL_TAKE_TRIES
+#define cGAB_VM_CHANNEL_TAKE_TRIES 0
+#endif
+
+// Collect as frequently as possible (on every RC push)
+// This is kinda broken fundamentally
+#ifndef cGAB_DEBUG_GC
+#define cGAB_DEBUG_GC 0
+#endif
+
+// Log what is happening during collection.
+#ifndef cGAB_LOG_GC
+#define cGAB_LOG_GC 0
+#endif
+
+// Log what is happening to workers as the gab engine spins.
+#ifndef cGAB_LOG_EG
+#define cGAB_LOG_EG 0
+#endif
+
+#ifndef cGAB_VM_OPCODE_ATTRIBUTES
+#define cGAB_VM_OPCODE_ATTRIBUTES [[clang::preserve_none, gnu::hot]]
+#endif
+
+// Log what is happening during execution.
+#ifndef cGAB_LOG_VM
+#define cGAB_LOG_VM 0
+#endif
+
+// Make sure functions don't break out of their frame
+#ifndef cGAB_DEBUG_VM
+#define cGAB_DEBUG_VM 0
+#endif
+
+// Define how many jobs should be used, default to 8.
+#ifndef cGAB_DEFAULT_NJOBS
+#define cGAB_DEFAULT_NJOBS 8
+#endif
+
+// Define how long the default busy-wait sleep should be.
+#ifndef cGAB_DEFAULT_WAIT_NS
+#define cGAB_DEFAULT_WAIT_NS 800
+#endif
+
+// Capacity at which point dictionaries are resized
+#ifndef cGAB_DICT_MAX_LOAD
+#define cGAB_DICT_MAX_LOAD 0.6
+#endif
+
+// Maximum number of call frames that can be on the call stack
+#ifndef cGAB_FRAMES_MAX
+#define cGAB_FRAMES_MAX 32
+#endif
+
+// Maximum number of function defintions that can be nested.
+#ifndef cGAB_FUNCTION_DEF_NESTING_MAX
+#define cGAB_FUNCTION_DEF_NESTING_MAX 64
+#endif
+
+// Initial capacity of interned table
+#ifndef cGAB_INTERN_INITIAL_CAP
+#define cGAB_INTERN_INITIAL_CAP 256
+#endif
+
+// Initial capacity of module constant table
+#ifndef cGAB_CONSTANTS_INITIAL_CAP
+#define cGAB_CONSTANTS_INITIAL_CAP 64
+#endif
+
+#ifndef cGAB_WORKER_LOCALQUEUE_MAX
+#define cGAB_WORKER_LOCALQUEUE_MAX 32
+#endif
+
+#ifndef cGAB_ERR_SPRINTF_BUF_MAX
+#define cGAB_ERR_SPRINTF_BUF_MAX 4096
+#endif
+
+#ifndef cGAB_STACK_MAX
+#define cGAB_STACK_MAX (cGAB_FRAMES_MAX * 32)
+#endif
+
+#ifndef cGAB_RESOURCE_MAX
+#define cGAB_RESOURCE_MAX 64
+#endif
+
+#ifndef cGAB_GC_MOD_BUFF_MAX
+#define cGAB_GC_MOD_BUFF_MAX (cGAB_STACK_MAX * cGAB_WORKER_LOCALQUEUE_MAX)
+#endif
+
+#if cGAB_GC_MOD_BUFF_MAX <= cGAB_STACK_MAX
+#error "cGAB_GC_MOD_BUFF_MAX must be greater than to cGAB_STACK_MAX"
+#endif
+
+#define cGAB_BINARY_LEN_CUTOFF 16
+
+// Not configurable, just constants
+#define GAB_CONSTANTS_MAX (UINT16_MAX + 1)
+// Maximum value of a local.
+#define GAB_LOCAL_MAX 256
+// Maximum value of an upvalues.
+#define GAB_UPVALUE_MAX (256 >> 1)
+// Maximum number of function arguments.
+#define GAB_ARG_MAX (256 >> 2)
+// Maximum number of function return values.
+#define GAB_RET_MAX 128
+
+// The size of a single line of cache.
+// This is enough for:
+//  - The type of the value
+//  - The specialization
+//  - The offset of the spec in the record/message
+//  This should be removed yo
+#define GAB_SEND_CACHE_SIZE 3
+
+// These ks are always the first two elements, and are
+// necessary for tracking what message is sent
+// and if it has been changed
+#define GAB_SEND_KMESSAGE 0
+#define GAB_SEND_KSPECS 1
+
+#define GAB_SEND_KTYPE 2
+#define GAB_SEND_KSPEC 3
+#define GAB_SEND_KOFFSET 4
+
+#define GAB_SEND_KGENERIC_CALL_MESSAGE 5
+
+#define GAB_SEND_KNATIVE_REENTRANT_USERDATA 7
+
+#define GAB_SEND_HASH(t) (t & (cGAB_SEND_CACHE_LEN - 1))
+
+#define GAB_PVEC_BITS (5)
+#define GAB_PVEC_SIZE (1 << GAB_PVEC_BITS)
+#define GAB_PVEC_MASK (GAB_PVEC_SIZE - 1)
+
+#define MATCH_HASHT(t) (GAB_SEND_HASH(t) * GAB_SEND_CACHE_SIZE)
+
+#if GAB_PVEC_SIZE > 64
+#error "HAMT_SIZE is larger than is indexable by a size_t"
+#endif
+
+#define VAR_EXP 255
+#define fHAVE_VAR (1 << 0)
+#define fHAVE_TAIL (1 << 7)
+
+// TODO @cgab @qol: Replace these include-based xmacros with just xmacros.
+
+enum gab_status {
+#define STATUS(name, message) GAB_##name,
+#include "status_code.h"
+#undef STATUS
+};
+
+// VERSION
+#define GAB_VERSION_MAJOR "0"
+#define GAB_VERSION_MINOR "1"
+#define GAB_VERSION_PATCH "0"
+#define GAB_VERSION_TAG                                                        \
+  GAB_VERSION_MAJOR "." GAB_VERSION_MINOR "." GAB_VERSION_PATCH
+
+// Message constants
+#define mGAB_LT "<"
+#define mGAB_GT ">"
+#define mGAB_EQ "=="
+#define mGAB_ADD "+"
+#define mGAB_SUB "-"
+#define mGAB_MUL "*"
+#define mGAB_DIV "/"
+#define mGAB_MOD "%"
+#define mGAB_BOR "|"
+#define mGAB_BND "&"
+#define mGAB_LOR "|"
+#define mGAB_LND "&"
+#define mGAB_LSH "<<"
+#define mGAB_RSH ">>"
+#define mGAB_LTE "<="
+#define mGAB_GTE ">="
+#define mGAB_SPLATLIST "*"
+#define mGAB_SPLATDICT "**"
+#define mGAB_CONS "cons"
+#define mGAB_TYPE "?"
+#define mGAB_BIN "~"
+#define mGAB_LIN "!"
+#define mGAB_CALL ""
+#define mGAB_USE "use"
+#define mGAB_TAKE ">!"
+#define mGAB_PUT "<!"
+#define mGAB_MAKE "make"
+
+#define mGAB_ASSIGN ":="
+#define mGAB_BLOCK "::"
+
+#define tGAB_STRING "gab\\string"
+#define tGAB_BINARY "gab\\binary"
+#define tGAB_MESSAGE "gab\\message"
+#define tGAB_PRIMITIVE "gab\\primitive"
+#define tGAB_NUMBER "gab\\number"
+#define tGAB_NATIVE "gab\\native"
+#define tGAB_PROTOTYPE "gab\\prototype"
+#define tGAB_BLOCK "gab\\block"
+#define tGAB_RECORD "gab\\record"
+#define tGAB_LIST "gab\\list"
+#define tGAB_SHAPE "gab\\shape"
+#define tGAB_BOX "gab\\box"
+#define tGAB_FIBER "gab\\fiber"
+#define tGAB_CHANNEL "gab\\channel"
+
+#define tGAB_STRING_NAME "Strings"
+#define tGAB_BINARY_NAME "Binaries"
+#define tGAB_MESSAGE_NAME "Messages"
+#define tGAB_PRIMITIVE_NAME "Primitives"
+#define tGAB_NUMBER_NAME "Numbers"
+#define tGAB_NATIVE_NAME "Natives"
+#define tGAB_PROTOTYPE_NAME "Prototypes"
+#define tGAB_BLOCK_NAME "Blocks"
+#define tGAB_RECORD_NAME "Records"
+#define tGAB_LIST_NAME "Lists"
+#define tGAB_SHAPE_NAME "Shapes"
+#define tGAB_BOX_NAME "Boxes"
+#define tGAB_FIBER_NAME "Fibers"
+#define tGAB_CHANNEL_NAME "Channels"
+
+#define tGAB_IO "io"
+#define tGAB_IOFILE "io\\file"
+#define tGAB_IOSOCK "io\\sock"
+
+#define mGAB_AST_NODE_SEND_LHS "gab\\lhs"
+#define mGAB_AST_NODE_SEND_MSG "gab\\msg"
+#define mGAB_AST_NODE_SEND_RHS "gab\\rhs"
+
+#define T char
+#include "slice.h"
+
+#define T char
+#include "array.h"
+
+#define T char
+#include "vector.h"
+
+#define T uint8_t
+#include "vector.h"
+
+#define T uint32_t
+#include "vector.h"
+
+#define T uint64_t
+#include "vector.h"
+
+#define T s_char
+#include "vector.h"
+
+#define T int8_t
+#include "vector.h"
+
+#define T s_char
+#include "array.h"
+
+#define T a_char *
+#define NAME a_char
+#include "vector.h"
+
+#define T uint64_t
+#include "array.h"
+
+#define K uint64_t
+#define V uint64_t
+#define DEF_V 0
+#define HASH(a) a
+#define EQUAL(a, b) (a == b)
+#define LOAD cGAB_DICT_MAX_LOAD
+#include "dict.h"
+
+static inline s_char s_char_cstr(const char *str) {
+  return (s_char){.data = str, .len = strlen(str)};
+}
+
+static inline s_char s_char_arr(const a_char *str) {
+  return (s_char){.data = str->data, .len = str->len};
+}
+
+static inline s_char s_char_tok(s_char str, uint64_t start, char ch) {
+  if (start >= str.len)
+    return (s_char){.data = str.data + start, .len = 0};
+
+  uint64_t cursor = start;
+
+  while (cursor < str.len && str.data[cursor] != ch)
+    cursor++;
+
+  return (s_char){.data = str.data + start, .len = cursor - start};
+}
+
+static inline void v_char_spush(v_char *self, s_char slice) {
+  for (size_t i = 0; i < slice.len; i++) {
+    v_char_push(self, slice.data[i]);
+  }
+}
+
+static inline void v_uint8_t_npush(v_uint8_t *self, size_t n, uint8_t *buff) {
+  for (size_t i = 0; i < n; i++) {
+    v_uint8_t_push(self, buff[i]);
+  }
+}
+
+#define LEN_CARRAY(a) (sizeof(a) / sizeof(a[0]))
+
+#define GAB_INVIS "\x1b[28m"
+#define GAB_BLINK "\x1b[25m"
+#define GAB_SAVE "\x1b[s"
+#define GAB_RESTORE "\x1b[u"
+#define GAB_BLACK "\x1b[30m"
+#define GAB_RED "\x1b[31m"
+#define GAB_GREEN "\x1b[32m"
+#define GAB_YELLOW "\x1b[33m"
+#define GAB_BLUE "\x1b[34m"
+#define GAB_MAGENTA "\x1b[35m"
+#define GAB_CYAN "\x1b[36m"
+#define GAB_RESET "\x1b[0m"
+#define GAB_CLEAR "\x1b[2J"
+
+#include <stdarg.h>
+#include <stdio.h>
+
+// TODO @cgab: Better 'asserts' which are self-describing.
+#ifdef NDEBUG
+#define gab_assert(expr, format, ...)
+#else
+[[noreturn]]
+static inline void __gab_assert_fail(const char *expr, const char *file,
+                                     const char *function, size_t line,
+                                     const char *reason, ...) {
+  va_list va;
+  va_start(va, reason);
+
+  fprintf(stderr, "[%s] assertion '%s' failed at %s:%lu.\n ", function, expr,
+          file, line);
+
+  vfprintf(stderr, reason, va);
+
+  exit(EXIT_FAILURE);
+  va_end(va);
+};
+
+#define gab_assert(expr, format, ...)                                          \
+  ((expr) ? (void)(0)                                                          \
+          : __gab_assert_fail(#expr, __FILE__, __FUNCTION__, __LINE__,         \
+                              format __VA_OPT__(, ) __VA_ARGS__))
+
+#endif
+
 #include <errno.h>
+#include <float.h>
 #include <inttypes.h>
 #include <stdarg.h>
 #include <stdatomic.h>
@@ -17,21 +446,41 @@
 #include <stdlib.h>
 #include <wchar.h>
 
-#include "core.h"
-
 #define GAB_DYNLIB_MAIN "gab_lib"
 
 #define GAB_API_INLINE static inline
 
 #ifdef GAB_CORE
+#if GAB_PLATFORM_WIN
+#define GAB_API __declspec(dllexport)
+#else
 #define GAB_API [[gnu::used]]
+#endif
+#else
+#if GAB_PLATFORM_WIN
+#define GAB_API __declspec(dllimport) extern
 #else
 #define GAB_API extern
 #endif
+#endif
 
-#define GAB_DYNLIB_MAIN_FN union gab_value_pair gab_lib(struct gab_triple gab)
+#ifdef __cplusplus
+#define GAB_PROMISE_CLINKAGE extern "C"
+#else
+#define GAB_PROMISE_CLINKAGE
+#endif
+
+#ifdef GAB_PLATFORM_WIN
+#define GAB_DYNLIB_MAIN_FN                                                     \
+  __declspec(dllexport) GAB_PROMISE_CLINKAGE union gab_value_pair gab_lib(     \
+      struct gab_triple gab)
+#else
+#define GAB_DYNLIB_MAIN_FN                                                     \
+  GAB_PROMISE_CLINKAGE union gab_value_pair gab_lib(struct gab_triple gab)
+#endif
+
 #define GAB_DYNLIB_NATIVE_FN(module, name)                                     \
-  union gab_value_pair gab_mod_##module##_##name(                              \
+  GAB_PROMISE_CLINKAGE union gab_value_pair gab_mod_##module##_##name(         \
       struct gab_triple gab, uint64_t argc, gab_value *argv,                   \
       uintptr_t reentrant)
 
@@ -177,14 +626,26 @@ typedef int64_t gab_int;
 typedef uint64_t gab_uint;
 #else
 #define GAB_INTWIDTH 53
+
+/*
+ * When in debug mode, it is useful to define int and uint in terms
+ * of the 53 bit int width. This can help c-code catch some arithmetic
+ * errors at compile time.
+ *
+ * However, it does have a runtime cost. For example, adding two gab_ints
+ * (when they are defined as 53 bits) will emit additional shl and shr
+ * instructions to shift off the upper 11 bits.
+ */
 typedef signed _BitInt(GAB_INTWIDTH) gab_int;
 typedef unsigned _BitInt(GAB_INTWIDTH) gab_uint;
+
 #endif
 
 // This is the MAXIMUM SAFE INTEGER, because anything greater
 // cannot be exactly represented by a 64-bit floating point number.
 // This is because they have 53 bits of mantissa.
-#define GAB_INTMAX (2e53 - 1.0)
+// This is essentially the maximum value of a 53 bit int.
+#define GAB_INTMAX ((gab_float)9007199254740992)
 
 typedef double gab_float;
 
@@ -242,6 +703,13 @@ GAB_API_INLINE gab_value __gab_dtoval(gab_float value) {
   } data;
   data.num = value;
   return data.bits;
+}
+
+GAB_API_INLINE gab_value __gab_itoval(gab_int value) {
+  if (value > GAB_INTMAX)
+    return __gab_dtoval(GAB_INTMAX);
+
+  return __gab_dtoval(value);
 }
 
 #define __gab_valisn(val) (((val) & __GAB_QNAN) != __GAB_QNAN)
@@ -332,28 +800,23 @@ GAB_API_INLINE gab_value __gab_dtoval(gab_float value) {
 /*
  * As Gab's number type is a double (64-bit floating point)
  *
- * The largest integer which can be *completely stored without any loss* is 32
+ * The largest integer which can be *completely stored without any loss* is 53
  * bits.
  */
 GAB_API_INLINE gab_int __gab_valtoi(gab_value v) {
   gab_float num = (__gab_valtod(v));
 
-  if (num < -(gab_float)GAB_INTMAX)
-    return 0;
+  if (num < -GAB_INTMAX)
+    return (gab_int)(-GAB_INTMAX);
 
-  if (num >= (gab_float)GAB_INTMAX)
-    return 0;
+  if (num >= GAB_INTMAX)
+    return (gab_int)(GAB_INTMAX);
 
   return (gab_int)num;
 }
 
 GAB_API_INLINE gab_uint __gab_valtou(gab_value v) {
-  gab_float num = (__gab_valtod(v));
-
-  if (num >= GAB_INTMAX)
-    return 0;
-
-  return (gab_uint)(gab_int)num;
+  return (gab_uint)__gab_valtoi(v);
 }
 
 /* Cast a gab value to a number - a double-precsision floating point, signed, or
@@ -369,10 +832,8 @@ GAB_API_INLINE gab_uint __gab_valtou(gab_value v) {
     struct gab_obj *__o =                                                      \
         (struct gab_obj *)(uintptr_t)((val) & ~(__GAB_SIGN_BIT | __GAB_QNAN |  \
                                                 __GAB_TAGBITS));               \
-    if (GAB_OBJ_IS_FREED(__o)) {                                               \
-      printf("UAF\t%p\t%s:%i", __o, __FUNCTION__, __LINE__);                   \
-      exit(1);                                                                 \
-    }                                                                          \
+    gab_assert(!GAB_OBJ_IS_FREED(__o),                                         \
+               "Shall not use an object after its been freed.");               \
     __o;                                                                       \
   })
 #else
@@ -400,6 +861,9 @@ GAB_API_INLINE gab_uint __gab_valtou(gab_value v) {
 #define fGAB_OBJ_BUFFERED (1 << 6)
 #define fGAB_OBJ_NEW (1 << 7)
 
+// DEBUG purposes only
+#define fGAB_OBJ_FREED (1 << 8)
+
 #define GAB_OBJ_IS_BUFFERED(obj) ((obj)->flags & fGAB_OBJ_BUFFERED)
 #define GAB_OBJ_IS_NEW(obj) ((obj)->flags & fGAB_OBJ_NEW)
 
@@ -409,10 +873,44 @@ GAB_API_INLINE gab_uint __gab_valtou(gab_value v) {
 #define GAB_OBJ_NOT_BUFFERED(obj) ((obj)->flags &= ~fGAB_OBJ_BUFFERED)
 #define GAB_OBJ_NOT_NEW(obj) ((obj)->flags &= ~fGAB_OBJ_NEW)
 
-// DEBUG purposes only
-#define fGAB_OBJ_FREED (1 << 8)
 #define GAB_OBJ_IS_FREED(obj) ((obj)->flags & fGAB_OBJ_FREED)
 #define GAB_OBJ_FREED(obj) ((obj)->flags |= fGAB_OBJ_FREED)
+
+/**
+ * @class gab_obj
+ * @brief This struct is the first member of all heap-allocated objects.
+ *
+ * All gab objects inherit (as far as c can do inheritance) from this struct.
+ */
+struct gab_obj {
+  /**
+   * @brief The number of live references to this object.
+   *
+   * If this number is overflowed, gab keeps track  of this object's
+   * references in a separate, slower rec<gab_obj, uint64_t>. When the
+   * reference count drops back under 255, rc returns to the fast path.
+   */
+  uint8_t references;
+  /**
+   * @brief Flags used by garbage collection and for debug information.
+   *
+   * These *don't* have to be atomic, even though theoretically they are
+   * consumed by the worker *and* gc threads.
+   *
+   * This because the worker threads only touch this field on object *creation*,
+   * before the GC knows that the object exists. From that point on though,
+   * this field is owned and modified *exclusively* by the GC thread.
+   */
+  uint8_t flags;
+  /**
+   * @brief a flag denoting the kind of object referenced by this pointer -
+   * defines how to interpret the remaining bytes of this allocation.
+   *
+   * Some objects do modify this field - Fibers notably change their
+   * running/done state here.
+   */
+  uint8_t kind;
+};
 
 /*
  * Datastructure definitions.
@@ -431,18 +929,26 @@ GAB_API_INLINE gab_uint __gab_valtou(gab_value v) {
 #define T gab_value
 #include "vector.h"
 
+#define T char *
+#define NAME cstr
+#include "slice.h"
+
 // If this configuration macro is defined, try to use the native threads. If not
 // available, this will fall back to our threads wrapper compat layer. If it is
 // not defined, always use the compat layer.
 #ifdef cGAB_THREADS_NATIVE
+#if __has_include("threads.h")
 #include <threads.h>
+#else
+#include "cthreads.h"
+#endif
 #else
 #include "cthreads.h"
 #endif
 
 #define T gab_value
 #define NAME gab_value_thrd
-#define V_CONCURRENT
+#define V_THREADSAFE
 #include "vector.h"
 
 struct gab_gc;
@@ -476,20 +982,12 @@ struct gab_triple {
   int32_t wkid;
 };
 
-/*
- * Various callbacks used by the gab_box and gab_native types.
- */
-typedef void (*gab_gcvisit_f)(struct gab_triple, struct gab_obj *obj);
-
 typedef union gab_value_pair (*gab_native_f)(struct gab_triple, uint64_t argc,
                                              gab_value *argv,
                                              uintptr_t reentrant);
 
 typedef void (*gab_boxdestroy_f)(struct gab_triple gab, uint64_t len,
                                  char *data);
-
-typedef void (*gab_boxvisit_f)(struct gab_triple gab, gab_gcvisit_f visitor,
-                               uint64_t len, char *data);
 
 /**
  * @brief INTERNAL: Free memory held by an object.
@@ -536,6 +1034,11 @@ enum gab_flags {
    * when used.
    */
   fGAB_USE_RELOAD = 1 << 4,
+
+  /*
+   * @see gab_use
+   */
+  fGAB_DETATCH = 1 << 5,
 };
 
 /**
@@ -553,8 +1056,9 @@ struct gab_create_argt {
    * @brief A setting for the number of nanoseconds to *busywait*, at points
    * when the engine needs to *spin*.
    */
-  uint32_t flags, jobs, wait;
+  uint32_t flags, jobs, wait, nargs;
 
+  const char **args;
   /*
    * A list of resources. At each root, these
    * will be tested (in reverse order), until
@@ -603,7 +1107,9 @@ struct gab_create_argt {
    *
    *  This list should be terminated with a nullptr.
    * */
-  const char **modules;
+  struct gab_package {
+    const char *package, *module, *alias;
+  } *packages;
 };
 
 /**
@@ -616,18 +1122,24 @@ struct gab_create_argt {
 GAB_API union gab_value_pair gab_create(struct gab_create_argt args,
                                         struct gab_triple *gab_out);
 
+struct gab_module_res {
+  a_char *path;
+  const char *root_path, *package_path, *module_path;
+  const struct gab_resource *resource;
+};
+
 /**
  * @brief resolve a module with the engine's given loaders and roots.
  * The prefix and suffix that matched are written to prefix and suffix, if
  * provided.
  */
-GAB_API const char *gab_resolve(struct gab_triple gab, const char *mod,
-                                const char **prefix, const char **suffix);
+GAB_API struct gab_module_res
+gab_resolve(struct gab_triple gab, const char *package, const char *module);
 
-GAB_API const char *gab_mresolve(const char **roots,
-                                 const struct gab_resource *resources,
-                                 const char *mod, const char **prefix,
-                                 const char **suffix);
+GAB_API struct gab_module_res gab_mresolve(const char **roots,
+                                           const struct gab_resource *resources,
+                                           const char *package,
+                                           const char *module);
 
 /**
  * @brief Free the memory owned by this triple.
@@ -662,7 +1174,7 @@ GAB_API void gab_destroy(struct gab_triple gab);
  */
 GAB_API int gab_svalinspect(char **dest, size_t *n, gab_value value, int depth);
 GAB_API int gab_psvalinspect(char **dest, size_t *n, gab_value value,
-                             int depth);
+                             const char *prefix, int depth);
 
 /**
  * @brief Format the given string into the given buffer.
@@ -682,7 +1194,8 @@ GAB_API int gab_psvalinspect(char **dest, size_t *n, gab_value value,
  * @return the number of bytes written to the buffer, or -1.
  */
 GAB_API int gab_sprintf(char *dst, size_t n, const char *fmt, ...);
-GAB_API int gab_psprintf(char *dst, size_t n, const char *fmt, ...);
+GAB_API int gab_psprintf(char *dst, size_t n, const char *prefix,
+                         const char *fmt, ...);
 
 /**
  * @brief Format the given string to the given stream.
@@ -711,8 +1224,8 @@ GAB_API int gab_fprintf(FILE *stream, const char *fmt, ...);
  * @return the number of bytes written to the buffer, or -1.
  */
 GAB_API int gab_vsprintf(char *dst, size_t n, const char *fmt, va_list varargs);
-GAB_API int gab_vpsprintf(char *dst, size_t n, const char *fmt,
-                          va_list varargs);
+GAB_API int gab_vpsprintf(char *dst, size_t n, const char *prefix,
+                          const char *fmt, va_list varargs);
 
 /**
  * @brief Format the given string into the given buffer, with n arguments.
@@ -727,14 +1240,19 @@ GAB_API int gab_vpsprintf(char *dst, size_t n, const char *fmt,
  */
 GAB_API int gab_nsprintf(char *dst, size_t n, const char *fmt, uint64_t argc,
                          gab_value *argv);
-GAB_API int gab_npsprintf(char *dst, size_t n, const char *fmt, uint64_t argc,
-                          gab_value *argv);
+GAB_API int gab_npsprintf(char *dst, size_t n, const char *prefix,
+                          const char *fmt, uint64_t argc, gab_value *argv);
 
 /**
  * @brief Get the "length" of the engine, aka, the max number of jobs (working
  * threads).
  */
 GAB_API uint64_t gab_eglen(struct gab_eg *eg);
+
+/**
+ * @brief return the number of jobs currently alive.
+ */
+GAB_API uint64_t gab_egalive(struct gab_eg *eg);
 
 /**
  * @brief Give the engine ownership of the values.
@@ -852,6 +1370,11 @@ struct gab_impl_rest {
      * The receiver is a record with a matching property.
      */
     kGAB_IMPL_PROPERTY,
+
+    /*
+     * The implementation is a macro
+     */
+    kGAB_IMPL_MACRO,
   } status;
 };
 
@@ -934,14 +1457,24 @@ GAB_API gab_value gab_vmframe(struct gab_triple gab, uint64_t depth);
  */
 struct gab_use_argt {
   /**
+   * The name of the package to search for, as a c-string.
+   */
+  const char *spackage_name;
+  /**
+   * The name of the package to search for, as a gab-value.
+   */
+  gab_value vpackage_name;
+  /* Only one of spackage_name and vpackage_name is required. */
+
+  /**
    * The name of the module to search for, as a c-string.
    */
-  const char *sname;
+  const char *smodule_name;
   /**
    * The name of the module to search for, as a gab-value.
    */
-  gab_value vname;
-  /* Only one of sname and vname is required. */
+  gab_value vmodule_name;
+
   /**
    * @brief The number of arguments to the main block.
    */
@@ -954,6 +1487,11 @@ struct gab_use_argt {
    * @brief The values of the arguments to the main block.
    */
   gab_value *argv;
+
+  /**
+   * @brief Instead of providing len, sargv, and argv, you may provide a record.
+   */
+  gab_value env;
 
   /**
    * Optional flags for compilation AND execution.
@@ -1196,6 +1734,11 @@ struct gab_send_argt {
    * The arguments passed to the send.
    */
   gab_value *argv;
+
+  /**
+   * An optional worker id, to which gab will pin this fiber.
+   */
+  int pin;
   /**
    * Optional flags for the vm.
    */
@@ -1399,6 +1942,15 @@ struct gab_def_argt {
 GAB_API bool gab_ndef(struct gab_triple gab, uint64_t len,
                       struct gab_def_argt *args);
 
+#define gab_defmacro(gab, ...)                                                 \
+  ({                                                                           \
+    struct gab_def_argt defs[] = {__VA_ARGS__};                                \
+    gab_ndefmacro(gab, sizeof(defs) / sizeof(struct gab_def_argt), defs);      \
+  })
+
+GAB_API bool gab_ndefmacro(struct gab_triple gab, uint64_t len,
+                           struct gab_def_argt *args);
+
 /**
  * @brief Get the runtime value that corresponds to the given kind.
  *
@@ -1558,9 +2110,9 @@ GAB_API void gab_ndref(struct gab_triple gab, uint64_t stride, uint64_t len,
  */
 #if cGAB_LOG_GC
 #define gab_gcepochnext(gab) (__gab_gcepochnext(gab, __FUNCTION__, __LINE__))
-void __gab_gcepochnext(struct gab_triple gab, const char *func, int line);
+GAB_API void __gab_gcepochnext(struct gab_triple gab, const char *func, int line);
 #else
-void gab_gcepochnext(struct gab_triple gab);
+GAB_API void gab_gcepochnext(struct gab_triple gab);
 #endif
 
 /**
@@ -1633,7 +2185,12 @@ GAB_API uint64_t gab_tsrcline(struct gab_src *src, uint64_t token_offset);
  * @param value The value.
  * @return The kind of the value.
  */
-GAB_API enum gab_kind gab_valkind(gab_value value);
+GAB_API_INLINE enum gab_kind gab_valkind(gab_value value) {
+  if (gab_valiso(value))
+    return (enum gab_kind)(gab_valtoo(value)->kind + __GAB_VAL_TAG(value));
+
+  return __GAB_VAL_TAG(value);
+}
 
 GAB_API_INLINE bool gab_valisshp(gab_value value) {
   enum gab_kind k = gab_valkind(value);
@@ -1683,6 +2240,9 @@ GAB_API_INLINE bool gab_valhast(gab_value value) {
 GAB_API gab_value gab_nstring(struct gab_triple gab, uint64_t len,
                               const char *data);
 
+GAB_API gab_value gab_tnstring(struct gab_triple gab, uint64_t len,
+                               const char *data);
+
 /**
  * @brief Create a gab_value from a c-string
  *
@@ -1695,7 +2255,10 @@ GAB_API_INLINE gab_value gab_string(struct gab_triple gab, const char *data) {
 }
 
 /**
- * @brief Concatenate two gab strings
+ * @brief Concatenate two gab strings.
+ *
+ * TODO @cgab @api: Implement 'nstrcat' which concatenates n strings
+ * efficiently.
  *
  * @param gab The engine.
  * @param a The first string.
@@ -1704,6 +2267,33 @@ GAB_API_INLINE gab_value gab_string(struct gab_triple gab, const char *data) {
  */
 GAB_API gab_value gab_strcat(struct gab_triple gab, gab_value a, gab_value b);
 
+/**
+ * @brief Concatenate two gab strings. This can timeout, as it needs to hold
+ * a mutex in order to complete its work.
+ *
+ * @param gab The engine.
+ * @param a The first string.
+ * @param b The second string.
+ * @return The value.
+ */
+GAB_API gab_value gab_tstrcat(struct gab_triple gab, gab_value a, gab_value b);
+
+/**
+ * @brief Create a string by concatenating n values. (Converting them to strings
+ * in the process).
+ */
+GAB_API gab_value gab_nvstring(struct gab_triple gab, uint64_t n,
+                               gab_value *data);
+
+#define gab_stringof(gab, ...)                                                 \
+  ({                                                                           \
+    gab_value items[] = {__VA_ARGS__};                                         \
+    gab_nvstring(gab, sizeof(items) / sizeof(gab_value), items);               \
+  })
+
+/**
+ * @brief Concatenate a cstring to a gab string.
+ */
 GAB_API_INLINE gab_value gab_sstrcat(struct gab_triple gab, gab_value a,
                                      const char *b) {
   return gab_strcat(gab, a, gab_string(gab, b));
@@ -1757,7 +2347,11 @@ GAB_API uint64_t gab_strhash(gab_value str);
  * @return The message
  */
 GAB_API_INLINE gab_value gab_strtomsg(gab_value str) {
-  assert(gab_valkind(str) == kGAB_STRING);
+  if (str == gab_cinvalid)
+    return gab_cinvalid;
+
+  gab_assert(gab_valkind(str) == kGAB_STRING,
+             "User shall supply a string value");
   return str | (uint64_t)kGAB_MESSAGE << __GAB_TAGOFFSET;
 }
 
@@ -1765,6 +2359,9 @@ GAB_API_INLINE gab_value gab_strtomsg(gab_value str) {
  * @brief Convert a string into a binary. This is constant-time.
  */
 GAB_API_INLINE gab_value gab_strtobin(gab_value str) {
+  if (str == gab_cinvalid)
+    return gab_cinvalid;
+
   assert(gab_valkind(str) == kGAB_STRING);
   return str | (uint64_t)kGAB_BINARY << __GAB_TAGOFFSET;
 }
@@ -1800,11 +2397,17 @@ GAB_API_INLINE gab_value gab_message(struct gab_triple gab, const char *data) {
  * @return the name.
  */
 GAB_API_INLINE gab_value gab_msgtostr(gab_value msg) {
+  if (msg == gab_cinvalid)
+    return gab_cinvalid;
+
   assert(gab_valkind(msg) == kGAB_MESSAGE);
   return msg & ~((uint64_t)kGAB_MESSAGE << __GAB_TAGOFFSET);
 }
 
 GAB_API_INLINE gab_value gab_ubintostr(gab_value bin) {
+  if (bin == gab_cinvalid)
+    return gab_cinvalid;
+
   assert(gab_valkind(bin) == kGAB_BINARY);
   return bin & ~((uint64_t)kGAB_BINARY << __GAB_TAGOFFSET);
 }
@@ -1817,6 +2420,9 @@ GAB_API_INLINE gab_value gab_ubintostr(gab_value bin) {
  * @return The string if bin is valid utf8, otherwise gab_cinvalid.
  */
 GAB_API_INLINE gab_value gab_bintostr(gab_value bin) {
+  if (bin == gab_cinvalid)
+    return gab_cinvalid;
+
   assert(gab_valkind(bin) == kGAB_BINARY);
 
   if (gab_strmblen(bin) == -1)
@@ -1827,15 +2433,17 @@ GAB_API_INLINE gab_value gab_bintostr(gab_value bin) {
 
 GAB_API_INLINE gab_value gab_bincat(struct gab_triple gab, gab_value a,
                                     gab_value b) {
+  if (a == gab_cinvalid || b == gab_cinvalid)
+    return gab_cinvalid;
+
   assert(gab_valkind(a) == kGAB_BINARY);
   assert(gab_valkind(b) == kGAB_BINARY);
-  assert(gab_valkind(gab_ubintostr(a)) == kGAB_STRING);
-  assert(gab_valkind(gab_ubintostr(b)) == kGAB_STRING);
 
   gab_value astr = gab_ubintostr(a);
   gab_value bstr = gab_ubintostr(b);
+  gab_value abstr = gab_strcat(gab, astr, bstr);
 
-  return gab_strtobin(gab_strcat(gab, astr, bstr));
+  return gab_strtobin(abstr);
 }
 
 /**
@@ -1856,7 +2464,12 @@ GAB_API_INLINE gab_value gab_nbinary(struct gab_triple gab, size_t len,
 GAB_API_INLINE gab_value gab_nbincat(struct gab_triple gab, gab_value a,
                                      uint64_t len, const uint8_t *b) {
   assert(gab_valkind(a) == kGAB_BINARY);
-  return gab_bincat(gab, a, gab_nbinary(gab, len, b));
+  gab_value bin = gab_nbinary(gab, len, b);
+
+  if (bin == gab_cinvalid)
+    return bin;
+
+  return gab_bincat(gab, a, bin);
 }
 
 /* Cast a value to a (gab_onative*) */
@@ -1949,7 +2562,7 @@ GAB_API_INLINE uint64_t gab_shpfind(gab_value shp, gab_value key) {
     uint64_t len = gab_shplen(shp);
     gab_value *keys = gab_shpdata(shp);
 
-    // TODO: SIMDIFY ME (or use trees, sure)
+    // TODO @cgab @perf: SIMDIFY ME (or use trees, sure)
     for (uint64_t i = 0; i < len; i++) {
       if (gab_valeq(key, keys[i]))
         return i;
@@ -2053,14 +2666,32 @@ GAB_API_INLINE gab_value gab_erecord(struct gab_triple gab) {
  * @param vals The vals
  * @return The new record
  */
-GAB_API_INLINE gab_value gab_srecord(struct gab_triple gab, uint64_t len,
-                                     const char **keys, gab_value *vals) {
-  gab_value vkeys[len];
+GAB_API_INLINE gab_value gab_mrecord(struct gab_triple gab, uint64_t stride,
+                                     uint64_t len, const char **keys,
+                                     gab_value *vals) {
+  gab_value vkeys[len * stride];
 
   gab_gclock(gab);
 
   for (uint64_t i = 0; i < len; i++)
-    vkeys[i] = gab_message(gab, keys[i]);
+    vkeys[i * stride] = gab_message(gab, keys[i * stride]);
+
+  gab_value rec = gab_record(gab, 1, len, vkeys, vals);
+
+  gab_gcunlock(gab);
+
+  return rec;
+}
+
+GAB_API_INLINE gab_value gab_brecord(struct gab_triple gab, uint64_t stride,
+                                     uint64_t len, const char **keys,
+                                     gab_value *vals) {
+  gab_value vkeys[len * stride];
+
+  gab_gclock(gab);
+
+  for (uint64_t i = 0; i < len; i++)
+    vkeys[i * stride] = gab_binary(gab, keys[i * stride]);
 
   gab_value rec = gab_record(gab, 1, len, vkeys, vals);
 
@@ -2186,7 +2817,12 @@ GAB_API_INLINE gab_value gab_recat(gab_value record, gab_value key) {
  */
 GAB_API_INLINE gab_value gab_srecat(struct gab_triple gab, gab_value record,
                                     const char *key) {
-  return gab_recat(record, gab_string(gab, key));
+  gab_value s = gab_string(gab, key);
+
+  if (s == gab_cinvalid)
+    return s;
+
+  return gab_recat(record, s);
 }
 
 /**
@@ -2199,7 +2835,12 @@ GAB_API_INLINE gab_value gab_srecat(struct gab_triple gab, gab_value record,
  */
 GAB_API_INLINE gab_value gab_mrecat(struct gab_triple gab, gab_value rec,
                                     const char *key) {
-  return gab_recat(rec, gab_message(gab, key));
+  gab_value m = gab_message(gab, key);
+
+  if (m == gab_cinvalid)
+    return m;
+
+  return gab_recat(rec, m);
 }
 
 /**
@@ -2277,6 +2918,7 @@ GAB_API gab_value gab_nlstpush(struct gab_triple gab, gab_value list,
  */
 GAB_API_INLINE gab_value gab_recpop(struct gab_triple gab, gab_value rec,
                                     gab_value *out_val, gab_value *out_key) {
+  assert(gab_reclen(rec) > 0);
   gab_value lastkey = gab_ushpat(gab_recshp(rec), gab_reclen(rec) - 1);
 
   if (out_key)
@@ -2528,10 +3170,6 @@ struct gab_box_argt {
    * A callback called when the object is collected by the gc.
    */
   gab_boxdestroy_f destructor;
-  /**
-   * A callback called when the object is visited during gc.
-   */
-  gab_boxvisit_f visitor;
 };
 
 /**
@@ -2551,7 +3189,7 @@ GAB_API gab_value gab_box(struct gab_triple gab, struct gab_box_argt args);
  * @param box The box.
  * @return The user data.
  */
-GAB_API inline uint64_t gab_boxlen(gab_value box);
+GAB_API uint64_t gab_boxlen(gab_value box);
 
 /**
  * @brief Get the user data from a boxed value.
@@ -2597,11 +3235,15 @@ GAB_API gab_value gab_prototype(struct gab_triple gab, struct gab_src *src,
 
 GAB_API gab_value gab_prtenv(gab_value prt);
 
-GAB_API_INLINE gab_value gab_prtshp(gab_value prt) {
+GAB_API_INLINE gab_value gab_prtrec(gab_value prt) {
   gab_value env = gab_prtenv(prt);
   uint64_t len = gab_reclen(env);
   assert(len > 0);
-  return gab_recshp(gab_uvrecat(env, len - 1));
+  return gab_uvrecat(env, len - 1);
+}
+
+GAB_API_INLINE gab_value gab_prtshp(gab_value prt) {
+  return gab_recshp(gab_prtrec(prt));
 }
 
 GAB_API gab_value gab_prtparams(struct gab_triple gab, gab_value prt);
@@ -2646,7 +3288,7 @@ GAB_API gab_value gab_snative(struct gab_triple gab, const char *name,
 #define gab_listof(gab, ...)                                                   \
   ({                                                                           \
     gab_value items[] = {__VA_ARGS__};                                         \
-    gab_list(gab, sizeof(items) / sizeof(gab_value), items);                   \
+    gab_list(gab, 1, sizeof(items) / sizeof(gab_value), items);                \
   })
 
 /**
@@ -2657,11 +3299,33 @@ GAB_API gab_value gab_snative(struct gab_triple gab, const char *name,
  * @param values The values of the record to bundle.
  * @return The new record.
  */
-GAB_API gab_value gab_list(struct gab_triple gab, uint64_t len,
+GAB_API gab_value gab_list(struct gab_triple gab, uint64_t stride, uint64_t len,
                            gab_value *values);
+
+GAB_API_INLINE gab_value gab_slist(struct gab_triple gab, uint64_t stride,
+                                   uint64_t len, const char **values) {
+  if (!len)
+    return gab_erecord(gab);
+
+  gab_value vals[len * stride];
+
+  gab_gclock(gab);
+
+  for (uint64_t i = 0; i < len; i++)
+    vals[i * stride] = gab_string(gab, values[i * stride]);
+
+  gab_value rec = gab_list(gab, 1, len, vals);
+
+  gab_gcunlock(gab);
+
+  return rec;
+}
 
 /**
  * @brief Get the practical runtime type of a value.
+ *
+ * TODO @perf: Allow this function to be completely inlined. Lets be done with
+ * engine.h
  *
  * @param gab The engine
  * @param value The value
@@ -2686,7 +3350,7 @@ GAB_API_INLINE gab_value gab_valtype(struct gab_triple gab, gab_value value) {
 
 GAB_API struct gab_gc *gab_gc(struct gab_triple gab);
 
-GAB_API_INLINE gab_value gab_valintos(struct gab_triple gab, gab_value value);
+GAB_API_INLINE gab_value gab_valintostr(struct gab_triple gab, gab_value value);
 
 /**
  * @brief Get the running fiber of the current job.
@@ -2715,7 +3379,7 @@ GAB_API_INLINE gab_value gab_thisvmmsg(struct gab_triple gab) {
 };
 
 enum gab_signal {
-  sGAB_IGN,
+  sGAB_IGN = 0,
   sGAB_COLL,
   sGAB_TERM,
 };
@@ -2802,7 +3466,8 @@ GAB_API_INLINE bool gab_valintob(gab_value value) {
  * @param value The value to convert
  * @return The string representation of the value.
  */
-GAB_API_INLINE gab_value gab_valintos(struct gab_triple gab, gab_value value) {
+GAB_API_INLINE gab_value gab_valintostr(struct gab_triple gab,
+                                        gab_value value) {
   switch (gab_valkind(value)) {
   case kGAB_MESSAGE:
     return gab_msgtostr(value);
@@ -2810,7 +3475,7 @@ GAB_API_INLINE gab_value gab_valintos(struct gab_triple gab, gab_value value) {
     return value;
   default:
     for (size_t len = 4096;; len *= 2) {
-      char *buffer = malloc(len);
+      char *buffer = (char *)malloc(len);
       assert(buffer);
 
       char *cursor = buffer;
@@ -2824,6 +3489,31 @@ GAB_API_INLINE gab_value gab_valintos(struct gab_triple gab, gab_value value) {
   }
 }
 
+GAB_API_INLINE gab_value gab_valintobin(struct gab_triple gab,
+                                        gab_value value) {
+  switch (gab_valkind(value)) {
+  case kGAB_MESSAGE:
+    return gab_strtobin(gab_msgtostr(value));
+  case kGAB_STRING:
+    return gab_strtobin(value);
+  case kGAB_BINARY:
+    return value;
+  default:
+    for (size_t len = 4096;; len *= 2) {
+      char *buffer = (char *)malloc(len);
+      assert(buffer);
+
+      char *cursor = buffer;
+      size_t remaining = len;
+
+      if (gab_svalinspect(&cursor, &remaining, value, -1) < 0)
+        continue;
+
+      return gab_binary(gab, buffer);
+    }
+  }
+}
+
 /**
  * @brief Coerce the given value to a string. Format said string to be pretty!
  *
@@ -2831,15 +3521,16 @@ GAB_API_INLINE gab_value gab_valintos(struct gab_triple gab, gab_value value) {
  * @param value The value to convert
  * @return The string representation of the value.
  */
-GAB_API_INLINE gab_value gab_pvalintos(struct gab_triple gab, gab_value value) {
+GAB_API_INLINE gab_value gab_pvalintos(struct gab_triple gab, gab_value value,
+                                       const char *prefix) {
   for (size_t len = 4096;; len *= 2) {
-    char *buffer = malloc(len);
+    char *buffer = (char *)malloc(len);
     assert(buffer);
 
     char *cursor = buffer;
     size_t remaining = len;
 
-    if (gab_psvalinspect(&cursor, &remaining, value, -1) < 0)
+    if (gab_psvalinspect(&cursor, &remaining, value, prefix, -1) < 0)
       continue;
 
     return gab_string(gab, buffer);
@@ -2850,7 +3541,7 @@ GAB_API_INLINE gab_value gab_pvalintos(struct gab_triple gab, gab_value value) {
  * @brief Returns true if the engine is currently processing/propagating a
  * signal.
  */
-GAB_API bool gab_is_signaling(struct gab_triple gab);
+GAB_API bool gab_signaling(struct gab_triple gab);
 
 /**
  * @brief Returns true if there is a signal waiting for the worker
@@ -2872,7 +3563,8 @@ GAB_API_INLINE void gab_sigpropagate(struct gab_triple gab) {
     return;
 
   int wkid = gab.wkid + 1;
-  gab_signext(gab, wkid);
+  bool res = gab_signext(gab, wkid);
+  assert(res);
 };
 
 /**
@@ -2886,10 +3578,13 @@ GAB_API bool gab_sigclear(struct gab_triple gab);
  *
  * This should be made atomic.
  */
+;
 GAB_API bool gab_signal(struct gab_triple gab, enum gab_signal s, int wkid);
 
 #ifdef __cplusplus
 }
 #endif
+
+#include "platform.h"
 
 #endif

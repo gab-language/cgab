@@ -1,11 +1,11 @@
-log = 'gab/lsp/logs'.use
+log := 'gab/lsp/logs'.use
 
 'cgab'.use
 
-diag\job\t = Shapes.make(server: uri: text:)
+diag\job\t := Shapes.make(server: uri: text:)
 
 [diag\job\t] .defmodule {
-  notify\diagnostics: diagnostics => do
+  notify\diagnostics: diagnostics :: do
     self.server.log("Notifying", self.uri, diagnostics)
 
     self.server.notify(
@@ -17,20 +17,20 @@ diag\job\t = Shapes.make(server: uri: text:)
 
     ok:
   end
-  diag\check: () => do
-    text = self.text
+  diag\check: () :: do
+    text := self.text
 
-    (ok, err) = text.as\gab\block
+    (ok, err) := text.as\gab\block
 
     (ok == ok:!) .and err .or nil:
   end
-  diag\complete: () => do
-    job = self
+  diag\complete: () :: do
+    job := self
     self.server.log("Diagnostics for: " self.uri)
-    diagnostic = self.diag\check
+    diagnostic := self.diag\check
 
     diagnostic
-      .then(() => do
+      .then(() :: do
         job.notify\diagnostics [
             {
               'range' {
@@ -51,7 +51,7 @@ diag\job\t = Shapes.make(server: uri: text:)
             }
           ]
       end)
-    .else(() => do
+    .else(() :: do
       job.server.log("Clearing diagnostics: " diagnostic)
       job.notify\diagnostics []
     end)

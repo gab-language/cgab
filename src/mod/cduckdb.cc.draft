@@ -1,0 +1,341 @@
+/**
+ *  MIT License
+ *
+ *  Copyright (c) 2023 Teddy Randby
+ *
+ *  Permission is hereby granted, free of charge, to any person obtaining a copy
+ *  of this software and associated documentation files (the "Software"), to
+ * deal in the Software without restriction, including without limitation the
+ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+ * sell copies of the Software, and to permit persons to whom the Software is
+ *  furnished to do so, subject to the following conditions:
+ *
+ *  The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ *  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ *  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ *  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ *  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ *  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+ * IN THE SOFTWARE.
+ */
+
+#include "duckdb.cpp"
+#include "duckdb.hpp"
+
+#include "gab.h"
+
+/*
+ * The strategy for multithreading SQLITE here is as follows:
+ *
+ * In Sqlite, parallel reads are fine. However, there is only a single write
+ * allowed. (Readers don't block writers, because of the write-ahead-log)
+ *
+ * Enable 'multithreading' mode. In this mode, there are *no mutexes* compiled
+ * into sqlite's code.
+ *
+ * It is *our* responsibility to ensure that no two threads access the same
+ * connection or sqlite object (ie, prepared statement) at the same time.
+ *
+ * We accomplish this by lazily establishing a connection for
+ * each Gab worker thread that wants to access the sqlite database.
+ */
+
+#define cGAB_CSQLITE_TYPE "db\\row"
+
+#define cGAB_CSQLITE_MAXPATH 2048
+
+struct gab_sqlite_conn {
+  char path[cGAB_CSQLITE_MAXPATH];
+  duckdb_database db;
+  int len;
+  duckdb_connection connections[];
+};
+
+gab_value make_conn(struct gab_triple gab, const char *path) {
+  gab_value conn =
+      gab_box(gab, (struct gab_box_argt){
+                       .size = sizeof(struct gab_sqlite_conn) +
+                               gab_eglen(gab.eg) * sizeof(duckdb_connection),
+                       .type = gab_string(gab, cGAB_CSQLITE_TYPE),
+                   });
+
+  struct gab_sqlite_conn *sql = (struct gab_sqlite_conn *)gab_boxdata(conn);
+
+  int res = duckdb_open(path, &sql->db);
+
+  if (res != DuckDBSuccess)
+    return gab_cinvalid;
+
+  sql->len = gab_eglen(gab.eg);
+  strncpy(sql->path, path, sizeof(sql->path));
+
+  return conn;
+}
+
+int get_conn(struct gab_triple gab, gab_value conn,
+             duckdb_connection *out_conn) {
+  struct gab_sqlite_conn *sql = (struct gab_sqlite_conn *)gab_boxdata(conn);
+  duckdb_connection sql_conn = sql->connections[gab.wkid];
+
+  if (sql_conn != nullptr)
+    return *out_conn = sql_conn, DuckDBSuccess;
+
+  int res = duckdb_connect(sql->db, sql->connections + gab.wkid);
+
+  return *out_conn = sql_conn, res;
+}
+
+GAB_DYNLIB_NATIVE_FN(row, open) {
+  gab_value path = gab_arg(1);
+
+  gab_value conn = gab_cinvalid;
+
+  // TODO @bug: This seems like kind of a bad way to check for errors.
+
+  // Create a connection with the given path.
+  if (path == gab_nil)
+    conn = make_conn(gab, ":memory:");
+  else if (gab_valkind(path) == kGAB_STRING)
+    conn = make_conn(gab, gab_strdata(&path));
+  else
+    return gab_pktypemismatch(gab, path, kGAB_STRING);
+
+  if (conn == gab_cinvalid)
+    return gab_push(gab, gab_err,
+                    gab_string(gab, "Error obtaining duckdb connection")),
+           gab_union_cvalid(gab_nil);
+
+  // Test the connection by eagerly spawning one
+  // for the current worker.
+  duckdb_connection sqlite;
+  int res = get_conn(gab, conn, &sqlite);
+
+  // This can fail.
+  if (res != DuckDBSuccess)
+    return gab_push(gab, gab_err,
+                    gab_string(gab, "Error obtaining duckdb connection")),
+           gab_union_cvalid(gab_nil);
+
+  return gab_push(gab, gab_ok, conn), gab_union_cvalid(gab_nil);
+}
+
+GAB_DYNLIB_NATIVE_FN(row, exec) {
+  gab_value conn = gab_arg(0);
+
+  duckdb_connection sqlite;
+  int res = get_conn(gab, conn, &sqlite);
+
+  if (res != DuckDBSuccess)
+    return gab_panicf(gab, "$",
+                      gab_string(gab, "Error obtaining duckdb connection"));
+
+  gab_value stmt = gab_arg(1);
+
+  if (gab_valkind(stmt) != kGAB_STRING)
+    return gab_pktypemismatch(gab, stmt, kGAB_STRING);
+
+  const char *sql = gab_strdata(&stmt);
+
+  duckdb_prepared_statement stmts = nullptr;
+  res = duckdb_prepare(sqlite, sql, &stmts);
+
+  if (res != DuckDBSuccess)
+    return gab_vmpush(gab_thisvm(gab), gab_err,
+                      gab_string(gab, "DuckDB failed to prepare statement")),
+           gab_union_cvalid(gab_nil);
+  /*
+   * Bind parameters
+   *
+   * 0 and 1 are conn and query.
+   */
+  for (uint64_t i = 2; i < argc; i += 2) {
+    gab_value sname = gab_arg(i);
+    gab_value value = gab_arg(i + 1);
+
+    if (gab_valkind(sname) != kGAB_STRING)
+      return gab_pktypemismatch(gab, sname, kGAB_STRING);
+
+    const char *cname = gab_strdata(&sname);
+    uint64_t idx = -1;
+    duckdb_state res = duckdb_bind_parameter_index(stmts, &idx, cname);
+
+    if (!idx)
+      return gab_vmpush(gab_thisvm(gab), gab_err,
+                        gab_string(gab, "Invalid parameter name")),
+             gab_union_cvalid(gab_nil);
+
+    switch (gab_valkind(value)) {
+    case kGAB_NUMBER: {
+      if (duckdb_bind_double(stmts, idx, gab_valtof(value)) != DuckDBSuccess)
+        return gab_vmpush(gab_thisvm(gab), gab_err,
+                          gab_string(gab, "Could not bind number parameter")),
+               gab_union_cvalid(gab_nil);
+      break;
+    }
+      // TODO @csqlite @qol: Better string lifetimes.
+      // SQLITE_TRANSIENT Tells sql it should handle the lifetime of the string
+      // data. This might not be necessary - we could probably make some
+      // guarantees for sqlite about this. Might save time copying big strings.
+    case kGAB_STRING: {
+      if (duckdb_bind_varchar(stmts, idx, gab_strdata(&value)) != DuckDBSuccess)
+        return gab_vmpush(gab_thisvm(gab), gab_err,
+                          gab_string(gab, "Could not bind string parameter")),
+               gab_union_cvalid(gab_nil);
+      break;
+    }
+    case kGAB_BINARY: {
+      if (duckdb_bind_blob(stmts, idx, gab_strdata(&value),
+                           gab_strlen(value)) != DuckDBSuccess)
+        return gab_vmpush(gab_thisvm(gab), gab_err,
+                          gab_string(gab, "Could not bind binary parameter")),
+               gab_union_cvalid(gab_nil);
+      break;
+    }
+    case kGAB_MESSAGE: {
+      if (value == gab_nil) {
+        if (duckdb_bind_null(stmts, idx) != DuckDBSuccess)
+          return gab_vmpush(gab_thisvm(gab), gab_err,
+                            gab_string(gab, "Could not bind nil parameter")),
+                 gab_union_cvalid(gab_nil);
+
+        break;
+      }
+
+      // TODO @csqlite @feat: Add true and false here?
+      // Should they just bind to ints?
+
+      return gab_vmpush(gab_thisvm(gab), gab_err,
+                        gab_string(gab, "Could not bind message parameter")),
+             gab_union_cvalid(gab_nil);
+    }
+    default:
+      return gab_vmpush(gab_thisvm(gab), gab_err,
+                        gab_string(gab, "Cannot bind parameter of this type")),
+             gab_union_cvalid(gab_nil);
+    }
+  }
+
+  // TODO @bug: Locking the GC while performing the step isn't idea.
+  // In general, it might be better to allow the *user* to lazyily step
+  // statement. We could simply implement seq\init and seq\next.
+  gab_gclock(gab);
+
+  duckdb_result result = {};
+
+  if (duckdb_execute_prepared(stmts, &result) != DuckDBSuccess)
+    return gab_gcunlock(gab),
+           gab_vmpush(gab_thisvm(gab), gab_err,
+                      gab_string(gab, duckdb_prepare_error(stmts))),
+           gab_union_cvalid(gab_nil);
+
+  duckdb_data_chunk chunk;
+  while ((chunk = duckdb_fetch_chunk(result))) {
+    // Do some row accumulation
+    uint64_t cols = duckdb_data_chunk_get_column_count(chunk);
+    // cols may be 0, if there is no data returned.
+    uint64_t sz = duckdb_data_chunk_get_size(chunk);
+
+    for (uint64_t i = 0; i < cols; i++) {
+      duckdb_vector v = duckdb_data_chunk_get_vector(chunk, i);
+      void *data = duckdb_vector_get_data(v);
+      uint64_t *validity = duckdb_vector_get_validity(v);
+
+      for (uint64_t j = 0; j < sz; j++) {
+        if (!duckdb_validity_row_is_valid(validity, j)) {
+          gab_wfibpush(gab_thisfiber(gab), gab_nil);
+          continue;
+        }
+
+        switch (duckdb_column_type(&result, i)) {
+        case DUCKDB_TYPE_INTEGER: {
+          gab_wfibpush(gab_thisfiber(gab), gab_number(((int *)data)[j]));
+          break;
+        }
+        case DUCKDB_TYPE_FLOAT: {
+          gab_wfibpush(gab_thisfiber(gab), gab_number(((float *)data)[j]));
+          break;
+        }
+        case DUCKDB_TYPE_DATE: {
+          duckdb_date_struct date = duckdb_from_date(((duckdb_date *)data)[j]);
+          char buf[100];
+          int len = snprintf(buf, sizeof(buf), "%i-%i-%i", date.year,
+                             date.month, date.day);
+          gab_wfibpush(gab_thisfiber(gab), gab_nstring(gab, len, buf));
+          break;
+        }
+        case DUCKDB_TYPE_VARCHAR: {
+          duckdb_string_t str = ((duckdb_string_t *)data)[j];
+          if (duckdb_string_is_inlined(str))
+            gab_wfibpush(gab_thisfiber(gab),
+                         gab_nstring(gab, str.value.inlined.length,
+                                     str.value.inlined.inlined));
+          else
+            gab_wfibpush(gab_thisfiber(gab),
+                         gab_nstring(gab, str.value.pointer.length,
+                                     str.value.pointer.ptr));
+          break;
+        }
+        case DUCKDB_TYPE_BLOB: {
+          duckdb_string_t str = ((duckdb_string_t *)data)[j];
+          if (duckdb_string_is_inlined(str))
+            gab_wfibpush(gab_thisfiber(gab),
+                         gab_nbinary(gab, str.value.inlined.length,
+                                     (uint8_t *)str.value.inlined.inlined));
+          else
+            gab_wfibpush(gab_thisfiber(gab),
+                         gab_nbinary(gab, str.value.pointer.length,
+                                     (uint8_t *)str.value.pointer.ptr));
+          break;
+        }
+        default:
+          return gab_gcunlock(gab),
+                 gab_vmpush(gab_thisvm(gab), gab_err,
+                            gab_string(gab, "Unhandled DuckDB Type"),
+                            gab_number(duckdb_column_type(&result, i))),
+                 gab_union_cvalid(gab_nil);
+        }
+      }
+    }
+  }
+
+  gab_gcunlock(gab);
+
+  // Push everything we allocated on the temp buffer.
+  gab_vmpush(gab_thisvm(gab), gab_ok);
+
+  uint64_t n = gab_fibsize(gab_thisfiber(gab));
+  gab_assert(n % 8 == 0, "Invalid alignment of gab_value array.");
+
+  if (n)
+    gab_nvmpush(gab_thisvm(gab), n / 8,
+                (gab_value *)gab_fibat(gab_thisfiber(gab), 0));
+
+  return gab_union_cvalid(gab_nil);
+}
+
+GAB_DYNLIB_MAIN_FN {
+  gab_value mod = gab_message(gab, "sqlite");
+  gab_value type = gab_string(gab, cGAB_CSQLITE_TYPE);
+
+  gab_def(gab,
+          {
+              gab_message(gab, "make"),
+              mod,
+              gab_snative(gab, "make", gab_mod_row_open),
+          },
+          {
+              gab_message(gab, "eval"),
+              type,
+              gab_snative(gab, "eval", gab_mod_row_exec),
+          }, );
+
+  gab_value res[] = {gab_ok, mod};
+
+  return (union gab_value_pair){
+      .status = gab_cvalid,
+      .aresult = a_gab_value_create(res, sizeof(res) / sizeof(gab_value)),
+  };
+}

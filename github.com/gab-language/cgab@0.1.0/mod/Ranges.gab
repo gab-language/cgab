@@ -1,0 +1,30 @@
+Ranges := range:
+
+t:.def(
+  Ranges
+  Shapes.make(from: to:))
+
+to\range: .defcase {
+  nil: to :: { from: 0, to: to }
+  (Numbers.t) from :: { from: from, to: self }
+}
+
+make:.def(
+  Ranges
+  (from to) :: do
+    (to from) .to\range
+  end)
+
+[Ranges.t] .defmodule {
+  seq\init: _ :: do
+    (ok: self.from, self.from)
+  end
+  seq\next: n :: do
+    nx := n + 1
+    (n .< (self.to) .and ok: .or none:, nx, nx)
+  end
+}
+
+Ranges.t .defseq
+
+Ranges

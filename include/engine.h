@@ -1,7 +1,6 @@
 #ifndef GAB_ENGINE_H
 #define GAB_ENGINE_H
 
-#include "core.h"
 #include "gab.h"
 #include <stdint.h>
 
@@ -14,11 +13,11 @@ static const char *ANSI_COLORS[] = {
 
 #define GAB_COLORS_LEN (sizeof(ANSI_COLORS) / sizeof(ANSI_COLORS[0]))
 
-typedef enum gab_opcode {
+enum gab_bcop_kind {
 #define OP_CODE(name) OP_##name,
 #include "bytecode.h"
 #undef OP_CODE
-} gab_opcode;
+};
 
 /**
  * Structure used to actually execute bytecode
@@ -30,6 +29,8 @@ typedef enum gab_opcode {
  * It might be a nice optimization to store a small number of frames
  * on the fiber itself, and then migrate the stack to a larger
  * one if this small stack overflows.
+ *
+ * TODO @cgab @runtime: Optimize fibers to begin with a small internal stack.
  * */
 struct gab_vm {
   uint8_t *ip;
@@ -37,32 +38,6 @@ struct gab_vm {
   gab_value *sp, *fp, *kb;
 
   gab_value sb[cGAB_STACK_MAX];
-};
-
-/**
- * @class gab_obj
- * @brief This struct is the first member of all heap-allocated objects.
- *
- * All gab objects inherit (as far as c can do inheritance) from this struct.
- */
-struct gab_obj {
-  /**
-   * @brief The number of live references to this object.
-   *
-   * If this number is overflowed, gab keeps track  of this object's
-   * references in a separate, slower rec<gab_obj, uint64_t>. When the
-   * reference count drops back under 255, rc returns to the fast path.
-   */
-  uint8_t references;
-  /**
-   * @brief Flags used by garbage collection and for debug information.
-   */
-  uint8_t flags;
-  /**
-   * @brief a flag denoting the kind of object referenced by this pointer -
-   * defines how to interpret the remaining bytes of this allocation.
-   */
-  uint8_t kind;
 };
 
 /**
@@ -111,6 +86,44 @@ struct gab_onative {
   gab_value name;
 };
 
+/**
+ * @brief A shape defines what keys are in a record
+ *
+ * This needs to be optimized. It:
+ *  - Isn't space efficient, as it copies keys heavily.
+ *  - Mutates transition vector kinda nastily
+ *  - Lists, (kGAB_SHAPELIST), stores its shape and does
+ *    everything O(n) when it could be constant time
+ *
+ * Desires from this data structure:
+ *  - Constant time key->idx lookup (or scan through nearby array)
+ *
+ *           [s]
+ *          /  \
+ *      [...] [...]
+ *     /
+ *   [
+ *
+ *   big_int len;
+ *
+ *   gab_value edge;
+ *
+ *   The data array contains the keys, edges, and child values.
+ *
+ *   To add a transition, we have to traverse back *up* the tree to the root.
+ *
+ *   There is no O(log(n)) happening, its just O(n) back up bc each shape
+ *   needs its own node.
+ *
+ *   Maybe I can introduce *shortcut edges* somehow?
+ *
+ *   Most code doesn't traverse down the whole tree, it puts from one shape to
+ * another. That does still require traversing up the tree and copying nodes in
+ * O(n)
+ *
+ *   gab_value data[]
+ *
+ */
 struct gab_oshape {
   struct gab_obj header;
 
@@ -272,17 +285,15 @@ struct gab_ofiber {
 struct gab_ochannel {
   struct gab_obj header;
   /* Number of values held at member *data* */
-  _Atomic(uint64_t) len;
+  _Atomic uint64_t len;
   /* Values held */
-  _Atomic(gab_value *) data;
+  _Atomic(gab_value *)data;
 };
 
 /**
  * @brief A container object, which holds arbitrary data.
  *
- * There are two callbacks:
  *  - one to do cleanup when the object is destroyed
- *  - one to visit children values when doing garbage collection.
  */
 struct gab_obox {
   struct gab_obj header;
@@ -293,14 +304,6 @@ struct gab_obox {
    * This function should release all non-gab resources owned by the box.
    */
   gab_boxdestroy_f do_destroy;
-
-  /**
-   * A callback called when the object is visited during gc.
-   *
-   * This function should be used to visit all gab_values that are referenced
-   * by the box.
-   */
-  gab_boxvisit_f do_visit;
 
   /**
    * The type of the box.
@@ -328,7 +331,7 @@ struct gab_oprototype {
   /**
    * The number of arguments, captures, slots (stack space) and locals.
    */
-  unsigned char narguments, nupvalues, nslots, nlocals;
+  uint8_t narguments, nupvalues, nslots, nlocals;
 
   /**
    * The source file this prototype is from.
@@ -399,6 +402,7 @@ struct gab_gc {
   d_gab_obj overflow_rc;
   v_gab_obj dead;
   gab_value msg[GAB_GCNEPOCHS];
+  gab_value mac[GAB_GCNEPOCHS];
 };
 
 typedef enum gab_token {
@@ -468,8 +472,6 @@ void gab_srcdestroy(struct gab_src *self);
  * needed for the gab environment.
  */
 struct gab_eg {
-  _Atomic int8_t njobs;
-
   uint64_t hash_seed;
 
   v_gab_value scratch;
@@ -478,46 +480,89 @@ struct gab_eg {
 
   gab_value types[kGAB_NKINDS];
 
-  struct gab_sig {
-    _Atomic int8_t schedule;
-    _Atomic int8_t signal;
+  // The arguments to the engine.
+  gab_value args;
+
+  // An atomic struct which tracks the state of
+  // scheduling/aliveness in the workers.
+  // These are swapped/compared as a whole.
+  // Neat, all our state is atomic!
+  _Atomic struct gab_sig {
+    int32_t mask;
+    int8_t schedule;
+    int8_t signal;
   } sig;
 
-  const char *resroots[cGAB_RESOURCE_MAX];
+  // Synchronization field for waking the GC
+  // thread to do do work.
+  cnd_t gc_cnd;
+  mtx_t gc_mtx;
 
+  // Resources and roots define where/how packages and modules
+  // are discovered.
+  const char *resroots[cGAB_RESOURCE_MAX];
   struct gab_resource res[cGAB_RESOURCE_MAX];
 
+  // Garbage Collection state
   struct gab_gc gc;
 
+  // The global message state.
+  // A gab record which holds all message specializations in the system.
   _Atomic gab_value messages;
+  // A value incremented whenever the messages record is changed.
+  // Used to check inline caches.
   _Atomic uint64_t messages_epoch;
+
+  _Atomic gab_value macros;
+  _Atomic uint64_t macros_epoch;
+
+  // The global work queue, where jobs push fibers to other jobs.
   gab_value work_channel;
 
+  // The root shape and a mutex locking it.
   mtx_t shapes_mtx;
   gab_value shapes;
 
-  mtx_t strings_mtx;
+  // Intern table of strings.
   d_strings strings;
 
+  // Table of compiled source files.
   mtx_t sources_mtx;
   d_gab_src sources;
 
+  // Table of cached module results.
   mtx_t modules_mtx;
   d_gab_modules modules;
 
+  // Configured busywait value, and number of jobs.
   uint32_t wait, len;
 
+  // Data for each job.
   struct gab_job {
+    // Unique thread identifier.
     thrd_t td;
 
-    uint8_t alive;
-
+    // GC epoch.
     uint32_t epoch;
+    // Used by gab_gclock() to prevent collection while locked > 0.
+    // Useful when allocating a lot of gab objects at once, and they
+    // need to be kept alive until you're done.
+    // While locked, gab objects are queued into the jobs lock_keep vector.
+    // When the lock is released, the vector is flushed into the GC algorithm.
     int32_t locked;
     v_gab_value lock_keep;
 
+    // A work channel specific to this job. Useful for sending work to a
+    // specific job, instead of any available.
+    gab_value work_channel;
+
+    // Local work queue. When work is taken from any work channel
+    // (global or local), it is tracked in this queue. Once a fiber has
+    // begun running in a job, *it may not migrate*. If it yields, it returns
+    // to this queue.
     q_gab_value queue;
 
+    // GC inc/dec ref count tracking buffer.
     struct gab_gcbuf {
       uint64_t len;
       struct gab_obj *data[cGAB_GC_MOD_BUFF_MAX];
@@ -541,9 +586,9 @@ bool gab_gctrigger(struct gab_triple gab);
 
 void gab_gcdocollect(struct gab_triple gab);
 
-void gab_gcassertdone(struct gab_triple gab);
+void gab_gcloglen(struct gab_triple gab);
 
-typedef void (*gab_gc_visitor)(struct gab_triple gab, struct gab_obj *obj);
+void gab_gcassertdone(struct gab_triple gab);
 
 enum variable_flag {
   fLOCAL_LOCAL = 1 << 0,
@@ -552,6 +597,7 @@ enum variable_flag {
   fLOCAL_REST = 1 << 3,
 };
 
+// Allocate/deallocate a gab_object.
 static inline void *gab_egalloc(struct gab_triple gab, struct gab_obj *obj,
                                 uint64_t size) {
   if (size == 0) {
@@ -579,10 +625,15 @@ struct gab_err_argt {
   int wkid;
 };
 
+#define T struct gab_err_argt
+#define NAME err
+#define V_THREADSAFE
+#include "vector.h"
+
 /*
  * @brief Construct a panic.
  */
-gab_value gab_vspanicf(struct gab_triple gab, va_list vastruct,
+GAB_API gab_value gab_vspanicf(struct gab_triple gab, va_list vastruct,
                        struct gab_err_argt args);
 
 /**
@@ -657,6 +708,41 @@ static inline int gsnprintf_through(char **dst, size_t *n, const char *fmt,
 
 bool gab_wkspawn(struct gab_triple gab, gab_value fiber);
 
+void gab_jbalive(struct gab_triple gab, int32_t wkid);
+
+void gab_jbunalive(struct gab_triple gab, int32_t wkid);
+
 gab_value __gab_shape(struct gab_triple gab, uint64_t len);
 
+static inline uint8_t *proto_srcbegin(struct gab_triple gab,
+                                      struct gab_oprototype *p) {
+  return p->src->thread_bytecode[gab.wkid].bytecode;
+}
+
+static inline gab_value *proto_ks(struct gab_triple gab,
+                                  struct gab_oprototype *p) {
+  return p->src->thread_bytecode[gab.wkid].constants;
+}
+
+static inline uint8_t *proto_ip(struct gab_triple gab,
+                                struct gab_oprototype *p) {
+  return proto_srcbegin(gab, p) + p->offset;
+}
+
+cGAB_VM_OPCODE_ATTRIBUTES
+union gab_value_pair vm_eerror(struct gab_triple *__gab, struct gab_vm *__vm,
+                               uint8_t *__ip, gab_value *__kb, gab_value *__fb,
+                               gab_value *__sp);
+
+cGAB_VM_OPCODE_ATTRIBUTES
+union gab_value_pair vm_ok(struct gab_triple *__gab, struct gab_vm *__vm,
+                           uint8_t *__ip, gab_value *__kb, gab_value *__fb,
+                           gab_value *__sp);
+
+union gab_value_pair vm_terminate(struct gab_triple gab, const char *fmt, ...);
+
+union gab_value_pair vm_error(struct gab_triple gab, enum gab_status s,
+                              const char *fmt, ...);
+
+union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
 #endif

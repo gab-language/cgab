@@ -1,0 +1,40 @@
+# ring.gab
+# Message-passing ring - tests channel throughput and scheduler overhead.
+# Spawns N fibers in a ring. Each fiber reads a value from its inbox,
+# increments it, and forwards it to the next fiber. A token is passed
+# around the ring M times. The canonical Erlang/BEAM concurrency benchmark.
+
+n_fibers := 1000
+n_laps   := 10
+
+# Build N channels, one per fiber
+channels := Ranges.make(0, n_fibers).reduce(
+  [],
+  (acc, _) :: acc.put(acc.len, Channels.make))
+
+# Spawn each fiber: loop n_laps times, reading from channel[i]
+# and forwarding to channel[(i+1) % n_fibers]
+fibers := Ranges.make(0, n_fibers).map (i) :: do
+  inbox  := channels.at(i).unwrap
+  outbox := channels.at((i + 1) % n_fibers).unwrap
+  Fibers.make () :: do
+    Ranges.make(0, n_laps).each (l) :: do
+      val := inbox >! .unwrap
+      outbox <! val
+    end
+  end
+end
+
+# The entry and exit point is channel[0]
+entry := channels.at(0).unwrap
+
+# Inject the token once — the ring fibers carry it for all n_laps
+entry <! 0
+
+fibers
+  .slice(n_fibers - 1)
+  .each(f :: f.await)
+
+entry >!
+
+'done'.println

@@ -68,7 +68,7 @@
 
 #define gab_osproc(cmd, ...)                                                   \
   ({                                                                           \
-    const char *_args[] = {__VA_ARGS__};                                             \
+    const char *_args[] = {__VA_ARGS__};                                       \
     gab_nosproc(cmd, sizeof(_args) / sizeof(char *), _args);                   \
   })
 
@@ -177,7 +177,7 @@ GAB_API_INLINE const char *gab_osexepath() {
 
 #define gab_osdynlib void *
 #define gab_oslibopen(path) dlopen(path, RTLD_NOW)
-#define gab_oslibfind(dynlib, name) (void (*)(void)) dlsym(dynlib, name)
+#define gab_oslibfind(dynlib, name) (void *)dlsym(dynlib, name)
 
 GAB_API_INLINE const int gab_osmkdirp(const char *path) {
   char *dup = strdup(path);
@@ -300,6 +300,8 @@ GAB_API_INLINE int gab_nosproc(char *cmd, size_t nargs, const char *args[]) {
 }
 
 #elifdef GAB_PLATFORM_WIN
+#include <delayimp.h>
+#include <direct.h>
 #include <io.h>
 #include <shlobj.h>
 #include <signal.h>
@@ -307,7 +309,61 @@ GAB_API_INLINE int gab_nosproc(char *cmd, size_t nargs, const char *args[]) {
 #include <tchar.h>
 #include <wchar.h>
 #include <windows.h>
-#include <direct.h>
+
+#ifndef GAB_CORE
+thread_local static DWORD g_oldProtect = 0;
+ExternC FARPROC gab_delayload(unsigned dliNotify, PDelayLoadInfo pdli) {
+  switch (dliNotify) {
+  case dliNotePreLoadLibrary:
+    // 1. Alias "gab" to the current running process (the .exe)
+    if (_stricmp(pdli->szDll, "gab") == 0) {
+      return (FARPROC)GetModuleHandle(NULL);
+    }
+    break;
+
+  case dliNotePreGetProcAddress:
+    // 2. This is called right before the helper tries to resolve the symbol
+    // and write to the IAT. We make the IAT entry writable here.
+    if (pdli->ppfn) {
+      if (!VirtualProtect(pdli->ppfn, sizeof(void *), PAGE_READWRITE,
+                          &g_oldProtect)) {
+        printf("GAB_DELAY: Failed to unprotect IAT at %p (Error: %lu)\n",
+               pdli->ppfn, GetLastError());
+      }
+    }
+    break;
+
+  case dliNoteEndProcessing:
+    // 3. This is called after the helper has successfully written the address
+    // to *pdli->ppfn. We restore the original Read-Only protection now.
+    if (g_oldProtect != 0 && pdli->ppfn) {
+      DWORD dummy;
+      if (!VirtualProtect(pdli->ppfn, sizeof(void *), g_oldProtect, &dummy)) {
+        printf("GAB_DELAY: Failed to restore protection at %p\n", pdli->ppfn);
+      }
+      g_oldProtect = 0; // Reset state
+    }
+    break;
+
+  case dliFailLoadLib:
+    printf("GAB_DELAY: Critical Failure - Could not load library %s\n",
+           pdli->szDll);
+    break;
+
+  case dliFailGetProc:
+    printf("GAB_DELAY: Critical Failure - Could not find function %s\n",
+           pdli->dlp.szProcName);
+    break;
+
+  default:
+    return NULL;
+  }
+
+  return NULL;
+}
+PfnDliHook __pfnDliNotifyHook2 = gab_delayload;
+PfnDliHook __pfnDliFailureHook2 = gab_delayload;
+#endif
 
 #define gab_ossignal(sig, handler) signal(sig, handler)
 
@@ -315,9 +371,11 @@ GAB_API_INLINE int gab_nosproc(char *cmd, size_t nargs, const char *args[]) {
 #define gab_osfisatty(f) _isatty(_fileno(f))
 
 #define gab_osdynlib HMODULE
-#define gab_oslibopen(path) LoadLibraryA(path)
-#define gab_oslibfind(dynlib, name)                                            \
-  ((void (*)(void))GetProcAddress(dynlib, name))
+#define gab_oslibfind(dynlib, name) ((PVOID)GetProcAddress(dynlib, name))
+
+static inline void *gab_oslibopen(const char *path) {
+  return LoadLibraryA(path);
+}
 
 GAB_API_INLINE const int gab_osmkdirp(const char *path) {
   char *dup = strdup(path);
@@ -340,7 +398,7 @@ GAB_API_INLINE const int gab_osmkdirp(const char *path) {
     if (!strlen(dup))
       goto next;
 
-    int res = _mkdir(dup, 0755);
+    int res = _mkdir(dup);
 
     if (res < 0 && errno != EEXIST)
       return free(dup), errno;
@@ -364,7 +422,6 @@ GAB_API_INLINE const bool gab_osrm(const char *path) {
 
   return 0;
 }
-
 
 GAB_API_INLINE const char *gab_osexepath() {
   DWORD len = GetModuleFileNameA(NULL, _exepath, GAB_MAXEXEPATH);

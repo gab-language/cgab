@@ -1,5 +1,9 @@
-function Fib(n)
-  return n < 2 and n or Fib(n - 1) + Fib(n - 2)
+local function fib(n)
+  if n < 2 then
+    return n
+  else
+    return fib(n - 1) + fib(n - 2)
+  end
 end
 
-Fib(35)
+print(fib(36))

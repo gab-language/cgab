@@ -1,3 +1,27 @@
+/**
+ *  MIT License
+ *
+ *  Copyright (c) 2023 Teddy Randby
+ *
+ *  Permission is hereby granted, free of charge, to any person obtaining a copy
+ *  of this software and associated documentation files (the "Software"), to deal
+ *  in the Software without restriction, including without limitation the rights
+ *  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ *  copies of the Software, and to permit persons to whom the Software is
+ *  furnished to do so, subject to the following conditions:
+ *
+ *  The above copyright notice and this permission notice shall be included in all
+ *  copies or substantial portions of the Software.
+ *
+ *  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ *  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ *  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ *  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ *  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ *  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ *  SOFTWARE.
+ */
+
 #define BENCODE_IMPL
 #include "bencode-c/bencode.h"
 
@@ -21,19 +45,19 @@ int push_value(struct gab_triple gab, struct bencode *bncd,
   case BENCODE_LIST_BEGIN: {
     size_t i = 0, save = stack->len;
 
-    // TODO: Handle errors here.
+    // TODO @cgab @api: Handle errors here.
     while (push_value(gab, bncd, stack) != BENCODE_LIST_END)
       i++;
 
     stack->len -= i;
 
-    v_gab_value_push(stack, gab_list(gab, i, stack->data + save));
+    v_gab_value_push(stack, gab_list(gab, 1, i, stack->data + save));
     break;
   }
   case BENCODE_DICT_BEGIN: {
     size_t i = 0, save = stack->len, res = 0;
 
-    // TODO: Handle errors here.
+    // TODO @cgab @api: Handle errors here.
     for (;;)
       switch ((res = push_value(gab, bncd, stack))) {
       case BENCODE_DICT_END:

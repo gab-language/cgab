@@ -3,15 +3,15 @@
 
 lsp\messages\into:.def(
   Records.t
-  () => do
-    method = self.at 'method' .unwrap
-    (_, params) = self.at 'params'
+  () :: do
+    method := self.at 'method' .unwrap
+    (_, params) := self.at 'params'
 
-    method = method.or "" .to\m
-    params = params.or {}
-    (ok, id) = self .at 'id'
+    method := method.or "" .to\m
+    params := params.or {}
+    (ok, id) := self .at 'id'
 
-    id = ok.== ok: .and id .or 1
+    id := ok.== ok: .and id .or 1
 
     {
       method nil:,
@@ -22,7 +22,7 @@ lsp\messages\into:.def(
 
 def\lsp\handler:.def(
   Strings.t
-  handler => do
+  handler :: do
     lsp\handle:.def(
       Shapes.make(self.to\m, id:, params:)
       handler)
@@ -30,10 +30,10 @@ def\lsp\handler:.def(
 
 # Dispatch a message into its handler, if we have one
 lsp\dispatch:.def(
-  server => do
-    message = self
+  server :: do
+    message := self
     
-    lsp\handle:.at message .ok .then () => do
+    lsp\handle:.at message .ok .then () :: do
         server.log("Dispatch" lsp\handle:.at message)
         (ok: message.lsp\handle server)
     end
@@ -44,13 +44,13 @@ lsp\dispatch:.def(
 # INITIALIZATION
 #
 
-TextDocumentSyncKind = {
+TextDocumentSyncKind := {
   NONE: 0
   FULL: 1
   INCREMENTAL: 2
 }
 
-'initialize' .def\lsp\handler server => do
+'initialize' .def\lsp\handler server :: do
   server.respond(
     self.id,
     {
@@ -69,11 +69,11 @@ TextDocumentSyncKind = {
   server
 end
 
-'initialized' .def\lsp\handler server => do
+'initialized' .def\lsp\handler server :: do
   server
 end
 
-'shutdown' .def\lsp\handler server => do
+'shutdown' .def\lsp\handler server :: do
   server.log("Shutting down")
 
   server.server\open_ch.close
@@ -87,55 +87,55 @@ end
 # SYNCHRONIZATION
 #
 
-"textDocument/didOpen" .def\lsp\handler server => do
-  uri = self.params.at 'textDocument' .unwrap.at 'uri' .unwrap
+"textDocument/didOpen" .def\lsp\handler server :: do
+  uri := self.params.at 'textDocument' .unwrap.at 'uri' .unwrap
   text= self.params.at 'textDocument' .unwrap.at 'text' .unwrap
 
   server.log("Opened", uri)
 
-  data = server.server\data.put(uri, text)
+  data := server.server\data.put(uri, text)
 
-  server = server.put(server\data: data)
+  server := server.put(server\data: data)
 
   server.diagnostics\queue(text, uri)
 
   server
 end
 
-"textDocument/didSave" .def\lsp\handler server => do
-  uri = self.params.at 'textDocument' .unwrap.at 'uri' .unwrap
-  (ok, text) = self.params.at 'text'
+"textDocument/didSave" .def\lsp\handler server :: do
+  uri := self.params.at 'textDocument' .unwrap.at 'uri' .unwrap
+  (ok, text) := self.params.at 'text'
 
   server.log("Saved", uri)
 
-  data = server.server\data.put(uri, text)
+  data := server.server\data.put(uri, text)
 
-  updated_server = server.put(server\data: data)
+  updated_server := server.put(server\data: data)
 
   updated_server.diagnostics\queue(text uri)
 
   (ok, updated_server) .unwrap.or (server)
 end
 
-"textDocument/didClose" .def\lsp\handler server => do
-  # TODO: Delete documents from the server data on load
+"textDocument/didClose" .def\lsp\handler server :: do
+  # TODO @lsp: Delete documents from the server data on load
   server
 end
 
-"textDocument/didChange" .def\lsp\handler server => do
-  uri = self.params.at 'textDocument' .unwrap.at 'uri' .unwrap
-  (ok, changes) = self.params.at 'contentChanges'
+"textDocument/didChange" .def\lsp\handler server :: do
+  uri := self.params.at 'textDocument' .unwrap.at 'uri' .unwrap
+  (ok, changes) := self.params.at 'contentChanges'
 
   ok
-    .then () => do
+    .then () :: do
       server.log("Changed", uri)
-      text = changes.at 0 .unwrap .at "text" .unwrap
+      text := changes.at 0 .unwrap .at "text" .unwrap
 
-      updated_server = server.put_via(server\data: uri, text)
+      updated_server := server.put_via(server\data: uri, text)
 
       updated_server.diagnostics\queue(text uri)
 
-      # TODO: Handle incremental changes in documents
+      # TODO @lsp: Handle incremental changes in documents
       updated_server
     end
     .or server

@@ -1,8 +1,28 @@
+/**
+ *  MIT License
+ *
+ *  Copyright (c) 2023-2026 Teddy Randby
+ *
+ *  Permission is hereby granted, free of charge, to any person obtaining a copy
+ *  of this software and associated documentation files (the "Software"), to
+ * deal in the Software without restriction, including without limitation the
+ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+ * sell copies of the Software, and to permit persons to whom the Software is
+ *  furnished to do so, subject to the following conditions:
+ *
+ *  The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ *  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ *  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ *  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ *  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ *  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+ * IN THE SOFTWARE.
+ */
 #include "gab.h"
 #include "llhttp.h"
-
-#include "furi/code/furi/furi.h"
-#include "platform.h"
 
 #define M_HTTP_VERSION "http\\version"
 #define M_HTTP_METHOD "http\\method"
@@ -10,12 +30,6 @@
 #define M_HTTP_URL "http\\uri"
 #define M_HTTP_BODY "http\\body"
 #define M_HTTP_STATUS "http\\status"
-
-#define M_URL_SCHEME "uri\\scheme"
-#define M_URL_AUTHORITY "uri\\authority"
-#define M_URL_PATH "uri\\path"
-#define M_URL_QUERY "uri\\query"
-#define M_URL_FRAGMENT "uri\\fragment"
 
 #define MAX_SLICES 128
 
@@ -177,77 +191,6 @@ gab_value build_method(llhttp_t *parser) {
   }
 }
 
-gab_value furi_sv_to_value(struct gab_triple gab, furi_sv sv) {
-  return gab_nstring(gab, furi_sv_length(sv), sv.begin);
-}
-
-gab_value build_path(struct gab_triple gab, furi_sv path) {
-  v_gab_value elems = {0};
-  for (furi_path_iter iter = furi_make_path_iter_begin(path);
-       !furi_path_iter_is_done(iter); furi_path_iter_next(&iter)) {
-    v_gab_value_push(&elems,
-                     furi_sv_to_value(gab, furi_path_iter_get_value(iter)));
-  }
-  if (elems.len) {
-  gab_value vpath = gab_list(gab, elems.len, elems.data);
-  v_gab_value_destroy(&elems);
-  return vpath;
-  } else {
-    return gab_listof(gab);
-  }
-};
-
-gab_value build_query(struct gab_triple gab, furi_sv query) {
-  v_gab_value elems = {0};
-
-  for (furi_query_iter iter = furi_make_query_iter_begin(query);
-       !furi_query_iter_is_done(iter); furi_query_iter_next(&iter)) {
-
-    furi_query_iter_value elem = furi_query_iter_get_value(iter);
-    v_gab_value_push(&elems, furi_sv_to_value(gab, elem.key));
-    v_gab_value_push(&elems, furi_sv_to_value(gab, elem.value));
-  }
-
-  if (elems.len) {
-    gab_value vquery =
-        gab_record(gab, 2, elems.len / 2, elems.data, elems.data + 1);
-    v_gab_value_destroy(&elems);
-    return vquery;
-  } else {
-    return gab_listof(gab);
-  }
-};
-
-gab_value build_url(struct gab_triple gab, const char *ptr, size_t len) {
-  furi_uri_split split = furi_split_uri(furi_make_sv(ptr, ptr + len));
-
-  v_gab_value kvps = {0};
-
-  if (furi_sv_is_null(split.path))
-    return gab_cundefined;
-
-  v_gab_value_push(&kvps, gab_message(gab, M_URL_SCHEME));
-  v_gab_value_push(&kvps, furi_sv_to_value(gab, split.scheme));
-
-  // TODO: Pull this out appropriately
-  v_gab_value_push(&kvps, gab_message(gab, M_URL_AUTHORITY));
-  v_gab_value_push(&kvps, furi_sv_to_value(gab, split.authority));
-
-  v_gab_value_push(&kvps, gab_message(gab, M_URL_PATH));
-  v_gab_value_push(&kvps, build_path(gab, split.path));
-
-  v_gab_value_push(&kvps, gab_message(gab, M_URL_QUERY));
-  v_gab_value_push(&kvps, build_query(gab, split.query));
-
-  v_gab_value_push(&kvps, gab_message(gab, M_URL_FRAGMENT));
-  v_gab_value_push(&kvps, furi_sv_to_value(gab, split.fragment));
-
-  gab_value url = gab_record(gab, 2, kvps.len / 2, kvps.data, kvps.data + 1);
-  v_gab_value_destroy(&kvps);
-
-  return url;
-}
-
 gab_value build_headers(struct ParserData *pd) {
   if (pd->nheaders) {
     gab_value headers[pd->nheaders];
@@ -265,6 +208,18 @@ gab_value build_headers(struct ParserData *pd) {
     return gab_record(pd->gab, 2, nheaders, headers, headers + 1);
   } else {
     return gab_listof(pd->gab);
+  }
+}
+
+#define switch_status_to_message(code, name, desc)                             \
+  case code:                                                                   \
+    return gab_message(gab, #name);
+
+gab_value build_codemessage(struct gab_triple gab, int code) {
+  switch (code) {
+    HTTP_STATUS_MAP(switch_status_to_message);
+  default:
+    return gab_cundefined;
   }
 }
 
@@ -289,9 +244,8 @@ gab_value build_http(llhttp_t *parser) {
 
         gab_message(pd->gab, M_HTTP_URL),
         gab_nstring(pd->gab, pd->url.len, pd->url.ptr),
-
         gab_message(pd->gab, M_HTTP_BODY),
-        gab_nstring(pd->gab, pd->body.len, pd->body.ptr),
+        gab_nbinary(pd->gab, pd->body.len, (const uint8_t *)pd->body.ptr),
     };
 
     gab_value rec = gab_record(
@@ -306,13 +260,13 @@ gab_value build_http(llhttp_t *parser) {
                    llhttp_get_http_minor(parser) / 10.0),
 
         gab_message(pd->gab, M_HTTP_STATUS),
-        gab_number(llhttp_get_status_code(parser)),
+        build_codemessage(pd->gab, llhttp_get_status_code(parser)),
 
         gab_message(pd->gab, M_HTTP_HEADERS),
         build_headers(pd),
 
         gab_message(pd->gab, M_HTTP_BODY),
-        gab_nstring(pd->gab, pd->body.len, pd->body.ptr),
+        gab_nbinary(pd->gab, pd->body.len, (const uint8_t *)pd->body.ptr),
     };
 
     gab_value rec = gab_record(
@@ -325,17 +279,17 @@ gab_value build_http(llhttp_t *parser) {
   assert(false && "UNREACHABLE");
 }
 
-GAB_DYNLIB_NATIVE_FN(uri, decode) {
-  gab_value vuri = gab_arg(0);
+#define defstatus_handlers(code, name, desc)                                   \
+  GAB_DYNLIB_NATIVE_FN(http, to_http_code_##name) {                            \
+    gab_push(gab, gab_number(code));                                           \
+    return gab_union_cvalid(gab_nil);                                          \
+  }                                                                            \
+  GAB_DYNLIB_NATIVE_FN(http, to_http_status_##name) {                          \
+    gab_push(gab, gab_string(gab, #name));                                     \
+    return gab_union_cvalid(gab_nil);                                          \
+  }
 
-  gab_value res = build_url(gab, gab_strdata(&vuri), gab_strlen(vuri));
-  if (res == gab_cundefined)
-    return gab_vmpush(gab_thisvm(gab), gab_err,
-                      gab_string(gab, "Failed to parse uri")),
-           gab_union_cvalid(gab_nil);
-  else
-    return gab_vmpush(gab_thisvm(gab), gab_ok, res), gab_union_cvalid(gab_nil);
-}
+HTTP_STATUS_MAP(defstatus_handlers);
 
 GAB_DYNLIB_NATIVE_FN(http, decode) {
   gab_value vreq = gab_arg(0);
@@ -367,20 +321,29 @@ GAB_DYNLIB_NATIVE_FN(http, decode) {
   return gab_union_cvalid(gab_nil);
 };
 
-GAB_DYNLIB_MAIN_FN {
-  gab_def(gab,
-          {
-              gab_message(gab, "as\\http"),
-              gab_type(gab, kGAB_STRING),
-              gab_snative(gab, "as\\http", gab_mod_http_decode),
-          },
-          {
-              gab_message(gab, "as\\uri"),
-              gab_type(gab, kGAB_STRING),
-              gab_snative(gab, "as\\uri", gab_mod_uri_decode),
-          });
+#define defstatus_impls(code, name, desc)                                      \
+  {                                                                            \
+      gab_message(gab, "to\\http\\code"),                                      \
+      gab_message(gab, "http\\" #name),                                         \
+      gab_snative(gab, "to\\http\\code", gab_mod_http_to_http_code_##name),    \
+  },                                                                           \
+      {                                                                        \
+          gab_message(gab, "to\\http\\status"),                                \
+          gab_message(gab, "http\\" #name),                                     \
+          gab_snative(gab, "to\\http\\status",                                 \
+                      gab_mod_http_to_http_status_##name),                     \
+      },
 
-  gab_value res[] = {gab_ok};
+GAB_DYNLIB_MAIN_FN {
+  gab_value mod = gab_message(gab, "http");
+
+  gab_def(gab, HTTP_STATUS_MAP(defstatus_impls){
+                   gab_message(gab, "as\\http"),
+                   gab_type(gab, kGAB_BINARY),
+                   gab_snative(gab, "as\\http", gab_mod_http_decode),
+               });
+
+  gab_value res[] = {gab_ok, mod};
 
   return (union gab_value_pair){
       .status = gab_cvalid,

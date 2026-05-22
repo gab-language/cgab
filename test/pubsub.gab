@@ -1,0 +1,81 @@
+Broker := broker:
+
+make: .def (Broker, () :: do
+  ch := Channels.make
+
+  loop := (state) :: do
+    (cmd, args*) := ch >! .unwrap
+    next_state := (cmd, state, args*) .handle
+    self.(next_state)
+  end
+
+  Fibers.make () :: loop.({})
+
+  ch
+end)
+
+handle: .defcase {
+  broker\subscribe: (state, topic, ch) :: do
+    state.put_via_by(topic subs :: subs.cons ch)
+  end
+
+  broker\unsubscribe: (state, topic, ch) :: do
+    state.at(topic)
+      .then(() :: do
+
+        after := state.put_by(topic, subs :: subs.filter(c :: c == ch !))
+        after
+      end)
+      .or(state)
+  end
+
+  broker\publish: (state, topic, event) :: do
+    state.at(topic)
+      .then(subs :: do
+        subs.each sub :: do
+          Fibers.make () :: ok := sub <! event
+        end
+      end)
+
+    state
+  end
+}
+
+t: .def (Broker, Channels.t)
+
+[Broker.t] .defmodule {
+  broker\subscribe: (topic, ch) :: do
+    self <! (broker\subscribe: topic ch)
+  end
+
+  broker\unsubscribe: (topic, ch) :: do
+    self <! (broker\unsubscribe: topic ch)
+  end
+
+  broker\publish: (topic, event) :: do
+    self <! (broker\publish: topic event)
+  end
+}
+
+Broker
+
+broker := Broker.make
+
+news_reader  := Channels.make
+sport_reader := Channels.make
+all_reader   := Channels.make
+
+broker.broker\subscribe(news:  news_reader)
+broker.broker\subscribe(sport: sport_reader)
+broker.broker\subscribe(news:  all_reader)
+broker.broker\subscribe(sport: all_reader)
+
+broker.broker\publish(news:  'Gab 1.0 released')
+broker.broker\publish(sport: 'Final score: 3-1')
+broker.broker\publish(news:  'New example published')
+
+news_reader  >! .unwrap.println   # :: Gab 1.0 released
+all_reader   >! .unwrap.println   # :: Gab 1.0 released  (or 3-1, delivery order not guaranteed)
+sport_reader >! .unwrap.println   # :: Final score: 3-1
+all_reader   >! .unwrap.println
+news_reader  >! .unwrap.println 

@@ -1,21 +1,21 @@
 dofor: .defcase {
-  ok: (seq\i, seq\v, xs) => do
-    (ok, seq\v, nxs*) = seq\i.seq\next seq\v
+  ok: (seq\i, seq\v, xs) :: do
+    (ok, seq\v, nxs*) := seq\i.seq\next seq\v
 
     (xs*, ok.dofor(seq\i, seq\v, nxs))
   end
-  none: (seq\i, seq\v, xs) => do
+  none: (seq\i, seq\v, xs) :: do
     xs*
   end
 }
 
-for: .def xf => do
-  (ok, seq\v, xs*) = self.seq\init
+for: .def xf :: do
+  (ok, seq\v, xs*) := self.seq\init
 
   ok.dofor(self, seq\v, xs)
 end
 
-nums = [1 2 3 4]
+nums := [1 2 3 4]
 
 # Small little macro proposal
 # Is all this hullaballo even necessary?
@@ -25,8 +25,8 @@ nums = [1 2 3 4]
 # at inlining to solve creating local blocks and slowing
 # control flow?
 
-def: .defmacro (m, ts, args, blk) => ~~do
-  (!!m).def(!!(ts*), !!args => !!blk) 
+def: .defmacro (m, ts, args, blk) :: ~~do
+  (!!m).def(!!(ts*), !!args :: !!blk) 
 end
 #---
 #def for:[Records.t]() do
@@ -36,8 +36,8 @@ end
 
 # Define a unique message at compile time
 # Dispatch on said message in this when
-when: .defmacro (cases) => do
-  m = Messages.gen
+when: .defmacro (cases) :: do
+  m := Messages.gen
   m.defcase cases
   quote do unquote(self).(unquote(m.to\s)) end
 end

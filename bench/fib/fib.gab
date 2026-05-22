@@ -1,10 +1,18 @@
+'github.com/gab-language/cgab@0.1.0'.use 'Io'
+
+# fib.gab
+# Recursive Fibonacci - tests raw message dispatch and arithmetic.
+# No allocation, no concurrency. Establishes a dispatch baseline.
+#
+# Compare against: lua, python3, ruby
+
 do_fib: .defcase {
-  true: n => n
-  false: n => (n - 1).fib + (n - 2).fib
+  true:  n :: n
+  false: n :: (n - 1).fib + (n - 2).fib
 }
 
-fib: .def (
-  "gab\number"
-  () => (self < 2) .do_fib self)
+fib: .def (Numbers.t, () :: do
+  (self < 2) .do_fib self
+end)
 
-30.fib
+36.fib.println

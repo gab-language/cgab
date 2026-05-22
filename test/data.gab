@@ -1,9 +1,126 @@
-dc = 'carrow'.use
+Socket := IO.Sockets
+Store  := store:
 
-nums = dc.Arrays.make(i8: 1 2 3)
-other_nums = dc.Arrays.make(i8: 3 2 1)
+# --- Store actor ---
 
-nums.to\s.println
-other_nums.to\s.println
+make: .def (Store, () :: do
+  ch := Channels.make
 
-(nums + other_nums ).to\s.println
+  loop := (state) :: do
+    (cmd, reply, args*) := ch >! .unwrap
+    next_state := (cmd, reply, state, args*) .handle
+    self.(next_state)
+  end
+
+  Fibers.make () :: loop.({})
+
+  ch
+end)
+
+handle: .defcase {
+  store\get: (reply, state, k) :: do
+    reply <! (state.at k)
+    state
+  end
+
+  store\set: (reply, state, k, v) :: do
+    reply <! ok:
+    state.put(k, v)
+  end
+
+  store\delete: (reply, state, k) :: do
+    reply <! (state.at k)
+    state.take(k)
+  end
+}
+
+t: .def (Store, Channels.t)
+
+[Store.t] .defmodule {
+  store\get: (k) :: do
+    reply := Channels.make
+    self <! (store\get: reply k)
+    reply >! .unwrap
+  end
+
+  store\set: (k, v) :: do
+    reply := Channels.make
+    self <! (store\set: reply k v)
+    reply >! .unwrap
+  end
+
+  store\delete: (k) :: do
+    reply := Channels.make
+    self <! (store\delete: reply k)
+    reply >! .unwrap
+  end
+
+  start: (host, port) :: do
+    server := Socket.make(tcp:).unwrap
+    server.bind(host port).unwrap
+    server.listen(128).unwrap
+    'Listening on $:$'.sprintf(host port).println
+    store := self
+    Fibers.make () :: server.accept_loop(store)
+  end
+}
+
+run_command: .defcase {
+  GET: (socket, store, key, rest*) :: do
+    store.store\get key
+      .then((val) :: 'OK $'.sprintf(val))
+      .else(()    :: 'NONE')
+  end
+
+  SET: (socket, store, key, val, rest*) :: do
+    store.store\set (key, val)
+      .then(() :: 'OK')
+  end
+
+  DELETE: (socket, store, key, rest*) :: do
+    store.store\delete key
+      .then((val) :: 'OK $'.sprintf(val))
+      .else(()    :: 'NONE')
+  end
+}
+
+serve_client: .def (IO.Sockets.t, (store) :: do
+  sock := self
+  'Connected $'.sprintf(sock).println
+
+  loop := () :: do
+    recurse := self
+
+    sock
+      .until('\n'.to\b)
+      .then(line :: do
+        (cmd, args*) := line.as\s.unwrap.trim.split(' ')
+
+        response := cmd.to\m.run_command(sock, store, args*)
+
+        sock.write('$\n'.sprintf(response).to\b)
+
+        recurse.()
+      end)
+      .else(() :: do
+        'Disconnected $'.sprintf(sock).println
+      end)
+  end
+
+  loop.()
+end)
+
+accept_loop: .def (IO.Sockets.t, (store) :: do
+  server := self
+
+  self.accept
+    .then((client) :: do
+      Fibers.make () :: client.serve_client(store)
+      server.accept_loop(store)
+    end)
+    .else(() :: 'server closed'.println)
+end)
+
+store  := Store.make
+server := store.start('::1' 6379)
+server.await

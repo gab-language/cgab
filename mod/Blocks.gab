@@ -1,7 +1,0 @@
-M = gab\block:
-
-to\block:.def(
-  M.t
-  () => self)
-
-M

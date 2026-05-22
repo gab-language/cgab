@@ -16,7 +16,7 @@ on:
     branches: [ "main" ]
 
 env:
-  version: 0.0.5
+  version: 0.1.0
   GH_TOKEN: ${{ github.token }}
 
 jobs:
@@ -28,13 +28,28 @@ jobs:
         target:
           - x86_64-linux-gnu
           - x86_64-macos-none
-          # - x86_64-windows-gnu
+          - x86_64-windows-gnu
           - aarch64-linux-gnu
           - aarch64-macos-none
-          # - aarch64-windows-gnu
+          - aarch64-windows-gnu
         build_type:
           - release
           - debugoptimized
+        include:
+          - target: x86_64-windows-gnu
+            dlltool: x86_64-w64-mingw32-dlltool -m x86-64
+            cmd: .\build-x86_64-windows-gnu\gab\gab.exe
+          - target: aarch64-windows-gnu
+            dlltool: x86_64-w64-mingw32-dlltool -m arm64
+            cmd: .\build-aarch64-windows-gnu\gab\gab.exe
+          - target: x86_64-linux-gnu
+            cmd: ./build-x86_64-linux-gnu/gab/gab
+          - target: aarch64-linux-gnu
+            cmd: ./build-aarch64-linux-gnu/gab/gab
+          - target: x86_64-macos-none
+            cmd: ./build-x86_64-macos-none/gab/gab
+          - target: aarch64-macos-none
+            cmd: ./build-aarch64-macos-none/gab/gab
 
     steps:
     - uses: actions/checkout@v4
@@ -61,18 +76,30 @@ jobs:
     - name: Install Clide
       run: go install github.com/TeddyRandby/clide@latest
 
+    - name: Install binutils
+      run: sudo apt-get -y install binutils-mingw-w64
+
     - name: Configure
       run: clide configure -b='${{ matrix.build_type }}' -t='${{ matrix.target }}'
 
     - name: Build
-      run: clide build
+      run: DLLTOOL='${{ matrix.dlltool }}' clide build
 
-    - name: Upload Binary Artifact
+    - name: Upload Binary Artifact (NON WINDOWS)
+      if: ${{ !contains(matrix.target, 'windows') }}
       uses: pyTooling/upload-artifact@v4
       with:
         name: 'gab-${{ matrix.build_type }}-${{ matrix.target }}'
         path: 'build-${{ matrix.target }}/gab'
 
+    - name: Upload Binary Artifact (WINDOWS)
+      if: ${{ contains(matrix.target, 'windows') }}
+      uses: pyTooling/upload-artifact@v4
+      with:
+        name: 'gab-${{ matrix.build_type }}-${{ matrix.target }}'
+        path: 'build-${{ matrix.target }}/gab.exe'
+
+    # TODO: Support windows properly here.
     - name: Upload Static Library
       uses: pyTooling/upload-artifact@v4
       with:
@@ -87,6 +114,9 @@ jobs:
 
     - name: Collect modules
       run: cp build-${{ matrix.target }}/mod/* mod
+
+    - name: Create bundle
+      run: ./build-${{matrix.target}}/gab build < bundle
 
     - name: Upload Module Artifacts
       uses: pyTooling/upload-artifact@v4
@@ -130,13 +160,6 @@ jobs:
         uses: pyTooling/download-artifact@v4
         with:
           name: gab-${{ matrix.build_type }}-${{ matrix.target }}-modules
-
-      # - name: Make the binary executable (win)
-      #   if: ${{ contains(matrix.target, 'windows') }}
-      #   run: |
-      #     move gab gab.exe
-      #     where.exe "gab"
-      #     Get-Command ".\gab"
 
       - name: Run help
         run: ${{ matrix.cmd }} help

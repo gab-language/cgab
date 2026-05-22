@@ -1,0 +1,395 @@
+s := 'github.com/gab-language/cgab@0.1.0'.use 'Specs'
+
+'github.com/gab-language/cgab@0.1.0/specs'.use 'seqable.specs'
+
+record\spec := record: .defspec {
+  help:  "
+  An immutable set of key,value pairs. This is the core datastructure of the language.
+
+  In addition to the builtin messages defined in this module, records also respond to their *keys* as messages.
+  ",
+  spec:  s.record
+}
+
+KEY   := s.unknown
+VALUE := s.unknown
+
+record\len: .defspec {
+  help: "
+  Return the number of key-value pairs in the record.
+
+  ```gab
+  [1 2 3].len # :: 3
+  ```
+  ",
+  spec: s.message {
+    receiver:   record\spec
+    message:    len:
+    input:      s.cat
+    output:     s.int
+  },
+}
+
+record\at: .defspec {
+  help:  "
+  Check for a value at the given key. 
+
+  Returns a tuple with the result of the check, and the value if it was found.
+  ```gab
+  (ok value) := { name: 'John Doe' } .at (name:)
+
+  ok    # :: ok:
+  value # :: 'John Doe'
+
+  (ok value) := { name: 'John Doe' } .at (age:)
+
+  ok    # :: none:
+  value # :: nil:
+  ```
+  ",
+  spec:  s.message {
+    receiver:   record\spec,
+    message:    at:,
+    input:      s.unknown,
+    output:     s.option(s.unknown),
+    semantics:  nil:,
+  },
+}
+
+record\has: .defspec {
+  help:
+  "
+  Check if the receiver has the given key. Returns true: if it does, and false otherwise.
+  ```
+  ",
+  spec:  s.message {
+    receiver:   record\spec,
+    message:    has:,
+    input:      KEY,
+    output:     s.boolean,
+    semantics:  nil:,
+  },
+}
+
+record\put: .defspec {
+  help: "
+  Return a new record with the additional key-value pair, or an updated value for an existing key.
+
+  ```gab
+  person := { name: 'John Doe' }
+
+  person := person.put(age: 30)
+
+  person.name # :: 'John Doe'
+  person.age  # :: 30
+  ```
+  ",
+  spec: s.message {
+    receiver:   record\spec
+    message:    put:
+    input:      s.cat('key' KEY, 'value' VALUE)
+    output:     record\spec
+    semantics:  nil:
+  }
+}
+
+record\put_via: .defspec {
+  help: "
+  Traverse nested records with the given `key_path`, eventually performing a final put.
+
+  ```gab
+  person := {
+    mother: := {
+      name: 'Jane Doe' 
+    }
+  }
+
+  person := person.put_via(mother: age: 60)
+
+  person.mother.age # :: 60
+  ```
+
+  This message will create records along the path where none exist.
+
+  ```gab
+  {}.put_via(mother: sister: daugher: relation: 'cousin')
+
+  # :: { mother: { sister: { daughter: { relation: 'cousin' } } } }
+  ```
+  "
+  spec: s.message {
+    receiver:   record\spec
+    message:    put_via:
+    input:      s.cat('key_path' s*KEY, 'value' VALUE)
+    output:     record\spec
+    semantics:  nil:
+  }
+}
+
+record\at_via: .defspec {
+  help: "
+  Get a value by traversing nested maps with the given `key_path`.
+  If any key along the path is missing, returns `none:`
+
+  ```gab
+  (ok, value) := record.at_via(a: long: run: of: keys:)
+  ```
+  "
+  spec: s.message {
+    receiver:   record\spec
+    message:    at_via:
+    input:      s.cat('key_path' s*KEY)
+    output:     s.option(VALUE)
+    semantics:  nil:
+  }
+}
+
+record\put_by: .defspec {
+  help: "
+  Apply a function to the value at key, returning a new record with the returned value from that function at key.
+
+  ```gab
+  person := { age: 30 }
+
+  person := person.put_by(age: age :: age + 1)
+
+  person.age # :: 30
+  ```
+
+  If the key does not exist in the record, then the argument to the block will be `nil:`.
+  "
+  spec: s.message {
+    receiver:  record\spec
+    message:   put_by:
+    input:     s.cat('key' KEY 'f' is\block:)
+    output:    record\spec
+    semantics: nil:
+  }
+}
+
+record\put_via_by: .defspec {
+  help: "
+  Apply a function to the value at `key_path`, returning a new record with the returned value from that function at key_path.
+
+  Combines the behavior of `put_via:` and `put_by:`.
+  "
+  spec: s.message {
+    receiver:  record\spec
+    message:   put_via_by:
+    input:     s.cat('key_path' s*KEY 'f' is\block:)
+    output:    record\spec
+    semantics: nil:
+  }
+}
+
+record\push: .defspec {
+  help: "
+  Return a new record with the given value at the *end* of the record. The key will be the length of the record *before* inserting.
+
+  ```gab
+  arr := [1 2 3] .push 4
+
+  arr # :: [1 2 3 4]
+  ```
+  "
+  spec: s.message {
+    receiver: record\spec
+    message:  push:
+    input:    VALUE
+    output:   record\spec
+    semantics: nil:
+  }
+}
+
+record\pop: .defspec {
+  help: "
+  Return a new record without the *last* key-value pair in the record.
+
+  ```gab
+
+  (ok rec val key) := [1 2 3 4].pop
+
+  ok  # :: ok:
+  rec # :: [1 2 3]
+  val # :: 4
+  key # :: 3
+  ```
+
+  If the record was empty, returns `none:` and an empty record.
+  ```gab
+  [].pop # :: none: []
+  ```
+  "
+  spec: s.message {
+    receiver: record\spec
+    message:  pop:
+    input:    s.cat
+    output:   s.option(
+      s.cat(
+        'record' record\spec
+        'popped_value' VALUE
+        'popped_key' KEY
+      )
+    )
+    semantics: nil:
+  }
+}
+
+record\is\record: .defspec {
+  help: "
+  Returns `true:` if the receiver is a record, and `false:` otherwise.
+  "
+  spec: s.message {
+    receiver: s.unknown 'ANY'
+    message:  is\record:
+    input: s.cat
+    output: s.boolean
+  }
+}
+
+record\is\list: .defspec {
+  help: "
+  Returns `true:` if the receiving record is a list, and false otherwise.
+  "
+  spec: s.message {
+    receiver: record\spec
+    message:  is\list:
+    input: s.cat
+    output: s.boolean
+  }
+}
+
+record\is\dict: .defspec {
+  help: "
+  Returns `true:` if the receiving record is a dict, and false otherwise.
+  "
+  spec: s.message {
+    receiver: record\spec
+    message:  is\dict:
+    input: s.cat
+    output: s.boolean
+  }
+}
+
+record\keys: .defspec {
+  help: "
+  Return a list of all the keys in the record, in order.
+  "
+  spec: s.message {
+    receiver: record\spec
+    message:  keys:
+    input:    s.cat
+    output:   s.list(KEY)
+    semantics: nil:
+  }
+}
+
+record\vals: .defspec {
+  help: "
+  Return a list of all the values in the record, in order.
+  "
+  spec: s.message {
+    receiver: record\spec
+    message:  vals:
+    input:    s.cat
+    output:   s.list(VALUE)
+    semantics: nil:
+  }
+}
+
+record\plus: .defspec {
+  help:
+  "
+  Concatenate the argment record onto self.
+  "
+  spec: s.message {
+    receiver:  record\spec
+    message:   +:
+    input:     s.cat('other' record\spec)
+    output:    record\spec
+    semantics: nil:
+  }
+}
+
+record\slice: .defspec {
+  help:
+  "
+  Return a new record with only the key-value pairs in the range
+  (0, end) or (begin, end).
+  "
+  spec: s.message {
+    receiver: record\spec
+    message:  slice:
+    input:    s.alt(
+      'end'
+      s.cat (
+        'end' s.int
+      )
+      'both'
+      s.cat (
+        'begin' s.int
+        'end'   s.int
+      )
+    )
+    output: record\spec
+    semantics: nil:
+  }
+}
+
+record\: .defspec {
+  help: "
+  Return the value at the key given by the argument. If the key doesn't exist, panic.
+
+  ```gab
+  map := { 'id' 1234 }
+
+  map.('id') # :: 1234
+
+  map.('name') # :: panic
+  ```
+
+  This allows for records to serve as functions of their keys.
+  ",
+  spec: s.message {
+    receiver:   record\spec
+    message:    :
+    input:      KEY
+    output:     VALUE
+    semantics: nil:
+  }
+}
+
+record\take: .defspec {
+  help:
+  "
+  Given a key, return a tuple of a new record *without* the given key, and whatever value was found at that key (if any).
+  "
+  spec: s.message {
+    receiver:  record\spec
+    message:   take:
+    input:     KEY
+    output:    s.cat('remaining' s.record, 'value' VALUE)
+  }
+}
+
+record\seq\init: .defspec {
+  help:
+  "
+  Begin iterating the key-value pairs in the record.
+
+  See the seqable protocol for details.
+  "
+  spec: seqable\seq\init:.spec
+}
+
+record\seq\next: .defspec {
+  help:
+  "
+  Continue iterating the key-value pairs in the record.
+
+  See the seqable protocol for details.
+  "
+  spec: seqable\seq\next:.spec
+}
+
+record\spec

@@ -1,0 +1,19 @@
+# spawn.gab
+# Fiber spawn throughput - tests fiber creation cost.
+# Spawns N fibers each doing trivial work, waits for all to complete
+# via a done channel. Measures raw spawn overhead under load.
+# The BEAM equivalent is the 'parallel bang' benchmark.
+
+n    := 200000
+done := Channels.make
+
+Ranges.make(0, n).each () :: do
+  Fibers.make () :: done <! nil:
+end
+
+# Drain the done channel - wait for all fibers to finish
+Ranges.make(0, n).each () :: do
+  done >!
+end
+
+'done'.println
