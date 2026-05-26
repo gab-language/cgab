@@ -164,14 +164,14 @@ jobs:
         os: 
           - ubuntu-latest
           - macos-latest
-          # - windows-latest
+          - windows-latest
         include:
           - os: ubuntu-latest
             target: x86_64-linux-gnu
-            cmd: ./build-x86_64-linux-gnu/gab
+            cmd: ./build-x86_64-linux-gnu/gab/gab
           - os: macos-latest
             target: aarch64-macos-none
-            cmd: ./build-aarch64-macos-none/gab
+            cmd: ./build-aarch64-macos-none/gab/gab
           - os: windows-latest
             target: x86_64-windows-gnu
             cmd: .\build-x86_64-windows-gnu\gab\gab.exe
@@ -236,10 +236,10 @@ jobs:
         target:
           - x86_64-linux-gnu
           - x86_64-macos-none
-          # - x86_64-windows-gnu
+          - x86_64-windows-gnu
           - aarch64-linux-gnu
           - aarch64-macos-none
-          # - aarch64-windows-gnu
+          - aarch64-windows-gnu
         build_type:
           - release
           - debugoptimized
@@ -266,8 +266,13 @@ jobs:
         with:
           name: 'gab-${{ matrix.build_type }}-${{ matrix.target }}-modules'
       
-      - name: Rename Binary
-        run: mv build-${{ matrix.target }}/gab 'gab-${{ matrix.build_type }}-${{ matrix.target }}'
+      - name: Rename Binary (WINDOWS)
+        if: ${{ contains(matrix.target, 'windows') }}
+        run: mv build-${{ matrix.target }}/gab/gab.exe 'gab-${{ matrix.build_type }}-${{ matrix.target }}.exe'
+
+      - name: Rename Binary (NONWINDOWS)
+        if: ${{ !contains(matrix.target, 'windows') }}
+        run: mv build-${{ matrix.target }}/gab/gab.exe 'gab-${{ matrix.build_type }}-${{ matrix.target }}.exe'
 
       - name: Rename Library
         run: mv build-${{ matrix.target }}/libcgab.a 'libcgab.a'
