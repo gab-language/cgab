@@ -36,7 +36,7 @@ jobs:
             dlltool: x86_64-w64-mingw32-dlltool -m i386:x86-64
           - target: aarch64-windows-gnu
             dlltool: x86_64-w64-mingw32-dlltool -m arm64
-          - cmd: ./x86_64-linux-gnu/gab/gab
+          - cmd: ./build-x86_64-linux-gnu/gab/gab
 
     steps:
     - uses: actions/checkout@v4
