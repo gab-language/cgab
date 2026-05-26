@@ -25,31 +25,18 @@ jobs:
 
     strategy:
       matrix:
-        target:
-          - x86_64-linux-gnu
-          - x86_64-macos-none
-          - x86_64-windows-gnu
-          - aarch64-linux-gnu
-          - aarch64-macos-none
-          - aarch64-windows-gnu
+        arch:
+          - x86_64
+          - aarch64
         build_type:
           - release
           - debugoptimized
         include:
-          - target: x86_64-windows-gnu
+          - target: x86_64
             dlltool: x86_64-w64-mingw32-dlltool -m i386:x86-64
-            cmd: .\build-x86_64-windows-gnu\gab\gab.exe
           - target: aarch64-windows-gnu
             dlltool: x86_64-w64-mingw32-dlltool -m arm64
-            cmd: .\build-aarch64-windows-gnu\gab\gab.exe
-          - target: x86_64-linux-gnu
-            cmd: ./build-x86_64-linux-gnu/gab/gab
-          - target: aarch64-linux-gnu
-            cmd: ./build-aarch64-linux-gnu/gab/gab
-          - target: x86_64-macos-none
-            cmd: ./build-x86_64-macos-none/gab/gab
-          - target: aarch64-macos-none
-            cmd: ./build-aarch64-macos-none/gab/gab
+          - cmd: ./x86_64-linux-gnu/gab/gab
 
     steps:
     - uses: actions/checkout@v4
@@ -80,48 +67,93 @@ jobs:
       run: sudo apt-get -y install binutils-mingw-w64
 
     - name: Configure
-      run: clide configure -b='${{ matrix.build_type }}' -t='${{ matrix.target }}'
+      run: clide configure -t='${{ matrix.arch }}-linux-gnu ${{ matrix.arch }}-macos-none ${{ matrix.arch }}-windows-gnu' -b='${{ matrix.build_type }}'
 
     - name: Build
       run: DLLTOOL='${{ matrix.dlltool }}' clide build
 
-    - name: Upload Binary Artifact (NON WINDOWS)
-      if: ${{ !contains(matrix.target, 'windows') }}
+    - name: Collect native modules into local package
+      run: |
+          cp build-${{ matrix.arch }}-linux-gnu/mod/* github.com/gab-language/cgab@0.1.0/mod
+          cp build-${{ matrix.arch }}-macos-none/mod/* github.com/gab-language/cgab@0.1.0/mod
+          cp build-${{ matrix.arch }}-windows-gnu/mod/* github.com/gab-language/cgab@0.1.0/mod
+
+    - name: Create bundles
+      run: |
+          ${{ matrix.cmd }} build -n -t ${{ matrix.arch }}-linux-gnu   < bundle
+          ${{ matrix.cmd }} build -n -t ${{ matrix.arch }}-macos-none  < bundle
+          ${{ matrix.cmd }} build -n -t ${{ matrix.arch }}-windows-gnu  < bundle
+
+    - name: Upload Binary Artifact
       uses: pyTooling/upload-artifact@v4
       with:
-        name: 'gab-${{ matrix.build_type }}-${{ matrix.target }}'
-        path: 'build-${{ matrix.target }}/gab/gab'
+        name: 'gab-${{ matrix.build_type }}-${{ matrix.arch }}-linux-gnu'
+        path: 'build-${{ matrix.arch }}-linux-gnu/gab/gab'
 
-    - name: Upload Binary Artifact (WINDOWS)
-      if: ${{ contains(matrix.target, 'windows') }}
-      uses: pyTooling/upload-artifact@v4
-      with:
-        name: 'gab-${{ matrix.build_type }}-${{ matrix.target }}'
-        path: 'build-${{ matrix.target }}/gab/gab.exe'
-
-    # TODO: Support windows properly here.
     - name: Upload Static Library
       uses: pyTooling/upload-artifact@v4
       with:
-        name: 'gab-${{ matrix.build_type }}-${{ matrix.target }}-lib'
+        name: 'gab-${{ matrix.build_type }}-${{ matrix.arch }}-linux-gnu-lib'
         path: 'build-${{ matrix.target }}/libcgab.a'
 
     - name: Upload Headers
       uses: pyTooling/upload-artifact@v4
       with:
-        name: 'gab-${{ matrix.build_type }}-${{ matrix.target }}-h' 
+        name: 'gab-${{ matrix.build_type }}-${{ matrix.arch }}-linux-gnu-h' 
         path: include
-
-    - name: Collect modules
-      run: cp build-${{ matrix.target }}/mod/* mod
-
-    - name: Create bundle
-      run: ${{ matrix.cmd }} build < bundle
 
     - name: Upload Module Artifacts
       uses: pyTooling/upload-artifact@v4
       with:
-        name: 'gab-${{ matrix.build_type }}-${{ matrix.target }}-modules'
+        name: 'gab-${{ matrix.build_type }}-${{ matrix.arch }}-linux-gnu-modules'
+        path: mod
+
+    - name: Upload Binary Artifact
+      uses: pyTooling/upload-artifact@v4
+      with:
+        name: 'gab-${{ matrix.build_type }}-${{ matrix.arch }}-macos-none'
+        path: 'build-${{ matrix.arch }}-macos-none/gab/gab'
+
+    - name: Upload Static Library
+      uses: pyTooling/upload-artifact@v4
+      with:
+        name: 'gab-${{ matrix.build_type }}-${{ matrix.arch }}-macos-none-lib'
+        path: 'build-${{ matrix.target }}/libcgab.a'
+
+    - name: Upload Headers
+      uses: pyTooling/upload-artifact@v4
+      with:
+        name: 'gab-${{ matrix.build_type }}-${{ matrix.arch }}-macos-none-h' 
+        path: include
+
+    - name: Upload Module Artifacts
+      uses: pyTooling/upload-artifact@v4
+      with:
+        name: 'gab-${{ matrix.build_type }}-${{ matrix.arch }}-macos-none-modules'
+        path: mod
+
+    - name: Upload Binary Artifact
+      uses: pyTooling/upload-artifact@v4
+      with:
+        name: 'gab-${{ matrix.build_type }}-${{ matrix.arch }}-windows-gnu'
+        path: 'build-${{ matrix.arch }}-windows-gnu/gab/gab'
+
+    - name: Upload Static Library
+      uses: pyTooling/upload-artifact@v4
+      with:
+        name: 'gab-${{ matrix.build_type }}-${{ matrix.arch }}-windows-gnu-lib'
+        path: 'build-${{ matrix.target }}/libcgab.a'
+
+    - name: Upload Headers
+      uses: pyTooling/upload-artifact@v4
+      with:
+        name: 'gab-${{ matrix.build_type }}-${{ matrix.arch }}-windows-gnu-h' 
+        path: include
+
+    - name: Upload Module Artifacts
+      uses: pyTooling/upload-artifact@v4
+      with:
+        name: 'gab-${{ matrix.build_type }}-${{ matrix.arch }}-windows-gnu-modules'
         path: mod
 
   run_tests:
@@ -140,9 +172,9 @@ jobs:
           - os: macos-latest
             target: aarch64-macos-none
             cmd: ./build-aarch64-macos-none/gab
-          # - os: windows-latest
-          #   target: x86_64-windows-gnu
-          #   cmd: .\build-x86_64-windows-gnu\gab
+          - os: windows-latest
+            target: x86_64-windows-gnu
+            cmd: .\build-x86_64-windows-gnu\gab\gab.exe
 
     runs-on: ${{ matrix.os }}
     needs: build_artifacts
