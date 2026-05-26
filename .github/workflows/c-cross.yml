@@ -67,7 +67,7 @@ jobs:
       run: sudo apt-get -y install binutils-mingw-w64
 
     - name: Configure
-      run: clide configure -t='x86-64-linux-gnu ${{ matrix.arch }}-linux-gnu ${{ matrix.arch }}-macos-none ${{ matrix.arch }}-windows-gnu' -b='${{ matrix.build_type }}'
+      run: clide configure -t='x86_64-linux-gnu ${{ matrix.arch }}-linux-gnu ${{ matrix.arch }}-macos-none ${{ matrix.arch }}-windows-gnu' -b='${{ matrix.build_type }}'
 
     - name: Build
       run: DLLTOOL='${{ matrix.dlltool }}' clide build
