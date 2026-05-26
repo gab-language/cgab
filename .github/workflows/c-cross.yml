@@ -106,7 +106,9 @@ jobs:
       uses: pyTooling/upload-artifact@v4
       with:
         name: 'gab-${{ matrix.build_type }}-${{ matrix.arch }}-linux-gnu-modules'
-        path: mod
+        path: |
+          ./github.com/gab-language/cgab@0.1.0/**/*.gab
+          ./github.com/gab-language/cgab@0.1.0/**/*.so
 
     - name: Upload Binary Artifact
       uses: pyTooling/upload-artifact@v4
@@ -130,7 +132,9 @@ jobs:
       uses: pyTooling/upload-artifact@v4
       with:
         name: 'gab-${{ matrix.build_type }}-${{ matrix.arch }}-macos-none-modules'
-        path: mod
+        path: |
+          ./github.com/gab-language/cgab@0.1.0/**/*.gab
+          ./github.com/gab-language/cgab@0.1.0/**/*.dylib
 
     - name: Upload Binary Artifact
       uses: pyTooling/upload-artifact@v4
@@ -154,7 +158,9 @@ jobs:
       uses: pyTooling/upload-artifact@v4
       with:
         name: 'gab-${{ matrix.build_type }}-${{ matrix.arch }}-windows-gnu-modules'
-        path: mod
+        path: |
+          ./github.com/gab-language/cgab@0.1.0/**/*.gab
+          ./github.com/gab-language/cgab@0.1.0/**/*.dll
 
   run_tests:
     strategy:
