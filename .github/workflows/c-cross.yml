@@ -200,7 +200,7 @@ jobs:
           name: gab-${{ matrix.build_type }}-${{ matrix.target }}-modules
 
       - name: DEBUG
-        run: ls -al
+        run: ls -Ral github.com
 
       - name: Run help
         run: ${{ matrix.cmd }} help
