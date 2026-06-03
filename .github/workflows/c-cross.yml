@@ -204,7 +204,7 @@ jobs:
         run: |
           dir .
           dir build-x86_64-windows-gnu
-          Import-Module build-x86_64-windows-gnu
+          Import-Module build-x86_64-windows-gnu\gab\gab.exe
 
       - name: Run help
         run: ${{ matrix.cmd }} help
