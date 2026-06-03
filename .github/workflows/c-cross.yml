@@ -140,7 +140,7 @@ jobs:
       uses: pyTooling/upload-artifact@v4
       with:
         name: 'gab-${{ matrix.build_type }}-${{ matrix.arch }}-windows-gnu'
-        path: 'build-${{ matrix.arch }}-windows-gnu/gab/gab'
+        path: 'build-${{ matrix.arch }}-windows-gnu/gab/gab.exe'
 
     - name: Upload Static Library
       uses: pyTooling/upload-artifact@v4
