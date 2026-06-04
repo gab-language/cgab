@@ -258,7 +258,7 @@ jobs:
         run: mv build-${{ matrix.target }}/gab/gab 'gab-${{ matrix.build_type }}-${{ matrix.target }}'
 
       - name: Create Module Archive
-        run: tar -cvzf 'gab-${{ matrix.build_type }}-${{ matrix.target }}-modules' mod/*
+        run: tar -cvzf 'gab-${{ matrix.build_type }}-${{ matrix.target }}-modules' github.com/gab-language/cgab@0.1.0/mod
 
       - name: Attach Binary to Release
         run: gh release upload -R '${{ github.repository }}' '${{ env.version }}' 'gab-${{ matrix.build_type }}-${{ matrix.target }}' || exit 0
