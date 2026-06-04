@@ -278,7 +278,7 @@ jobs:
 
       - name: Rename Binary (NONWINDOWS)
         if: ${{ !contains(matrix.target, 'windows') }}
-        run: mv build-${{ matrix.target }}/gab/gab.exe 'gab-${{ matrix.build_type }}-${{ matrix.target }}.exe'
+        run: mv build-${{ matrix.target }}/gab/gab 'gab-${{ matrix.build_type }}-${{ matrix.target }}'
 
       - name: Rename Library
         run: mv build-${{ matrix.target }}/libcgab.a 'libcgab.a'
