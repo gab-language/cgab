@@ -16,7 +16,7 @@ on:
     branches: [ "main" ]
 
 env:
-  version: 0.1.0
+  version: 0.1.1
   GH_TOKEN: ${{ github.token }}
 
 jobs:
@@ -74,9 +74,9 @@ jobs:
 
     - name: Collect native modules into local package
       run: |
-          cp build-${{ matrix.arch }}-linux-gnu/mod/* github.com/gab-language/cgab@0.1.0/mod
-          cp build-${{ matrix.arch }}-macos-none/mod/* github.com/gab-language/cgab@0.1.0/mod
-          cp build-${{ matrix.arch }}-windows-gnu/mod/* github.com/gab-language/cgab@0.1.0/mod
+          cp build-${{ matrix.arch }}-linux-gnu/mod/* github.com/gab-language/cgab@${{ env.version }}/mod
+          cp build-${{ matrix.arch }}-macos-none/mod/* github.com/gab-language/cgab@${{ env.version }}/mod
+          cp build-${{ matrix.arch }}-windows-gnu/mod/* github.com/gab-language/cgab@${{ env.version }}/mod
 
     - name: Create bundles
       run: |
@@ -99,16 +99,16 @@ jobs:
     - name: Upload Bundle Artifact
       uses: pyTooling/upload-artifact@v4
       with:
-        name: 'cgab-0.1.0-${{ matrix.arch }}-linux-gnu'
-        path: cgab-0.1.0-${{ matrix.arch }}-linux-gnu
+        name: 'cgab-${{ env.version }}-${{ matrix.arch }}-linux-gnu'
+        path: cgab-${{ env.version }}-${{ matrix.arch }}-linux-gnu
 
     - name: Upload Module Artifacts
       uses: pyTooling/upload-artifact@v4
       with:
         name: 'gab-${{ matrix.build_type }}-${{ matrix.arch }}-linux-gnu-modules'
         path: |
-          github.com/gab-language/cgab@0.1.0/mod/*.gab
-          github.com/gab-language/cgab@0.1.0/mod/*.so
+          github.com/gab-language/cgab@${{ env.version }}/mod/*.gab
+          github.com/gab-language/cgab@${{ env.version }}/mod/*.so
 
     - name: Upload Binary Artifact
       uses: pyTooling/upload-artifact@v4
@@ -125,16 +125,16 @@ jobs:
     - name: Upload Bundle Artifact
       uses: pyTooling/upload-artifact@v4
       with:
-        name: 'cgab-0.1.0-${{ matrix.arch }}-macos-none'
-        path: cgab-0.1.0-${{ matrix.arch }}-macos-none
+        name: 'cgab-${{ env.version }}-${{ matrix.arch }}-macos-none'
+        path: cgab-${{ env.version }}-${{ matrix.arch }}-macos-none
 
     - name: Upload Module Artifacts
       uses: pyTooling/upload-artifact@v4
       with:
         name: 'gab-${{ matrix.build_type }}-${{ matrix.arch }}-macos-none-modules'
         path: |
-          github.com/gab-language/cgab@0.1.0/mod/*.gab
-          github.com/gab-language/cgab@0.1.0/mod/*.dylib
+          github.com/gab-language/cgab@${{ env.version }}/mod/*.gab
+          github.com/gab-language/cgab@${{ env.version }}/mod/*.dylib
 
     - name: Upload Binary Artifact
       uses: pyTooling/upload-artifact@v4
@@ -151,16 +151,16 @@ jobs:
     - name: Upload Bundle Artifact
       uses: pyTooling/upload-artifact@v4
       with:
-        name: 'cgab-0.1.0-${{ matrix.arch }}-windows-gnu'
-        path: cgab-0.1.0-${{ matrix.arch }}-windows-gnu
+        name: 'cgab-${{ env.version }}-${{ matrix.arch }}-windows-gnu'
+        path: cgab-${{ env.version }}-${{ matrix.arch }}-windows-gnu
 
     - name: Upload Module Artifacts
       uses: pyTooling/upload-artifact@v4
       with:
         name: 'gab-${{ matrix.build_type }}-${{ matrix.arch }}-windows-gnu-modules'
         path: |
-          github.com/gab-language/cgab@0.1.0/mod/*.gab
-          github.com/gab-language/cgab@0.1.0/mod/*.dll
+          github.com/gab-language/cgab@${{ env.version }}/mod/*.gab
+          github.com/gab-language/cgab@${{ env.version }}/mod/*.dll
 
   run_tests:
     strategy:
@@ -276,7 +276,7 @@ jobs:
         run: mv build-${{ matrix.target }}/gab/gab 'gab-${{ matrix.build_type }}-${{ matrix.target }}'
 
       - name: Create Module Archive
-        run: tar -cvzf 'gab-${{ matrix.build_type }}-${{ matrix.target }}-modules' github.com/gab-language/cgab@0.1.0/mod
+        run: tar -cvzf 'gab-${{ matrix.build_type }}-${{ matrix.target }}-modules' github.com/gab-language/cgab@${{ env.version }}/mod
 
       - name: Attach Binary to Release
         run: gh release upload -R '${{ github.repository }}' '${{ env.version }}' 'gab-${{ matrix.build_type }}-${{ matrix.target }}' || exit 0
