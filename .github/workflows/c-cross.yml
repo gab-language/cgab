@@ -3,13 +3,6 @@ name: Release static binaries
 #
 # This action builds, tests, and releases new versions of gab.
 #
-# Currently, all windows builds are disabled.
-#
-# This is because there are some c-abi issues with zig cc, and these affect
-# only the windows platform. Until these bugs are fixed in zig cc, Gab will not
-# support windows.
-#
-# (Unless I feel ike refactoring all the code that is using these abi features - passing structs as arguments).
 
 on:
   push:
@@ -283,5 +276,5 @@ jobs:
         run: gh release upload -R '${{ github.repository }}' '${{ env.version }}' 'gab-${{ matrix.build_type }}-${{ matrix.target }}-dev' || exit 0
 
       - name: Attach Bundle to Release
-        if: ${{ contains(matrix.build_type, 'releases') }}
+        if: ${{ contains(matrix.build_type, 'release') }}
         run: gh release upload -R '${{ github.repository }}' '${{ env.version }}' 'cgab-${{ env.version }}-${{ matrix.target }}' || exit 0
