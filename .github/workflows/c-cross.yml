@@ -266,7 +266,7 @@ jobs:
         if: ${{ contains(matrix.build_type, 'release') }}
         uses: pyTooling/download-artifact@v4
         with:
-          name: 'cgab-${{ env.version }}-${{ matrix.target }}-modules'
+          name: 'cgab-${{ env.version }}-${{ matrix.target }}'
       
       - name: Rename Binary (WINDOWS)
         if: ${{ contains(matrix.target, 'windows') }}
@@ -283,5 +283,5 @@ jobs:
         run: gh release upload -R '${{ github.repository }}' '${{ env.version }}' 'gab-${{ matrix.build_type }}-${{ matrix.target }}-dev' || exit 0
 
       - name: Attach Bundle to Release
-        if: ${{ contains(matrix.build_type, 'release') }}
+        if: ${{ contains(matrix.build_type, 'releases') }}
         run: gh release upload -R '${{ github.repository }}' '${{ env.version }}' 'cgab-${{ env.version }}-${{ matrix.target }}' || exit 0
