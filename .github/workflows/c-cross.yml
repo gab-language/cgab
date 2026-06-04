@@ -96,6 +96,12 @@ jobs:
         name: 'gab-${{ matrix.build_type }}-${{ matrix.arch }}-linux-gnu-h' 
         path: include
 
+    - name: Upload Bundle Artifact
+      uses: pyTooling/upload-artifact@v4
+      with:
+        name: 'cgab-0.1.0-${{ matrix.arch }}-linux-gnu'
+        path: cgab-0.1.0-${{ matrix.arch }}-linux-gnu
+
     - name: Upload Module Artifacts
       uses: pyTooling/upload-artifact@v4
       with:
@@ -116,6 +122,12 @@ jobs:
         name: 'gab-${{ matrix.build_type }}-${{ matrix.arch }}-macos-none-h' 
         path: include
 
+    - name: Upload Bundle Artifact
+      uses: pyTooling/upload-artifact@v4
+      with:
+        name: 'cgab-0.1.0-${{ matrix.arch }}-macos-none'
+        path: cgab-0.1.0-${{ matrix.arch }}-macos-none
+
     - name: Upload Module Artifacts
       uses: pyTooling/upload-artifact@v4
       with:
@@ -135,6 +147,12 @@ jobs:
       with:
         name: 'gab-${{ matrix.build_type }}-${{ matrix.arch }}-windows-gnu-h' 
         path: include
+
+    - name: Upload Bundle Artifact
+      uses: pyTooling/upload-artifact@v4
+      with:
+        name: 'cgab-0.1.0-${{ matrix.arch }}-windows-gnu'
+        path: cgab-0.1.0-${{ matrix.arch }}-windows-gnu
 
     - name: Upload Module Artifacts
       uses: pyTooling/upload-artifact@v4

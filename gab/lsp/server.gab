@@ -1,8 +1,8 @@
-'github.com/gab-language/cgab@0.1.0'.use 'Json'
+'github.com/gab-language/cgab@0.1.1'.use 'Json'
 
-Streams := 'github.com/gab-language/cgab@0.1.0' .use 'Streams'
+Streams := 'github.com/gab-language/cgab@0.1.1' .use 'Streams'
 
-IO := 'github.com/gab-language/cgab@0.1.0' .use 'Io'
+IO := 'github.com/gab-language/cgab@0.1.1' .use 'Io'
 
 log\row\t := 'gab/lsp' .use 'logs'
 

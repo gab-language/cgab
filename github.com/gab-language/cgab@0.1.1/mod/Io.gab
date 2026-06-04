@@ -1,0 +1,39 @@
+io := 'github.com/gab-language/cgab@0.1.1'.use 'cio'
+
+eprintln:.def () :: io.stderr.stream\send('$\n'.sprintf(self).to\binary)
+println:.def () :: io.stdout.stream\send('$\n'.sprintf(self).to\binary)
+
+printf:.def(
+  Strings.t
+  (args*) :: do
+    io.stdout.stream\send(self.psprintf(args*).to\binary)
+  end)
+
+#Socket := io.Sock
+#File := io.File
+
+_doconnect: .defcase {
+  ok: (sock, hostname, port) :: do
+    (sock.connect(hostname, port), sock)
+  end
+  err: (err) :: (err: err)
+}
+
+# Is this a good api?
+[io].defmodule {
+  connect: (protocol hostname port) :: do
+    io.Sockets
+        .make(protocol)
+        ._doconnect(hostname, port)
+  end
+}
+
+[io.Sockets.t, io.Files.t] .defmodule {
+  <!: (arg) :: do 
+    self.stream\send(arg.to\string.to\binary)
+
+    self
+  end
+}
+
+io

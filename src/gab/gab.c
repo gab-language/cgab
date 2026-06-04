@@ -194,10 +194,10 @@ int copy_file(FILE *in, FILE *out) {
  * - Its possible we should try and detect that inmain here, and add a root for
  * the cwd as a package
  *
- * - Import files like 'github.com/gab-language/cgab@0.1.0/mod/cstrings'.use
+ * - Import files like 'github.com/gab-language/cgab@0.1.1/mod/cstrings'.use
  *   -> This is kind of ugly. Maybe 'cstrings' .use (from:
- * 'github.com/gab-language/cgab@0.1.0)
- *   -> Or Maybe: 'github.com/gab-language/cgab@0.1.0' .use 'cstrings'
+ * 'github.com/gab-language/cgab@0.1.1)
+ *   -> Or Maybe: 'github.com/gab-language/cgab@0.1.1' .use 'cstrings'
  */
 
 #ifdef GAB_PLATFORM_WIN
@@ -802,7 +802,7 @@ int step(struct step *step) {
       /*
        * Each filename should begin with the same prefix as in *dst*.
        *
-       * For example, the package `github.com/gab-language/cgab@0.1.0`
+       * For example, the package `github.com/gab-language/cgab@0.1.1`
        *
        * will resolve to url, which will fetch a bundle `cgab-<gab
        * version>-<platform-triple>`
@@ -812,7 +812,7 @@ int step(struct step *step) {
        *
        * These modules should start with a path which matches the package name.
        *
-       * `github.com/gab-language/cgab@0.1.0/<module>`
+       * `github.com/gab-language/cgab@0.1.1/<module>`
        */
       if (memcmp(step->as.unzip.dst, stat.m_filename,
                  strlen(step->as.unzip.dst)))
@@ -1753,7 +1753,7 @@ int get_package(v_step *steps, struct command_arguments *args,
   const char *url = url_from_package(pkg, tag, bundle.data);
 
   if (!url)
-    return clierror("Unknown host for package '%s'", package), 1;
+    return clierror("Unknown host for package '%s'\n", package), 1;
 
   const char *install_dir = install_location(gab_target, gab_tag, nullptr);
 
@@ -1908,7 +1908,7 @@ int get(struct command_arguments *args) {
 
   if (!tag) {
     clierror("Could not resolve package and tag for '%s'.\n\tNote: Packages "
-             "have the format <url>@<tag>",
+             "have the format <url>@<tag>\n",
              pkgbuf);
     return false;
   }
@@ -2279,7 +2279,7 @@ int build_exe(struct command_arguments *args, const char *module) {
 
 #if GAB_PLATFORM_UNIX
   if (chmod(bundle.data, 0755) != 0) {
-    return clierror("Failed to chmod bundle"), 1;
+    return clierror("Failed to chmod bundle\n"), 1;
   }
 #endif
 
@@ -2292,7 +2292,7 @@ int build_exe(struct command_arguments *args, const char *module) {
 
 int build_lib(struct command_arguments *args) {
   if (args->packages.len == 0)
-    return clierror("No modules were requested. See `gab help build`"), 1;
+    return clierror("No modules were requested. See `gab help build`\n"), 1;
 
   v_char bundle = {0};
   v_char_spush(&bundle, s_char_cstr("cgab-"));
@@ -2330,7 +2330,7 @@ int build_lib(struct command_arguments *args) {
 
   /* Add an additional kind of resource for builds such as these:
    * A BUNDLE loading resource.
-   * cgab@0.1.0 -> gab-language/cgab/cgab-0.1.0-x86_64-linux-gnu
+   * cgab@0.1.1 -> gab-language/cgab/cgab-0.1.1-x86_64-linux-gnu
    */
   platform_file_resources[0] = (struct gab_resource){
       .prefix = "",
@@ -2446,7 +2446,7 @@ int init(struct command_arguments *args) {
     v_char_spush(&path, s_char_cstr("/mod.gab"));
 
     if (!touch(path.data))
-      return clierror("Failed to create file %s.", path.data), 1;
+      return clierror("Failed to create file %s.\n", path.data), 1;
 
     clisuccess("Created package %s.", package);
     return 0;
@@ -2466,7 +2466,7 @@ int init(struct command_arguments *args) {
   v_char_push(&path, '\0');
 
   if (!touch(path.data))
-    return clierror("Failed to create file %s.", path.data), 1;
+    return clierror("Failed to create file %s.\n", path.data), 1;
 
   clisuccess("Created package %s.", package);
   clisuccess("Created module %s.", module);

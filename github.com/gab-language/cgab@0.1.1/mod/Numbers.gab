@@ -1,0 +1,17 @@
+Numbers := 'github.com/gab-language/cgab@0.1.1' .use'cnumbers'
+
+is\number:.def(Numbers.t, true:)
+is\number: .def false:
+
+[Numbers.t] .defmodule {
+  ->: to :: (to, self) .to\range
+  ++: _ :: self + 1
+  --: _ :: self - 1
+  even: _ :: self .% 2 .== 0
+  odd: _ :: self .is\even .!
+  pos: _ :: self > 0
+  neg: _ :: self < 0
+  to\n: _ :: self
+}
+
+Numbers
