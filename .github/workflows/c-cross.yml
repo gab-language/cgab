@@ -55,7 +55,7 @@ jobs:
       with:
         go-version: '1.23'
 
-    - uses: actions/setup-node@v5
+    - uses: actions/setup-node@v6
       with:
         node-version: 24
 
@@ -90,12 +90,6 @@ jobs:
         name: 'gab-${{ matrix.build_type }}-${{ matrix.arch }}-linux-gnu'
         path: 'build-${{ matrix.arch }}-linux-gnu/gab/gab'
 
-    - name: Upload Static Library
-      uses: pyTooling/upload-artifact@v4
-      with:
-        name: 'gab-${{ matrix.build_type }}-${{ matrix.arch }}-linux-gnu-lib'
-        path: 'build-${{ matrix.target }}/libcgab.a'
-
     - name: Upload Headers
       uses: pyTooling/upload-artifact@v4
       with:
@@ -116,12 +110,6 @@ jobs:
         name: 'gab-${{ matrix.build_type }}-${{ matrix.arch }}-macos-none'
         path: 'build-${{ matrix.arch }}-macos-none/gab/gab'
 
-    - name: Upload Static Library
-      uses: pyTooling/upload-artifact@v4
-      with:
-        name: 'gab-${{ matrix.build_type }}-${{ matrix.arch }}-macos-none-lib'
-        path: 'build-${{ matrix.target }}/libcgab.a'
-
     - name: Upload Headers
       uses: pyTooling/upload-artifact@v4
       with:
@@ -141,12 +129,6 @@ jobs:
       with:
         name: 'gab-${{ matrix.build_type }}-${{ matrix.arch }}-windows-gnu'
         path: 'build-${{ matrix.arch }}-windows-gnu/gab/gab.exe'
-
-    - name: Upload Static Library
-      uses: pyTooling/upload-artifact@v4
-      with:
-        name: 'gab-${{ matrix.build_type }}-${{ matrix.arch }}-windows-gnu-lib'
-        path: 'build-${{ matrix.target }}/libcgab.a'
 
     - name: Upload Headers
       uses: pyTooling/upload-artifact@v4
@@ -280,14 +262,8 @@ jobs:
         if: ${{ !contains(matrix.target, 'windows') }}
         run: mv build-${{ matrix.target }}/gab/gab 'gab-${{ matrix.build_type }}-${{ matrix.target }}'
 
-      - name: Rename Library
-        run: mv build-${{ matrix.target }}/libcgab.a 'libcgab.a'
-
       - name: Create Module Archive
         run: tar -cvzf 'gab-${{ matrix.build_type }}-${{ matrix.target }}-modules' mod/*
-
-      - name: Create Dev Archive
-        run: tar -cvzf 'gab-${{ matrix.build_type }}-${{ matrix.target }}-dev' 'libcgab.a' include/*
 
       - name: Attach Binary to Release
         run: gh release upload -R '${{ github.repository }}' '${{ env.version }}' 'gab-${{ matrix.build_type }}-${{ matrix.target }}' || exit 0
