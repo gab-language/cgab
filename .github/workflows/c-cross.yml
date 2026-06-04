@@ -239,11 +239,6 @@ jobs:
         with:
           name: 'gab-${{ matrix.build_type }}-${{ matrix.target }}'
 
-      - name: Download Library
-        uses: pyTooling/download-artifact@v4
-        with:
-          name: 'gab-${{ matrix.build_type }}-${{ matrix.target }}-lib'
-
       - name: Download Headers
         uses: pyTooling/download-artifact@v4
         with:
