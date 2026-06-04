@@ -1,6 +1,6 @@
-Ui      := 'github.com/gab-language/cgab@0.1.0' .use 'cui'
-Atoms   := 'github.com/gab-language/cgab@0.1.0' .use 'Atoms'
-Streams := 'github.com/gab-language/cgab@0.1.0' .use 'Transducers'
+Ui      := 'github.com/gab-language/cgab@0.1.1' .use 'cui'
+Atoms   := 'github.com/gab-language/cgab@0.1.1' .use 'Atoms'
+Streams := 'github.com/gab-language/cgab@0.1.1' .use 'Transducers'
 
 (events, app) := (Channels.make, Channels.make)
 

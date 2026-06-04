@@ -1,7 +1,7 @@
 # Native module which uses the FURI library to implement URI parsing.
 # Supports uri percent-encoding and decoding.
 # Will automatically decode each segment of the url when as\uri is sent.
-Uri := 'github.com/gab-language/cgab@0.1.0' .use 'curi'
+Uri := 'github.com/gab-language/cgab@0.1.1' .use 'curi'
 
 join_query_params := Transducers.map(
                         (v k) :: Strings

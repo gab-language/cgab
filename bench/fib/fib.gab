@@ -1,4 +1,4 @@
-'github.com/gab-language/cgab@0.1.0'.use 'Io'
+'github.com/gab-language/cgab@0.1.1'.use 'Io'
 
 # fib.gab
 # Recursive Fibonacci - tests raw message dispatch and arithmetic.
