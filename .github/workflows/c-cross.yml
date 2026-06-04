@@ -262,10 +262,11 @@ jobs:
         with:
           name: 'gab-${{ matrix.build_type }}-${{ matrix.target }}-h'
 
-      - name: Download Modules
+      - name: Download Bundle
+        if: ${{ contains(matrix.build_type, 'release') }}
         uses: pyTooling/download-artifact@v4
         with:
-          name: 'gab-${{ matrix.build_type }}-${{ matrix.target }}-modules'
+          name: 'cgab-${{ env.version }}-${{ matrix.target }}-modules'
       
       - name: Rename Binary (WINDOWS)
         if: ${{ contains(matrix.target, 'windows') }}
@@ -275,14 +276,12 @@ jobs:
         if: ${{ !contains(matrix.target, 'windows') }}
         run: mv build-${{ matrix.target }}/gab/gab 'gab-${{ matrix.build_type }}-${{ matrix.target }}'
 
-      - name: Create Module Archive
-        run: tar -cvzf 'gab-${{ matrix.build_type }}-${{ matrix.target }}-modules' github.com/gab-language/cgab@${{ env.version }}/mod
-
       - name: Attach Binary to Release
         run: gh release upload -R '${{ github.repository }}' '${{ env.version }}' 'gab-${{ matrix.build_type }}-${{ matrix.target }}' || exit 0
 
-      - name: Attach Modules to Release
-        run: gh release upload -R '${{ github.repository }}' '${{ env.version }}' 'gab-${{ matrix.build_type }}-${{ matrix.target }}-modules' || exit 0
-
       - name: Attach Dev to Release
         run: gh release upload -R '${{ github.repository }}' '${{ env.version }}' 'gab-${{ matrix.build_type }}-${{ matrix.target }}-dev' || exit 0
+
+      - name: Attach Bundle to Release
+        if: ${{ contains(matrix.build_type, 'release') }}
+        run: gh release upload -R '${{ github.repository }}' '${{ env.version }}' 'cgab-${{ env.version }}-${{ matrix.target }}' || exit 0
