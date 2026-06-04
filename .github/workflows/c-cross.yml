@@ -199,14 +199,6 @@ jobs:
         with:
           name: gab-${{ matrix.build_type }}-${{ matrix.target }}-modules
 
-      - name: DEBUG WINDOWS
-        if: ${{ contains(matrix.target, 'windows') }}
-        run: |
-          dir .
-          dir build-x86_64-windows-gnu
-          dir build-x86_64-windows-gnu\gab
-          Import-Module .\build-x86_64-windows-gnu\gab\gab.exe
-
       - name: Run help
         run: ${{ matrix.cmd }} help
 
