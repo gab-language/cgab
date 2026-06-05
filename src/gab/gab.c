@@ -20,16 +20,6 @@
 
 #define MAIN_MODULE "gab\\main"
 
-#ifdef GAB_PLATFORM_UNIX
-#define GAB_SYMLINK_RECOMMENDATION "ln -sf %sgab /usr/local/bin"
-#elifdef GAB_PLATFORM_WIN
-#define GAB_SYMLINK_RECOMMENDATION                                             \
-  "New-Item -ItemType SymbolicLink -Path %s\gab -Target "                      \
-  "\"Some\\Directory\\In\\Path\""
-#elifdef GAB_PLATFORM_WASI
-#define GAB_SYMLINK_RECOMMENDATION ""
-#endif
-
 struct gab_triple gab;
 
 mz_zip_archive zip = {0};
@@ -711,7 +701,6 @@ struct step {
     kSTEP_NONE,
     kSTEP_MKDIRP,
     kSTEP_FETCH,
-    kSTEP_EXTRACT,
     kSTEP_UNZIP,
     kSTEP_RM,
     kSTEP_ARCHIVE_OPEN,
@@ -782,9 +771,6 @@ int step(struct step *step) {
   case kSTEP_FETCH:
     return gab_osproc("curl", "-f", "-s", "-L", "-o", step->as.fetch.dst,
                       step->as.fetch.url);
-  case kSTEP_EXTRACT:
-    return gab_osproc("tar", "xzf", step->as.extract.src, "-C",
-                      step->as.extract.dst);
   case kSTEP_UNZIP: {
     mz_zip_archive zip_o = {0};
     if (!mz_zip_reader_init_file(&zip_o, step->as.unzip.src, 0))
@@ -821,11 +807,13 @@ int step(struct step *step) {
        * We should only do this if we are unzipping a package, and not a generic
        * zip we downloaded.
        */
+
       if (memcmp(step->as.unzip.pkg, stat.m_filename,
                 strlen(step->as.unzip.pkg)))
         return 2;
 
       v_char filename = {0};
+      v_char_spush(&filename, s_char_cstr(step->as.unzip.dst));
       v_char_spush(&filename, s_char_cstr(stat.m_filename));
       v_char_push(&filename, '\0');
 
@@ -923,8 +911,6 @@ int unstep(struct step *step) {
     return gab_osrm(step->as.mkdirp.path);
   case kSTEP_FETCH:
     return gab_osrm(step->as.fetch.dst);
-  case kSTEP_EXTRACT:
-    return gab_osrm(step->as.unzip.dst);
   case kSTEP_UNZIP:
     return gab_osrm(step->as.unzip.dst);
   case kSTEP_RM:
@@ -964,8 +950,6 @@ void elogstep(struct step *step, int i, int res) {
                       step->as.fetch.dst);
 
     return clierror("Step %i failed: %i.\n", i, res);
-  case kSTEP_EXTRACT:
-    return clierror("Step %i failed: %i.\n", i, res);
   case kSTEP_UNZIP:
     switch (res) {
     case 2:
@@ -1001,8 +985,6 @@ void slogstep(struct step *step, int i) {
     return clisuccess(" %2i Created  %s.\n", i, step->as.mkdirp.path);
   case kSTEP_FETCH:
     return clisuccess(" %2i Fetched  %s.\n", i, step->as.fetch.url);
-  case kSTEP_EXTRACT:
-    return clisuccess(" %2i Extracted %s.\n", i, step->as.extract.src);
   case kSTEP_UNZIP:
     return clisuccess(" %2i Unzipped %s.\n", i, step->as.unzip.src);
   case kSTEP_RM:
@@ -1030,9 +1012,6 @@ void logstep(struct step *step, int i) {
   case kSTEP_FETCH:
     return cliinfo(" %2i Download " GAB_MAGENTA "%s" GAB_RESET "\n", i,
                    step->as.fetch.url);
-  case kSTEP_EXTRACT:
-    return cliinfo(" %2i Extract " GAB_MAGENTA "%s" GAB_RESET "\n", i,
-                   step->as.extract.src);
   case kSTEP_UNZIP:
     return cliinfo(" %2i Unzip " GAB_MAGENTA "%s" GAB_RESET "\n", i,
                    step->as.unzip.src);
@@ -1780,7 +1759,6 @@ int get_package(v_step *steps, struct command_arguments *args,
 
   v_char pkg_dst = {};
   v_char_spush(&pkg_dst, s_char_cstr(install_dir));
-  v_char_spush(&pkg_dst, s_char_cstr(package));
   v_char_push(&pkg_dst, '\0');
 
   v_step_push(steps, (struct step){
@@ -1940,12 +1918,13 @@ int get(struct command_arguments *args) {
     logsteps(steps.len, steps.data);
 
   if (checksteps(args, steps.len, steps.data))
-    return clierror("Installation cancelled.\n"), 1;
+    return clierror("Operation cancelled.\n"), 1;
 
   if (execute_steps(steps.len, steps.data, args->flags & FLAG_STEP_VERBOSE))
-    return clierror("Installation failed.\n"), 1;
+    return clierror("Operation failed.\n"), 1;
 
-  clisuccess("Installation complete.\n");
+  clisuccess("Operation complete.\n");
+
   return 0;
 }
 
