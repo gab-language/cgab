@@ -946,39 +946,39 @@ void elogstep(struct step *step, int i, int res) {
     assert(false);
     return;
   case kSTEP_MKDIRP:
-    return clierror("Step %i failed: %i\n", i, res);
+    return clierror("Step %i failed: %i.\n", i, res);
   case kSTEP_FETCH:
     if (res == 22)
-      return clierror("Step %i failed: Resource %s not found\n", i,
+      return clierror("Step %i failed: Resource %s not found.\n", i,
                       step->as.fetch.url);
     if (res == 23)
-      return clierror("Step %i failed: Error writing %s\n", i,
+      return clierror("Step %i failed: Error writing %s.\n", i,
                       step->as.fetch.dst);
 
-    return clierror("Step %i failed: %i\n", i, res);
+    return clierror("Step %i failed: %i.\n", i, res);
   case kSTEP_EXTRACT:
-    return clierror("Step %i failed: %i\n", i, res);
+    return clierror("Step %i failed: %i.\n", i, res);
   case kSTEP_UNZIP:
     switch (res) {
     case 2:
       return clierror("Step %i failed: A module within this package did not "
                       "have a prefix which matched the specified package.\n");
     default:
-      return clierror("Step %i failed: %i\n", i, res);
+      return clierror("Step %i failed: %i.\n", i, res);
     }
   case kSTEP_RM:
-    return clierror("Step %i failed: %i\n", i, res);
+    return clierror("Step %i failed: %i.\n", i, res);
   case kSTEP_ARCHIVE_OPEN:
-    return clierror("Step %i failed: %i\n", i, res);
+    return clierror("Step %i failed: %i.\n", i, res);
   case kSTEP_ARCHIVE_ADD_PACKAGE:
     if (!step->as.archive_add_package.mod_out.path)
-      return clierror("Step %i failed: Failed to resolve module %.*s\n", i,
+      return clierror("Step %i failed: Failed to resolve module %.*s.\n", i,
                       step->as.archive_add_package.package.len,
                       step->as.archive_add_package.package.data);
 
-    return clierror("Step %i failed: %i\n", i, res);
+    return clierror("Step %i failed: %i.\n", i, res);
   case kSTEP_ARCHIVE_FINALIZE:
-    return clierror("Step %i failed: %i\n", i, res);
+    return clierror("Step %i failed: %i.\n", i, res);
   }
 }
 
@@ -1757,7 +1757,7 @@ int get_package(v_step *steps, struct command_arguments *args,
   const char *url = url_from_package(pkg, tag, bundle.data);
 
   if (!url)
-    return clierror("Unknown host for package '%s'\n", package), 1;
+    return clierror("Unknown host for package '%s'.\n", package), 1;
 
   const char *install_dir = install_location(gab_target, gab_tag, nullptr);
 
@@ -1912,7 +1912,7 @@ int get(struct command_arguments *args) {
 
   if (!tag) {
     clierror("Could not resolve package and tag for '%s'.\n\tNote: Packages "
-             "have the format <url>@<tag>\n",
+             "have the format <url>@<tag>.\n",
              pkgbuf);
     return false;
   }
@@ -1964,10 +1964,10 @@ int get(struct command_arguments *args) {
     logsteps(steps.len, steps.data);
 
   if (checksteps(args, steps.len, steps.data))
-    return clierror("Installation cancelled\n"), 1;
+    return clierror("Installation cancelled.\n"), 1;
 
   if (execute_steps(steps.len, steps.data, args->flags & FLAG_STEP_VERBOSE))
-    return clierror("Installation failed\n"), 1;
+    return clierror("Installation failed.\n"), 1;
 
   clisuccess("Installation complete\n");
   return 0;
@@ -2000,7 +2000,7 @@ int init_modules(v_pkg *modules, struct command_arguments *args) {
 
 int run(struct command_arguments *args) {
   if (args->argc < 1) {
-    clierror("Missing module argument to subcommand 'run'\n");
+    clierror("Missing module argument to subcommand 'run'.\n");
     return 1;
   }
 
@@ -2283,7 +2283,7 @@ int build_exe(struct command_arguments *args, const char *module) {
 
 #if GAB_PLATFORM_UNIX
   if (chmod(bundle.data, 0755) != 0) {
-    return clierror("Failed to chmod bundle\n"), 1;
+    return clierror("Failed to chmod bundle.\n"), 1;
   }
 #endif
 
@@ -2296,7 +2296,7 @@ int build_exe(struct command_arguments *args, const char *module) {
 
 int build_lib(struct command_arguments *args) {
   if (args->packages.len == 0)
-    return clierror("No modules were requested. See `gab help build`\n"), 1;
+    return clierror("No modules were requested. See `gab help build`.\n"), 1;
 
   v_char bundle = {0};
   v_char_spush(&bundle, s_char_cstr("cgab-"));
@@ -2425,7 +2425,7 @@ int init(struct command_arguments *args) {
 
   if (args->argc) {
     if (module)
-      return clierror("Module already specified: %s\n", module), 1;
+      return clierror("Module already specified: %s.\n", module), 1;
 
     module = args->argv[0];
     args->argv++;
@@ -2433,7 +2433,7 @@ int init(struct command_arguments *args) {
   }
 
   if (!package) {
-    return clierror("No package specified\n"), 1;
+    return clierror("No package specified.\n"), 1;
   }
 
   // We may not have a module at this point.
