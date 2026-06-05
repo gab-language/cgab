@@ -761,6 +761,7 @@ struct step {
     struct {
       const char *src;
       const char *dst;
+      const char *pkg;
     } unzip;
   } as;
 };
@@ -796,6 +797,9 @@ int step(struct step *step) {
       if (!mz_zip_reader_file_stat(&zip_o, n, &stat))
         return 1;
 
+      /*
+       * Skip directories.
+       */
       if (stat.m_is_directory)
         continue;
 
@@ -813,9 +817,12 @@ int step(struct step *step) {
        * These modules should start with a path which matches the package name.
        *
        * `github.com/gab-language/cgab@0.1.1/<module>`
+       *
+       * We should only do this if we are unzipping a package, and not a generic
+       * zip we downloaded.
        */
-      if (memcmp(step->as.unzip.dst, stat.m_filename,
-                 strlen(step->as.unzip.dst)))
+      if (memcmp(step->as.unzip.pkg, stat.m_filename,
+                strlen(step->as.unzip.pkg)))
         return 2;
 
       v_char filename = {0};
@@ -846,7 +853,8 @@ int step(struct step *step) {
     return 0;
   }
   case kSTEP_ARCHIVE_OPEN: {
-    // The 'b' in the string has no effect on posix systems, but is necessary on windows.
+    // The 'b' in the string has no effect on posix systems, but is necessary on
+    // windows.
 
     FILE *archive = fopen(step->as.archive_open.path, "wb");
 
@@ -961,8 +969,10 @@ void elogstep(struct step *step, int i, int res) {
   case kSTEP_UNZIP:
     switch (res) {
     case 2:
-      return clierror("Step %i failed: A module within this package did not "
-                      "have a prefix which matched the specified package.\n");
+      return clierror(
+          "Step %i failed: A module within this package did not "
+          "have a prefix which matched the specified package '%s'.\n",
+          step->as.unzip.pkg);
     default:
       return clierror("Step %i failed: %i.\n", i, res);
     }
@@ -988,19 +998,19 @@ void slogstep(struct step *step, int i) {
     assert(false);
     return;
   case kSTEP_MKDIRP:
-    return clisuccess(" %2i Created  %s\n", i, step->as.mkdirp.path);
+    return clisuccess(" %2i Created  %s.\n", i, step->as.mkdirp.path);
   case kSTEP_FETCH:
-    return clisuccess(" %2i Fetched  %s\n", i, step->as.fetch.url);
+    return clisuccess(" %2i Fetched  %s.\n", i, step->as.fetch.url);
   case kSTEP_EXTRACT:
-    return clisuccess(" %2i Extracted %s\n", i, step->as.extract.src);
+    return clisuccess(" %2i Extracted %s.\n", i, step->as.extract.src);
   case kSTEP_UNZIP:
-    return clisuccess(" %2i Unzipped %s\n", i, step->as.unzip.src);
+    return clisuccess(" %2i Unzipped %s.\n", i, step->as.unzip.src);
   case kSTEP_RM:
-    return clisuccess(" %2i Removed %s\n", i, step->as.rm.path);
+    return clisuccess(" %2i Removed %s.\n", i, step->as.rm.path);
   case kSTEP_ARCHIVE_OPEN:
-    return clisuccess(" %2i Opened bundle %s\n", i, step->as.archive_open.path);
+    return clisuccess(" %2i Opened bundle %s.\n", i, step->as.archive_open.path);
   case kSTEP_ARCHIVE_ADD_PACKAGE:
-    return clisuccess(" %2i Added module %.*s (%s)\n", i,
+    return clisuccess(" %2i Added module %.*s (%s).\n", i,
                       step->as.archive_add_package.package.len,
                       step->as.archive_add_package.package.data,
                       step->as.archive_add_package.mod_out.path->data);
@@ -1789,6 +1799,7 @@ int get_package(v_step *steps, struct command_arguments *args,
                            kSTEP_UNZIP,
                            .as.unzip.src = bundle_dst.data,
                            .as.unzip.dst = pkg_dst.data,
+                           .as.unzip.pkg = package,
                        });
 
   return 0;
@@ -1816,24 +1827,6 @@ int download_gab(v_step *steps, struct command_arguments *args,
   v_char_spush(&binary_url, s_char_cstr(gab_target));
   v_char_push(&binary_url, '\0');
 
-  // Fetch dev files (libcgab.a, headers)
-  v_char dev_url = {};
-  v_char_spush(&dev_url, s_char_cstr(GAB_RELEASE_DOWNLOAD_URL));
-  v_char_spush(&dev_url, s_char_cstr(gab_tag));
-  v_char_spush(&dev_url, s_char_cstr("/gab-release-"));
-  v_char_spush(&dev_url, s_char_cstr(gab_target));
-  v_char_spush(&dev_url, s_char_cstr("-dev"));
-  v_char_push(&dev_url, '\0');
-
-  v_char dev_location = {};
-  v_char_spush(&dev_location, s_char_cstr(location_prefix));
-  v_char_spush(&dev_location, s_char_cstr("dev"));
-  v_char_push(&dev_location, '\0');
-
-  v_char dev_extract_location = {};
-  v_char_spush(&dev_extract_location, s_char_cstr(location_prefix));
-  v_char_push(&dev_extract_location, '\0');
-
   /*
    * Fetch the standard libraries package.
    */
@@ -1848,23 +1841,6 @@ int download_gab(v_step *steps, struct command_arguments *args,
                          kSTEP_FETCH,
                          .as.fetch.url = binary_url.data,
                          .as.fetch.dst = binary_location.data,
-                     });
-
-  v_step_push(steps, (struct step){
-                         kSTEP_FETCH,
-                         .as.fetch.url = dev_url.data,
-                         .as.fetch.dst = dev_location.data,
-                     });
-
-  v_step_push(steps, (struct step){
-                         kSTEP_EXTRACT,
-                         .as.unzip.src = dev_location.data,
-                         .as.unzip.dst = dev_extract_location.data,
-                     });
-
-  v_step_push(steps, (struct step){
-                         kSTEP_RM,
-                         .as.rm.path = dev_location.data,
                      });
 
   return 0;
@@ -1969,7 +1945,7 @@ int get(struct command_arguments *args) {
   if (execute_steps(steps.len, steps.data, args->flags & FLAG_STEP_VERBOSE))
     return clierror("Installation failed.\n"), 1;
 
-  clisuccess("Installation complete\n");
+  clisuccess("Installation complete.\n");
   return 0;
 }
 
@@ -2288,7 +2264,7 @@ int build_exe(struct command_arguments *args, const char *module) {
 #endif
 
   clisuccess("Created bundled executable " GAB_CYAN "%s" GAB_RESET
-             " (%2.2lf mb)\n",
+             " (%2.2lf mb).\n",
              bundle.data, (double)size / 1024 / 1024);
 
   return 0;
@@ -2393,7 +2369,7 @@ int build_lib(struct command_arguments *args) {
     return clierror("Bundle creation failed.\n"), 1;
 
   clisuccess("Created bundled library " GAB_CYAN "%s" GAB_RESET
-             " (%2.2lf mb)\n",
+             " (%2.2lf mb).\n",
              bundle.data, (double)size / 1024 / 1024);
 
   return 0;
