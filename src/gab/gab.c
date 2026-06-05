@@ -951,6 +951,9 @@ void elogstep(struct step *step, int i, int res) {
     if (res == 22)
       return clierror("Step %i failed: Resource %s not found\n", i,
                       step->as.fetch.url);
+    if (res == 23)
+      return clierror("Step %i failed: Error writing %s\n", i,
+                      step->as.fetch.dst);
 
     return clierror("Step %i failed: %i\n", i, res);
   case kSTEP_EXTRACT:

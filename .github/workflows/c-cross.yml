@@ -269,8 +269,11 @@ jobs:
         if: ${{ !contains(matrix.target, 'windows') }}
         run: mv build-${{ matrix.target }}/gab/gab 'gab-${{ matrix.build_type }}-${{ matrix.target }}'
 
-      - name: Attach Binary to Release
+      - name: Attach Binary to Release (NONWINDOWS)
         run: gh release upload -R '${{ github.repository }}' '${{ env.version }}' 'gab-${{ matrix.build_type }}-${{ matrix.target }}' || exit 0
+
+      - name: Attach Binary to Release (WINDOWS)
+        run: gh release upload -R '${{ github.repository }}' '${{ env.version }}' 'gab-${{ matrix.build_type }}-${{ matrix.target }}.exe' || exit 0
 
       - name: Attach Dev to Release
         run: gh release upload -R '${{ github.repository }}' '${{ env.version }}' 'gab-${{ matrix.build_type }}-${{ matrix.target }}-dev' || exit 0
