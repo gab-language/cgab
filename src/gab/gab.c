@@ -809,7 +809,7 @@ int step(struct step *step) {
        */
 
       if (memcmp(step->as.unzip.pkg, stat.m_filename,
-                strlen(step->as.unzip.pkg)))
+                 strlen(step->as.unzip.pkg)))
         return 2;
 
       v_char filename = {0};
@@ -990,7 +990,8 @@ void slogstep(struct step *step, int i) {
   case kSTEP_RM:
     return clisuccess(" %2i Removed %s.\n", i, step->as.rm.path);
   case kSTEP_ARCHIVE_OPEN:
-    return clisuccess(" %2i Opened bundle %s.\n", i, step->as.archive_open.path);
+    return clisuccess(" %2i Opened bundle %s.\n", i,
+                      step->as.archive_open.path);
   case kSTEP_ARCHIVE_ADD_PACKAGE:
     return clisuccess(" %2i Added module %.*s (%s).\n", i,
                       step->as.archive_add_package.package.len,
@@ -1759,6 +1760,7 @@ int get_package(v_step *steps, struct command_arguments *args,
 
   v_char pkg_dst = {};
   v_char_spush(&pkg_dst, s_char_cstr(install_dir));
+  v_char_spush(&pkg_dst, s_char_cstr(package));
   v_char_push(&pkg_dst, '\0');
 
   v_step_push(steps, (struct step){
@@ -1776,7 +1778,7 @@ int get_package(v_step *steps, struct command_arguments *args,
     v_step_push(steps, (struct step){
                            kSTEP_UNZIP,
                            .as.unzip.src = bundle_dst.data,
-                           .as.unzip.dst = pkg_dst.data,
+                           .as.unzip.dst = install_dir,
                            .as.unzip.pkg = package,
                        });
 
@@ -1796,6 +1798,10 @@ int download_gab(v_step *steps, struct command_arguments *args,
   v_char binary_location = {};
   v_char_spush(&binary_location, s_char_cstr(location_prefix));
   v_char_spush(&binary_location, s_char_cstr("gab"));
+  if (!strcmp(gab_target, "x86_64-windows-gnu") ||
+      !strcmp(gab_target, "aarch64-windows-gnu"))
+    v_char_spush(&binary_location, s_char_cstr(".exe"));
+
   v_char_push(&binary_location, '\0');
 
   v_char binary_url = {};
@@ -1803,6 +1809,11 @@ int download_gab(v_step *steps, struct command_arguments *args,
   v_char_spush(&binary_url, s_char_cstr(gab_tag));
   v_char_spush(&binary_url, s_char_cstr("/gab-release-"));
   v_char_spush(&binary_url, s_char_cstr(gab_target));
+
+  if (!strcmp(gab_target, "x86_64-windows-gnu") ||
+      !strcmp(gab_target, "aarch64-windows-gnu"))
+    v_char_spush(&binary_url, s_char_cstr(".exe"));
+
   v_char_push(&binary_url, '\0');
 
   /*
@@ -2058,14 +2069,14 @@ struct {
 };
 
 struct {
-  const char *name, *target;
+  const char *name, *target, *signal;
 } possible_targets[] = {
-    {"x64 linux", "x86_64-linux-gnu"},
-    {"x64 macos", "x86_64-macos-none"},
-    {"x64 windows", "x86_64-windows-gnu"},
-    {"arm linux", "aarch64-linux-gnu"},
-    {"arm macos", "aarch64-macos-none"},
-    {"arm windows", "aarch64-windows-gnu"},
+    {"x64 linux", "x86_64-linux-gnu", "gab"},
+    {"x64 macos", "x86_64-macos-none", "gab"},
+    {"x64 windows", "x86_64-windows-gnu", "gab.exe"},
+    {"arm linux", "aarch64-linux-gnu", "gab"},
+    {"arm macos", "aarch64-macos-none", "gab"},
+    {"arm windows", "aarch64-windows-gnu", "gab.exe"},
 };
 
 int info(struct command_arguments *args) {
@@ -2078,11 +2089,22 @@ int info(struct command_arguments *args) {
   printf("\n%17s\n", GAB_VERSION_TAG " TARGETS");
 
   for (int i = 0; i < LEN_CARRAY(possible_targets); i++) {
+    /*
+     * We have to check for the existence of a file with file_exister.
+     * Look for the gab-binary that is installed when you install gab for a target.
+     */
     const char *target = possible_targets[i].target;
+    v_char signal = {};
     const char *loc = install_location(target, GAB_VERSION_TAG, nullptr);
-    bool exists = file_exister(loc);
+
+    v_char_spush(&signal, s_char_cstr(loc));
+    v_char_spush(&signal, s_char_cstr(possible_targets[i].signal));
+    v_char_push(&signal, '\0');
+
+    bool exists = file_exister(signal.data);
     printf("%17s | %s\n", possible_targets[i].name,
            exists ? loc : "not installed");
+    v_char_destroy(&signal);
   }
   return 0;
 }
