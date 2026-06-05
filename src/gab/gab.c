@@ -1638,6 +1638,7 @@ struct host known_hosts[] = {
 char *url_from_package(const char *package, const char *tag,
                        const char *resource) {
   char host[1024];
+  memset(host, 0, sizeof(host));
 
   const char *dot = strchr(package, '.');
 
