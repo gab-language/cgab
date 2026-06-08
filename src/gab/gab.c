@@ -572,10 +572,10 @@ int run_bundle(const char *mod) {
   }
 
   // Scan for a '.' in the remaining name.
-  const char *dot = strchr(mod, '.');
+  const char *dash = strchr(mod, '-');
 
-  if (dot && dot - mod < modlen)
-    modlen = dot - mod;
+  if (dash && dash - mod < modlen)
+    modlen = dash - mod;
 
   struct gab_package *packages = default_modules;
 
@@ -2141,7 +2141,7 @@ int help(struct command_arguments *args) {
 int build_exe(struct command_arguments *args, const char *module) {
   v_char bundle = {};
   v_char_spush(&bundle, s_char_cstr(module));
-  v_char_spush(&bundle, s_char_cstr(".cgab-"));
+  v_char_spush(&bundle, s_char_cstr("-cgab-"));
   v_char_spush(&bundle, s_char_cstr(GAB_VERSION_TAG));
   v_char_push(&bundle, '-');
   v_char_spush(&bundle, s_char_cstr(platform));
