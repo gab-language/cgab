@@ -193,6 +193,7 @@ bool clay_RGFW_update(struct gab_triple gab, struct gui *gui, double deltaTime,
   case RGFW_windowResized:
     return false;
   case RGFW_keyPressed:
+    return false;
   case RGFW_keyReleased:
     switch (ev->key.value) {
       RGFW_KEY_CASE(Return, enter);
