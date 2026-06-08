@@ -247,8 +247,8 @@ handle\keyup: .defcase {
 }
 
 handle\key: .defcase {
-  true: (msg ev model) :: msg.handle\keydown(ev model)
-  false: (msg ev model) :: msg.handle\keyup(ev model)
+  true: (msg ev model) :: msg.handle\keyup(ev model)
+  false: (msg ev model) :: msg.handle\keydown(ev model)
 }
 
 handle\type: .defcase {

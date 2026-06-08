@@ -152,6 +152,8 @@ gab_value clayGetTopmostId(struct gab_triple gab) {
   return gab_cundefined;
 }
 
+// TODO @ui @qol: Switch to distinct key\up key\down events.
+
 Clay_Vector2 mousePosition;
 bool clay_RGFW_update(struct gab_triple gab, struct gui *gui, double deltaTime,
                       RGFW_event *ev) {
@@ -1207,8 +1209,6 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
 
     // Reset our id counter;
     gui->n = 0;
-    // Compute our dt
-    clock_t dt = clock() - time;
 
     // Increment the app data structure, so it isn't collected while
     // we are in this function.
@@ -1231,6 +1231,9 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
 
     if (res.status != gab_cundefined)
       goto err;
+
+    // Compute our dt
+    clock_t dt = clock() - time;
 
     Clay_RenderCommandArray cmd = Clay_EndLayout((double)dt / CLOCKS_PER_SEC);
     time += dt;
@@ -1359,8 +1362,6 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_render) {
 
     // Reset our id counter;
     gui->n = 0;
-    // Compute our dt
-    clock_t dt = clock() - time;
 
     // Increment the app data structure, so it isn't collected while
     // we are in this function.
@@ -1380,6 +1381,9 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_render) {
 
     if (res.status != gab_cundefined)
       goto err;
+
+    // Compute our dt
+    clock_t dt = clock() - time;
 
     Clay_RenderCommandArray cmd = Clay_EndLayout((double)dt / CLOCKS_PER_SEC);
     time += dt;
