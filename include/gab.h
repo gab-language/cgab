@@ -241,7 +241,7 @@ enum gab_status {
 // VERSION
 #define GAB_VERSION_MAJOR "0"
 #define GAB_VERSION_MINOR "1"
-#define GAB_VERSION_PATCH "1"
+#define GAB_VERSION_PATCH "2"
 #define GAB_VERSION_TAG                                                        \
   GAB_VERSION_MAJOR "." GAB_VERSION_MINOR "." GAB_VERSION_PATCH
 
@@ -2110,7 +2110,8 @@ GAB_API void gab_ndref(struct gab_triple gab, uint64_t stride, uint64_t len,
  */
 #if cGAB_LOG_GC
 #define gab_gcepochnext(gab) (__gab_gcepochnext(gab, __FUNCTION__, __LINE__))
-GAB_API void __gab_gcepochnext(struct gab_triple gab, const char *func, int line);
+GAB_API void __gab_gcepochnext(struct gab_triple gab, const char *func,
+                               int line);
 #else
 GAB_API void gab_gcepochnext(struct gab_triple gab);
 #endif

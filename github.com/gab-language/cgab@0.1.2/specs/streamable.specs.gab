@@ -1,0 +1,43 @@
+s := 'github.com/gab-language/cgab@0.1.2'.use 'Specs'
+
+streamable\spec := streamable: .defspec {
+  help:
+  "
+  The `streamable` protocol defines an interface for a value to stream bytes in or out as a **side effect**.
+
+  A file handle or socket connection are examples of devices which could serve as `streamable`.
+  "
+  spec: s.protocol (
+    stream\send:
+    stream\recv:
+  )
+}
+
+streamable\stream\send: .defspec {
+  help:
+  "
+  Send the binary argument through the device. This API is synchronous (IE, the operation is guranteed to be completed when this message returns.)
+
+  Returns `ok:` on success, or `err:` if an error occurred.
+  "
+  spec: s.message {
+    receiver:  streamable\spec
+    message:   stream\send:
+    input:     s.cat('bytes' s.binary)
+    output:    s.result(nil: s.string)
+ }
+}
+
+streamable\stream\recv: .defspec {
+  help:
+  "
+  When `arg` is not `nil:`, perform a blocking wait for `arg` bytes on the device, and return them. Otherwise, don't block and return as many bytes as are available.
+  "
+  spec: s.message {
+    receiver:  streamable\spec
+    message:   stream\recv:
+    input:     s.alt('n' s.int, 'default' nil:)
+    output:    s.result(s.binary, s.string)
+ }
+}
+

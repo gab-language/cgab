@@ -1,0 +1,47 @@
+Http := 'github.com/gab-language/cgab@0.1.2' .use 'Http'
+Uri  := 'github.com/gab-language/cgab@0.1.2' .use 'Uri'
+
+Net := net:
+
+# Implement response body decompression/decoding, follow redirects, retry.
+
+join_headers := Transducers.map((v k) :: Strings.make(k ':' v))
+            |> Transducers.interpose('\r\n')
+
+# encode and append params to url endpoint?
+
+# Send an http request
+http\send: .defcase {
+  Http\req
+  (params, body) :: do
+    req = Strings
+      .make(
+          self.http\method.to\s
+          ' '
+          self.http\endpoint
+          ' HTTP/1.1\r\n'
+          self.http\headers.join(join_headers)
+          '\r\n'
+          self.http\body)
+      .to\b
+
+    (ok, conn) := IO.connect(tcp\tls: host 443)
+
+    data := req.as\b
+
+    ok
+      .then () :: do
+        conn
+          .write(data)
+          .unwrap
+
+        conn
+          .until('\0'.to\b)
+          .unwrap
+          .as\s
+          .unwrap
+          .as\http
+      end
+  end
+
+}

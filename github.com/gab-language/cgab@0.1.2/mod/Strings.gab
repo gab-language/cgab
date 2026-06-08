@@ -1,0 +1,7 @@
+Strings := 'github.com/gab-language/cgab@0.1.2' .use 'cstrings'
+
+[Strings.t].defmodule {
+  is\empty: () :: self.len == 0
+}
+
+Strings

@@ -1,0 +1,32 @@
+Messages := 'github.com/gab-language/cgab@0.1.2'.use 'cmessages'
+
+to\class_cxtor: .defcase {
+  default:
+  () :: (t) :: (args*) :: t.make(args*)
+
+# Blocks.t can't really work here unfortunately.
+  "gab\block"
+  () :: do
+    block := self
+    (t) :: (args*) :: block.(t args*)
+  end
+}
+
+# Helper message for defining 'class'-esque types.
+defclass: .def (fields*, cxtor, module) :: do
+# Combine the fields into a shape to get our class type.
+  t := Shapes.make(fields*)
+
+# Define t: for this message, returning our class type.
+  t: .def(self t)
+# Define the make: constructor message
+  make: .def(self cxtor.to\class_cxtor.(t))
+
+# Define the module (the 'instance methods') on our class type.
+  [t] .defmodule module
+
+# Return our 'class'
+  self
+end
+
+Messages
