@@ -134,8 +134,9 @@ bool putevent(struct gab_triple gab, struct gui *gui, const char *type,
 
 #define RGFW_KEY_CASE(keyname, str)                                            \
   case RGFW_key##keyname:                                                      \
-    return putevent(gab, gui, "key", #str, gab_number(ev->key.mod),            \
-                    gab_bool(ev->type == RGFW_keyPressed), gab_cundefined);
+    return putevent(                                                           \
+        gab, gui, "key", ev->type == RGFW_keyPressed ? "down" : "up",          \
+        gab_string(gab, #str), gab_number(ev->key.mod), gab_cundefined);
 
 gab_value clayGetTopmostId(struct gab_triple gab) {
   Clay_ElementIdArray arr = Clay_GetPointerOverIds();
@@ -222,8 +223,9 @@ bool clay_RGFW_update(struct gab_triple gab, struct gui *gui, double deltaTime,
       RGFW_KEY_CASE(F12, f12);
     default:
       const char event[] = {ev->keyChar.value, '\0'};
-      return putevent(gab, gui, "key", event, gab_number(ev->key.mod),
-                      gab_bool(ev->type == RGFW_keyPressed), gab_cundefined);
+      return putevent(
+          gab, gui, "key", ev->type == RGFW_keyPressed ? "down" : "up",
+          gab_string(gab, event), gab_number(ev->key.mod), gab_cundefined);
     }
 
   default:
@@ -235,8 +237,8 @@ bool clay_RGFW_update(struct gab_triple gab, struct gui *gui, double deltaTime,
 
 #define TERMBOX_KEY_CASE(key, str)                                             \
   case TB_KEY_##key:                                                           \
-    return putevent(gab, gui, "key", #str, gab_number(e->mod),                 \
-                    gab_bool(false), gab_cundefined);
+    return putevent(gab, gui, "key", "up", gab_string(gab, #str),              \
+                    gab_number(e->mod), gab_cundefined);
 
 bool clay_termbox_update(struct gab_triple gab, struct gui *gui,
                          struct tb_event *e, double deltaTime) {
@@ -272,8 +274,8 @@ bool clay_termbox_update(struct gab_triple gab, struct gui *gui,
       TERMBOX_KEY_CASE(F12, f12);
     default:
       const char ev[] = {e->ch, '\0'};
-      return putevent(gab, gui, "key", ev, gab_number(e->mod), gab_bool(false),
-                      gab_cundefined);
+      return putevent(gab, gui, "key", "up", gab_string(gab, ev),
+                      gab_number(e->mod), gab_cundefined);
     }
   case TB_EVENT_MOUSE:
     switch (e->key) {

@@ -247,8 +247,8 @@ handle\keyup: .defcase {
 }
 
 handle\key: .defcase {
-  true: (msg ev model) :: msg.handle\keyup(ev model)
-  false: (msg ev model) :: msg.handle\keydown(ev model)
+  down: (msg ev model) :: msg.handle\keyup(ev model)
+  up: (msg ev model) :: msg.handle\keydown(ev model)
 }
 
 handle\type: .defcase {
@@ -260,8 +260,8 @@ handle\type: .defcase {
     model
   end
   key:   (ev model) :: do
-    keymsg := ev.at 0 .unwrap
-    down := ev.at 2 .unwrap
+    keymsg := ev.at 1 .unwrap .to\message
+    down := ev.at 0 .unwrap
     down.handle\key(keymsg ev model)
   end
 }
@@ -471,8 +471,8 @@ queue_tests.()
 events
   .pipe(
     app,
-    Streams.take_until((e, key) :: do
-      (e == key:) & ((key == escape:) | (key == q:))
+    Streams.take_until((e t key) :: do
+      (e == key:) & ((key == "escape") | (key == "q"))
     end)
 #|> Streams.tap((args*) :: args.eprintln)
     |> Streams.reduce(
