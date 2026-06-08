@@ -23,6 +23,7 @@
  */
 
 #include <stdint.h>
+#include <time.h>
 
 // GL/gl.h won't work because some OS's have files which override.
 // Use glad/gl.h instead.
@@ -193,7 +194,6 @@ bool clay_RGFW_update(struct gab_triple gab, struct gui *gui, double deltaTime,
   case RGFW_windowResized:
     return false;
   case RGFW_keyPressed:
-    return false;
   case RGFW_keyReleased:
     switch (ev->key.value) {
       RGFW_KEY_CASE(Return, enter);
@@ -233,8 +233,8 @@ bool clay_RGFW_update(struct gab_triple gab, struct gui *gui, double deltaTime,
 
 #define TERMBOX_KEY_CASE(key, str)                                             \
   case TB_KEY_##key:                                                           \
-    return putevent(gab, gui, "key", #str, gab_number(e->mod), gab_bool(true), \
-                    gab_cundefined);
+    return putevent(gab, gui, "key", #str, gab_number(e->mod),                 \
+                    gab_bool(false), gab_cundefined);
 
 bool clay_termbox_update(struct gab_triple gab, struct gui *gui,
                          struct tb_event *e, double deltaTime) {
@@ -270,7 +270,7 @@ bool clay_termbox_update(struct gab_triple gab, struct gui *gui,
       TERMBOX_KEY_CASE(F12, f12);
     default:
       const char ev[] = {e->ch, '\0'};
-      return putevent(gab, gui, "key", ev, gab_number(e->mod), gab_bool(true),
+      return putevent(gab, gui, "key", ev, gab_number(e->mod), gab_bool(false),
                       gab_cundefined);
     }
   case TB_EVENT_MOUSE:
@@ -328,6 +328,31 @@ Clay_LayoutDirection parseDirection(struct gab_triple gab, gab_value props) {
     return CLAY_LEFT_TO_RIGHT;
   else
     return CLAY_TOP_TO_BOTTOM;
+}
+
+Clay_ChildAlignment parseChildAlignment(struct gab_triple gab,
+                                        gab_value props) {
+  gab_value valignx = gab_mrecat(gab, props, "align\\x");
+  gab_value valigny = gab_mrecat(gab, props, "align\\y");
+
+  Clay_LayoutAlignmentX align_x = CLAY_ALIGN_X_LEFT;
+  Clay_LayoutAlignmentY align_y = CLAY_ALIGN_Y_TOP;
+
+  if (valignx == gab_message(gab, "left"))
+    align_x = CLAY_ALIGN_X_LEFT;
+  else if (valignx == gab_message(gab, "center"))
+    align_x = CLAY_ALIGN_X_CENTER;
+  else if (valignx == gab_message(gab, "right"))
+    align_x = CLAY_ALIGN_X_RIGHT;
+
+  if (valigny == gab_message(gab, "top"))
+    align_y = CLAY_ALIGN_Y_TOP;
+  else if (valigny == gab_message(gab, "center"))
+    align_y = CLAY_ALIGN_Y_CENTER;
+  else if (valigny == gab_message(gab, "bottom"))
+    align_y = CLAY_ALIGN_Y_BOTTOM;
+
+  return (Clay_ChildAlignment){align_x, align_y};
 }
 
 Clay_Padding parsePadding(struct gab_triple gab, gab_value props) {
@@ -423,17 +448,68 @@ Clay_Sizing parseSizing(struct gab_triple gab, gab_value props) {
 }
 
 Clay_LayoutConfig parseLayout(struct gab_triple gab, gab_value props) {
+  gab_value vgap = gab_mrecat(gab, props, "gap");
+
   return (Clay_LayoutConfig){
       .layoutDirection = parseDirection(gab, props),
       .padding = parsePadding(gab, props),
       .sizing = parseSizing(gab, props),
+      .childAlignment = parseChildAlignment(gab, props),
+      .childGap = gab_valkind(vgap) == kGAB_NUMBER ? gab_valtou(vgap) : 0,
+  };
+}
+
+Clay_TransitionElementConfig parseTransition(struct gab_triple gab,
+                                             gab_value props) {
+  gab_value vduration = gab_mrecat(gab, props, "transition\\duration");
+
+  // gab_value vfunction = gab_mrecat(gab, props, "transition\\function");
+
+  gab_value vproperties = gab_mrecat(gab, props, "transition\\properties");
+
+  uint16_t properties = 0;
+
+  // Transition everything if the key doesn't exist.
+  if (vproperties == gab_cundefined)
+    properties = 0xffff;
+
+  // Transition *one* property, or known property set.
+  if (gab_valkind(vproperties) == kGAB_MESSAGE) {
+    if (vproperties == gab_message(gab, "border"))
+      properties |= CLAY_TRANSITION_PROPERTY_BORDER;
+    else if (vproperties == gab_message(gab, "pos"))
+      properties |= CLAY_TRANSITION_PROPERTY_POSITION;
+    else if (vproperties == gab_message(gab, "box"))
+      properties |= CLAY_TRANSITION_PROPERTY_BOUNDING_BOX;
+    else if (vproperties == gab_message(gab, "dim"))
+      properties |= CLAY_TRANSITION_PROPERTY_DIMENSIONS;
+    else if (vproperties == gab_message(gab, "x"))
+      properties |= CLAY_TRANSITION_PROPERTY_X;
+    else if (vproperties == gab_message(gab, "y"))
+      properties |= CLAY_TRANSITION_PROPERTY_Y;
+    else if (vproperties == gab_message(gab, "width"))
+      properties |= CLAY_TRANSITION_PROPERTY_WIDTH;
+    else if (vproperties == gab_message(gab, "height"))
+      properties |= CLAY_TRANSITION_PROPERTY_HEIGHT;
+    else if (vproperties == gab_message(gab, "bg"))
+      properties |= CLAY_TRANSITION_PROPERTY_BACKGROUND_COLOR;
+    else if (vproperties == gab_message(gab, "r"))
+      properties |= CLAY_TRANSITION_PROPERTY_CORNER_RADIUS;
+  }
+
+  // TODO @ui @qol: Add more transition functions
+  return (Clay_TransitionElementConfig){
+      .handler = Clay_EaseOut,
+      .duration =
+          gab_valkind(vduration) == kGAB_NUMBER ? gab_valtou(vduration) : 0.2f,
+      .properties = properties,
   };
 }
 
 [[nodiscard]]
-union gab_value_pair render_componentlist(struct gab_triple gab,
-                                          struct gui *gui, gab_value app,
-                                          Clay_LayoutDirection dir);
+union gab_value_pair
+render_componentlist(struct gab_triple gab, struct gui *gui, gab_value app,
+                     Clay_LayoutDirection dir, Clay_ChildAlignment align);
 
 [[nodiscard]]
 union gab_value_pair render_box(struct gab_triple gab, struct gui *gui,
@@ -500,6 +576,7 @@ union gab_value_pair render_box(struct gab_triple gab, struct gui *gui,
                    cornerRadius,
                    cornerRadius,
                },
+           .transition = parseTransition(gab, props),
            .backgroundColor = packedToClayColor(vbg),
            .border =
                {
@@ -513,8 +590,8 @@ union gab_value_pair render_box(struct gab_triple gab, struct gui *gui,
                        },
                },
        }) {
-    union gab_value_pair res =
-        render_componentlist(gab, gui, children, layout.layoutDirection);
+    union gab_value_pair res = render_componentlist(
+        gab, gui, children, layout.layoutDirection, layout.childAlignment);
 
     if (res.status != gab_cundefined)
       return res;
@@ -734,6 +811,7 @@ union gab_value_pair render_text(struct gab_triple gab, struct gui *gui,
 
   CLAY(CLAY_IDI("", gui->n++), {
                                    .layout = parseLayout(gab, props),
+                                   .transition = parseTransition(gab, props),
                                    .backgroundColor = packedToClayColor(vbg),
                                }) {
     CLAY_TEXT(text, CLAY_TEXT_CONFIG({
@@ -788,7 +866,8 @@ union gab_value_pair render_component(struct gab_triple gab, struct gui *gui,
 
 union gab_value_pair render_componentlist(struct gab_triple gab,
                                           struct gui *gui, gab_value components,
-                                          Clay_LayoutDirection dir) {
+                                          Clay_LayoutDirection dir,
+                                          Clay_ChildAlignment align) {
   if (gab_valkind(components) != kGAB_RECORD)
     return gab_pktypemismatch(gab, components, kGAB_RECORD);
 
@@ -801,6 +880,7 @@ union gab_value_pair render_componentlist(struct gab_triple gab,
            .layout =
                {
                    .layoutDirection = dir,
+                   .childAlignment = align,
                    .sizing =
                        {
                            .width = CLAY_SIZING_GROW(1),
@@ -950,11 +1030,13 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
   if (gab_valtype(gab, vgui) != gab_string(gab, "gab\\gui"))
     return gab_ptypemismatch(gab, vgui, gab_string(gab, "gab\\gui"));
 
-  struct gui *gui = gab_boxdata(vgui);
-  if (!gui->ready)
-    goto yield;
-
   gab_value res = 0;
+
+  struct gui *gui = gab_boxdata(vgui);
+  if (!gui->ready) {
+    res = gab_ctimeout;
+    goto yield;
+  }
 
   if (reentrant && gab_fibsize(gab_thisfiber(gab))) {
     gab_value *ev = gab_fibat(gab_thisfiber(gab), 0);
@@ -1013,9 +1095,6 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
       // Get the ptr
       gab_value *ev = gab_fibat(gab_thisfiber(gab), 0);
 
-      // fprintf(stderr, "REENTRANT: %lu, MATCH: %b\n", reentrant,
-      //         gab_chnmatches(gui->evch, ev));
-
       // If we are are resuming a put, but it has been taken since last check
       // we accidentally re-put the same event
       // We can yield with some value if we did put something on the channel
@@ -1026,15 +1105,10 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
         goto yield;
       }
 
-      // for (size_t i = 0; i < len; i++)
-      //   gab_fprintf(stderr, "CHNPUT $: $\n", gab_number(i), ev[i]);
-
       // We need to retry this put until we get cvalid - that is how
       // we know the put is on the channel.
       // we can do this by yielding a specific value, instead of just undefined.
       res = gab_untchnput(gab, gui->evch, len, ev, 1);
-
-      // gab_fprintf(stderr, "CHNPUT->$\n", res);
 
       // Check for error and timeout
       if (res == gab_cundefined)
@@ -1065,15 +1139,8 @@ yield:
   if (gab_chnisclosed(gui->evch))
     goto fin;
 
-  // fprintf(stderr, "YIELD\n");
   assert(res != 0);
-
-  switch (gab_yield(gab)) {
-  case sGAB_TERM:
-    goto fin;
-  default:
-    return gab_union_ctimeout(res);
-  }
+  return gab_union_ctimeout(res);
 
 fin:
   gab_chnclose(gui->appch);
@@ -1085,6 +1152,8 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
 
   gab_value vgui = gab_arg(0);
   struct gui *gui = gab_boxdata(vgui);
+
+  static clock_t time;
 
   if (!reentrant) {
     if (gab_valtype(gab, vgui) != gab_string(gab, "gab\\gui"))
@@ -1110,8 +1179,8 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
 
     Clay_SetMeasureTextFunction(Clay_Termbox_MeasureText, nullptr);
 
-    // Clay_SetDebugModeEnabled(true);
     gui->ready = true;
+    time = 0;
   }
 
   union gab_value_pair res;
@@ -1138,6 +1207,8 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
 
     // Reset our id counter;
     gui->n = 0;
+    // Compute our dt
+    clock_t dt = clock() - time;
 
     // Increment the app data structure, so it isn't collected while
     // we are in this function.
@@ -1155,12 +1226,14 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
 
     Clay_BeginLayout();
 
-    res = render_componentlist(gab, gui, app, CLAY_TOP_TO_BOTTOM);
+    res = render_componentlist(gab, gui, app, CLAY_TOP_TO_BOTTOM,
+                               (Clay_ChildAlignment){});
 
     if (res.status != gab_cundefined)
       goto err;
 
-    Clay_RenderCommandArray cmd = Clay_EndLayout(1);
+    Clay_RenderCommandArray cmd = Clay_EndLayout((double)dt / CLOCKS_PER_SEC);
+    time += dt;
 
 #if GAB_PLATFORM_UNIX
     tb_clear();
@@ -1188,6 +1261,7 @@ fin:
 
 GAB_DYNLIB_NATIVE_FN(ui, gui_render) {
   gab_value vgui = gab_arg(0);
+  static clock_t time;
 
   if (gab_valtype(gab, vgui) != gab_string(gab, "gab\\gui"))
     return gab_ptypemismatch(gab, vgui, gab_string(gab, "gab\\gui"));
@@ -1257,9 +1331,8 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_render) {
 
     Clay_SetMeasureTextFunction(sclay_measure_text, &fonts);
 
-    // Clay_SetDebugModeEnabled(true);
-
     gui->ready = true;
+    time = 0;
   }
 
   union gab_value_pair res;
@@ -1286,6 +1359,8 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_render) {
 
     // Reset our id counter;
     gui->n = 0;
+    // Compute our dt
+    clock_t dt = clock() - time;
 
     // Increment the app data structure, so it isn't collected while
     // we are in this function.
@@ -1300,12 +1375,14 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_render) {
 
     Clay_BeginLayout();
 
-    res = render_componentlist(gab, gui, app, CLAY_TOP_TO_BOTTOM);
+    res = render_componentlist(gab, gui, app, CLAY_TOP_TO_BOTTOM,
+                               (Clay_ChildAlignment){});
 
     if (res.status != gab_cundefined)
       goto err;
 
-    Clay_RenderCommandArray cmd = Clay_EndLayout(1);
+    Clay_RenderCommandArray cmd = Clay_EndLayout((double)dt / CLOCKS_PER_SEC);
+    time += dt;
 
     sg_begin_pass(&(sg_pass){
         .action =
@@ -1360,84 +1437,107 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_event) {
   if (gab_valtype(gab, vgui) != gab_string(gab, "gab\\gui"))
     return gab_ptypemismatch(gab, vgui, gab_string(gab, "gab\\gui"));
 
+  gab_value res = 0;
+
   struct gui *gui = gab_boxdata(vgui);
-  if (!gui->ready)
+  if (!gui->ready) {
+    res = gab_ctimeout;
     goto yield;
+  }
 
-  if (reentrant && gab_fibsize(gab_thisfiber(gab)))
-    goto put_event;
+  if (reentrant && gab_fibsize(gab_thisfiber(gab))) {
+    gab_value *ev = gab_fibat(gab_thisfiber(gab), 0);
+    size_t len = gab_fibsize(gab_thisfiber(gab)) / sizeof(gab_value);
 
-  if (gab_chnisclosed(gui->appch))
-    goto fin;
+    if (gab_chnmatches(gui->evch, ev)) {
+      res = gab_cvalid;
+      goto yield;
+    } else if (reentrant != gab_cvalid) {
+      res = gab_ctimeout;
+      goto put_event;
+    } else {
+      res = gab_cundefined;
+      // Otherwise we succeeded, and can deref the values and go to next
+      // event
+      gab_ndref(gab, 1, len, ev);
 
-  if (gab_chnisclosed(gui->evch))
-    goto fin;
+      // Clear the event we put
+      gab_fibclear(gab_thisfiber(gab));
+    }
+  }
 
-  if (RGFW_window_shouldClose(&gui->win) == RGFW_TRUE)
-    goto fin;
-
-  RGFW_pollEvents();
-
-  RGFW_event ev;
-  if (RGFW_window_checkQueuedEvent(&gui->win, &ev)) {
+  for (;;) {
     if (gab_chnisclosed(gui->appch))
       goto fin;
 
     if (gab_chnisclosed(gui->evch))
       goto fin;
 
-    if (ev.type == RGFW_windowClose)
+    if (RGFW_window_shouldClose(&gui->win) == RGFW_TRUE)
       goto fin;
 
-    if (clay_RGFW_update(gab, gui, 10, &ev))
-      goto fin;
+    RGFW_pollEvents();
 
-  put_event:
-    // Our event did not yield a value.
-    if (!gab_fibsize(gab_thisfiber(gab)))
+    RGFW_event ev;
+    if (RGFW_window_checkQueuedEvent(&gui->win, &ev)) {
+      if (ev.type == RGFW_windowClose)
+        goto fin;
+
+      if (clay_RGFW_update(gab, gui, 10, &ev))
+        goto fin;
+
+    put_event:
+      // Our event did not yield a value.
+      if (!gab_fibsize(gab_thisfiber(gab)))
+        continue;
+
+      // Assert we have a number of bytes which is reasonable for a list of
+      // gab_values
+      assert(gab_fibsize(gab_thisfiber(gab)) % sizeof(gab_value) == 0);
+      assert(gab_fibsize(gab_thisfiber(gab)) > 0);
+      // Determine the number of values
+      size_t len = gab_fibsize(gab_thisfiber(gab)) / sizeof(gab_value);
+      // Get the ptr
+      gab_value *ev = gab_fibat(gab_thisfiber(gab), 0);
+
+      if (reentrant && gab_chnmatches(gui->evch, ev)) {
+        res = gab_ctimeout;
+        goto yield;
+      }
+
+      res = gab_untchnput(gab, gui->evch, len, ev, 1);
+
+      // Check for error and timeout
+      if (res == gab_cundefined)
+        goto fin;
+
+      if (res == gab_cinvalid)
+        goto fin;
+
       goto yield;
+    } else {
+      if (putevent(gab, gui, "tick", "tick", clayGetTopmostId(gab),
+                   gab_cundefined, gab_cundefined))
+        goto fin;
 
-    // Assert we have a number of bytes which is reasonable for a list of
-    // gab_values
-    assert(gab_fibsize(gab_thisfiber(gab)) % sizeof(gab_value) == 0);
-    assert(gab_fibsize(gab_thisfiber(gab)) > 0);
-    // Determine the number of values
-    size_t len = gab_fibsize(gab_thisfiber(gab)) / sizeof(gab_value);
-    // Get the ptr
-    gab_value *ev = gab_fibat(gab_thisfiber(gab), 0);
-    // Try the put
-    gab_value res = gab_ntchnput(gab, gui->evch, len, ev, 1);
-
-    // Check for error and timeout
-    if (res == gab_cundefined)
-      goto fin;
-
-    if (res == gab_cinvalid)
-      goto fin;
-
-    if (res == gab_ctimeout)
-      goto yield;
-
-    // Otherwise we succeeded, and can deref the values and go to next event
-    gab_ndref(gab, 1, len, ev);
-
-    // Clear the event we put
-    gab_fibclear(gab_thisfiber(gab));
-  } else {
-    if (putevent(gab, gui, "tick", "tick", clayGetTopmostId(gab),
-                 gab_cundefined, gab_cundefined))
-      goto fin;
-
-    goto put_event;
+      goto put_event;
+    }
   }
 
 yield:
-  return gab_union_ctimeout(gab_cundefined);
+  if (gab_chnisclosed(gui->appch))
+    goto fin;
+
+  if (gab_chnisclosed(gui->evch))
+    goto fin;
+
+  assert(res != 0);
+  return gab_union_ctimeout(res);
 
 fin:
   gab_chnclose(gui->appch);
   gab_chnclose(gui->evch);
-  return gab_union_cinvalid;
+  return gab_union_cvalid(gab_ok);
 }
 
 GAB_DYNLIB_NATIVE_FN(ui, run) {

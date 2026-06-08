@@ -366,18 +366,20 @@ GAB_DYNLIB_NATIVE_FN(string, at) {
 
   int64_t index = gab_valtoi(argv[1]);
 
-  if (index > gab_strlen(argv[0])) {
-    return gab_panicf(gab, "Index out of bounds");
-  }
-
   if (index < 0) {
     // Go from the back
     index = gab_strlen(argv[0]) + index;
   }
 
+  if (index >= gab_strlen(argv[0])) {
+    gab_vmpush(gab_thisvm(gab), gab_none);
+    return gab_union_cvalid(gab_nil);
+  }
+
+  // Woah, this ain't right.
   char byte = gab_strdata(argv + 0)[index];
 
-  gab_vmpush(gab_thisvm(gab), gab_nstring(gab, 1, &byte));
+  gab_vmpush(gab_thisvm(gab), gab_ok, gab_nstring(gab, 1, &byte));
   return gab_union_cvalid(gab_nil);
 }
 
