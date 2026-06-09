@@ -1,0 +1,54 @@
+# Native module which uses the LLHTTP library to implement HTTP parsing.
+Http := 'github.com/gab-language/cgab@0.1.2' .use 'chttp'
+
+to_http_headers := Transducers.map((v k) :: Strings.make(k ':' v))
+                |> Transducers.interpose('\r\n')
+
+to\http\headers: .def (
+  Records.t
+  () :: do
+    self.join('' to_http_headers)
+  end)
+
+# TODO @http @qol: Include HTTP version as part of this interface.
+
+Http\Req := http\req: .defclass(
+  http\method: http\endpoint: http\headers: http\body:
+  default:
+  {
+    to\http:
+    () :: do
+      Binaries.make(
+        self.http\method
+        ' '
+        self.http\endpoint,
+        ' HTTP/1.1\r\n'
+        self.http\headers.to\http\headers,
+        '\r\n'
+        self.http\body
+      )
+    end
+  })
+
+Http\Res := http\res: .defclass(
+  http\status: http\headers: http\body:
+  default:
+  {
+    to\http:
+    () :: do
+      Binaries.make(
+        self.http\status.to\http\status
+        ' HTTP/1.1\r\n'
+        self.http\headers.to\http\headers,
+        '\r\n'
+        self.http\body
+      )
+    end
+  })
+
+[Http] .defmodule {
+  Req: Http\Req
+  Res: Http\Res
+}
+
+Http

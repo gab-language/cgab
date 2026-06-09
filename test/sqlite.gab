@@ -1,4 +1,4 @@
-sqlite := 'github.com/gab-language/cgab@0.1.1'.use 'cduckdb'
+sqlite := 'github.com/gab-language/cgab@0.1.2'.use 'cduckdb'
 
 db := sqlite.make.unwrap
 

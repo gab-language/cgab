@@ -16,7 +16,7 @@ on:
     branches: [ "main" ]
 
 env:
-  version: 0.1.1
+  version: 0.1.2
   GH_TOKEN: ${{ github.token }}
 
 jobs:
@@ -115,8 +115,8 @@ jobs:
     - name: Upload x86_64-linux-gnu Test Executable Artifact
       uses: pyTooling/upload-artifact@v4
       with:
-        name: 'test.cgab-${{ env.version }}-x86_64-linux-gnu.exe'
-        path: 'test.cgab-${{ env.version }}-x86_64-linux-gnu.exe'
+        name: 'test-cgab-${{ env.version }}-x86_64-linux-gnu.exe'
+        path: 'test-cgab-${{ env.version }}-x86_64-linux-gnu.exe'
 
     - name: Upload aarch64-linux-gnu Binary Artifact
       uses: pyTooling/upload-artifact@v4
@@ -133,8 +133,8 @@ jobs:
     - name: Upload aarch64-linux-gnu Test Executable Artifact
       uses: pyTooling/upload-artifact@v4
       with:
-        name: 'test.cgab-${{ env.version }}-aarch64-linux-gnu.exe'
-        path: 'test.cgab-${{ env.version }}-aarch64-linux-gnu.exe'
+        name: 'test-cgab-${{ env.version }}-aarch64-linux-gnu.exe'
+        path: 'test-cgab-${{ env.version }}-aarch64-linux-gnu.exe'
 
     - name: Upload x86_64-macos-none Binary Artifact
       uses: pyTooling/upload-artifact@v4
@@ -151,8 +151,8 @@ jobs:
     - name: Upload x86_64-macos-none Test Executable Artifact
       uses: pyTooling/upload-artifact@v4
       with:
-        name: 'test.cgab-${{ env.version }}-x86_64-macos-none.exe' 
-        path: 'test.cgab-${{ env.version }}-x86_64-macos-none.exe'
+        name: 'test-cgab-${{ env.version }}-x86_64-macos-none.exe' 
+        path: 'test-cgab-${{ env.version }}-x86_64-macos-none.exe'
 
     - name: Upload aarch64-macos-none Binary Artifact
       uses: pyTooling/upload-artifact@v4
@@ -169,8 +169,8 @@ jobs:
     - name: Upload aarch64-macos-none Test Executable Artifact
       uses: pyTooling/upload-artifact@v4
       with:
-        name: 'test.cgab-${{ env.version }}-aarch64-macos-none.exe' 
-        path: 'test.cgab-${{ env.version }}-aarch64-macos-none.exe'
+        name: 'test-cgab-${{ env.version }}-aarch64-macos-none.exe' 
+        path: 'test-cgab-${{ env.version }}-aarch64-macos-none.exe'
 
     - name: Upload x86_64-windows-gnu Binary Artifact
       uses: pyTooling/upload-artifact@v4
@@ -187,8 +187,8 @@ jobs:
     - name: Upload x86_64-windows-gnu Test Executable Artifact
       uses: pyTooling/upload-artifact@v4
       with:
-        name: 'test.cgab-${{ env.version }}-x86_64-windows-gnu.exe'
-        path: 'test.cgab-${{ env.version }}-x86_64-windows-gnu.exe'
+        name: 'test-cgab-${{ env.version }}-x86_64-windows-gnu.exe'
+        path: 'test-cgab-${{ env.version }}-x86_64-windows-gnu.exe'
 
     - name: Upload aarch64-windows-gnu Binary Artifact
       uses: pyTooling/upload-artifact@v4
@@ -205,8 +205,8 @@ jobs:
     - name: Upload aarch64-windows-gnu Test Executable Artifact
       uses: pyTooling/upload-artifact@v4
       with:
-        name: 'test.cgab-${{ env.version }}-aarch64-windows-gnu.exe'
-        path: 'test.cgab-${{ env.version }}-aarch64-windows-gnu.exe'
+        name: 'test-cgab-${{ env.version }}-aarch64-windows-gnu.exe'
+        path: 'test-cgab-${{ env.version }}-aarch64-windows-gnu.exe'
 
   run_tests:
     strategy:
@@ -248,7 +248,7 @@ jobs:
       - name: Download Cross-Compiled Binary
         uses: pyTooling/download-artifact@v4
         with:
-          name: test.cgab-${{ env.version }}-${{ matrix.target }}.exe
+          name: test-cgab-${{ env.version }}-${{ matrix.target }}.exe
 
       # Linux and Macos install identically
       - name: Unzip & Install Modules (LINUX)
@@ -286,7 +286,7 @@ jobs:
         run: ${{ matrix.cmd }} run test
 
       - name: Run cross-compiled tests bundle
-        run: ./test.cgab-${{ env.version }}-${{ matrix.target }}.exe
+        run: ./test-cgab-${{ env.version }}-${{ matrix.target }}.exe
 
       - name: Gab Build Bundle (WINDOWS)
         if: ${{ contains(matrix.target, 'windows') }}
@@ -299,4 +299,4 @@ jobs:
           ${{ matrix.cmd }} build test < bundle
 
       - name: Run tests bundle
-        run: ./test.cgab-${{ env.version }}-${{ matrix.target }}.exe
+        run: ./test-cgab-${{ env.version }}-${{ matrix.target }}.exe

@@ -184,10 +184,10 @@ int copy_file(FILE *in, FILE *out) {
  * - Its possible we should try and detect that inmain here, and add a root for
  * the cwd as a package
  *
- * - Import files like 'github.com/gab-language/cgab@0.1.1/mod/cstrings'.use
+ * - Import files like 'github.com/gab-language/cgab@0.1.2/mod/cstrings'.use
  *   -> This is kind of ugly. Maybe 'cstrings' .use (from:
- * 'github.com/gab-language/cgab@0.1.1)
- *   -> Or Maybe: 'github.com/gab-language/cgab@0.1.1' .use 'cstrings'
+ * 'github.com/gab-language/cgab@0.1.2)
+ *   -> Or Maybe: 'github.com/gab-language/cgab@0.1.2' .use 'cstrings'
  */
 
 #ifdef GAB_PLATFORM_WIN
@@ -572,10 +572,10 @@ int run_bundle(const char *mod) {
   }
 
   // Scan for a '.' in the remaining name.
-  const char *dot = strchr(mod, '.');
+  const char *dash = strchr(mod, '-');
 
-  if (dot && dot - mod < modlen)
-    modlen = dot - mod;
+  if (dash && dash - mod < modlen)
+    modlen = dash - mod;
 
   struct gab_package *packages = default_modules;
 
@@ -792,7 +792,7 @@ int step(struct step *step) {
       /*
        * Each filename should begin with the same prefix as in *dst*.
        *
-       * For example, the package `github.com/gab-language/cgab@0.1.1`
+       * For example, the package `github.com/gab-language/cgab@0.1.2`
        *
        * will resolve to url, which will fetch a bundle `cgab-<gab
        * version>-<platform-triple>`
@@ -802,7 +802,7 @@ int step(struct step *step) {
        *
        * These modules should start with a path which matches the package name.
        *
-       * `github.com/gab-language/cgab@0.1.1/<module>`
+       * `github.com/gab-language/cgab@0.1.2/<module>`
        *
        * We should only do this if we are unzipping a package, and not a generic
        * zip we downloaded.
@@ -2141,7 +2141,7 @@ int help(struct command_arguments *args) {
 int build_exe(struct command_arguments *args, const char *module) {
   v_char bundle = {};
   v_char_spush(&bundle, s_char_cstr(module));
-  v_char_spush(&bundle, s_char_cstr(".cgab-"));
+  v_char_spush(&bundle, s_char_cstr("-cgab-"));
   v_char_spush(&bundle, s_char_cstr(GAB_VERSION_TAG));
   v_char_push(&bundle, '-');
   v_char_spush(&bundle, s_char_cstr(platform));
@@ -2311,7 +2311,7 @@ int build_lib(struct command_arguments *args) {
 
   /* Add an additional kind of resource for builds such as these:
    * A BUNDLE loading resource.
-   * cgab@0.1.1 -> gab-language/cgab/cgab-0.1.1-x86_64-linux-gnu
+   * cgab@0.1.2 -> gab-language/cgab/cgab-0.1.2-x86_64-linux-gnu
    */
   platform_file_resources[0] = (struct gab_resource){
       .prefix = "",
