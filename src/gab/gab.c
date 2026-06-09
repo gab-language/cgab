@@ -1657,6 +1657,7 @@ char *url_from_package(const char *package, const char *tag,
 
       if (!pre_pattern) {
         v_char_spush(&url, s_char_cstr(cursor));
+        v_char_push(&url, '\0');
         return url.data;
       }
 
@@ -1785,8 +1786,8 @@ int get_package(v_step *steps, struct command_arguments *args,
   return 0;
 }
 
-int download_gab(v_step *steps, struct command_arguments *args,
-                 const char *gab_target, const char *gab_tag) {
+int get_gab(v_step *steps, struct command_arguments *args,
+            const char *gab_target, const char *gab_tag) {
 
   const char *location_prefix = install_location(gab_target, gab_tag, nullptr);
 
@@ -1918,7 +1919,7 @@ int get(struct command_arguments *args) {
 
   // If we match the special Gab package, then defer to that helper.
   if (!strcmp(pkgbuf, "gab"))
-    res = download_gab(&steps, args, platform, tagbuf);
+    res = get_gab(&steps, args, platform, tagbuf);
   else
     res = get_package(&steps, args, pkg, resource, platform, GAB_VERSION_TAG);
 
@@ -2091,7 +2092,8 @@ int info(struct command_arguments *args) {
   for (int i = 0; i < LEN_CARRAY(possible_targets); i++) {
     /*
      * We have to check for the existence of a file with file_exister.
-     * Look for the gab-binary that is installed when you install gab for a target.
+     * Look for the gab-binary that is installed when you install gab for a
+     * target.
      */
     const char *target = possible_targets[i].target;
     v_char signal = {};
@@ -2160,7 +2162,7 @@ int build_exe(struct command_arguments *args, const char *module) {
   v_char_spush(&exepath, s_char_cstr(path));
   v_char_spush(&exepath, s_char_cstr("gab"));
 
-  // On windows, the executable has `.exe` on the end.
+  // On windows targets, the executable we're looking for has `.exe` on the end.
   if (!strcmp(platform, "x86_64-windows-gnu") ||
       !strcmp(platform, "aarch64-windows-gnu"))
     v_char_spush(&exepath, s_char_cstr(".exe"));
