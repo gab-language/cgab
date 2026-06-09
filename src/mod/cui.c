@@ -491,9 +491,9 @@ Clay_TransitionElementConfig parseTransition(struct gab_triple gab,
       properties |= CLAY_TRANSITION_PROPERTY_X;
     else if (vproperties == gab_message(gab, "y"))
       properties |= CLAY_TRANSITION_PROPERTY_Y;
-    else if (vproperties == gab_message(gab, "width"))
+    else if (vproperties == gab_message(gab, "w"))
       properties |= CLAY_TRANSITION_PROPERTY_WIDTH;
-    else if (vproperties == gab_message(gab, "height"))
+    else if (vproperties == gab_message(gab, "h"))
       properties |= CLAY_TRANSITION_PROPERTY_HEIGHT;
     else if (vproperties == gab_message(gab, "bg"))
       properties |= CLAY_TRANSITION_PROPERTY_BACKGROUND_COLOR;

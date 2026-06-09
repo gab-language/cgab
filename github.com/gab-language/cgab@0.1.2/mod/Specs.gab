@@ -898,6 +898,10 @@ cat: .def(
 
     spec\type:.def(pred 'Concatenation')
 
+    spec\explain: .def(
+      pred
+      () :: re.re\debug)
+
     pred
   end)
 
@@ -925,6 +929,9 @@ alt: .def(
       to\spec\re: re
 
       spec\type: 'Alternation'
+
+      spec\explain: ()
+        :: re.re\debug
     }
 
 

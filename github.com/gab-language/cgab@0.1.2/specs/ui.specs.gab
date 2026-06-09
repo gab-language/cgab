@@ -32,7 +32,7 @@ ui\run: .defspec {
   }
 }
 
-ui\event: .defspec {
+ui\event := ui\event: .defspec {
   help:
   "
   A *ui\event* is a tuple of values describing some user interaction, or simply the passage of time.
@@ -45,9 +45,8 @@ ui\event: .defspec {
     )
     'key'   s.cat(
       'kind'    'key'
-      'key'     s.string
-      'val'     s.int
-      'pressed' s.boolean
+      'event'   s.any('up' 'down')
+      'value'   s.string
     )
     'tick'  s.cat(
       'kind'    'tick'
@@ -61,29 +60,98 @@ ui\component := ui\component: .defspec {
   help:
   "
   A component is UI element, drawable to the screen.
+
+  The 'props' is a record containing layout/design information for the component.
+
+  The supported keys are:
+  ```gab
+  # Color
+  bg:  # Set the background color
+  fg:  # Set the foreground color
+  # Colors are represented with numbers. Use the hex notation to write them easily:
+  # Here is a sample pallette. The most significant byte is the alpha - so you could even add an *empty/clear* color
+  # by setting that to 00.
+  Colors := {
+    bg: 0xff161821
+    fg: 0xffcdd6f5
+    bg\hl: 0xff272c42
+    fg\hl: 0xffc6c8d1
+    r: 0xfff38ba9
+    o: 0xfffab388
+    y: 0xfff9e2b0
+    g: 0xffa6e3a2
+    b: 0xff89b4fb
+    i: 0xff94e2d6
+    v: 0xffcba6f8
+  }
+
+  # Border
+  border: # Set a border
+  # Should be a record with keys:
+  fg:  # Color of the border
+  w:   # Width of the border
+
+  # Padding
+  p:   # Set padding in all directions
+  p\x: # Set padding in left/right directions (along x axis)
+  p\y: # Set padding in top/bottom directions (along y axis)
+  p\l: # Set padding on left side
+  p\r: # Set padding on right side
+  p\t: # Set padding on top side
+  p\b: # Set padding on bottom side
+
+  # Sizing
+  w:   # Set width directly
+  w\g: # Set how much component should grow relative to others
+  w\r: # Set width relative to parent
+  h:   # Set height directly
+  h\g: # Set how much component should grow relative to others
+  h\r: # Set height relative to parent
+
+  # Child layout
+  layout\direction: # Set the direction that children layout
+  align\x:          # Set how children align along x axis (left: right: center:)
+  align\y:          # Set how children align along y axis (top: bottom: center:)
+
+  # Transitions
+  transition\duration:   # Set durations for *all* transitions on this element. Default is 0.5 seconds.
+  transition\properties: # Set which properties should transition on this element. Leave unset for *all*.
+  # Available transition properties:
+  #  r:      Corner radius
+  #  bg:     Background color
+  #  fg:     Foreground color
+  #  w:      Width
+  #  h:      Height
+  #  x:      X Position
+  #  y:      Y Position
+  #  border: Border properties
+  #  pos:    x: and y:
+  #  dim:    w: and h:
+  #  box:    pos: and dim:
+  ```
   "
   spec: s.alt(
     'text' s.pat(
       'kind' text:
-      'opts' s.record
+      'props' s.record
     )
     'rect' s.pat(
       'kind' rect:
-      'opts' s.record
+      'props' s.record
     )
     'img' s.pat(
       'kind' img:
-      'opts' s.record
+      'props' s.record
     )
     'box' s.pat(
       'kind' box:
-      'opts' s.record
+      'props' s.record
       'children' ui\view:
     )
   )
 }
 
-ui\view: .defspec {
+ui\view := ui\view: .defspec {
   help:
   "
   A list of UI components.
