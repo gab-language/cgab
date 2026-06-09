@@ -25,9 +25,9 @@ jobs:
           - release
           - debugoptimized
         include:
-          - target: x86_64
+          - arch: x86_64
             dlltool: x86_64-w64-mingw32-dlltool -m i386:x86-64
-          - target: aarch64-windows-gnu
+          - arch: aarch64
             dlltool: x86_64-w64-mingw32-dlltool -m arm64
           - cmd: ./build-x86_64-linux-gnu/gab/gab
 
