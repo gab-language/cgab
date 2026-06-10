@@ -1731,7 +1731,7 @@ int get_package(v_step *steps, struct command_arguments *args,
 
   if (resource) {
     v_char_spush(&bundle, s_char_cstr(resource));
-    v_char_push(&bundle, '.');
+    v_char_push(&bundle, '-');
   }
 
   v_char_spush(&bundle, s_char_cstr("cgab-"));

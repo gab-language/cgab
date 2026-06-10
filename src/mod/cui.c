@@ -134,9 +134,8 @@ bool putevent(struct gab_triple gab, struct gui *gui, const char *type,
 
 #define RGFW_KEY_CASE(keyname, str)                                            \
   case RGFW_key##keyname:                                                      \
-    return putevent(                                                           \
-        gab, gui, "key", ev->type == RGFW_keyPressed ? "down" : "up",          \
-        gab_string(gab, #str), gab_number(ev->key.mod), gab_cundefined);
+    return putevent(gab, gui, "key", "up", gab_string(gab, #str),              \
+                    gab_cundefined, gab_cundefined);
 
 gab_value clayGetTopmostId(struct gab_triple gab) {
   Clay_ElementIdArray arr = Clay_GetPointerOverIds();
@@ -196,9 +195,8 @@ bool clay_RGFW_update(struct gab_triple gab, struct gui *gui, double deltaTime,
   case RGFW_windowMoved:
   case RGFW_windowResized:
     return false;
-  case RGFW_keyPressed:
-  case RGFW_keyReleased:
-    switch (ev->key.value) {
+  case RGFW_keyChar:
+    switch (ev->keyChar.value) {
       RGFW_KEY_CASE(Return, enter);
       RGFW_KEY_CASE(Escape, escape);
       RGFW_KEY_CASE(BackSpace, backspace);
@@ -223,9 +221,8 @@ bool clay_RGFW_update(struct gab_triple gab, struct gui *gui, double deltaTime,
       RGFW_KEY_CASE(F12, f12);
     default:
       const char event[] = {ev->keyChar.value, '\0'};
-      return putevent(
-          gab, gui, "key", ev->type == RGFW_keyPressed ? "down" : "up",
-          gab_string(gab, event), gab_number(ev->key.mod), gab_cundefined);
+      return putevent(gab, gui, "key", "up", gab_string(gab, event),
+                      gab_cundefined, gab_cundefined);
     }
 
   default:
