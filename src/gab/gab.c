@@ -328,6 +328,37 @@ exists:
   return res;
 }
 
+union gab_value_pair gab_use_zip_data(struct gab_triple gab, const char *path,
+                                      size_t len, const char **sargs,
+                                      gab_value *vargs) {
+  int idx = mz_zip_reader_locate_file(&zip, path, "", 0);
+  if (idx < 0)
+    return gab_panicf(gab, "Failed to load module");
+
+  mz_zip_archive_file_stat stat;
+  if (!mz_zip_reader_file_stat(&zip, idx, &stat)) {
+    mz_zip_error e = mz_zip_get_last_error(&zip);
+    const char *estr = mz_zip_get_error_string(e);
+    return gab_panicf(gab, "Failed to load module: $", gab_string(gab, estr));
+  };
+
+  size_t sz;
+  void *src = mz_zip_reader_extract_file_to_heap(&zip, stat.m_filename, &sz, 0);
+
+  if (!src) {
+    mz_zip_error e = mz_zip_get_last_error(&zip);
+    const char *estr = mz_zip_get_error_string(e);
+    return gab_panicf(gab, "Failed to load module: $", gab_string(gab, estr));
+  }
+
+  union gab_value_pair result = {
+      {gab_ok, gab_nbinary(gab, sz, (uint8_t *)src)},
+  };
+
+  free(src);
+  return result;
+}
+
 union gab_value_pair gab_use_zip_source(struct gab_triple gab, const char *path,
                                         size_t len, const char **sargs,
                                         gab_value *vargs) {
@@ -363,6 +394,24 @@ union gab_value_pair gab_use_zip_source(struct gab_triple gab, const char *path,
   a_char_destroy(src);
 
   return fiber;
+}
+
+union gab_value_pair gab_use_data(struct gab_triple gab, const char *path,
+                                  size_t len, const char **sargs,
+                                  gab_value *vargs) {
+  a_char *src = gab_osread(path);
+
+  gab_value data[] = {gab_ok, gab_nbinary(gab, src->len, (uint8_t *)src->data)};
+  gab_iref(gab, data[1]);
+  gab_egkeep(gab.eg, data[1]);
+
+  union gab_value_pair result = {
+      .status = gab_cvalid,
+      .aresult = a_gab_value_create(data, 2),
+  };
+
+  a_char_destroy(src);
+  return result;
 }
 
 union gab_value_pair gab_use_source(struct gab_triple gab, const char *path,
@@ -435,6 +484,8 @@ static const struct gab_resource native_file_resources[] = {
 
     {"mod/", "mod.gab", gab_use_source, file_exister},
     {"mod/", ".gab", gab_use_source, file_exister},
+
+    {"data/", "", gab_use_data, file_exister},
 
     {}, // List terminator.
 };
@@ -621,7 +672,7 @@ int run_bundle(const char *mod) {
   return gab_destroy(gab), 0;
 }
 
-int run_file(const char *path, int flags, uint32_t wait, size_t jobs,
+int run_file(const char *package, int flags, uint32_t wait, size_t jobs,
              size_t nmodules, struct gab_package *packages) {
   gab_ossignal(SIGINT, propagate_term);
 
@@ -646,7 +697,7 @@ int run_file(const char *path, int flags, uint32_t wait, size_t jobs,
 
   union gab_value_pair run_res = gab_use(gab, (struct gab_use_argt){
                                                   .flags = flags,
-                                                  .spackage_name = path,
+                                                  .spackage_name = package,
                                                   .len = nmodules,
                                                   .sargv = sargs,
                                                   .argv = res.aresult->data + 1,

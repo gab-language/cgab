@@ -61,7 +61,7 @@
 // prefix will basically be in a linked-list. (hash-bucket-chaining, etc) If
 // this macro is 0, then gab will not limit hashing.
 #ifndef cGAB_STRING_HASHLEN
-#define cGAB_STRING_HASHLEN 0
+#define cGAB_STRING_HASHLEN 256
 #endif
 
 // Combine common consecutive instruction patterns into one superinstruction
@@ -79,7 +79,7 @@
 // New workers are spawned as needed up until a maximum is reached (specified at
 // runtime)
 #ifndef cGAB_WORKER_IDLE_TRIES
-#define cGAB_WORKER_IDLE_TRIES 2
+#define cGAB_WORKER_IDLE_TRIES 128
 #endif
 
 #ifndef cGAB_VM_CHANNEL_PUT_TRIES

@@ -16,4 +16,4 @@ STATUS(MISSING_INITIALIZER, "Variables must be initialized")
 // Run-time errors
 STATUS(TYPE_MISMATCH, "Type Mismatch")
 STATUS(SPECIALIZATION_MISSING, "Missing Specialization")
-STATUS(OVERFLOW, "Reached Maximum Call Depth")
+STATUS(OVERFLOW, "Fiber stack overflow")

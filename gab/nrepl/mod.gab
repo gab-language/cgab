@@ -9,11 +9,11 @@ ByteStream := stream\byte: .defclass (
   stream\source:
   default:
   {
-    seq\next: _ :: do
+    seq\init: _ :: do
       (ok byte) := self.stream\source.read 1
       (ok nil: byte)
     end
-    seq\init: _ :: do
+    seq\next: _ :: do
       (ok byte) := self.stream\source.read 1
       (ok nil: byte)
     end

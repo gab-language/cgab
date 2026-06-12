@@ -1,7 +1,25 @@
 Strings := 'github.com/gab-language/cgab@0.1.2' .use 'cstrings'
 
+String\Stream\Split := string\stream\split: .defclass (
+  string\stream\split\source:
+  string\stream\split\sep:
+  default:
+  {
+    seq\init: _ :: do
+      (ok head tail) := self.string\stream\split\source.split(self.string\stream\split\sep)
+      (ok tail head)
+    end
+    seq\next: tail :: do
+      (ok head tail) := tail.split(self.string\stream\split\sep)
+      (ok tail head)
+    end
+  })
+
 [Strings.t].defmodule {
   is\empty: () :: self.len == 0
+  to\stream\split: (sep) :: do
+    String\Stream\Split.make(self sep)  
+  end
 }
 
 Strings

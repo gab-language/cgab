@@ -4,25 +4,26 @@
  *  Copyright (c) 2023 Teddy Randby
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy
- *  of this software and associated documentation files (the "Software"), to deal
- *  in the Software without restriction, including without limitation the rights
- *  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- *  copies of the Software, and to permit persons to whom the Software is
+ *  of this software and associated documentation files (the "Software"), to
+ * deal in the Software without restriction, including without limitation the
+ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+ * sell copies of the Software, and to permit persons to whom the Software is
  *  furnished to do so, subject to the following conditions:
  *
- *  The above copyright notice and this permission notice shall be included in all
- *  copies or substantial portions of the Software.
+ *  The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
  *
  *  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  *  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  *  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
  *  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- *  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- *  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- *  SOFTWARE.
+ *  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+ * IN THE SOFTWARE.
  */
 
 #include "gab.h"
+#include <stdint.h>
 
 GAB_DYNLIB_NATIVE_FN(shp, at) {
   gab_value shp = gab_arg(0);
@@ -233,6 +234,28 @@ fin:
   return gab_union_cvalid(gab_nil);
 }
 
+GAB_DYNLIB_NATIVE_FN(shp, from_list) {
+  gab_value list = gab_arg(1);
+
+  if (gab_valkind(list) != kGAB_RECORD)
+    return gab_pktypemismatch(gab, list, kGAB_RECORD);
+
+  if (gab_valkind(gab_recshp(list)) != kGAB_SHAPELIST)
+    return gab_panicf(gab, "Should be a list, not @", gab_recshp(list));
+
+  uint64_t len = gab_reclen(list);
+  gab_value* keys = malloc(len * sizeof(gab_value));
+  for (uint64_t i = 0; i < len; i++) {
+    keys[i] = gab_uvrecat(list, i);
+  }
+
+  gab_value shp = gab_shape(gab, 1, len, keys, nullptr);
+  gab_push(gab, shp);
+  free(keys);
+
+  return gab_union_cvalid(gab_nil);
+};
+
 GAB_DYNLIB_MAIN_FN {
   gab_value t = gab_type(gab, kGAB_SHAPE);
 
@@ -241,6 +264,11 @@ GAB_DYNLIB_MAIN_FN {
               gab_message(gab, "t"),
               gab_strtomsg(t),
               t,
+          },
+          {
+              gab_message(gab, "from"),
+              gab_strtomsg(t),
+              gab_snative(gab, "from", gab_mod_shp_from_list),
           },
           {
               gab_message(gab, "slice"),

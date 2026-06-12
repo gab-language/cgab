@@ -132,9 +132,9 @@ bool putevent(struct gab_triple gab, struct gui *gui, const char *type,
   return false;
 }
 
-#define RGFW_KEY_CASE(keyname, str)                                            \
+#define RGFW_KEY_CASE(keyname, str, up)                                        \
   case RGFW_key##keyname:                                                      \
-    return putevent(gab, gui, "key", "up", gab_string(gab, #str),              \
+    return putevent(gab, gui, "key", up, gab_string(gab, #str),                \
                     gab_cundefined, gab_cundefined);
 
 gab_value clayGetTopmostId(struct gab_triple gab) {
@@ -195,34 +195,51 @@ bool clay_RGFW_update(struct gab_triple gab, struct gui *gui, double deltaTime,
   case RGFW_windowMoved:
   case RGFW_windowResized:
     return false;
+  // TODO: Fix how keychar event is handled.
+  // Non-alphabet keys should respond to pressed-released?
+  case RGFW_keyPressed:
+  case RGFW_keyReleased:
+    switch (ev->keyChar.value) {
+      RGFW_KEY_CASE(Enter, enter, ev->type == RGFW_keyPressed ? "down" : "up");
+      RGFW_KEY_CASE(Escape, escape,
+                    ev->type == RGFW_keyPressed ? "down" : "up");
+      RGFW_KEY_CASE(BackSpace, backspace,
+                    ev->type == RGFW_keyPressed ? "down" : "up");
+      RGFW_KEY_CASE(CapsLock, capslock,
+                    ev->type == RGFW_keyPressed ? "down" : "up");
+      RGFW_KEY_CASE(Insert, insert,
+                    ev->type == RGFW_keyPressed ? "down" : "up");
+      RGFW_KEY_CASE(End, end, ev->type == RGFW_keyPressed ? "down" : "up");
+      RGFW_KEY_CASE(Home, home, ev->type == RGFW_keyPressed ? "down" : "up");
+      RGFW_KEY_CASE(PageUp, pageup,
+                    ev->type == RGFW_keyPressed ? "down" : "up");
+      RGFW_KEY_CASE(PageDown, pagedown,
+                    ev->type == RGFW_keyPressed ? "down" : "up");
+      RGFW_KEY_CASE(Space, space, ev->type == RGFW_keyPressed ? "down" : "up");
+      RGFW_KEY_CASE(F1, f1, ev->type == RGFW_keyPressed ? "down" : "up");
+      RGFW_KEY_CASE(F2, f2, ev->type == RGFW_keyPressed ? "down" : "up");
+      RGFW_KEY_CASE(F3, f3, ev->type == RGFW_keyPressed ? "down" : "up");
+      RGFW_KEY_CASE(F4, f4, ev->type == RGFW_keyPressed ? "down" : "up");
+      RGFW_KEY_CASE(F5, f5, ev->type == RGFW_keyPressed ? "down" : "up");
+      RGFW_KEY_CASE(F6, f6, ev->type == RGFW_keyPressed ? "down" : "up");
+      RGFW_KEY_CASE(F7, f7, ev->type == RGFW_keyPressed ? "down" : "up");
+      RGFW_KEY_CASE(F8, f8, ev->type == RGFW_keyPressed ? "down" : "up");
+      RGFW_KEY_CASE(F9, f9, ev->type == RGFW_keyPressed ? "down" : "up");
+      RGFW_KEY_CASE(F10, f10, ev->type == RGFW_keyPressed ? "down" : "up");
+      RGFW_KEY_CASE(F11, f11, ev->type == RGFW_keyPressed ? "down" : "up");
+      RGFW_KEY_CASE(F12, f12, ev->type == RGFW_keyPressed ? "down" : "up");
+    default:
+      return false;
+    }
   case RGFW_keyChar:
     switch (ev->keyChar.value) {
-      RGFW_KEY_CASE(Return, enter);
-      RGFW_KEY_CASE(Escape, escape);
-      RGFW_KEY_CASE(BackSpace, backspace);
-      RGFW_KEY_CASE(CapsLock, capslock);
-      RGFW_KEY_CASE(Insert, insert);
-      RGFW_KEY_CASE(End, end);
-      RGFW_KEY_CASE(Home, home);
-      RGFW_KEY_CASE(PageUp, pageup);
-      RGFW_KEY_CASE(PageDown, pagedown);
-      RGFW_KEY_CASE(Space, space);
-      RGFW_KEY_CASE(F1, f1);
-      RGFW_KEY_CASE(F2, f2);
-      RGFW_KEY_CASE(F3, f3);
-      RGFW_KEY_CASE(F4, f4);
-      RGFW_KEY_CASE(F5, f5);
-      RGFW_KEY_CASE(F6, f6);
-      RGFW_KEY_CASE(F7, f7);
-      RGFW_KEY_CASE(F8, f8);
-      RGFW_KEY_CASE(F9, f9);
-      RGFW_KEY_CASE(F10, f10);
-      RGFW_KEY_CASE(F11, f11);
-      RGFW_KEY_CASE(F12, f12);
-    default:
+    case RGFW_keyBackSpace:
+        return false;
+    default: {
       const char event[] = {ev->keyChar.value, '\0'};
       return putevent(gab, gui, "key", "up", gab_string(gab, event),
                       gab_cundefined, gab_cundefined);
+    }
     }
 
   default:
@@ -635,7 +652,7 @@ union gab_value_pair render_rect(struct gab_triple gab, struct gui *gui,
 
   gab_float h = gab_valtof(vh);
 
-  gab_value vcolor = gab_mrecat(gab, props, "color");
+  gab_value vcolor = gab_mrecat(gab, props, "fg");
   if (vcolor == gab_cundefined)
     vcolor = gab_number(0xffffffff);
 

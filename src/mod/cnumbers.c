@@ -91,7 +91,7 @@ GAB_DYNLIB_NATIVE_FN(number, between) {
 
   case 2: {
     if (gab_valkind(argv[1]) != kGAB_NUMBER)
-      return gab_panicf(gab, "Invalid call to gab_numlib_random");
+      return gab_pktypemismatch(gab, argv[1], kGAB_NUMBER);
 
     max = gab_valtof(argv[1]);
 
@@ -99,10 +99,11 @@ GAB_DYNLIB_NATIVE_FN(number, between) {
   }
 
   case 3: {
-    if (gab_valkind(argv[1]) != kGAB_NUMBER ||
-        gab_valkind(argv[2]) != kGAB_NUMBER) {
-      return gab_panicf(gab, "Invalid call to gab_numlib_random");
-    }
+    if (gab_valkind(argv[1]) != kGAB_NUMBER)
+      return gab_pktypemismatch(gab, argv[1], kGAB_NUMBER);
+
+    if (gab_valkind(argv[2]) != kGAB_NUMBER)
+      return gab_pktypemismatch(gab, argv[2], kGAB_NUMBER);
 
     min = gab_valtof(argv[1]);
     max = gab_valtof(argv[2]);
