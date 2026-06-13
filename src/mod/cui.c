@@ -233,8 +233,9 @@ bool clay_RGFW_update(struct gab_triple gab, struct gui *gui, double deltaTime,
     }
   case RGFW_keyChar:
     switch (ev->keyChar.value) {
+    case RGFW_keyEscape:
     case RGFW_keyBackSpace:
-        return false;
+      return false;
     default: {
       const char event[] = {ev->keyChar.value, '\0'};
       return putevent(gab, gui, "key", "up", gab_string(gab, event),
@@ -1166,6 +1167,23 @@ fin:
   return gab_union_cvalid(gab_ok);
 }
 
+double limit_fps(clock_t last) {
+  clock_t dt = clock() - last;
+
+  double dt_d = (double)dt / CLOCKS_PER_SEC;
+
+  if (dt_d < 15) {
+    int64_t ns = (15 - dt_d) * 1000 * 1000;
+    struct timespec remaining = {};
+
+    nanosleep(&(struct timespec){.tv_nsec = ns}, &remaining);
+
+    dt += remaining.tv_nsec * 1000;
+  }
+
+  return dt_d;
+}
+
 GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
 
   gab_value vgui = gab_arg(0);
@@ -1249,10 +1267,10 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
       goto err;
 
     // Compute our dt
-    clock_t dt = clock() - time;
+    double dt_d = limit_fps(time);
 
-    Clay_RenderCommandArray cmd = Clay_EndLayout((double)dt / CLOCKS_PER_SEC);
-    time += dt;
+    Clay_RenderCommandArray cmd = Clay_EndLayout(dt_d);
+    time += dt_d;
 
 #if GAB_PLATFORM_UNIX
     tb_clear();
@@ -1399,10 +1417,10 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_render) {
       goto err;
 
     // Compute our dt
-    clock_t dt = clock() - time;
+    double dt_d = limit_fps(time);
 
-    Clay_RenderCommandArray cmd = Clay_EndLayout((double)dt / CLOCKS_PER_SEC);
-    time += dt;
+    Clay_RenderCommandArray cmd = Clay_EndLayout(dt_d);
+    time += dt_d;
 
     sg_begin_pass(&(sg_pass){
         .action =

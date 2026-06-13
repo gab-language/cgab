@@ -3,11 +3,9 @@ Transducers := 'github.com/gab-language/cgab@0.1.2' .use 'Transducers'
 
 (app ev) := (Channels.make, Channels.make)
 
-Fibers.make () :: do
-  UI
-    .run(gui: ev app)
-    .unwrap
-end
+UI
+  .run(tui: ev app)
+  .unwrap
 
 word_bank := 'test/gwordle' .use 'word_bank.csv'
 valid_words := 'test/gwordle' .use 'valid_words.csv'

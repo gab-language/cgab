@@ -25,13 +25,13 @@ string\is\blank: .defspec {
 
 string\split: .defspec {
   help: "
-  Split the receiving string on the given delimitier.
+  Split the receiving string on the given delimiter. Only performs one split.
   "
   spec: s.message {
     receiver: string\spec
     message:  split:
     input:    s.cat('delimiter' s.string)
-    output:   s.cat('tokens' s*s.string())
+    output:   s.cat('head' s.string, 'tail' s.string)
   }
 }
 
