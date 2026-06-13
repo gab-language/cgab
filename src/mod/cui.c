@@ -233,7 +233,9 @@ bool clay_RGFW_update(struct gab_triple gab, struct gui *gui, double deltaTime,
     }
   case RGFW_keyChar:
     switch (ev->keyChar.value) {
+    case RGFW_keyEnter:
     case RGFW_keyEscape:
+    case RGFW_keySpace:
     case RGFW_keyBackSpace:
       return false;
     default: {
