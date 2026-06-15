@@ -3,12 +3,12 @@ Transducers := 'github.com/gab-language/cgab@0.1.2' .use 'Transducers'
 
 (app ev) := (Channels.make, Channels.make)
 
-UI
-  .run(gui: ev app)
-  .unwrap
+ui := UI.run(gui: ev app).unwrap
 
 word_bank := 'test/gwordle' .use 'word_bank.csv'
 valid_words := 'test/gwordle' .use 'valid_words.csv'
+
+dog := 'test/gwordle' .use 'dog.jpg'
 
 listify := (binary) :: do
   str := binary.as\string.unwrap
@@ -212,6 +212,14 @@ current_guess := (model) :: do
 end
 
 view := (model) :: [
+  [
+    image:
+    {
+      content: dog
+      w:       100
+      h:       100
+    }
+  ]
   [
     box:
     {

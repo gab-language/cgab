@@ -4780,7 +4780,7 @@ GAB_API inline uint64_t gab_strmblen(gab_value str) {
 };
 
 GAB_API inline uint64_t gab_strhash(gab_value str) {
-  assert(gab_valkind(str) == kGAB_STRING);
+  assert(gab_valkind(str) == kGAB_STRING || gab_valkind(str) == kGAB_BINARY);
 
   if (gab_valiso(str))
     return GAB_VAL_TO_STRING(str)->hash;

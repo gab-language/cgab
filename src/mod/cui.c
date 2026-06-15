@@ -87,17 +87,46 @@ unsigned char fontData[] = {
 
 #include "gab.h"
 
-struct gui {
-  struct RGFW_window win;
+#define UI_BOX_TYPE "gab\\ui"
+
+typedef struct clay_sg_image {
+  sclay_image sclay;
+  stbi_uc *pixels;
+  int width, height, channels;
+  sg_image img;
+  sg_view view;
+} clay_sg_image;
+
+struct ui_image {
+  union {
+    clay_sg_image gui;
+    clay_tb_image tui;
+  } as;
+};
+
+#define K gab_value
+#define V struct ui_image
+#define NAME ui_image
+#define HASH(v) (gab_strhash(v))
+#define EQUAL(a, b) (a == b)
+#define DEF_V ((struct ui_image){0})
+#include "dict.h"
+
+struct ui {
+  d_ui_image image_cache;
   gab_value appch, evch;
   uint64_t n;
+  enum gui_kind { kGAB_GUI, kGAB_TUI, kGAB_HUI } k;
   bool ready;
+  union {
+    struct RGFW_window win;
+  };
 };
 
 gab_value gab_gui(struct gab_triple gab) {
   return gab_box(gab, (struct gab_box_argt){
-                          .size = sizeof(struct gui),
-                          .type = gab_string(gab, "gab\\gui"),
+                          .size = sizeof(struct ui),
+                          .type = gab_string(gab, UI_BOX_TYPE),
                       });
 }
 
@@ -105,7 +134,7 @@ void HandleClayErrors(Clay_ErrorData errorData) {
   fprintf(stderr, "%s\n", errorData.errorText.chars);
 }
 
-bool putevent(struct gab_triple gab, struct gui *gui, const char *type,
+bool putevent(struct gab_triple gab, struct ui *gui, const char *type,
               const char *event, gab_value data1, gab_value data2,
               gab_value data3) {
   gab_value ev[] = {
@@ -155,7 +184,7 @@ gab_value clayGetTopmostId(struct gab_triple gab) {
 // TODO @ui @qol: Switch to distinct key\up key\down events.
 
 Clay_Vector2 mousePosition;
-bool clay_RGFW_update(struct gab_triple gab, struct gui *gui, double deltaTime,
+bool clay_RGFW_update(struct gab_triple gab, struct ui *gui, double deltaTime,
                       RGFW_event *ev) {
   switch (ev->type) {
   case RGFW_mouseButtonPressed: {
@@ -257,7 +286,7 @@ bool clay_RGFW_update(struct gab_triple gab, struct gui *gui, double deltaTime,
     return putevent(gab, gui, "key", "up", gab_string(gab, #str),              \
                     gab_number(e->mod), gab_cundefined);
 
-bool clay_termbox_update(struct gab_triple gab, struct gui *gui,
+bool clay_termbox_update(struct gab_triple gab, struct ui *gui,
                          struct tb_event *e, double deltaTime) {
   switch (e->type) {
   case TB_EVENT_RESIZE:
@@ -529,11 +558,11 @@ Clay_TransitionElementConfig parseTransition(struct gab_triple gab,
 
 [[nodiscard]]
 union gab_value_pair
-render_componentlist(struct gab_triple gab, struct gui *gui, gab_value app,
+render_componentlist(struct gab_triple gab, struct ui *gui, gab_value app,
                      Clay_LayoutDirection dir, Clay_ChildAlignment align);
 
 [[nodiscard]]
-union gab_value_pair render_box(struct gab_triple gab, struct gui *gui,
+union gab_value_pair render_box(struct gab_triple gab, struct ui *gui,
                                 gab_value props, gab_value children) {
   if (gab_valkind(props) != kGAB_RECORD)
     return gab_pktypemismatch(gab, props, kGAB_RECORD);
@@ -622,7 +651,7 @@ union gab_value_pair render_box(struct gab_triple gab, struct gui *gui,
 }
 
 [[nodiscard]]
-union gab_value_pair render_rect(struct gab_triple gab, struct gui *gui,
+union gab_value_pair render_rect(struct gab_triple gab, struct ui *gui,
                                  gab_value props) {
   if (gab_valkind(props) != kGAB_RECORD)
     return gab_pktypemismatch(gab, props, kGAB_RECORD);
@@ -686,36 +715,101 @@ union gab_value_pair render_rect(struct gab_triple gab, struct gui *gui,
 }
 
 /*
+ * Free these with the destructors.
+ * THIS NEEDS TO BE THREAD SAFE AND DEFER WORK TO BE DONE BY MAIN THREAD
+ */
+const struct ui_image *image_cache_read(struct gab_triple gab, struct ui *gui,
+                                        gab_value data) {
+  assert(gab.wkid == 1);
+
+  size_t idx = d_ui_image_index_of(&gui->image_cache, data);
+  if (d_ui_image_iexists(&gui->image_cache, idx))
+    return &gui->image_cache.buckets[idx].val;
+
+  struct ui_image insert = {};
+
+  switch (gui->k) {
+  case kGAB_GUI: {
+    const int desired_color_channels = 4;
+
+    insert.as.gui.pixels = stbi_load_from_memory(
+        (const void *)gab_strdata(&data), gab_strlen(data),
+        &insert.as.gui.width, &insert.as.gui.height, &insert.as.gui.channels,
+        desired_color_channels);
+
+    insert.as.gui.channels = 4;
+
+    insert.as.gui.img = sg_make_image(&(struct sg_image_desc){
+        .type = SG_IMAGETYPE_2D,
+        .usage.immutable = true,
+        .width = insert.as.gui.width,
+        .height = insert.as.gui.height,
+        .pixel_format = SG_PIXELFORMAT_RGBA8,
+        .data.mip_levels[0] =
+            {
+                .ptr = insert.as.gui.pixels,
+                .size = (insert.as.gui.width * insert.as.gui.height *
+                         insert.as.gui.channels),
+            },
+    });
+
+    sg_resource_state state = sg_query_image_state(insert.as.gui.img);
+    assert(state == SG_RESOURCESTATE_VALID);
+
+    insert.as.gui.view = sg_make_view(&(struct sg_view_desc){
+        .texture.image = insert.as.gui.img,
+    });
+
+    state = sg_query_view_state(insert.as.gui.view);
+    assert(state == SG_RESOURCESTATE_VALID);
+
+    insert.as.gui.sclay = (sclay_image){
+        .view = insert.as.gui.view,
+    };
+    break;
+  }
+  case kGAB_TUI: {
+    insert.as.tui =
+        Clay_Termbox_Image_Load_Memory(gab_strdata(&data), gab_strlen(data));
+    break;
+  }
+  case kGAB_HUI:
+    break;
+  }
+
+  bool inserted = d_ui_image_insert(&gui->image_cache, data, insert);
+  assert(inserted);
+
+  return &gui->image_cache.buckets[idx].val;
+};
+
+/*
  * TODO @cui @api @qol: Provide an API for loading images into some gab_box,
  * and then expect that as an argument here.
- *
- * TODO @cgab @api: Also - I want all the numbers that are "pixels" to translate
- * to "cells" in the TUI api.  This means we need to wrap them up with some
- * conversions.
  */
 [[nodiscard]]
-union gab_value_pair render_image(struct gab_triple gab, struct gui *gui,
+union gab_value_pair render_image(struct gab_triple gab, struct ui *gui,
                                   gab_value props) {
   if (gab_valkind(props) != kGAB_RECORD)
     return gab_pktypemismatch(gab, props, kGAB_RECORD);
 
   gab_value vw = gab_mrecat(gab, props, "w");
   if (vw == gab_cundefined)
-    return gab_panicf(gab, "Props missing required key $",
+    return gab_panicf(gab, "Props missing required key @",
                       gab_message(gab, "w"));
 
   gab_float w = gab_valtof(vw);
 
   gab_value vh = gab_mrecat(gab, props, "h");
   if (vh == gab_cundefined)
-    return gab_panicf(gab, "Props missing required key $",
+    return gab_panicf(gab, "Props missing required key @",
                       gab_message(gab, "h"));
 
   gab_float h = gab_valtof(vh);
 
   gab_value vimage = gab_mrecat(gab, props, "content");
   if (vimage == gab_cundefined)
-    return gab_panicf(gab, "Props missing required key $",
+    return gab_panicf(gab, "Props missing required key @",
                       gab_message(gab, "content"));
 
   if (gab_valkind(vimage) != kGAB_BINARY)
@@ -725,36 +819,30 @@ union gab_value_pair render_image(struct gab_triple gab, struct gui *gui,
   if (vid != gab_cundefined && gab_valkind(vid) != kGAB_MESSAGE)
     return gab_pktypemismatch(gab, vid, kGAB_MESSAGE);
 
-  // clay_tb_image *img = malloc(sizeof(clay_tb_image));
-  // *img =
-  //     Clay_Termbox_Image_Load_Memory(gab_strdata(&vimage),
-  //     gab_strlen(vimage));
-  //
-  // CLAY(vid == gab_cundefined ? CLAY_IDI("", gui->n++)
-  //                            : CLAY_SID(((Clay_String){
-  //                                  .length = gab_strlen(vid),
-  //                                  .chars = gab_strdata(&vid),
-  //                              })),
-  //      {
-  //          .layout =
-  //              {
-  //                  .sizing =
-  //                      {
-  //                          .width = CLAY_SIZING_FIT(w),
-  //                          .height = CLAY_SIZING_FIT(h),
-  //                      },
-  //              },
-  //          .image =
-  //              {
-  //                  .imageData = img,
-  //              },
-  //      }, );
+  const struct ui_image *img = image_cache_read(gab, gui, vimage);
+
+  CLAY(vid == gab_cundefined ? CLAY_IDI("", gui->n++)
+                             : CLAY_SID(((Clay_String){
+                                   .length = gab_strlen(vid),
+                                   .chars = gab_strdata(&vid),
+                               })),
+       {
+           .layout =
+               {
+                   .sizing =
+                       {
+                           .width = CLAY_SIZING_FIT(w),
+                           .height = CLAY_SIZING_FIT(h),
+                       },
+               },
+           .image = {.imageData = (void *)img},
+       }, );
 
   return gab_union_cvalid(gab_nil);
 }
 
 [[nodiscard]]
-union gab_value_pair render_text(struct gab_triple gab, struct gui *gui,
+union gab_value_pair render_text(struct gab_triple gab, struct ui *gui,
                                  gab_value props) {
   if (gab_valkind(props) != kGAB_RECORD)
     return gab_pktypemismatch(gab, props, kGAB_RECORD);
@@ -848,7 +936,7 @@ union gab_value_pair render_text(struct gab_triple gab, struct gui *gui,
 }
 
 [[nodiscard]]
-union gab_value_pair render_component(struct gab_triple gab, struct gui *gui,
+union gab_value_pair render_component(struct gab_triple gab, struct ui *gui,
                                       gab_value component) {
   if (gab_valkind(component) != kGAB_RECORD)
     return gab_pktypemismatch(gab, component, kGAB_RECORD);
@@ -869,8 +957,7 @@ union gab_value_pair render_component(struct gab_triple gab, struct gui *gui,
   if (kind == gab_message(gab, "rect"))
     return render_rect(gab, gui, props);
 
-  // Currently unsupported by sokol_clay.h
-  if (kind == gab_message(gab, "img"))
+  if (kind == gab_message(gab, "image"))
     return render_image(gab, gui, props);
 
   if (gab_reclen(component) < 3)
@@ -885,8 +972,8 @@ union gab_value_pair render_component(struct gab_triple gab, struct gui *gui,
   return gab_panicf(gab, "Unknown component type\n\n$", kind);
 }
 
-union gab_value_pair render_componentlist(struct gab_triple gab,
-                                          struct gui *gui, gab_value components,
+union gab_value_pair render_componentlist(struct gab_triple gab, struct ui *gui,
+                                          gab_value components,
                                           Clay_LayoutDirection dir,
                                           Clay_ChildAlignment align) {
   if (gab_valkind(components) != kGAB_RECORD)
@@ -929,10 +1016,10 @@ sclay_font_t fonts[1];
 GAB_DYNLIB_NATIVE_FN(ui, hui_event) {
   gab_value vgui = gab_arg(0);
 
-  if (gab_valtype(gab, vgui) != gab_string(gab, "gab\\gui"))
-    return gab_ptypemismatch(gab, vgui, gab_string(gab, "gab\\gui"));
+  if (gab_valtype(gab, vgui) != gab_string(gab, UI_BOX_TYPE))
+    return gab_ptypemismatch(gab, vgui, gab_string(gab, UI_BOX_TYPE));
 
-  struct gui *gui = gab_boxdata(vgui);
+  struct ui *gui = gab_boxdata(vgui);
   union gab_value_pair res;
   static gab_value ev[2] = {};
 
@@ -991,10 +1078,10 @@ fin:
 GAB_DYNLIB_NATIVE_FN(ui, hui_render) {
   gab_value vgui = gab_arg(0);
 
-  if (gab_valtype(gab, vgui) != gab_string(gab, "gab\\gui"))
-    return gab_ptypemismatch(gab, vgui, gab_string(gab, "gab\\gui"));
+  if (gab_valtype(gab, vgui) != gab_string(gab, UI_BOX_TYPE))
+    return gab_ptypemismatch(gab, vgui, gab_string(gab, UI_BOX_TYPE));
 
-  struct gui *gui = gab_boxdata(vgui);
+  struct ui *gui = gab_boxdata(vgui);
   union gab_value_pair res;
 
   for (;;) {
@@ -1048,12 +1135,12 @@ fin:
 GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
   gab_value vgui = gab_arg(0);
 
-  if (gab_valtype(gab, vgui) != gab_string(gab, "gab\\gui"))
-    return gab_ptypemismatch(gab, vgui, gab_string(gab, "gab\\gui"));
+  if (gab_valtype(gab, vgui) != gab_string(gab, UI_BOX_TYPE))
+    return gab_ptypemismatch(gab, vgui, gab_string(gab, UI_BOX_TYPE));
 
   gab_value res = 0;
 
-  struct gui *gui = gab_boxdata(vgui);
+  struct ui *gui = gab_boxdata(vgui);
   if (!gui->ready) {
     res = gab_ctimeout;
     goto yield;
@@ -1128,7 +1215,8 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
 
       // We need to retry this put until we get cvalid - that is how
       // we know the put is on the channel.
-      // we can do this by yielding a specific value, instead of just undefined.
+      // we can do this by yielding a specific value, instead of just
+      // undefined.
       res = gab_untchnput(gab, gui->evch, len, ev, 1);
 
       // Check for error and timeout
@@ -1169,13 +1257,15 @@ fin:
   return gab_union_cvalid(gab_ok);
 }
 
+#define MAX_MS_PER_FRAME 15
+
 double limit_fps(clock_t last) {
   clock_t dt = clock() - last;
 
   double dt_d = (double)dt / CLOCKS_PER_SEC;
 
-  if (dt_d < 15) {
-    int64_t ns = (15 - dt_d) * 1000 * 1000;
+  if (dt_d < MAX_MS_PER_FRAME) {
+    int64_t ns = (MAX_MS_PER_FRAME - dt_d) * 1000 * 1000;
     struct timespec remaining = {};
 
     nanosleep(&(struct timespec){.tv_nsec = ns}, &remaining);
@@ -1189,13 +1279,13 @@ double limit_fps(clock_t last) {
 GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
 
   gab_value vgui = gab_arg(0);
-  struct gui *gui = gab_boxdata(vgui);
+  struct ui *gui = gab_boxdata(vgui);
 
   static clock_t time;
 
   if (!reentrant) {
-    if (gab_valtype(gab, vgui) != gab_string(gab, "gab\\gui"))
-      return gab_ptypemismatch(gab, vgui, gab_string(gab, "gab\\gui"));
+    if (gab_valtype(gab, vgui) != gab_string(gab, UI_BOX_TYPE))
+      return gab_ptypemismatch(gab, vgui, gab_string(gab, UI_BOX_TYPE));
 
     Clay_Termbox_Initialize(TB_OUTPUT_TRUECOLOR, CLAY_TB_BORDER_MODE_MINIMUM,
                             CLAY_TB_BORDER_CHARS_BLANK,
@@ -1302,10 +1392,10 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_render) {
   gab_value vgui = gab_arg(0);
   static clock_t time;
 
-  if (gab_valtype(gab, vgui) != gab_string(gab, "gab\\gui"))
-    return gab_ptypemismatch(gab, vgui, gab_string(gab, "gab\\gui"));
+  if (gab_valtype(gab, vgui) != gab_string(gab, UI_BOX_TYPE))
+    return gab_ptypemismatch(gab, vgui, gab_string(gab, UI_BOX_TYPE));
 
-  struct gui *gui = gab_boxdata(vgui);
+  struct ui *gui = gab_boxdata(vgui);
 
   if (!gui->ready) {
     RGFW_glHints *hints = RGFW_getGlobalHints_OpenGL();
@@ -1474,12 +1564,12 @@ fin:
 GAB_DYNLIB_NATIVE_FN(ui, gui_event) {
   gab_value vgui = gab_arg(0);
 
-  if (gab_valtype(gab, vgui) != gab_string(gab, "gab\\gui"))
-    return gab_ptypemismatch(gab, vgui, gab_string(gab, "gab\\gui"));
+  if (gab_valtype(gab, vgui) != gab_string(gab, UI_BOX_TYPE))
+    return gab_ptypemismatch(gab, vgui, gab_string(gab, UI_BOX_TYPE));
 
   gab_value res = 0;
 
-  struct gui *gui = gab_boxdata(vgui);
+  struct ui *gui = gab_boxdata(vgui);
   if (!gui->ready) {
     res = gab_ctimeout;
     goto yield;
@@ -1597,30 +1687,34 @@ GAB_DYNLIB_NATIVE_FN(ui, run) {
   const char *event_rec_name = nullptr;
   gab_native_f event_rec_target = nullptr;
 
+  gab_value vgui = gab_gui(gab);
+  struct ui *gui = gab_boxdata(vgui);
+  d_ui_image_create(&gui->image_cache, 8);
+
   if (kind == gab_message(gab, "gui")) {
     render_rec_name = "ui\\gui\\loop\\render";
     render_rec_target = gab_mod_ui_gui_render;
     event_rec_name = "ui\\gui\\loop\\event";
     event_rec_target = gab_mod_ui_gui_event;
+    gui->k = kGAB_GUI;
 #if GAB_PLATFORM_UNIX
   } else if (kind == gab_message(gab, "tui")) {
     render_rec_name = "ui\\tui\\loop\\render";
     render_rec_target = gab_mod_ui_tui_render;
     event_rec_name = "ui\\tui\\loop\\event";
     event_rec_target = gab_mod_ui_tui_event;
+    gui->k = kGAB_TUI;
 #endif
   } else if (kind == gab_message(gab, "hui")) {
     render_rec_name = "ui\\hui\\loop\\render";
     render_rec_target = gab_mod_ui_hui_render;
     event_rec_name = "ui\\hui\\loop\\event";
     event_rec_target = gab_mod_ui_hui_event;
+    gui->k = kGAB_HUI;
   } else {
     return gab_panicf(gab, "Expected @ or @, found @", gab_message(gab, "gui"),
                       gab_message(gab, "tui"), kind);
   }
-
-  gab_value vgui = gab_gui(gab);
-  struct gui *gui = gab_boxdata(vgui);
 
   gab_irefall(gab, evch, appch, vgui);
 
@@ -1654,7 +1748,7 @@ GAB_DYNLIB_NATIVE_FN(ui, run) {
     return gab_panicf(gab, "Couldn't start event thread");
   }
 
-  return gab_vmpush(gab_thisvm(gab), gab_ok), gab_union_cvalid(gab_nil);
+  return gab_vmpush(gab_thisvm(gab), gab_ok, vgui), gab_union_cvalid(gab_nil);
 }
 
 GAB_DYNLIB_MAIN_FN {
