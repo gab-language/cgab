@@ -3,7 +3,7 @@ Transducers := 'github.com/gab-language/cgab@0.1.2' .use 'Transducers'
 
 (app ev) := (Channels.make, Channels.make)
 
-ui := UI.run(gui: ev app).unwrap
+ui := UI.run(tui: ev app).unwrap
 
 word_bank := 'test/gwordle' .use 'word_bank.csv'
 valid_words := 'test/gwordle' .use 'valid_words.csv'
@@ -139,7 +139,7 @@ HintRow := (model str id) :: do
   Ranges.make(4).map i :: [
     box:
     {
-#id: '$#$'.sprintf(id i) .to\message
+      id: '$#$'.sprintf(id i).to\message
       w: 100
       h: 100
       align\x: center:
@@ -166,7 +166,7 @@ Row := (str id) :: do
   Ranges.make(4).map i :: [
     box:
     {
-#id: '$#$'.sprintf(id i).to\message
+      id: '$#$'.sprintf(id i).to\message
       w: 100
       h: 100
       align\x: center:
@@ -212,14 +212,6 @@ current_guess := (model) :: do
 end
 
 view := (model) :: [
-  [
-    image:
-    {
-      content: dog
-      w:       100
-      h:       100
-    }
-  ]
   [
     box:
     {

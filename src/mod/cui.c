@@ -170,8 +170,9 @@ gab_value clayGetTopmostId(struct gab_triple gab) {
   Clay_ElementIdArray arr = Clay_GetPointerOverIds();
 
   // Skip the root - we don't care about clicks there.
-  for (size_t i = arr.length; i > 1; i--) {
+  for (int i = arr.length; i > 1; i--) {
     Clay_String str = arr.internalArray[i - 1].stringId;
+
     if (!str.length)
       continue;
 
@@ -183,43 +184,52 @@ gab_value clayGetTopmostId(struct gab_triple gab) {
 
 // TODO @ui @qol: Switch to distinct key\up key\down events.
 
-Clay_Vector2 mousePosition;
 bool clay_RGFW_update(struct gab_triple gab, struct ui *gui, double deltaTime,
                       RGFW_event *ev) {
   switch (ev->type) {
   case RGFW_mouseButtonPressed: {
     gab_value target = clayGetTopmostId(gab);
-    switch (ev->button.type) {
-    case RGFW_mouseScroll:
-      // Clay_UpdateScrollContainers(false, (Clay_Vector2){0, ev->scroll.y},
-      //                             deltaTime);
-      return false;
+
+    switch (ev->button.value) {
     case RGFW_mouseLeft:
-      // Clay_SetPointerState(mousePosition, true);
-      return putevent(gab, gui, "mouse", "left", target, gab_nil, gab_nil);
+      return putevent(gab, gui, "mouse", "down", gab_message(gab, "left"),
+                      target, gab_cundefined);
     case RGFW_mouseRight:
-      // Clay_SetPointerState(mousePosition, true);
-      return putevent(gab, gui, "mouse", "right", target, gab_nil, gab_nil);
+      return putevent(gab, gui, "mouse", "down", gab_message(gab, "right"),
+                      target, gab_cundefined);
+    default:
+      return true;
     }
 
     return false;
   }
   case RGFW_mouseButtonReleased: {
     gab_value target = clayGetTopmostId(gab);
+
+    gab_fprintf(stdout, "PRESS RELEASE($) ON $\n", gab_number(ev->button.value),
+                target);
+
     switch (ev->button.value) {
     case RGFW_mouseLeft:
-      // Clay_SetPointerState(mousePosition, true);
-      return putevent(gab, gui, "mouse", "left", target, gab_nil, gab_nil);
+      return putevent(gab, gui, "mouse", "up", gab_message(gab, "left"), target,
+                      gab_cundefined);
     case RGFW_mouseRight:
-      // Clay_SetPointerState(mousePosition, true);
-      return putevent(gab, gui, "mouse", "right", target, gab_nil, gab_nil);
+      return putevent(gab, gui, "mouse", "up", gab_message(gab, "right"),
+                      target, gab_cundefined);
+    default:
+      return true;
     }
 
     return false;
   }
+  case RGFW_mouseScroll: {
+    Clay_UpdateScrollContainers(false, (Clay_Vector2){0, ev->delta.y},
+                                deltaTime);
+    return false;
+  }
   case RGFW_mousePosChanged:
-    mousePosition = (Clay_Vector2){(float)ev->mouse.x, (float)ev->mouse.y};
-    // Clay_SetPointerState(mousePosition, RGFW_isMousePressed(RGFW_mouseLeft));
+    Clay_SetPointerState((Clay_Vector2){(float)ev->mouse.x, (float)ev->mouse.y},
+                         RGFW_isMousePressed(RGFW_mouseLeft));
     return false;
   case RGFW_windowMoved:
   case RGFW_windowResized:
@@ -561,6 +571,25 @@ union gab_value_pair
 render_componentlist(struct gab_triple gab, struct ui *gui, gab_value app,
                      Clay_LayoutDirection dir, Clay_ChildAlignment align);
 
+Clay_String str_for_gab_string(gab_value str) {
+  size_t len = gab_strlen(str);
+  if (len > 5)
+    return (Clay_String){
+        .length = len,
+        .chars = gab_strdata(&str),
+    };
+
+  // TODO @ui @bug: This leaks every time.
+  return (Clay_String){
+      .length = len,
+      .chars = strdup(gab_strdata(&str)),
+  };
+}
+
+#define UI_ID(vid)                                                             \
+  (vid == gab_cundefined ? CLAY_IDI("", gui->n++)                              \
+                         : CLAY_SID(str_for_gab_string(vid)))
+
 [[nodiscard]]
 union gab_value_pair render_box(struct gab_triple gab, struct ui *gui,
                                 gab_value props, gab_value children) {
@@ -612,11 +641,7 @@ union gab_value_pair render_box(struct gab_triple gab, struct ui *gui,
 
   gab_uint border_w = gab_valtou(vborderWidth);
 
-  CLAY(vid == gab_cundefined ? CLAY_IDI("", gui->n++)
-                             : CLAY_SID(((Clay_String){
-                                   .length = gab_strlen(vid),
-                                   .chars = gab_strdata(&vid),
-                               })),
+  CLAY(UI_ID(vid),
        {
            .layout = layout,
            .cornerRadius =
@@ -695,28 +720,22 @@ union gab_value_pair render_rect(struct gab_triple gab, struct ui *gui,
   if (vid != gab_cundefined && gab_valkind(vid) != kGAB_MESSAGE)
     return gab_pktypemismatch(gab, vid, kGAB_MESSAGE);
 
-  CLAY(vid == gab_cundefined ? CLAY_IDI("", gui->n++)
-                             : CLAY_SID(((Clay_String){
-                                   .length = gab_strlen(vid),
-                                   .chars = gab_strdata(&vid),
-                               })),
-       {
-           .backgroundColor = packedToClayColor(vcolor),
-           .layout = parseLayout(gab, props),
-           .floating =
-               {
-                   .attachTo = CLAY_ATTACH_TO_ROOT,
-                   .offset = {.x = x, .y = y},
-                   .expand = {.height = h, .width = w},
-               },
-       });
+  CLAY(UI_ID(vid), {
+                       .backgroundColor = packedToClayColor(vcolor),
+                       .layout = parseLayout(gab, props),
+                       .floating =
+                           {
+                               .attachTo = CLAY_ATTACH_TO_ROOT,
+                               .offset = {.x = x, .y = y},
+                               .expand = {.height = h, .width = w},
+                           },
+                   });
 
   return gab_union_cvalid(gab_nil);
 }
 
 /*
  * Free these with the destructors.
- * THIS NEEDS TO BE THREAD SAFE AND DEFER WORK TO BE DONE BY MAIN THREAD
  */
 const struct ui_image *image_cache_read(struct gab_triple gab, struct ui *gui,
                                         gab_value data) {
@@ -821,11 +840,7 @@ union gab_value_pair render_image(struct gab_triple gab, struct ui *gui,
 
   const struct ui_image *img = image_cache_read(gab, gui, vimage);
 
-  CLAY(vid == gab_cundefined ? CLAY_IDI("", gui->n++)
-                             : CLAY_SID(((Clay_String){
-                                   .length = gab_strlen(vid),
-                                   .chars = gab_strdata(&vid),
-                               })),
+  CLAY(UI_ID(vid),
        {
            .layout =
                {
@@ -1259,21 +1274,30 @@ fin:
 
 #define MAX_MS_PER_FRAME 15
 
-double limit_fps(clock_t last) {
+struct timestep {
+  clock_t dt;
+  double dt_d;
+};
+
+struct timestep limit_fps(clock_t last) {
   clock_t dt = clock() - last;
 
   double dt_d = (double)dt / CLOCKS_PER_SEC;
 
   if (dt_d < MAX_MS_PER_FRAME) {
-    int64_t ns = (MAX_MS_PER_FRAME - dt_d) * 1000 * 1000;
+    // milliseconds -> nanoseconds
+    int64_t ns = (MAX_MS_PER_FRAME - dt_d) * 1000;
     struct timespec remaining = {};
 
     nanosleep(&(struct timespec){.tv_nsec = ns}, &remaining);
 
-    dt += remaining.tv_nsec * 1000;
+    // TODO @ui @bug: Add some dt for sleeping to the clock time also?
+
+    // nanoseconds -> seconds
+    dt_d += (double)(ns - remaining.tv_nsec) / 1000000.f;
   }
 
-  return dt_d;
+  return (struct timestep){dt, dt_d};
 }
 
 GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
@@ -1359,10 +1383,10 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
       goto err;
 
     // Compute our dt
-    double dt_d = limit_fps(time);
+    struct timestep step = limit_fps(time);
 
-    Clay_RenderCommandArray cmd = Clay_EndLayout(dt_d);
-    time += dt_d;
+    Clay_RenderCommandArray cmd = Clay_EndLayout(step.dt_d);
+    time += step.dt;
 
 #if GAB_PLATFORM_UNIX
     tb_clear();
@@ -1509,10 +1533,10 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_render) {
       goto err;
 
     // Compute our dt
-    double dt_d = limit_fps(time);
+    struct timestep step = limit_fps(time);
 
-    Clay_RenderCommandArray cmd = Clay_EndLayout(dt_d);
-    time += dt_d;
+    Clay_RenderCommandArray cmd = Clay_EndLayout(step.dt_d);
+    time += step.dt;
 
     sg_begin_pass(&(sg_pass){
         .action =
