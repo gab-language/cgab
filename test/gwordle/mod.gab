@@ -153,10 +153,10 @@ HintRow := (model str id) :: do
         text:
         {
           size: SIZE
-          content: str.at i .unwrap_or " "
           bg: Colors.cl
           fg: Colors.bg
         }
+        str.at i .unwrap_or " "
       ]
     ]
   ]
@@ -180,10 +180,10 @@ Row := (str id) :: do
         text:
         {
           size: SIZE
-          content: str.at i .unwrap_or " "
           fg: Colors.bg
           bg: Colors.cl
         }
+        str.at i .unwrap_or " "
       ]
     ]
   ]
@@ -213,6 +213,14 @@ end
 
 view := (model) :: [
   [
+    image:
+    {
+      w\r: 50
+      h\r: 50
+    }
+    dog
+  ]
+  [
     box:
     {
       w\g: 1
@@ -220,7 +228,7 @@ view := (model) :: [
       align\x: center:
     }
     [
-      [text: { size: SIZE * 2 bg: Colors.bg, fg: Colors.b, content: "gwordle" }]
+      [text: { size: SIZE * 2 bg: Colors.bg, fg: Colors.b } "gwordle"]
     ]
   ]
   [

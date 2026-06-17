@@ -98,6 +98,7 @@ typedef struct clay_sg_image {
 } clay_sg_image;
 
 struct ui_image {
+
   union {
     clay_sg_image gui;
     clay_tb_image tui;
@@ -122,6 +123,34 @@ struct ui {
     struct RGFW_window win;
   };
 };
+
+#define MAX_MS_PER_FRAME 15
+
+struct timestep {
+  clock_t dt;
+  double dt_d;
+};
+
+struct timestep limit_fps(clock_t last) {
+  clock_t dt = clock() - last;
+
+  double dt_d = (double)dt / CLOCKS_PER_SEC;
+
+  if (dt_d < MAX_MS_PER_FRAME) {
+    // milliseconds -> nanoseconds
+    int64_t ns = (MAX_MS_PER_FRAME - dt_d) * 1000;
+    struct timespec remaining = {};
+
+    nanosleep(&(struct timespec){.tv_nsec = ns}, &remaining);
+
+    // TODO @ui @bug: Add some dt for sleeping to the clock time also?
+
+    // nanoseconds -> seconds
+    dt_d += (double)(ns - remaining.tv_nsec) / 1000000.f;
+  }
+
+  return (struct timestep){dt, dt_d};
+}
 
 gab_value gab_gui(struct gab_triple gab) {
   return gab_box(gab, (struct gab_box_argt){
@@ -456,7 +485,8 @@ Clay_Padding parsePadding(struct gab_triple gab, gab_value props) {
   return p;
 }
 
-Clay_Sizing parseSizing(struct gab_triple gab, gab_value props) {
+Clay_Sizing parseSizing(struct gab_triple gab, gab_value props,
+                        int default_width, int default_height) {
   gab_value vfixedwidth = gab_mrecat(gab, props, "w");
   gab_value vrelwidth = gab_mrecat(gab, props, "w\\r");
   gab_value vgrowwidth = gab_mrecat(gab, props, "w\\g");
@@ -481,8 +511,10 @@ Clay_Sizing parseSizing(struct gab_triple gab, gab_value props) {
       return (Clay_Sizing){};
     w = CLAY_SIZING_GROW(gab_valtou(vgrowwidth));
   } else {
-    // w = (Clay_SizingAxis){0};
-    w = CLAY_SIZING_FIT();
+    if (default_width)
+      w = CLAY_SIZING_FIT(default_width);
+    else
+      w = CLAY_SIZING_FIT();
   }
 
   gab_value vfixedheight = gab_mrecat(gab, props, "h");
@@ -509,8 +541,10 @@ Clay_Sizing parseSizing(struct gab_triple gab, gab_value props) {
       return (Clay_Sizing){};
     h = CLAY_SIZING_GROW(gab_valtou(vgrowheight));
   } else {
-    // h = (Clay_SizingAxis){0};
-    h = CLAY_SIZING_FIT();
+    if (default_height)
+      h = CLAY_SIZING_FIT(default_height);
+    else
+      h = CLAY_SIZING_FIT();
   }
 
   return (Clay_Sizing){.width = w, .height = h};
@@ -522,7 +556,7 @@ Clay_LayoutConfig parseLayout(struct gab_triple gab, gab_value props) {
   return (Clay_LayoutConfig){
       .layoutDirection = parseDirection(gab, props),
       .padding = parsePadding(gab, props),
-      .sizing = parseSizing(gab, props),
+      .sizing = parseSizing(gab, props, 0, 0),
       .childAlignment = parseChildAlignment(gab, props),
       .childGap = gab_valkind(vgap) == kGAB_NUMBER ? gab_valtou(vgap) : 0,
   };
@@ -602,9 +636,6 @@ Clay_String str_for_gab_string(gab_value str) {
 [[nodiscard]]
 union gab_value_pair render_box(struct gab_triple gab, struct ui *gui,
                                 gab_value props, gab_value children) {
-  if (gab_valkind(props) != kGAB_RECORD)
-    return gab_pktypemismatch(gab, props, kGAB_RECORD);
-
   gab_value vfg = gab_cundefined;
   gab_value vbg = gab_mrecat(gab, props, "bg");
 
@@ -743,9 +774,6 @@ union gab_value_pair render_rect(struct gab_triple gab, struct ui *gui,
   return gab_union_cvalid(gab_nil);
 }
 
-/*
- * Free these with the destructors.
- */
 const struct ui_image *image_cache_read(struct gab_triple gab, struct ui *gui,
                                         gab_value data) {
   assert(gab.wkid == 1);
@@ -811,53 +839,37 @@ const struct ui_image *image_cache_read(struct gab_triple gab, struct ui *gui,
   return &gui->image_cache.buckets[idx].val;
 };
 
-/*
- * TODO @cui @api @qol: Provide an API for loading images into some gab_box,
- * and then expect that as an argument here.
- */
 [[nodiscard]]
 union gab_value_pair render_image(struct gab_triple gab, struct ui *gui,
-                                  gab_value props) {
-  if (gab_valkind(props) != kGAB_RECORD)
-    return gab_pktypemismatch(gab, props, kGAB_RECORD);
-
-  gab_value vw = gab_mrecat(gab, props, "w");
-  if (vw == gab_cundefined)
-    return gab_panicf(gab, "Props missing required key @",
-                      gab_message(gab, "w"));
-
-  gab_float w = gab_valtof(vw);
-
-  gab_value vh = gab_mrecat(gab, props, "h");
-  if (vh == gab_cundefined)
-    return gab_panicf(gab, "Props missing required key @",
-                      gab_message(gab, "h"));
-
-  gab_float h = gab_valtof(vh);
-
-  gab_value vimage = gab_mrecat(gab, props, "content");
-  if (vimage == gab_cundefined)
-    return gab_panicf(gab, "Props missing required key @",
-                      gab_message(gab, "content"));
-
-  if (gab_valkind(vimage) != kGAB_BINARY)
-    return gab_pktypemismatch(gab, vimage, kGAB_BINARY);
-
+                                  gab_value props, gab_value content) {
   gab_value vid = gab_mrecat(gab, props, "id");
   if (vid != gab_cundefined && gab_valkind(vid) != kGAB_MESSAGE)
     return gab_pktypemismatch(gab, vid, kGAB_MESSAGE);
 
-  const struct ui_image *img = image_cache_read(gab, gui, vimage);
+  if (gab_valkind(content) != kGAB_BINARY)
+    return gab_panicf(gab,
+                      "An image component's third element should be a binary, "
+                      "containing the image content. Found:\n\n$",
+                      content);
+
+  const struct ui_image *img = image_cache_read(gab, gui, content);
+
+  // Pull default w/h out of the image width/height itself.
+
+  gab_uint w = gui->k == kGAB_GUI   ? img->as.gui.width
+               : gui->k == kGAB_TUI ? img->as.tui.pixel_width
+                                    : 0;
+
+  gab_uint h = gui->k == kGAB_GUI   ? img->as.gui.height
+               : gui->k == kGAB_TUI ? img->as.tui.pixel_height
+                                    : 0;
 
   CLAY(UI_ID(vid),
        {
            .layout =
                {
-                   .sizing =
-                       {
-                           .width = CLAY_SIZING_FIT(w),
-                           .height = CLAY_SIZING_FIT(h),
-                       },
+                   .padding = parsePadding(gab, props),
+                   .sizing = parseSizing(gab, props, w, h),
                },
            .image = {.imageData = (void *)img},
        }, );
@@ -867,23 +879,18 @@ union gab_value_pair render_image(struct gab_triple gab, struct ui *gui,
 
 [[nodiscard]]
 union gab_value_pair render_text(struct gab_triple gab, struct ui *gui,
-                                 gab_value props) {
-  if (gab_valkind(props) != kGAB_RECORD)
-    return gab_pktypemismatch(gab, props, kGAB_RECORD);
-
-  gab_value vtext = gab_mrecat(gab, props, "content");
-  if (vtext == gab_cundefined)
-    return gab_panicf(gab, "Props missing required key @",
-                      gab_message(gab, "content"));
-
-  if (gab_valkind(vtext) != kGAB_STRING)
-    return gab_pktypemismatch(gab, vtext, kGAB_STRING);
+                                 gab_value props, gab_value content) {
+  if (gab_valkind(content) != kGAB_STRING)
+    return gab_panicf(gab,
+                      "A text component's third element should be a string, "
+                      "containing the text content. Found:\n\n$",
+                      content);
 
   // This leaks every time
-  uint64_t len = gab_strlen(vtext);
+  uint64_t len = gab_strlen(content);
   char *str = malloc(len + 1);
   assert(str != nullptr);
-  strcpy(str, gab_strdata(&vtext));
+  strcpy(str, gab_strdata(&content));
 
   // not guaranteed to work here.
   Clay_String text = {
@@ -959,52 +966,80 @@ union gab_value_pair render_text(struct gab_triple gab, struct ui *gui,
   return gab_union_cvalid(gab_nil);
 }
 
+#define EXPECTED_COMPONENT_FMT "Expected a component, found:\n\n$\n\n"
+
+#define EXPECTED_COMPONENT_ERROR(component, help, ...)                         \
+  gab_panicf(gab, EXPECTED_COMPONENT_FMT help,                                 \
+             component __VA_OPT__(, ) __VA_ARGS__)
+
 [[nodiscard]]
 union gab_value_pair render_component(struct gab_triple gab, struct ui *gui,
                                       gab_value component) {
   if (gab_valkind(component) != kGAB_RECORD)
-    return gab_pktypemismatch(gab, component, kGAB_RECORD);
+    return EXPECTED_COMPONENT_ERROR(component,
+                                    "A component is a list-type record.");
 
   if (!gab_recisl(component))
-    return gab_panicf(gab, "Expected a list, found $", component);
-
-  if (gab_reclen(component) < 2)
-    return gab_panicf(gab, "Expected a list of at least 2 elements, found $",
-                      component);
-
-  gab_value kind = gab_lstat(component, 0);
-  gab_value props = gab_lstat(component, 1);
-
-  if (kind == gab_message(gab, "text"))
-    return render_text(gab, gui, props);
-
-  if (kind == gab_message(gab, "rect"))
-    return render_rect(gab, gui, props);
-
-  if (kind == gab_message(gab, "image"))
-    return render_image(gab, gui, props);
+    return EXPECTED_COMPONENT_ERROR(component,
+                                    "A component is a list-type record.");
 
   if (gab_reclen(component) < 3)
-    return gab_panicf(
-        gab, "Expected a list of at least 3 elements, found:\n\n$", component);
+    return EXPECTED_COMPONENT_ERROR(
+        component, "A component must have at least 3 elements.");
 
-  gab_value children = gab_lstat(component, 2);
+  gab_value kind = gab_lstat(component, 0);
+
+  if (gab_valkind(kind) != kGAB_MESSAGE)
+    return EXPECTED_COMPONENT_ERROR(
+        component,
+        "A component's first element should be a message, indicating the kind "
+        "of component. Instead, found:\n\n$",
+        kind);
+
+  gab_value props = gab_lstat(component, 1);
+
+  if (gab_valkind(props) != kGAB_RECORD)
+    return EXPECTED_COMPONENT_ERROR(
+        component,
+        "A component's second element should be a record, carrying properties "
+        "of the component. Instead, found:\n\n$",
+        props);
+
+  gab_value content = gab_lstat(component, 2);
+
+  if (kind == gab_message(gab, "text"))
+    return render_text(gab, gui, props, content);
+
+  if (kind == gab_message(gab, "image"))
+    return render_image(gab, gui, props, content);
 
   if (kind == gab_message(gab, "box"))
-    return render_box(gab, gui, props, children);
+    return render_box(gab, gui, props, content);
 
-  return gab_panicf(gab, "Unknown component type\n\n$", kind);
+  return EXPECTED_COMPONENT_ERROR(
+      component,
+      "Unrecognized component kind: \n\n$\n\nExpected one of: \n\n$\n$\n$",
+      kind, gab_message(gab, "text"), gab_message(gab, "image"),
+      gab_message(gab, "box"));
 }
+
+#define EXPECTED_COMPONENTLIST_FMT "Expected a component-list, found:\n\n$\n\n"
+
+#define EXPECTED_COMPONENTLIST_ERROR(component, help, ...)                     \
+  gab_panicf(gab, EXPECTED_COMPONENTLIST_FMT help,                             \
+             component __VA_OPT__(, ) __VA_ARGS__)
 
 union gab_value_pair render_componentlist(struct gab_triple gab, struct ui *gui,
                                           gab_value components,
                                           Clay_LayoutDirection dir,
                                           Clay_ChildAlignment align) {
   if (gab_valkind(components) != kGAB_RECORD)
-    return gab_pktypemismatch(gab, components, kGAB_RECORD);
+    return EXPECTED_COMPONENTLIST_ERROR(
+        components, "A component-list is a list-type record.");
 
   if (!gab_recisl(components))
-    return gab_panicf(gab, "Expected a list, found\n\n$", components);
+    return EXPECTED_COMPONENTLIST_ERROR(
+        components, "A component-list is a list-type record.");
 
   gab_uint len = gab_reclen(components);
   CLAY(CLAY_IDI("", gui->n++),
@@ -1108,6 +1143,11 @@ GAB_DYNLIB_NATIVE_FN(ui, hui_render) {
   struct ui *gui = gab_boxdata(vgui);
   union gab_value_pair res;
 
+  static clock_t time;
+
+  if (!reentrant)
+    time = 0;
+
   for (;;) {
     if (gab_chnisclosed(gui->appch))
       goto fin;
@@ -1127,6 +1167,22 @@ GAB_DYNLIB_NATIVE_FN(ui, hui_render) {
       res = gab_panicf(gab, "Crashed UI thrd due to some error");
       goto err;
     }
+
+    gab_iref(gab, app);
+
+    Clay_BeginLayout();
+
+    struct timestep step = limit_fps(time);
+
+    /* Try to render, so that we can see errors */
+    res = render_componentlist(gab, gui, app, CLAY_TOP_TO_BOTTOM,
+                               (Clay_ChildAlignment){});
+    Clay_RenderCommandArray cmd = Clay_EndLayout(step.dt_d);
+
+    if (res.status != gab_cundefined)
+      goto err;
+
+    gab_dref(gab, app);
   }
 
 yield:
@@ -1281,34 +1337,6 @@ fin:
   return gab_union_cvalid(gab_ok);
 }
 
-#define MAX_MS_PER_FRAME 15
-
-struct timestep {
-  clock_t dt;
-  double dt_d;
-};
-
-struct timestep limit_fps(clock_t last) {
-  clock_t dt = clock() - last;
-
-  double dt_d = (double)dt / CLOCKS_PER_SEC;
-
-  if (dt_d < MAX_MS_PER_FRAME) {
-    // milliseconds -> nanoseconds
-    int64_t ns = (MAX_MS_PER_FRAME - dt_d) * 1000;
-    struct timespec remaining = {};
-
-    nanosleep(&(struct timespec){.tv_nsec = ns}, &remaining);
-
-    // TODO @ui @bug: Add some dt for sleeping to the clock time also?
-
-    // nanoseconds -> seconds
-    dt_d += (double)(ns - remaining.tv_nsec) / 1000000.f;
-  }
-
-  return (struct timestep){dt, dt_d};
-}
-
 GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
 
   gab_value vgui = gab_arg(0);
@@ -1409,12 +1437,12 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
 err:
   gab_chnclose(gui->appch);
   gab_chnclose(gui->evch);
-  Clay_Termbox_Close();
   return res;
 
 fin:
   gab_chnclose(gui->appch);
   gab_chnclose(gui->evch);
+  fprintf(stderr, "CLOSE TB\n");
   Clay_Termbox_Close();
   return gab_union_cinvalid;
 }

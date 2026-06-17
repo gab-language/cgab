@@ -11045,11 +11045,15 @@ extern void putcs(char *arg);
     SET_HV(have);                                                              \
   })
 
+/*
+ * NOTE: crucially, this micro op gives the native function an option to handle the signal *itself*
+ * before CHECK_SIGNAL() is encountered.
+ *
+ * This is because some re-entrant natives may need to see terminate/gc signals in order to be correct.
+ */
 #define MICRO_OP_CALL_NATIVE(native, have, below_have, message)                \
   ({                                                                           \
     STORE();                                                                   \
-                                                                               \
-    CHECK_SIGNAL();                                                            \
                                                                                \
     gab_value *returnptr = RETURN_FB();                                        \
                                                                                \

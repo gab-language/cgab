@@ -127,7 +127,7 @@
 
 // Define how long the default busy-wait sleep should be.
 #ifndef cGAB_DEFAULT_WAIT_NS
-#define cGAB_DEFAULT_WAIT_NS 800
+#define cGAB_DEFAULT_WAIT_NS 10000
 #endif
 
 // Capacity at which point dictionaries are resized
@@ -409,9 +409,9 @@ static inline void v_uint8_t_npush(v_uint8_t *self, size_t n, uint8_t *buff) {
 #include <stdio.h>
 
 // TODO @cgab: Better 'asserts' which are self-describing.
-#ifdef NDEBUG
-#define gab_assert(expr, format, ...)
-#else
+// #ifdef NDEBUG
+// #define gab_assert(expr, format, ...)
+// #else
 [[noreturn]]
 static inline void __gab_assert_fail(const char *expr, const char *file,
                                      const char *function, size_t line,
@@ -433,7 +433,7 @@ static inline void __gab_assert_fail(const char *expr, const char *file,
           : __gab_assert_fail(#expr, __FILE__, __FUNCTION__, __LINE__,         \
                               format __VA_OPT__(, ) __VA_ARGS__))
 
-#endif
+// #endif
 
 #include <errno.h>
 #include <float.h>
