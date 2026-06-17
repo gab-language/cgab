@@ -34,7 +34,11 @@ implementations := Messages.specializations
 
 xf := Streams.filter((_ m) :: m.is\unittest)
   |> Streams.map((impls m) :: do
-      (path*, _) := m.to\string.split "\"
+      (path*, _) := m
+        .to\string
+        .to\stream\split "\" 
+        .collect []
+        *
 
       (path { path: path, impls: impls })
   end)
@@ -347,8 +351,8 @@ App := test\app:.defclass(
                         fg: color
                         bg: Colors.bg
                         size: 32
-                        content: "$ $".sprintf(spinner_char, name)
                       }
+                      "$ $".sprintf(spinner_char, name)
                     ]
                     [
                       text:
@@ -357,8 +361,8 @@ App := test\app:.defclass(
                         fg: Colors.g
                         bg: Colors.bg
                         size: 32
-                        content: '\u[2713] $'.sprintf(pass_behaviors.len)
                       }
+                      '\u[2713] $'.sprintf(pass_behaviors.len)
                     ]
                     [
                       text:
@@ -367,8 +371,8 @@ App := test\app:.defclass(
                         fg: Colors.r
                         bg: Colors.bg
                         size: 32
-                        content: '\u[2717] $'.sprintf(fail_behaviors.len)
                       }
+                      '\u[2717] $'.sprintf(fail_behaviors.len)
                     ]
                   ]
                 ]
@@ -412,8 +416,8 @@ App := test\app:.defclass(
                                   size: 32
                                   fg: color
                                   bg: Colors.bg
-                                  content: bhv.behavior\path.join("" Streams.interpose "should" |> Streams.interpose " ")
                                 }
+                                bhv.behavior\path.join("" Streams.interpose "should" |> Streams.interpose " ")
                               ]
                               bhv
                                 .behavior\assertions
@@ -428,12 +432,12 @@ App := test\app:.defclass(
                                           size: 32
                                           fg: color
                                           bg: Colors.bg
-                                          content: '$ $ $'.sprintf(
-                                            atn.assertion\meta.lhs
-                                            atn.assertion\meta.cmp
-                                            atn.assertion\meta.rhs
-                                          )
                                         }
+                                        '$ $ $'.sprintf(
+                                          atn.assertion\meta.lhs
+                                          atn.assertion\meta.cmp
+                                          atn.assertion\meta.rhs
+                                        )
                                       ]
                                     end)
                                 end)
@@ -450,13 +454,13 @@ App := test\app:.defclass(
                               size: 32
                               fg: color
                               bg: Colors.bg
-                              content: bhv.behavior\path.join("" Streams.interpose "should" |> Streams.interpose " ")
                             }
+                            bhv.behavior\path.join("" Streams.interpose "should" |> Streams.interpose " ")
                           ]
                         end)
                     end)
                 end)
-                .or([[text: { size: 32 content: "none" }]])
+                .or([[text: { size: 32 } "none"]])
             ]
           ]
         ]

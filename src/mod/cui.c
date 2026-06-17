@@ -1133,6 +1133,13 @@ fin:
   return gab_union_cinvalid;
 }
 
+static inline Clay_Dimensions
+Clay_HUI_measure_text(Clay_StringSlice text, Clay_TextElementConfig *config,
+                      void *userData) {
+  return (Clay_Dimensions){};
+}
+
+
 // Just pull apps out and don't do anything with the values.
 GAB_DYNLIB_NATIVE_FN(ui, hui_render) {
   gab_value vgui = gab_arg(0);
@@ -1145,8 +1152,25 @@ GAB_DYNLIB_NATIVE_FN(ui, hui_render) {
 
   static clock_t time;
 
-  if (!reentrant)
+  if (!reentrant) {
+    uint64_t totalMemorySize = Clay_MinMemorySize();
+    Clay_Arena clayMemory = Clay_CreateArenaWithCapacityAndMemory(
+        totalMemorySize, malloc(totalMemorySize));
+
+    Clay_Initialize(clayMemory,
+                    (Clay_Dimensions){
+                        .width = gui->win.w,
+                        .height = gui->win.h,
+                    },
+                    (Clay_ErrorHandler){
+                        HandleClayErrors,
+                    });
+
+    Clay_SetMeasureTextFunction(Clay_HUI_measure_text, nullptr);
+
+    gui->ready = true;
     time = 0;
+  }
 
   for (;;) {
     if (gab_chnisclosed(gui->appch))
