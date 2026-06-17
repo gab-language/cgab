@@ -206,9 +206,6 @@ bool clay_RGFW_update(struct gab_triple gab, struct ui *gui, double deltaTime,
   case RGFW_mouseButtonReleased: {
     gab_value target = clayGetTopmostId(gab);
 
-    gab_fprintf(stdout, "PRESS RELEASE($) ON $\n", gab_number(ev->button.value),
-                target);
-
     switch (ev->button.value) {
     case RGFW_mouseLeft:
       return putevent(gab, gui, "mouse", "up", gab_message(gab, "left"), target,
@@ -336,25 +333,37 @@ bool clay_termbox_update(struct gab_triple gab, struct ui *gui,
   case TB_EVENT_MOUSE:
     switch (e->key) {
     case TB_KEY_MOUSE_RELEASE:
-      // Clay_SetPointerState((Clay_Vector2){e->x, e->y}, false);
-      return putevent(gab, gui, "mouse", "left", gab_number(0), gab_false,
-                      clayGetTopmostId(gab));
+      Clay_SetPointerState((Clay_Vector2){e->x * clay_tb_cell_size.width,
+                                          e->y * clay_tb_cell_size.height},
+                           false);
+
+      // when the motion mod is present, this is not a true release event.
+      if (e->mod & TB_MOD_MOTION)
+        return false;
+
+      // TODO @ui @bug: fix 'unknown' mouse up event in tb
+      return putevent(gab, gui, "mouse", "up", gab_message(gab, "unknown"),
+                      clayGetTopmostId(gab), gab_cundefined);
     case TB_KEY_MOUSE_RIGHT:
-      // Clay_SetPointerState((Clay_Vector2){e->x, e->y}, false);
-      return putevent(gab, gui, "mouse", "right", gab_number(0), gab_true,
-                      clayGetTopmostId(gab));
+      Clay_SetPointerState((Clay_Vector2){e->x * clay_tb_cell_size.width,
+                                          e->y * clay_tb_cell_size.height},
+                           false);
+      return putevent(gab, gui, "mouse", "down", gab_message(gab, "right"),
+                      clayGetTopmostId(gab), gab_cundefined);
     case TB_KEY_MOUSE_LEFT:
-      // Clay_SetPointerState((Clay_Vector2){e->x, e->y}, true);
-      return putevent(gab, gui, "mouse", "left", gab_number(0), gab_true,
-                      clayGetTopmostId(gab));
+      Clay_SetPointerState((Clay_Vector2){e->x * clay_tb_cell_size.width,
+                                          e->y * clay_tb_cell_size.height},
+                           true);
+      return putevent(gab, gui, "mouse", "down", gab_message(gab, "left"),
+                      clayGetTopmostId(gab), gab_cundefined);
     case TB_KEY_MOUSE_WHEEL_UP:
-      // Clay_UpdateScrollContainers(false, (Clay_Vector2){0, e->y}, deltaTime);
-      return putevent(gab, gui, "mouse", "scroll\\up", gab_number(0), gab_false,
-                      clayGetTopmostId(gab));
+      Clay_UpdateScrollContainers(false, (Clay_Vector2){0, e->y}, deltaTime);
+      return putevent(gab, gui, "mouse", "scroll\\up", gab_number(e->y),
+                      gab_cundefined, gab_cundefined);
     case TB_KEY_MOUSE_WHEEL_DOWN:
-      // Clay_UpdateScrollContainers(false, (Clay_Vector2){0, e->y}, deltaTime);
-      return putevent(gab, gui, "mouse", "scroll\\down", gab_number(0),
-                      gab_false, clayGetTopmostId(gab));
+      Clay_UpdateScrollContainers(false, (Clay_Vector2){0, e->y}, deltaTime);
+      return putevent(gab, gui, "mouse", "scroll\\down", gab_number(e->y),
+                      gab_cundefined, gab_cundefined);
     default:
       goto err;
     }

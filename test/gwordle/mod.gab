@@ -246,7 +246,7 @@ ev
     Transducers.take_until((e t key) :: do
       (e == key:) & (key == "escape")
     end)
-#|> Transducers.tap((args*) :: args.eprintln)
+#|> Transducers.tap((args*) :: args.at 0 .unwrap .== tick: .else () :: args.eprintln)
     |> Transducers.reduce(model controller)
 #|> Transducers.tap((model) :: model.eprintln)
     |> Transducers.map(view))
