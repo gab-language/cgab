@@ -1442,7 +1442,6 @@ err:
 fin:
   gab_chnclose(gui->appch);
   gab_chnclose(gui->evch);
-  fprintf(stderr, "CLOSE TB\n");
   Clay_Termbox_Close();
   return gab_union_cinvalid;
 }
