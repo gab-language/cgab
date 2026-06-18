@@ -25,6 +25,43 @@ struct gab_triple gab;
 mz_zip_archive zip = {0};
 
 /*
+ *  *----------------*
+ *  |  INSTALLATION  |
+ *  *----------------*
+ *
+ *  Installation Directories
+ *
+ *  On each operating system, Gab installs in a different location.
+ *
+ *  UNIX: ~/gab/
+ *   WIN: ~/AppData/Local/gab/
+ *
+ *  Then, each gab version has its own subdirectory:
+ *
+ *  <installation_dir>/<cgab_version>-<target>
+ *
+ *  On an intel linux machine, this looks like:
+ *
+ *  ~/gab/0.1.3-x86_64-linux-gnu
+ *
+ *  When installing a package, gab installs it in the appropriate directory
+ *  for its cgab abi and platform.
+ *
+ *  For a package like github.com/gab-language/cgab@0.1.3, gab installs it at:
+ *
+ *  ~/gab/0.1.3-x86_64-linux-gnu/github.com/gab-language/cgab@0.1.3
+ *        ^^^^^                                               ^^^^^
+ *
+ *  Note that the cgab-abi and the cgab library version here are there same.
+ *  This is only because this cgab package *defines* the abi, therefore they always match.
+ *
+ *  Other packages may have multiple versions compiled against the same abi.
+ *
+ *  ~/gab/0.1.3-x86_64-linux-gnu/github.com/gab-language/gwordle@0.a.b
+ *  ~/gab/0.1.3-x86_64-linux-gnu/github.com/gab-language/gwordle@0.x.y
+ */
+
+/*
  * OS Signal handler for when SIGINT is caught
  */
 void propagate_term(int) { gab_sigterm(gab); }
@@ -174,21 +211,6 @@ int copy_file(FILE *in, FILE *out) {
 
   return 0; // success
 }
-
-/*
- * TODO @cgab @api: Think about how module requiring works, and try to make it
- * consistent to bundles, importing libraries, etc.
- *
- * Instead of having one root for ".", we might need to add some sort of notion
- * for the package you're in.
- * - Its possible we should try and detect that inmain here, and add a root for
- * the cwd as a package
- *
- * - Import files like 'github.com/gab-language/cgab@0.1.3/mod/cstrings'.use
- *   -> This is kind of ugly. Maybe 'cstrings' .use (from:
- * 'github.com/gab-language/cgab@0.1.3)
- *   -> Or Maybe: 'github.com/gab-language/cgab@0.1.3' .use 'cstrings'
- */
 
 #ifdef GAB_PLATFORM_WIN
 typedef union gab_value_pair(WINAPI *dynlib_fn)(struct gab_triple);
@@ -1152,7 +1174,6 @@ int repl(struct command_arguments *args);
 int help(struct command_arguments *args);
 int welcome(struct command_arguments *args);
 int build(struct command_arguments *args);
-int init(struct command_arguments *args);
 int info(struct command_arguments *args);
 
 #define DEFAULT_COMMAND commands[0]
@@ -1427,17 +1448,6 @@ static struct command commands[] = {
             },
         .handler = info,
     },
-    // TODO @cli: Determine if this is how we want packages to work.
-    // {
-    //     "init",
-    //     "Initialize a package and/or module within a project.",
-    //     "",
-    //     .example =
-    //         {
-    //             "gab init",
-    //         },
-    //     .handler = init,
-    // },
     {
         "build",
         "Build a standalone executable for the module <arg>.",

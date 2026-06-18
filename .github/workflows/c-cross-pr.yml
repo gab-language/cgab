@@ -287,7 +287,7 @@ jobs:
       - name: Run cross-compiled tests bundle
         run: ./test-cgab-${{ env.version }}-${{ matrix.target }}
 
-      - name: Gab Build Bundle (NON WINDOWS)
+      - name: Gab Build Bundle
         shell: bash
         run: |
           ${{ matrix.cmd }} build test < bundle
