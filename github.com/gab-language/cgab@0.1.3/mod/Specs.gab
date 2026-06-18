@@ -1496,6 +1496,7 @@ end
           v
           k .to\string
             .split '\\'
+            .unwrap
             .to\message,
           k))
       |> Streams.filter ((_ m) :: m == mod)
@@ -1508,7 +1509,7 @@ end
         name := (k == mod)
           .and mod
           .else(() :: do
-            (_, rest*) := k.to\string.split '\\'
+            (_, rest*) := k.to\string.to\stream\split '\\' .collect []
 
             rest
               .join('' Streams.interpose('\\'))

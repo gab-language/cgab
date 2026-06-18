@@ -41,7 +41,8 @@ ui\event := ui\event: .defspec {
   spec: s.alt(
     'mouse' s.cat(
       'kind'    'mouse'
-      'button'  s.any('left' 'right')
+      'event'   s.any('up' 'down')
+      'button'  s.any('left' 'right' 'unknown')
       'target'  s.message
     )
     'key'   s.cat(
@@ -165,19 +166,17 @@ ui\component := ui\component: .defspec {
     'text' s.pat(
       'kind' text:
       'props' s.record
-    )
-    'rect' s.pat(
-      'kind' rect:
-      'props' s.record
+      'content' s.string
     )
     'img' s.pat(
       'kind' img:
       'props' s.record
+      'content' s.binary
     )
     'box' s.pat(
       'kind' box:
       'props' s.record
-      'children' ui\view:
+      'content' ui\view:
     )
   )
 }

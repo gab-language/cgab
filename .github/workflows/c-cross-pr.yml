@@ -65,13 +65,12 @@ jobs:
 
     - name: Move built gab binaries into install directory where they are expected.
       run: |
-          mkdir -p ~/gab
-          mkdir -p ~/gab/${{ env.version }}-x86_64-linux-gnu
-          mkdir -p ~/gab/${{ env.version }}-aarch64-linux-gnu
-          mkdir -p ~/gab/${{ env.version }}-x86_64-macos-none
-          mkdir -p ~/gab/${{ env.version }}-aarch64-macos-none
-          mkdir -p ~/gab/${{ env.version }}-x86_64-windows-gnu
-          mkdir -p ~/gab/${{ env.version }}-aarch64-windows-gnu
+          mkdir -p ~/gab/${{ env.version }}-x86_64-linux-gnu/github.com/gab-language/cgab@${{ env.version }}
+          mkdir -p ~/gab/${{ env.version }}-aarch64-linux-gnu/github.com/gab-language/cgab@${{ env.version }}
+          mkdir -p ~/gab/${{ env.version }}-x86_64-macos-none/github.com/gab-language/cgab@${{ env.version }}
+          mkdir -p ~/gab/${{ env.version }}-aarch64-macos-none/github.com/gab-language/cgab@${{ env.version }}
+          mkdir -p ~/gab/${{ env.version }}-x86_64-windows-gnu/github.com/gab-language/cgab@${{ env.version }}
+          mkdir -p ~/gab/${{ env.version }}-aarch64-windows-gnu/github.com/gab-language/cgab@${{ env.version }}
 
           cp build-x86_64-linux-gnu/gab/gab ~/gab/${{ env.version }}-x86_64-linux-gnu/github.com/gab-language/cgab@${{ env.version }}/gab-release-cgab-${{ env.version }}-x86_64-linux-gnu
           cp build-aarch64-linux-gnu/gab/gab ~/gab/${{ env.version }}-aarch64-linux-gnu/github.com/gab-language/cgab@${{ env.version }}/gab-release-cgab-${{ env.version }}-aarch64-linux-gnu
