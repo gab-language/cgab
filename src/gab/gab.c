@@ -2093,12 +2093,42 @@ struct {
 struct {
   const char *name, *target, *signal;
 } possible_targets[] = {
-    {"x64 linux", "x86_64-linux-gnu", "gab"},
-    {"x64 macos", "x86_64-macos-none", "gab"},
-    {"x64 windows", "x86_64-windows-gnu", "gab"},
-    {"arm linux", "aarch64-linux-gnu", "gab"},
-    {"arm macos", "aarch64-macos-none", "gab"},
-    {"arm windows", "aarch64-windows-gnu", "gab"},
+    {
+        "x64 linux",
+        "x86_64-linux-gnu",
+        "github.com/gab-language/cgab@" GAB_VERSION_TAG
+        "/gab-release-cgab-" GAB_VERSION_TAG "-x86_64-linux-gnu",
+    },
+    {
+        "x64 macos",
+        "x86_64-macos-none",
+        "github.com/gab-language/cgab@" GAB_VERSION_TAG
+        "/gab-release-cgab-" GAB_VERSION_TAG "-x86_64-macos-none",
+    },
+    {
+        "x64 windows",
+        "x86_64-windows-gnu",
+        "github.com/gab-language/cgab@" GAB_VERSION_TAG
+        "/gab-release-cgab-" GAB_VERSION_TAG "-x86_64-windows-gnu",
+    },
+    {
+        "arm linux",
+        "aarch64-linux-gnu",
+        "github.com/gab-language/cgab@" GAB_VERSION_TAG
+        "/gab-release-cgab-" GAB_VERSION_TAG "-aarch64-linux-gnu",
+    },
+    {
+        "arm macos",
+        "aarch64-macos-none",
+        "github.com/gab-language/cgab@" GAB_VERSION_TAG
+        "/gab-release-cgab-" GAB_VERSION_TAG "-aarch64-macos-none",
+    },
+    {
+        "arm windows",
+        "aarch64-windows-gnu",
+        "github.com/gab-language/cgab@" GAB_VERSION_TAG
+        "/gab-release-cgab-" GAB_VERSION_TAG "-aarch64-windows-gnu",
+    },
 };
 
 int info(struct command_arguments *args) {
