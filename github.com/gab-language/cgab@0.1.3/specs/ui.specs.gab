@@ -25,7 +25,7 @@ ui\run: .defspec {
     receiver: ui:
     message:  run:
     input: s.cat(
-      'platform' s.any(gui: tui:)
+      'platform' s.any(gui: tui: hui:)
       'events' s.channel
       'frames' s.channel
     )
@@ -65,9 +65,9 @@ ui\component := ui\component: .defspec {
 
   The 'props' is a record containing layout/design information for the component.
 
-  The supported keys are listed below
+  The supported keys are listed below.
 
-  #### Color
+  ### color
   Colors are represented with numbers. Use the hex notation to write them easily. Here is a sample pallette. The most significant byte is the alpha - so you could even add an *empty/clear* color
   by setting that to 00.
 
@@ -75,7 +75,7 @@ ui\component := ui\component: .defspec {
   bg:  # Set the background color
   fg:  # Set the foreground color
 
-  #### Example pallette
+  # An example pallette
   Colors := {
     bg: 0xff161821
     fg: 0xffcdd6f5
@@ -91,7 +91,7 @@ ui\component := ui\component: .defspec {
   }
   ```
 
-  #### Border
+  ### border
   `box:` components support a border.
 
   ```gab
@@ -103,7 +103,7 @@ ui\component := ui\component: .defspec {
   border: { fg: Colors.r, w: 2 }
   ```
 
-  #### Padding
+  ### padding
   Padding is space on the inside of component between its edges and its conent.
 
   ```gab
@@ -116,7 +116,7 @@ ui\component := ui\component: .defspec {
   p\b: # Set padding on bottom side
   ```
 
-  #### Sizing
+  ### sizing
   Control the size of components. Left unset, it defaults to the size of its content.
 
   ```gab
@@ -128,7 +128,7 @@ ui\component := ui\component: .defspec {
   h\r: # Set height relative to parent
   ```
 
-  #### Child layout
+  ### child layout
   Control how child components are laid out.
 
   ```gab
@@ -137,7 +137,7 @@ ui\component := ui\component: .defspec {
   align\y:          # Set how children align along y axis (top: bottom: center:)
   ```
 
-  #### Transitions
+  ### transitions
   Transitions allow components to interpolate from one state to another over time.
 
   In order for this to work properly, components need a stable `id:`. By default, components are

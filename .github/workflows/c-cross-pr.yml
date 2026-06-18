@@ -287,13 +287,8 @@ jobs:
       - name: Run cross-compiled tests bundle
         run: ./test-cgab-${{ env.version }}-${{ matrix.target }}
 
-      - name: Gab Build Bundle (WINDOWS)
-        if: ${{ contains(matrix.target, 'windows') }}
-        run: |
-          Get-Content bundle | ${{ matrix.cmd }} build test
-
       - name: Gab Build Bundle (NON WINDOWS)
-        if: ${{ !contains(matrix.target, 'windows') }}
+        shell: bash
         run: |
           ${{ matrix.cmd }} build test < bundle
 

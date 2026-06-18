@@ -1509,7 +1509,7 @@ end
         name := (k == mod)
           .and mod
           .else(() :: do
-            (_, rest*) := k.to\string.to\stream\split '\\' .collect []
+            (_, rest*) := k.to\string.to\stream\split '\\' .collect [] .*
 
             rest
               .join('' Streams.interpose('\\'))
@@ -1518,7 +1518,7 @@ end
 
         kind := k.to\spec.spec\type
 
-        '### $\n```gab\n$\n```\n$'.sprintf(name e h)
+        '## $\n```gab\n$\n```\n$'.sprintf(name e h)
       end)
       |> Streams.interpose '\n\n'
 
