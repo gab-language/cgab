@@ -22,18 +22,29 @@
  * IN THE SOFTWARE.
  */
 
+#if GAB_PLATFORM_UNIX
+#define HAS_TERMBOX 1
+#else
+#define HAS_TERMBOX 0
+#endif
+
 #include <stdint.h>
 #include <time.h>
+
+/*
+ * The hygeine of these imports is important.
+ *
+ * The *_IMPLEMENTATION are undefined after each include
+ * because these headers may include each other,
+ * but we only want to define the implementation ONCE for
+ * each library.
+ */
 
 // GL/gl.h won't work because some OS's have files which override.
 // Use glad/gl.h instead.
 #define GLAD_GL_IMPLEMENTATION
 #define GLAD_GLX_IMPLEMENTATION
 #include "glad/gl.h"
-
-// GL/gl.h points to our glad directory. Therefore it is necessary
-// to undefined these as further includes of "GL/gl.h"
-// should not define implementations.
 #undef GLAD_GL
 #undef GLAD_GL_IMPLEMENTATION
 #undef GLAD_GLX_IMPLEMENTATION
@@ -42,18 +53,25 @@
 #define RGFW_OPENGL
 #define RGFW_PRINT_ERRORS
 #include "RGFW/RGFW.h"
+#undef RGFW_IMPLEMENTATION
 
 #define CLAY_IMPLEMENTATION
 #include "Clay/clay.h"
+#undef CLAY_IMPLEMENTATION
 
-#ifdef GAB_PLATFORM_UNIX
+#define STB_IMAGE_IMPLEMENTATION
+#define STB_IMAGE_RESIZE_IMPLEMENTATION
+#include "stb_image.h"
+#include "stb_image_resize2.h"
+#undef STB_IMAGE_IMPLEMENTATION
+#undef STB_IMAGE_RESIZE_IMPLEMENTATION
+
+#if HAS_TERMBOX
 
 // #include <wchar.h>
 // #define TB_OPT_LIBC_WCHAR
 #define TB_OPT_EGC
 #define TB_IMPL
-#define STB_IMAGE_IMPLEMENTATION
-#define STB_IMAGE_RESIZE_IMPLEMENTATION
 
 #ifndef NDEBUG
 #define STBIR__SEPARATE_ALLOCATIONS
@@ -66,7 +84,7 @@
 #define FONTSTASH_IMPLEMENTATION
 #include "fontstash/src/fontstash.h"
 
-// TODO @cui @qol: This font isn't great, replace it
+// TODO @cui @qol: This font isn't great, replace it. Also whats its license?
 unsigned char fontData[] = {
 #embed "resources/JetBrainsMonoNLNerdFontMono-Regular.ttf"
 };
@@ -101,7 +119,9 @@ struct ui_image {
 
   union {
     clay_sg_image gui;
+#if HAS_TERMBOX
     clay_tb_image tui;
+#endif
   } as;
 };
 
@@ -315,7 +335,7 @@ bool clay_RGFW_update(struct gab_triple gab, struct ui *gui, double deltaTime,
   }
 }
 
-#ifdef GAB_PLATFORM_UNIX
+#if HAS_TERMBOX
 
 #define TERMBOX_KEY_CASE(key, str)                                             \
   case TB_KEY_##key:                                                           \
@@ -824,11 +844,13 @@ const struct ui_image *image_cache_read(struct gab_triple gab, struct ui *gui,
     };
     break;
   }
+#if HAS_TERMBOX
   case kGAB_TUI: {
     insert.as.tui =
         Clay_Termbox_Image_Load_Memory(gab_strdata(&data), gab_strlen(data));
     break;
   }
+#endif
   case kGAB_HUI:
     break;
   }
@@ -856,12 +878,16 @@ union gab_value_pair render_image(struct gab_triple gab, struct ui *gui,
 
   // Pull default w/h out of the image width/height itself.
 
-  gab_uint w = gui->k == kGAB_GUI   ? img->as.gui.width
+  gab_uint w = gui->k == kGAB_GUI ? img->as.gui.width
+#if HAS_TERMBOX
                : gui->k == kGAB_TUI ? img->as.tui.pixel_width
+#endif
                                     : 0;
 
-  gab_uint h = gui->k == kGAB_GUI   ? img->as.gui.height
+  gab_uint h = gui->k == kGAB_GUI ? img->as.gui.height
+#if HAS_TERMBOX
                : gui->k == kGAB_TUI ? img->as.tui.pixel_height
+#endif
                                     : 0;
 
   CLAY(UI_ID(vid),
@@ -1139,7 +1165,6 @@ Clay_HUI_measure_text(Clay_StringSlice text, Clay_TextElementConfig *config,
   return (Clay_Dimensions){};
 }
 
-
 // Just pull apps out and don't do anything with the values.
 GAB_DYNLIB_NATIVE_FN(ui, hui_render) {
   gab_value vgui = gab_arg(0);
@@ -1234,7 +1259,7 @@ fin:
   return gab_union_cinvalid;
 }
 
-#ifdef GAB_PLATFORM_UNIX
+#if HAS_TERMBOX
 
 GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
   gab_value vgui = gab_arg(0);
@@ -1449,11 +1474,9 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
     Clay_RenderCommandArray cmd = Clay_EndLayout(step.dt_d);
     time += step.dt;
 
-#if GAB_PLATFORM_UNIX
     tb_clear();
     Clay_Termbox_Render(cmd);
     tb_present();
-#endif
 
     gab_dref(gab, app);
   }
@@ -1781,7 +1804,7 @@ GAB_DYNLIB_NATIVE_FN(ui, run) {
     event_rec_name = "ui\\gui\\loop\\event";
     event_rec_target = gab_mod_ui_gui_event;
     gui->k = kGAB_GUI;
-#if GAB_PLATFORM_UNIX
+#if HAS_TERMBOX
   } else if (kind == gab_message(gab, "tui")) {
     render_rec_name = "ui\\tui\\loop\\render";
     render_rec_target = gab_mod_ui_tui_render;
@@ -1796,8 +1819,9 @@ GAB_DYNLIB_NATIVE_FN(ui, run) {
     event_rec_target = gab_mod_ui_hui_event;
     gui->k = kGAB_HUI;
   } else {
-    return gab_panicf(gab, "Expected @ or @, found @", gab_message(gab, "gui"),
-                      gab_message(gab, "tui"), kind);
+    return gab_panicf(gab, "Expected @, @ or @. Found:\n\n$",
+                      gab_message(gab, "gui"), gab_message(gab, "tui"),
+                      gab_message(gab, "hui"), kind);
   }
 
   gab_irefall(gab, evch, appch, vgui);

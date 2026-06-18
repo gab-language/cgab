@@ -351,8 +351,13 @@ union gab_value_pair gab_use_zip_data(struct gab_triple gab, const char *path,
     return gab_panicf(gab, "Failed to load module: $", gab_string(gab, estr));
   }
 
+  gab_value data[] = {gab_ok, gab_nbinary(gab, sz, (uint8_t *)src)};
+  gab_iref(gab, data[1]);
+  gab_egkeep(gab.eg, data[1]);
+
   union gab_value_pair result = {
-      {gab_ok, gab_nbinary(gab, sz, (uint8_t *)src)},
+      .status = gab_cvalid,
+      .aresult = a_gab_value_create(data, 2),
   };
 
   free(src);
@@ -502,6 +507,8 @@ static const struct gab_resource native_zip_resources[] = {
 
     {"mod/", "mod.gab", gab_use_zip_source, zip_exister},
     {"mod/", ".gab", gab_use_zip_source, zip_exister},
+
+    {"data/", "", gab_use_zip_data, zip_exister},
 
     {}, // List terminator.
 };
@@ -1790,10 +1797,6 @@ int get_package(v_step *steps, struct command_arguments *args,
   v_char_push(&bundle, '-');
   v_char_spush(&bundle, s_char_cstr(gab_target));
 
-  if (resource) {
-    v_char_spush(&bundle, s_char_cstr(".exe"));
-  }
-
   v_char_push(&bundle, '\0');
 
   const char *url = url_from_package(pkg, tag, bundle.data);
@@ -1850,9 +1853,6 @@ int get_gab(v_step *steps, struct command_arguments *args,
   v_char binary_location = {};
   v_char_spush(&binary_location, s_char_cstr(location_prefix));
   v_char_spush(&binary_location, s_char_cstr("gab"));
-  if (!strcmp(gab_target, "x86_64-windows-gnu") ||
-      !strcmp(gab_target, "aarch64-windows-gnu"))
-    v_char_spush(&binary_location, s_char_cstr(".exe"));
 
   v_char_push(&binary_location, '\0');
 
@@ -1861,10 +1861,6 @@ int get_gab(v_step *steps, struct command_arguments *args,
   v_char_spush(&binary_url, s_char_cstr(gab_tag));
   v_char_spush(&binary_url, s_char_cstr("/gab-release-"));
   v_char_spush(&binary_url, s_char_cstr(gab_target));
-
-  if (!strcmp(gab_target, "x86_64-windows-gnu") ||
-      !strcmp(gab_target, "aarch64-windows-gnu"))
-    v_char_spush(&binary_url, s_char_cstr(".exe"));
 
   v_char_push(&binary_url, '\0');
 
@@ -1877,6 +1873,13 @@ int get_gab(v_step *steps, struct command_arguments *args,
   v_char_push(&package, '\0');
 
   get_package(steps, args, package.data, nullptr, gab_target, gab_tag);
+
+  v_char binary = {};
+  v_char_spush(&binary, s_char_cstr("gab-release"));
+
+  v_char_push(&binary, '\0');
+
+  get_package(steps, args, package.data, binary.data, gab_target, gab_tag);
 
   v_step_push(steps, (struct step){
                          kSTEP_FETCH,
@@ -2125,10 +2128,10 @@ struct {
 } possible_targets[] = {
     {"x64 linux", "x86_64-linux-gnu", "gab"},
     {"x64 macos", "x86_64-macos-none", "gab"},
-    {"x64 windows", "x86_64-windows-gnu", "gab.exe"},
+    {"x64 windows", "x86_64-windows-gnu", "gab"},
     {"arm linux", "aarch64-linux-gnu", "gab"},
     {"arm macos", "aarch64-macos-none", "gab"},
-    {"arm windows", "aarch64-windows-gnu", "gab.exe"},
+    {"arm windows", "aarch64-windows-gnu", "gab"},
 };
 
 int info(struct command_arguments *args) {
@@ -2198,7 +2201,6 @@ int build_exe(struct command_arguments *args, const char *module) {
   v_char_spush(&bundle, s_char_cstr(GAB_VERSION_TAG));
   v_char_push(&bundle, '-');
   v_char_spush(&bundle, s_char_cstr(platform));
-  v_char_spush(&bundle, s_char_cstr(".exe"));
   v_char_push(&bundle, '\0');
 
   v_char exepath = {};
@@ -2212,12 +2214,6 @@ int build_exe(struct command_arguments *args, const char *module) {
   v_char_destroy(&exepath);
   v_char_spush(&exepath, s_char_cstr(path));
   v_char_spush(&exepath, s_char_cstr("gab"));
-
-  // On windows targets, the executable we're looking for has `.exe` on the end.
-  if (!strcmp(platform, "x86_64-windows-gnu") ||
-      !strcmp(platform, "aarch64-windows-gnu"))
-    v_char_spush(&exepath, s_char_cstr(".exe"));
-
   v_char_push(&exepath, '\0');
 
   v_s_char_push(&args->packages, s_char_cstr(module));
