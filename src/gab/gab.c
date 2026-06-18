@@ -184,10 +184,10 @@ int copy_file(FILE *in, FILE *out) {
  * - Its possible we should try and detect that inmain here, and add a root for
  * the cwd as a package
  *
- * - Import files like 'github.com/gab-language/cgab@0.1.2/mod/cstrings'.use
+ * - Import files like 'github.com/gab-language/cgab@0.1.3/mod/cstrings'.use
  *   -> This is kind of ugly. Maybe 'cstrings' .use (from:
- * 'github.com/gab-language/cgab@0.1.2)
- *   -> Or Maybe: 'github.com/gab-language/cgab@0.1.2' .use 'cstrings'
+ * 'github.com/gab-language/cgab@0.1.3)
+ *   -> Or Maybe: 'github.com/gab-language/cgab@0.1.3' .use 'cstrings'
  */
 
 #ifdef GAB_PLATFORM_WIN
@@ -850,7 +850,7 @@ int step(struct step *step) {
       /*
        * Each filename should begin with the same prefix as in *dst*.
        *
-       * For example, the package `github.com/gab-language/cgab@0.1.2`
+       * For example, the package `github.com/gab-language/cgab@0.1.3`
        *
        * will resolve to url, which will fetch a bundle `cgab-<gab
        * version>-<platform-triple>`
@@ -860,7 +860,7 @@ int step(struct step *step) {
        *
        * These modules should start with a path which matches the package name.
        *
-       * `github.com/gab-language/cgab@0.1.2/<module>`
+       * `github.com/gab-language/cgab@0.1.3/<module>`
        *
        * We should only do this if we are unzipping a package, and not a generic
        * zip we downloaded.
@@ -2360,7 +2360,7 @@ int build_lib(struct command_arguments *args) {
 
   /* Add an additional kind of resource for builds such as these:
    * A BUNDLE loading resource.
-   * cgab@0.1.2 -> gab-language/cgab/cgab-0.1.2-x86_64-linux-gnu
+   * cgab@0.1.3 -> gab-language/cgab/cgab-0.1.3-x86_64-linux-gnu
    */
   platform_file_resources[0] = (struct gab_resource){
       .prefix = "",
