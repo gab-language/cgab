@@ -1842,28 +1842,6 @@ int get_package(v_step *steps, struct command_arguments *args,
 
 int get_gab(v_step *steps, struct command_arguments *args,
             const char *gab_target, const char *gab_tag) {
-
-  const char *location_prefix = install_location(gab_target, gab_tag, nullptr);
-
-  if (location_prefix == nullptr) {
-    clierror("Could not determine installation prefix.\n");
-    return 1;
-  }
-
-  v_char binary_location = {};
-  v_char_spush(&binary_location, s_char_cstr(location_prefix));
-  v_char_spush(&binary_location, s_char_cstr("gab"));
-
-  v_char_push(&binary_location, '\0');
-
-  v_char binary_url = {};
-  v_char_spush(&binary_url, s_char_cstr(GAB_RELEASE_DOWNLOAD_URL));
-  v_char_spush(&binary_url, s_char_cstr(gab_tag));
-  v_char_spush(&binary_url, s_char_cstr("/gab-release-"));
-  v_char_spush(&binary_url, s_char_cstr(gab_target));
-
-  v_char_push(&binary_url, '\0');
-
   /*
    * Fetch the standard libraries package.
    */
@@ -1874,18 +1852,7 @@ int get_gab(v_step *steps, struct command_arguments *args,
 
   get_package(steps, args, package.data, nullptr, gab_target, gab_tag);
 
-  v_char binary = {};
-  v_char_spush(&binary, s_char_cstr("gab-release"));
-
-  v_char_push(&binary, '\0');
-
-  get_package(steps, args, package.data, binary.data, gab_target, gab_tag);
-
-  v_step_push(steps, (struct step){
-                         kSTEP_FETCH,
-                         .as.fetch.url = binary_url.data,
-                         .as.fetch.dst = binary_location.data,
-                     });
+  get_package(steps, args, package.data, "gab-release", gab_target, gab_tag);
 
   return 0;
 }
@@ -2212,8 +2179,13 @@ int build_exe(struct command_arguments *args, const char *module) {
   const char *path = gab_osprefix_install(exepath.data);
 
   v_char_destroy(&exepath);
+
   v_char_spush(&exepath, s_char_cstr(path));
-  v_char_spush(&exepath, s_char_cstr("gab"));
+  v_char_spush(
+      &exepath,
+      s_char_cstr("github.com/gab-language/cgab@" GAB_VERSION_TAG "/"));
+  v_char_spush(&exepath, s_char_cstr("gab-release-cgab-" GAB_VERSION_TAG "-"));
+  v_char_spush(&exepath, s_char_cstr(platform));
   v_char_push(&exepath, '\0');
 
   v_s_char_push(&args->packages, s_char_cstr(module));
@@ -2233,7 +2205,7 @@ int build_exe(struct command_arguments *args, const char *module) {
   v_char_spush(&platform_dynlib_suffix, s_char_cstr(dynlib_fileending));
   v_char_push(&platform_dynlib_suffix, '\0');
 
-  // Replace the native DYNLIBFILEENDING witht the platform-specific one.
+  // Replace the native DYNLIBFILEENDING with the platform-specific one.
   // TODO @cli @bug: This is kinda manual and bug prone if we change resources.
   platform_file_resources[1].suffix = platform_dynlib_suffix.data;
   platform_file_resources[2].suffix = platform_dynlib_suffix.data;

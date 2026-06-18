@@ -18,12 +18,7 @@ GAB_VERSION_TAG = 0.1.3
 
 GAB_ISWINDOWS   = $(findstring windows,$(GAB_TARGETS))
 
-# TODO @build: Only do windows stuff when detect windows build.
-ifneq (,$(GAB_ISWINDOWS))
-BINARY_NAME = gab.exe
-else
 BINARY_NAME = gab
-endif
 
 INCLUDE		= $(INCLUDE_PREFIX) -isystem$(VENDOR_PREFIX) -L$(BUILD_PREFIX)
 
