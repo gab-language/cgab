@@ -403,6 +403,7 @@ static inline void v_uint8_t_npush(v_uint8_t *self, size_t n, uint8_t *buff) {
 #define GAB_MAGENTA "\x1b[35m"
 #define GAB_CYAN "\x1b[36m"
 #define GAB_RESET "\x1b[0m"
+#define GAB_SWAP "\x1b[7m"
 #define GAB_CLEAR "\x1b[2J"
 
 #include <stdarg.h>

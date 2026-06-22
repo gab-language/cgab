@@ -20,6 +20,16 @@
 
 #define MAIN_MODULE "gab\\main"
 
+#define GREEN(x) GAB_GREEN x GAB_RESET
+#define YELLOW(x) GAB_YELLOW x GAB_RESET
+#define BLUE(x) GAB_BLUE x GAB_RESET
+#define MAGENTA(x) GAB_MAGENTA x GAB_RESET
+#define RED(x) GAB_RED x GAB_RESET
+#define CYAN(x) GAB_CYAN x GAB_RESET
+#define SWAP(color, x) GAB_SWAP color(x) GAB_RESET
+
+#define SECTION(x) SWAP(GREEN, " " x " ")
+
 struct gab_triple gab;
 
 mz_zip_archive zip = {0};
@@ -87,7 +97,7 @@ void clisuccess(const char *fmt, ...) {
   va_list args;
   va_start(args, fmt);
 
-  fprintf(stderr, "[" GAB_GREEN "gab" GAB_RESET "] ");
+  fprintf(stderr, "[" GREEN("gab") "] ");
   vfprintf(stderr, fmt, args);
 
   va_end(args);
@@ -97,7 +107,7 @@ void cliwarn(const char *fmt, ...) {
   va_list args;
   va_start(args, fmt);
 
-  fprintf(stderr, "[" GAB_YELLOW "gab" GAB_RESET "] ");
+  fprintf(stderr, "[" YELLOW("gab") "] ");
   vfprintf(stderr, fmt, args);
 
   va_end(args);
@@ -516,7 +526,6 @@ static const struct gab_resource native_file_resources[] = {
     {"", "mod.gab", gab_use_source, file_exister},
     {"", ".gab", gab_use_source, file_exister},
 
-    {"mod/", "mod.gab", gab_use_source, file_exister},
     {"mod/", ".gab", gab_use_source, file_exister},
 
     {"data/", "", gab_use_data, file_exister},
@@ -534,7 +543,6 @@ static const struct gab_resource native_zip_resources[] = {
     {"", "mod.gab", gab_use_zip_source, zip_exister},
     {"", ".gab", gab_use_zip_source, zip_exister},
 
-    {"mod/", "mod.gab", gab_use_zip_source, zip_exister},
     {"mod/", ".gab", gab_use_zip_source, zip_exister},
 
     {"data/", "", gab_use_zip_data, zip_exister},
@@ -549,10 +557,25 @@ char *readline(const char *prompt) {
   return crossline_readline(prompt, prompt_buffer, sizeof(prompt_buffer));
 }
 
-const char *welcome_message = "  ________   ___  |\n"
-                              " / ___/ _ | / _ ) | v" GAB_VERSION_TAG "\n"
-                              "/ (_ / __ |/ _  | |  on: " GAB_TARGET_TRIPLE "\n"
-                              "\\___/_/ |_/____/  |  in: " GAB_BUILDTYPE "\n";
+const char
+    *welcome_message =
+        GREEN("  ________   ___  ") "|\n" GREEN(
+            " / ___/ _ | / _ "
+            ") ") "|   "
+                  "v:"
+                  " " YELLOW(GAB_VERSION_TAG) "\n" GREEN("/ (_ / __ |/ _  | ") "|  on: " CYAN(
+                      GAB_TARGET_TRIPLE) "\n" GREEN("\\___/"
+                                                    "_/ "
+                                                    "|_/"
+                                                    "____/ "
+                                                    " ") "|"
+                                                         " "
+                                                         " "
+                                                         "i"
+                                                         "n"
+                                                         ":"
+                                                         " " MAGENTA(
+                                                             GAB_BUILDTYPE) "\n";
 
 int run_repl(int flags, uint32_t wait, size_t nmodules,
              struct gab_package *packages) {
@@ -1397,7 +1420,7 @@ bool module_handler(struct command_arguments *args) {
 
 const struct option busywait_option = {
     "busy",
-    "Configure the gab engine's behavior while 'busy-waiting'",
+    "Configure gab's behavior while 'busy-waiting'",
     'w',
     .handler_f = busywait_handler,
 };
@@ -1426,7 +1449,7 @@ const struct option target_option = {
 
 const struct option jobs_option = {
     "jobs",
-    "Specify the maximum number of threads which Gab may spawn in "
+    "Specify the maximum number of threads which gab may spawn in "
     "parallel",
     'j',
     .handler_f = jobs_handler,
@@ -1439,7 +1462,7 @@ static struct command commands[] = {
         "\tPrint the welcome message",
         .example =
             {
-                "gab",
+                GREEN("gab"),
             },
         .handler = welcome,
     },
@@ -1452,7 +1475,7 @@ static struct command commands[] = {
         "related to that subcommand.",
         .example =
             {
-                "gab help get",
+                GREEN("gab") " " YELLOW("help") " get",
             },
         .handler = help,
     },
@@ -1460,8 +1483,8 @@ static struct command commands[] = {
         "get",
         "Install the package given by <arg>",
         "\tInstall packages from remote hosts.\n\n"
-        "\t<arg> should have the shape <package>@<tag>."
-        "\n\n\t<package> should correspond to a valid package, or the reserved "
+        "\t<arg> should resemble <package>@<tag>."
+        "\n\n\t<package> should correspond to either a valid package name or the reserved "
         "'gab' package."
         "\n\n\t<tag> should be a valid tag of the aforementioned package."
         "\n\n\tWhen the <package> argument is the 'gab' package, gab "
@@ -1477,20 +1500,28 @@ static struct command commands[] = {
         "\t\t3. A supported gab platform.\n"
         "\t\t4. A supported gab version.\n\n\t"
         "Using the last two items, gab constructs a bundle name like so:\n\n"
-        "\t\tcgab-<gab version>-<gab platform>\n\t\tcgab-" GAB_VERSION_TAG
-        "-" GAB_TARGET_TRIPLE "\n\n\t"
-        "Using the first two items and the bundle name, gab constructs a url "
+        "\t\t"CYAN("cgab-<gab version>-<gab platform>")"\n\t\t"CYAN("cgab-" GAB_VERSION_TAG
+        "-" GAB_TARGET_TRIPLE)"\n\n\t"
+        "gab uses the package host, tag, and bundle name to construct a url for the package host, "
         "like so:\n\n"
-        "\t\thttp://<pkg>/releases/download/<tag>/<bundle name>\n\t\t"
-        "http://github.com/gab-language/cgab/releases/download/0.0.5/"
-        "cgab-0.0.5-x86_64-linux-gnu\n\n\t"
-        "Gab downloads this artifact, and unzips it into the packages <install "
+        "\t\t"CYAN("http://<pkg>/releases/download/<tag>/<bundle name>")"\n\t\t"
+        CYAN("http://github.com/gab-language/cgab/releases/download/0.0.5/"
+        "cgab-0.0.5-x86_64-linux-gnu")"\n\n\t"
+        "gab downloads this artifact, and unzips it into the packages <install "
         "location>.\n\t"
-        "At this point, the package is installed.",
+        "At this point, the package is installed.\n\n\t"
+        "Applications work similarly, by defining a resource after the package name:\n\n\t"
+        "\t gab get github.com/gab-language/gwordle@0.1.0 " CYAN("gwordle@0.1.0")"\n\n\t"
+        "For the github host, gab constructs a url like so:\n\n\t"
+        "\t "CYAN("http://github.com/gab-language/gwordle/releases/download/0.1.0/"
+        "gwordle-cgab-0.0.5-x86_64-linux-gnu")"\n\n\t"
+        "gab downloads this artifact to the appropriate package directory, and then symlinks it to the "CYAN("gab/bin") " directory.\n\t"
+        "The symlinked name *includes* the tag, so that multiple version may coexist. To invoke the "CYAN("gwordle") " application above:\n\n\t"
+        "\t "GREEN("gwordle@0.1.0"),
         .example =
             {
-                "gab get gab@0.0.5",
-                "gab get github.com/<user>/<repository>@1.2",
+                GREEN("gab")" " YELLOW("get") " gab@0.0.5",
+                GREEN("gab")" " YELLOW("get") " github.com/<user>/<repository>@1.2 my_app",
             },
         .handler = get,
         {
@@ -1507,11 +1538,11 @@ static struct command commands[] = {
     {
         "info",
         "Log information about the local gab environment.",
-        "Dump compile-time configuration about this binary, as well as list "
+        "\tDump compile-time configuration about this binary, as well as list "
         "the targets installed locally",
         .example =
             {
-                "gab info",
+                GREEN("gab")" "YELLOW("info"),
             },
         .handler = info,
     },
@@ -1522,30 +1553,29 @@ static struct command commands[] = {
         "single executable.\n\tWhen stdin is a file or a pipe, modules "
         "will be read line-by-line from stdin.\n\n\t"
         "Multiple platforms are supported:\n\t"
-        "\tx86_64-linux-gnu    (Linux Intel)\n\t"
-        "\taarch64-linux-gnu   (Linux ARM)\n\t"
-        "\tx86_64-windows-gnu  (Windows Intel)\n"
-        "\taarch64-windows-gnu (Windows ARM)\n"
-        "\tx86_64-macos-none   (MacOS Intel)\n\t"
-        "\taarch64-macos-none  (MacOS ARM)\n\n\t"
-        "The executable produced will be named <arg>.exe. When invoked, will "
-        "behave as if the user typed `gab use <arg>`.\n\t"
-        "You may remove the .exe extension, but the filename is used to "
-        "determine the entrypoint.\n\t"
+        "\t"CYAN("x86_64-linux-gnu")"    (Linux Intel)\n\t"
+        "\t"CYAN("aarch64-linux-gnu")"   (Linux ARM)\n\t"
+        "\t"CYAN("x86_64-windows-gnu")"  (Windows Intel)\n\t"
+        "\t"CYAN("aarch64-windows-gnu")" (Windows ARM)\n\t"
+        "\t"CYAN("x86_64-macos-none")"   (MacOS Intel)\n\t"
+        "\t"CYAN("aarch64-macos-none")"  (MacOS ARM)\n\n\t"
+        "The executable produced will be named <arg>-cgab-<cgab_version>-<platform>.\n\tWhen invoked, the binary will "
+        "behave as if the user typed `gab run <arg>`.\n\t"
+        "The filename is used to determine the module entrypoint - therefore these binaries may not be renamed.\n\t"
         "The executable itself is distributable as a stand-alone binary. "
         "Users need not install anything, or even know anything about "
         "gab.\n\n\t"
         "If no entrypoint <arg> is supplied, then gab will build the modules "
-        "into a library-bundle instead.\n\t"
+        "into a bundle instead.\n\t"
         "These bundles are named for the gab version and platform they are "
         "built for.\n\t"
         "They look like this:\n\n\t"
-        "\tcgab-0.0.5-x86_64-linux-gnu\n\n\t"
-        "See `gab help get` for more information on these library bundles.",
+        "\t"CYAN("cgab-<cgab_version>-<platform>")"\n\n\t"
+        "See `gab help get` for more information on these bundles.",
         .example =
             {
-                "gab build -m IO,Strings my_app",
-                "gab build my_app < list_of_modules.txt",
+                GREEN("gab") " " YELLOW("build") " -m IO,Strings my_app",
+                GREEN("gab") " " YELLOW("build") " my_app < list_of_modules.txt",
             },
         .handler = build,
         {
@@ -1562,19 +1592,23 @@ static struct command commands[] = {
         "The search path begins at the first root. Roots and resources are "
         "checked in descending order.\n\t"
         "Each resource is checked at each root before moving on to the next.\n"
-        "\n\tThe roots are:"
-        "\n\t\t./"
-        "\n\t\t<install_dir>"
-        "\n\t\t<install_dir>/github.com/gab-language/cgab@" GAB_VERSION_TAG "\n"
-        "\n\tThe resources are:"
-        "\n\t\t<arg>.gab"
-        "\n\t\tmod/<arg>.gab"
-        "\n\t\t<arg>/mod.gab"
-        "\n\t\t<arg>.[so | dylib | dll]"
-        "\n\t\tmod/<arg>.[so | dylib | dll]",
+        "\n\tThe roots are:\n"
+        "\n\t\t"CYAN("./")
+        "\n\t\t"CYAN("<install_dir>")
+        "\n\n\tThe resources are:\n"
+        "\n\t\t"CYAN("<arg>.gab")
+        "\n\t\t"CYAN("mod/<arg>.gab")
+        "\n\t\t"CYAN("<arg>/mod.gab")
+        "\n\t\t"CYAN("<arg>.[so | dylib | dll]")
+        "\n\t\t"CYAN("mod/<arg>.[so | dylib | dll]")
+        "\n\n\tThese resources are evaluated as gab modules."
+        "\n\tThere is also a special resource:\n"
+        "\n\t\t"CYAN("data/<arg>")
+        "\n\n\tThis resource is not evaluated as a gab module. The content of the file is returned as a gab\\binary."
+        "\n\tThis is useful for packaging resources into gab applications, such as images, fonts, or static data.",
         .example =
             {
-                "gab run -m Json,http -j 16 my_project",
+                GREEN("gab") " " YELLOW("run") " -m Json,http -j 16 my_project",
             },
         .handler = run,
         {
@@ -1592,7 +1626,7 @@ static struct command commands[] = {
         "\tExecute the string <arg>",
         .example =
             {
-                "gab exec -a -d \"'hello'.println\"",
+                GREEN("gab") " " YELLOW("exec") " -a -d \"'hello'.println\"",
             },
         .handler = exec,
         {
@@ -1612,7 +1646,7 @@ static struct command commands[] = {
         "to evaluate code in the REPL.",
         .example =
             {
-                "gab repl -m Json",
+                GREEN("gab") " " YELLOW("repl") " -m Json",
             },
         .handler = repl,
         {
@@ -1899,6 +1933,8 @@ int get_package(v_step *steps, struct command_arguments *args,
       v_char dest = {0};
       v_char_spush(&dest, s_char_cstr(bindir));
       v_char_spush(&dest, s_char_cstr(resource));
+      v_char_push(&dest, '@');
+      v_char_spush(&dest, s_char_cstr(tag));
       v_char_push(&dest, '\0');
 
       v_step_push(steps, (struct step){
@@ -1931,7 +1967,7 @@ int get_gab(v_step *steps, struct command_arguments *args,
 
   get_package(steps, args, package.data, nullptr, gab_target, gab_tag);
 
-  get_package(steps, args, package.data, "gab-release", gab_target, gab_tag);
+  get_package(steps, args, package.data, "gab", gab_target, gab_tag);
 
   return 0;
 }
@@ -2003,8 +2039,8 @@ int get(struct command_arguments *args) {
     if (!strcmp(pkgbuf, "gab")) {
       strncpy(tagbuf, GAB_VERSION_TAG, 10 + taglen);
     } else {
-      clierror("To download a package, a tag must be specfied. Try " GAB_GREEN
-               "%s" GAB_RESET "@" GAB_YELLOW "<some tag>" GAB_RESET ".\n",
+      clierror("To download a package, a tag must be specfied. Try " GREEN(
+                   "%s") "@" YELLOW("<some tag>") ".\n",
                pkgbuf);
       return 1;
     }
@@ -2114,13 +2150,25 @@ int repl(struct command_arguments *args) {
 
 void cmd_summary(int i) {
   struct command cmd = commands[i];
-  printf("\n\tgab %-8s [opts] <args>\t%s", cmd.name, cmd.desc);
+  printf("\n\t" GREEN("gab") " " YELLOW("%-8s") " [opts] <args>\t%s", cmd.name,
+         cmd.desc);
 }
 
 void cmd_details(int i) {
   struct command cmd = commands[i];
-  printf("USAGE:\n\tgab %4s [opts] <args>\n\nDESCRIPTION:\n%s\n\nEXAMPLES:",
-         cmd.name, cmd.long_desc);
+  printf(
+      SECTION("USAGE") "\n\n\t" GREEN("gab") " " YELLOW(
+          "%-8s") " [opts] <args>\n\n" SECTION("DESCRIPTION") "\n\n%"
+                                                              "s\n\n" SECTION(
+                                                                  "E"
+                                                                  "X"
+                                                                  "A"
+                                                                  "M"
+                                                                  "P"
+                                                                  "L"
+                                                                  "E"
+                                                                  "S") "\n",
+      cmd.name, cmd.long_desc);
 
   for (const char **example = cmd.example; *example; example++) {
     printf("\n\t%s", *example);
@@ -2129,7 +2177,7 @@ void cmd_details(int i) {
   if (cmd.options[0].name == nullptr)
     return;
 
-  printf("\n\nFLAGS:\n");
+  printf("\n\n" SECTION("FLAGS") "\n\n");
   for (int j = 0; j < MAX_OPTIONS; j++) {
     struct option opt = cmd.options[j];
 
@@ -2211,13 +2259,13 @@ struct {
 };
 
 int info(struct command_arguments *args) {
-  printf("%s\n%17s\n", welcome_message, "CONFIGURATION");
+  printf("%s\n%17s\n", welcome_message, SECTION("CONFIGURATION") "\n");
 
   for (int i = 0; i < LEN_CARRAY(compile_info); i++) {
     printf("%17s | %s\n", compile_info[i].name, compile_info[i].value);
   }
 
-  printf("\n%17s\n", GAB_VERSION_TAG " TARGETS");
+  printf("\n%17s\n", SECTION(GAB_VERSION_TAG " TARGETS") "\n");
 
   for (int i = 0; i < LEN_CARRAY(possible_targets); i++) {
     /*
@@ -2244,7 +2292,7 @@ int info(struct command_arguments *args) {
 int help(struct command_arguments *args) {
   if (args->argc < 1) {
     printf("To see more details about each command, "
-           "run:\n\n\tgab help <cmd>\n\nThe available commands are:\n");
+           "run:\n\n\tgab help <cmd>\n\n"SECTION("COMMANDS")"\n");
 
     // Print command summaries
     for (int i = 0; i < N_COMMANDS; i++)
@@ -2269,7 +2317,6 @@ int help(struct command_arguments *args) {
 
 #define MODULE_NAME_MAX 2048
 
-// TODO @build @bug: On windows, the executable is gab.exe, not gab.
 int build_exe(struct command_arguments *args, const char *module) {
   v_char bundle = {};
   v_char_spush(&bundle, s_char_cstr(module));
