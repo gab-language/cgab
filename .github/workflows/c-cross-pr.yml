@@ -62,6 +62,7 @@ jobs:
       run: |
         mkdir -p github.com/gab-language/cgab@${{ env.version }}/mod
         cp build-*/mod/*.cgab-* github.com/gab-language/cgab@${{ env.version }}/mod
+        ls -al github.com/gab-language/cgab@${{ env.version }}/mod
 
     - name: Move built gab binaries into install directory where they are expected.
       run: |
