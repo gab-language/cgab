@@ -53,12 +53,19 @@ mz_zip_archive zip = {0};
  *        ^^^^^                                               ^^^^^
  *
  *  Note that the cgab-abi and the cgab library version here are there same.
- *  This is only because this cgab package *defines* the abi, therefore they always match.
+ *  This is only because this cgab package *defines* the abi, therefore they
+ * always match.
  *
  *  Other packages may have multiple versions compiled against the same abi.
  *
  *  ~/gab/0.1.3-x86_64-linux-gnu/github.com/gab-language/gwordle@0.a.b
  *  ~/gab/0.1.3-x86_64-linux-gnu/github.com/gab-language/gwordle@0.x.y
+ *
+ *  When downloading binaries like above, they are chmod'ed as the permissions
+ * are lost across the wire.
+ *
+ *  Then these need to be symlinked into gab/bin.
+ *
  */
 
 /*
@@ -642,8 +649,8 @@ int run_bundle(const char *mod) {
 
   // Scans backwards from the extension to the first '\' or '/'
   // This pulls the last component of a path out.
-  size_t modlen = 0;
-  for (size_t i = len - 1; i > 0; i--) {
+  int modlen = 0;
+  for (int i = len - 1; i >= 0; i--) {
     modlen++;
     if (mod[i - 1] == '\\' || mod[i - 1] == '/') {
       mod = mod + i;
@@ -651,7 +658,7 @@ int run_bundle(const char *mod) {
     }
   }
 
-  // Scan for a '.' in the remaining name.
+  // Scan for a '-' in the remaining name.
   const char *dash = strchr(mod, '-');
 
   if (dash && dash - mod < modlen)
@@ -782,6 +789,8 @@ struct step {
     kSTEP_MKDIRP,
     kSTEP_FETCH,
     kSTEP_UNZIP,
+    kSTEP_CHMOD,
+    kSTEP_INSTALL_BINARY,
     kSTEP_RM,
     kSTEP_ARCHIVE_OPEN,
     kSTEP_ARCHIVE_ADD_PACKAGE,
@@ -818,6 +827,15 @@ struct step {
     } rm;
 
     struct {
+      const char *path;
+    } chmod;
+
+    struct {
+      const char *from;
+      const char *to;
+    } install_binary;
+
+    struct {
       const char *url;
       const char *dst;
     } fetch;
@@ -839,6 +857,32 @@ struct step {
 #define NAME step
 #include "vector.h"
 
+/*
+ * Get the install location for a given gab target and gab version.
+ */
+const char *install_location(const char *target, const char *tag,
+                             const char *package) {
+  int taglen = strlen(tag);
+  int pkglen = package ? strlen(package) : 0;
+
+  size_t targetlen = strlen(target);
+  char locbuf[taglen + targetlen + pkglen + 4];
+  strncpy(locbuf, tag, taglen);
+  locbuf[taglen] = '-';
+  strncpy(locbuf + taglen + 1, target, targetlen);
+  locbuf[taglen + targetlen + 1] = '/';
+
+  if (package) {
+    strncpy(locbuf + taglen + targetlen + 2, package, pkglen);
+    locbuf[taglen + targetlen + pkglen + 2] = '/';
+    locbuf[taglen + targetlen + pkglen + 3] = '\0';
+  } else {
+    locbuf[taglen + targetlen + 2] = '\0';
+  }
+
+  return gab_osprefix_install(locbuf);
+}
+
 int step(struct step *step) {
   switch (step->k) {
   case kSTEP_NONE:
@@ -848,6 +892,11 @@ int step(struct step *step) {
     return gab_osmkdirp(step->as.mkdirp.path);
   case kSTEP_RM:
     return gab_osrm(step->as.rm.path);
+  case kSTEP_CHMOD:
+    return chmod(step->as.chmod.path, 0755);
+  case kSTEP_INSTALL_BINARY:
+    return gab_ossymlink(step->as.install_binary.from,
+                         step->as.install_binary.to);
   case kSTEP_FETCH:
     return gab_osproc("curl", "-f", "-s", "-L", "-o", step->as.fetch.dst,
                       step->as.fetch.url);
@@ -989,12 +1038,16 @@ int unstep(struct step *step) {
     return 1;
   case kSTEP_MKDIRP:
     return gab_osrm(step->as.mkdirp.path);
+  case kSTEP_INSTALL_BINARY:
+    return gab_osrm(step->as.install_binary.from);
   case kSTEP_FETCH:
     return gab_osrm(step->as.fetch.dst);
   case kSTEP_UNZIP:
     return gab_osrm(step->as.unzip.dst);
   case kSTEP_RM:
     return 0;
+  case kSTEP_CHMOD:
+    return chmod(step->as.chmod.path, 0644);
   case kSTEP_ARCHIVE_OPEN: {
     // Close file, finalize mz archive, remove file
     FILE *f = step->as.archive_open.zip->m_pState->m_pFile;
@@ -1019,6 +1072,8 @@ void elogstep(struct step *step, int i, int res) {
   case kSTEP_NONE:
     assert(false);
     return;
+  case kSTEP_INSTALL_BINARY:
+    return clierror("Step %i failed: %s.\n", i, strerror(errno));
   case kSTEP_MKDIRP:
     return clierror("Step %i failed: %i.\n", i, res);
   case kSTEP_FETCH:
@@ -1040,6 +1095,8 @@ void elogstep(struct step *step, int i, int res) {
     default:
       return clierror("Step %i failed: %i.\n", i, res);
     }
+  case kSTEP_CHMOD:
+    return clierror("Step %i failed: %i.\n", i, res);
   case kSTEP_RM:
     return clierror("Step %i failed: %i.\n", i, res);
   case kSTEP_ARCHIVE_OPEN:
@@ -1061,12 +1118,16 @@ void slogstep(struct step *step, int i) {
   case kSTEP_NONE:
     assert(false);
     return;
+  case kSTEP_INSTALL_BINARY:
+    return clisuccess(" %2i Installed  %s.\n", i, step->as.install_binary.to);
   case kSTEP_MKDIRP:
     return clisuccess(" %2i Created  %s.\n", i, step->as.mkdirp.path);
   case kSTEP_FETCH:
     return clisuccess(" %2i Fetched  %s.\n", i, step->as.fetch.url);
   case kSTEP_UNZIP:
     return clisuccess(" %2i Unzipped %s.\n", i, step->as.unzip.src);
+  case kSTEP_CHMOD:
+    return clisuccess(" %2i Chmod %s.\n", i, step->as.chmod.path);
   case kSTEP_RM:
     return clisuccess(" %2i Removed %s.\n", i, step->as.rm.path);
   case kSTEP_ARCHIVE_OPEN:
@@ -1090,6 +1151,9 @@ void logstep(struct step *step, int i) {
   case kSTEP_MKDIRP:
     return cliinfo(" %2i Create " GAB_MAGENTA "%s" GAB_RESET "\n", i,
                    step->as.mkdirp.path);
+  case kSTEP_INSTALL_BINARY:
+    return cliinfo(" %2i Install " GAB_MAGENTA "%s" GAB_RESET "\n", i,
+                   step->as.install_binary.from);
   case kSTEP_FETCH:
     return cliinfo(" %2i Download " GAB_MAGENTA "%s" GAB_RESET "\n", i,
                    step->as.fetch.url);
@@ -1099,6 +1163,9 @@ void logstep(struct step *step, int i) {
   case kSTEP_RM:
     return cliinfo(" %2i Remove " GAB_MAGENTA "%s" GAB_RESET "\n", i,
                    step->as.rm.path);
+  case kSTEP_CHMOD:
+    return cliinfo(" %2i Chmod " GAB_MAGENTA "%s" GAB_RESET "\n", i,
+                   step->as.chmod.path);
   case kSTEP_ARCHIVE_OPEN:
     return cliinfo(" %2i Open " GAB_MAGENTA "%s" GAB_RESET "\n", i,
                    step->as.archive_open.path);
@@ -1659,32 +1726,6 @@ const char *split_pkg(char *pkg) {
   return ++cursor;
 }
 
-/*
- * Get the install location for a given gab target and gab version.
- */
-const char *install_location(const char *target, const char *tag,
-                             const char *package) {
-  int taglen = strlen(tag);
-  int pkglen = package ? strlen(package) : 0;
-
-  size_t targetlen = strlen(target);
-  char locbuf[taglen + targetlen + pkglen + 4];
-  strncpy(locbuf, tag, taglen);
-  locbuf[taglen] = '-';
-  strncpy(locbuf + taglen + 1, target, targetlen);
-  locbuf[taglen + targetlen + 1] = '/';
-
-  if (package) {
-    strncpy(locbuf + taglen + targetlen + 2, package, pkglen);
-    locbuf[taglen + targetlen + pkglen + 2] = '/';
-    locbuf[taglen + targetlen + pkglen + 3] = '\0';
-  } else {
-    locbuf[taglen + targetlen + 2] = '\0';
-  }
-
-  return gab_osprefix_install(locbuf);
-}
-
 struct host {
   const char *hostname, *pattern;
 };
@@ -1839,13 +1880,41 @@ int get_package(v_step *steps, struct command_arguments *args,
                          .as.fetch.dst = bundle_dst.data,
                      });
 
-  if (!resource)
+  if (resource) {
+    // If we are downloading a resource which matches
+    // our native target, we can *install* it into ~/gab/bin also.
+    if (!strcmp(gab_target, GAB_TARGET_TRIPLE)) {
+      v_step_push(steps, (struct step){
+                             kSTEP_CHMOD,
+                             .as.chmod.path = bundle_dst.data,
+                         });
+
+      const char *bindir = gab_osprefix_install("bin/");
+
+      v_step_push(steps, (struct step){
+                             kSTEP_MKDIRP,
+                             .as.mkdirp.path = bindir,
+                         });
+
+      v_char dest = {0};
+      v_char_spush(&dest, s_char_cstr(bindir));
+      v_char_spush(&dest, s_char_cstr(resource));
+      v_char_push(&dest, '\0');
+
+      v_step_push(steps, (struct step){
+                             kSTEP_INSTALL_BINARY,
+                             .as.install_binary.from = dest.data,
+                             .as.install_binary.to = bundle_dst.data,
+                         });
+    }
+  } else {
     v_step_push(steps, (struct step){
                            kSTEP_UNZIP,
                            .as.unzip.src = bundle_dst.data,
                            .as.unzip.dst = install_dir,
                            .as.unzip.pkg = package,
                        });
+  }
 
   return 0;
 }
@@ -2308,6 +2377,11 @@ int build_exe(struct command_arguments *args, const char *module) {
                           kSTEP_ARCHIVE_FINALIZE,
                           .as.archive_finalize.zip = &zip_o,
                           .as.archive_finalize.size_out = &size,
+                      });
+
+  v_step_push(&steps, (struct step){
+                          kSTEP_CHMOD,
+                          .as.chmod.path = bundle.data,
                       });
 
   if (args->flags & FLAG_STEP_VERBOSE)

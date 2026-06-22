@@ -12,7 +12,7 @@ function compile() {
   export GAB_DYNLIB_FILEENDING=
   source "$1" || exit 1
 
-  make 
+  make -j 8
 }
 export -f compile
 

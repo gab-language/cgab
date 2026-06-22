@@ -265,10 +265,7 @@ jobs:
         run: mv build-${{ matrix.target }}/gab/gab 'gab-${{ matrix.build_type }}-${{ matrix.target }}'
 
       - name: Attach Binary to Release
-        run: gh release upload -R '${{ github.repository }}' '${{ env.version }}' 'gab-${{ matrix.build_type }}-cgab-${{ env.version }}-${{ matrix.target }}' || exit 0
-
-      - name: Attach Dev to Release
-        run: gh release upload -R '${{ github.repository }}' '${{ env.version }}' 'gab-${{ matrix.build_type }}-cgab-${{ env.version }}-${{ matrix.target }}-dev' || exit 0
+        run: gh release upload -R '${{ github.repository }}' '${{ env.version }}' 'gab@${{ env.version }}-cgab-${{ env.version }}-${{ matrix.target }}' || exit 0
 
       - name: Attach Bundle to Release
         if: ${{ contains(matrix.build_type, 'release') }}

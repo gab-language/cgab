@@ -42,6 +42,9 @@
  * gab_osmkdirp(path)
  * Make a directory at path, if it doesn't exist.
  *
+ * gab_ossymlink(from, to)
+ * Create a symlink
+ *
  * %---------------------%
  * | Spawn Sub-processes |
  * %---------------------%
@@ -178,6 +181,8 @@ GAB_API_INLINE const char *gab_osexepath() {
 #define gab_osdynlib void *
 #define gab_oslibopen(path) dlopen(path, RTLD_NOW)
 #define gab_oslibfind(dynlib, name) (void *)dlsym(dynlib, name)
+
+#define gab_ossymlink(from, to) symlink(to, from)
 
 GAB_API_INLINE const int gab_osmkdirp(const char *path) {
   char *dup = strdup(path);
@@ -376,6 +381,8 @@ PfnDliHook __pfnDliFailureHook2 = gab_delayload;
 static inline void *gab_oslibopen(const char *path) {
   return LoadLibraryA(path);
 }
+
+#define gab_ossymlink(from, to) CreateSymbolicLinkA(from, to, 0)
 
 GAB_API_INLINE const int gab_osmkdirp(const char *path) {
   char *dup = strdup(path);
