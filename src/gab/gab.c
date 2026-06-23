@@ -26,9 +26,10 @@
 #define MAGENTA(x) GAB_MAGENTA x GAB_RESET
 #define RED(x) GAB_RED x GAB_RESET
 #define CYAN(x) GAB_CYAN x GAB_RESET
+#define NONE(x) x
 #define SWAP(color, x) GAB_SWAP color(x) GAB_RESET
 
-#define SECTION(x) SWAP(GREEN, " " x " ")
+#define SECTION(x) SWAP(NONE, " " x " ")
 
 struct gab_triple gab;
 
@@ -87,7 +88,7 @@ void clierror(const char *fmt, ...) {
   va_list args;
   va_start(args, fmt);
 
-  fprintf(stderr, "[" GAB_RED "gab" GAB_RESET "] ");
+  fprintf(stderr, "gab: " RED("❌"));
   vfprintf(stderr, fmt, args);
 
   va_end(args);
@@ -97,7 +98,7 @@ void clisuccess(const char *fmt, ...) {
   va_list args;
   va_start(args, fmt);
 
-  fprintf(stderr, "[" GREEN("gab") "] ");
+  fprintf(stderr, "gab: " GREEN("✔ "));
   vfprintf(stderr, fmt, args);
 
   va_end(args);
@@ -107,7 +108,7 @@ void cliwarn(const char *fmt, ...) {
   va_list args;
   va_start(args, fmt);
 
-  fprintf(stderr, "[" YELLOW("gab") "] ");
+  fprintf(stderr, "gab: " YELLOW("● "));
   vfprintf(stderr, fmt, args);
 
   va_end(args);
@@ -117,10 +118,27 @@ void cliinfo(const char *fmt, ...) {
   va_list args;
   va_start(args, fmt);
 
-  fprintf(stderr, "[gab] ");
+  fprintf(stderr, "gab:   ");
   vfprintf(stderr, fmt, args);
 
   va_end(args);
+}
+
+int misuse_error(const char *subcommand, const char *error) {
+  return clierror("%s for subcommand " YELLOW("%s") ".", error, subcommand), 1;
+}
+
+int missing_flag_argument_error(const char *flag, const char *arg_name) {
+  return clierror("Missing %s argument for flag " CYAN("%s") ".", arg_name,
+                  flag),
+         1;
+}
+
+int missing_subcommand_argument_error(const char *subcommand,
+                                      const char *arg_name) {
+  return clierror("Missing %s argument for subcommand " YELLOW("%s") ".",
+                  arg_name, subcommand),
+         1;
 }
 
 void print_err(struct gab_triple gab, gab_value err) {
@@ -557,25 +575,30 @@ char *readline(const char *prompt) {
   return crossline_readline(prompt, prompt_buffer, sizeof(prompt_buffer));
 }
 
-const char
-    *welcome_message =
-        GREEN("  ________   ___  ") "|\n" GREEN(
-            " / ___/ _ | / _ "
-            ") ") "|   "
-                  "v:"
-                  " " YELLOW(GAB_VERSION_TAG) "\n" GREEN("/ (_ / __ |/ _  | ") "|  on: " CYAN(
-                      GAB_TARGET_TRIPLE) "\n" GREEN("\\___/"
-                                                    "_/ "
-                                                    "|_/"
-                                                    "____/ "
-                                                    " ") "|"
-                                                         " "
-                                                         " "
-                                                         "i"
-                                                         "n"
-                                                         ":"
-                                                         " " MAGENTA(
-                                                             GAB_BUILDTYPE) "\n";
+const char *welcome_message =
+    "  ________   ___  "
+    "|\n"
+    " / ___/ _ | / _ "
+    ") "
+    "|   "
+    "v:"
+    " " CYAN(GAB_VERSION_TAG) "\n"
+                              "/ (_ / __ |/ _  | "
+                              "|  on: " CYAN(
+                                  GAB_TARGET_TRIPLE) "\n"
+                                                     "\\___/"
+                                                     "_/ "
+                                                     "|_/"
+                                                     "____/ "
+                                                     " "
+                                                     "|"
+                                                     " "
+                                                     " "
+                                                     "i"
+                                                     "n"
+                                                     ":"
+                                                     " " CYAN(
+                                                         GAB_BUILDTYPE) "\n";
 
 int run_repl(int flags, uint32_t wait, size_t nmodules,
              struct gab_package *packages) {
@@ -1031,17 +1054,17 @@ int step(struct step *step) {
     FILE *bundle_f = zip->m_pState->m_pFile;
 
     if (!mz_zip_writer_finalize_archive(zip)) {
-      mz_zip_error e = mz_zip_get_last_error(zip);
-      const char *estr = mz_zip_get_error_string(e);
-      clierror("Failed to finalize zip archive: %s.\n", estr);
+      // mz_zip_error e = mz_zip_get_last_error(zip);
+      // const char *estr = mz_zip_get_error_string(e);
+      // clierror("Failed to finalize zip archive: %s.\n", estr);
       mz_zip_writer_end(zip);
       return 1;
     }
 
     if (!mz_zip_writer_end(zip)) {
-      mz_zip_error e = mz_zip_get_last_error(zip);
-      const char *estr = mz_zip_get_error_string(e);
-      clierror("Failed to cleanup zip archive: %s.\n", estr);
+      // mz_zip_error e = mz_zip_get_last_error(zip);
+      // const char *estr = mz_zip_get_error_string(e);
+      // clierror("Failed to cleanup zip archive: %s.\n", estr);
       return 1;
     }
 
@@ -1096,43 +1119,44 @@ void elogstep(struct step *step, int i, int res) {
     assert(false);
     return;
   case kSTEP_INSTALL_BINARY:
-    return clierror("Step %i failed: %s.\n", i, strerror(errno));
+    return clierror("Failed to install '%s'.\n", i,
+                    step->as.install_binary.from);
   case kSTEP_MKDIRP:
-    return clierror("Step %i failed: %i.\n", i, res);
+    return clierror("Failed to make directory '%s'.\n", step->as.mkdirp.path);
   case kSTEP_FETCH:
     if (res == 22)
-      return clierror("Step %i failed: Resource %s not found.\n", i,
-                      step->as.fetch.url);
+      return clierror("Resource '%s' not found.\n", step->as.fetch.url);
     if (res == 23)
-      return clierror("Step %i failed: Error writing %s.\n", i,
-                      step->as.fetch.dst);
+      return clierror("Failed writing '%s'.\n", step->as.fetch.dst);
 
-    return clierror("Step %i failed: %i.\n", i, res);
+    return clierror("cURL failed with exit code: %i.\n", res);
   case kSTEP_UNZIP:
     switch (res) {
     case 2:
       return clierror(
-          "Step %i failed: A module within this package did not "
+          "A module within this package did not "
           "have a prefix which matched the specified package '%s'.\n",
           step->as.unzip.pkg);
     default:
-      return clierror("Step %i failed: %i.\n", i, res);
+      return clierror("Failed to unzip '%s'.\n", step->as.unzip.pkg);
     }
   case kSTEP_CHMOD:
-    return clierror("Step %i failed: %i.\n", i, res);
+    return clierror("Failed to make '%s' executable.\n", step->as.chmod.path);
   case kSTEP_RM:
-    return clierror("Step %i failed: %i.\n", i, res);
+    return clierror("Failed to remove '%s'.\n", step->as.rm.path);
   case kSTEP_ARCHIVE_OPEN:
-    return clierror("Step %i failed: %i.\n", i, res);
+    return clierror("Failed to open '%s'.\n", step->as.archive_open.path);
   case kSTEP_ARCHIVE_ADD_PACKAGE:
     if (!step->as.archive_add_package.mod_out.path)
-      return clierror("Step %i failed: Failed to resolve module %.*s.\n", i,
+      return clierror("Failed to resolve module '%.*s'.\n",
                       step->as.archive_add_package.package.len,
                       step->as.archive_add_package.package.data);
 
-    return clierror("Step %i failed: %i.\n", i, res);
+    return clierror("Failed to bundle package: '%.*s'.\n",
+                    step->as.archive_add_package.package.len,
+                    step->as.archive_add_package.package.data);
   case kSTEP_ARCHIVE_FINALIZE:
-    return clierror("Step %i failed: %i.\n", i, res);
+    return clierror("Failed to finalize bundle.\n");
   }
 }
 
@@ -1231,7 +1255,7 @@ int execute_steps(int len, struct step steps[len], bool noisy) {
 
 struct command_arguments {
   uint32_t argc, flags, wait, njobs;
-  const char **argv, *platform;
+  const char **argv, *platform, *dynlib_fileending;
   v_s_char packages;
   v_s_char package_aliases;
 };
@@ -1242,7 +1266,7 @@ struct option {
   char shorthand;
   bool takes_argument;
   int flag;
-  bool (*handler_f)(struct command_arguments *args);
+  int (*handler_f)(struct command_arguments *args);
 };
 
 #define MAX_OPTIONS 8
@@ -1298,35 +1322,46 @@ const struct option structured_err_option = {
     .flag = FLAG_STRUCT_ERR,
 };
 
-bool target_handler(struct command_arguments *args) {
+int target_handler(struct command_arguments *args) {
   const char *flag = *args->argv;
   args->argv++;
   args->argc--;
 
-  if (args->argc <= 0) {
-    clierror("No argument to flag '%s'.\n", flag);
-    return false;
-  }
+  if (args->argc <= 0)
+    return missing_flag_argument_error(flag, "platform");
 
   args->flags |= FLAG_BUILD_TARGET;
   const char *platform = *args->argv;
   args->argv++;
   args->argc--;
 
+  if (!strcmp(platform, "x86_64-linux-gnu"))
+    args->dynlib_fileending = ".so";
+  else if (!strcmp(platform, "x86_64-macos-none"))
+    args->dynlib_fileending = ".dylib";
+  else if (!strcmp(platform, "x86_64-windows-gnu"))
+    args->dynlib_fileending = ".dll";
+  else if (!strcmp(platform, "aarch64-linux-gnu"))
+    args->dynlib_fileending = ".so";
+  else if (!strcmp(platform, "aarch64-macos-none"))
+    args->dynlib_fileending = ".dylib";
+  else if (!strcmp(platform, "aarch64-windows-gnu"))
+    args->dynlib_fileending = ".dll";
+  else
+    return clierror("Unrecognized platform '%s'.\n", platform), 1;
+
   args->platform = platform;
 
-  return true;
+  return 0;
 }
 
-bool jobs_handler(struct command_arguments *args) {
+int jobs_handler(struct command_arguments *args) {
   const char *flag = *args->argv;
   args->argv++;
   args->argc--;
 
-  if (args->argc <= 0) {
-    clierror("No argument to flag '%s'.\n", flag);
-    return false;
-  }
+  if (args->argc <= 0)
+    return missing_subcommand_argument_error("flag", flag);
 
   const char *jobs = *args->argv;
   args->argv++;
@@ -1337,24 +1372,22 @@ bool jobs_handler(struct command_arguments *args) {
   njobs = atoll(jobs);
   if (njobs == 0) {
     clierror("Specify a number of jobs greater than 0.");
-    return false;
+    return 1;
   }
 
   args->njobs = njobs;
-  return true;
+  return 0;
 }
 
-bool busywait_handler(struct command_arguments *args) {
+int busywait_handler(struct command_arguments *args) {
   const char *flag = *args->argv;
   args->argv++;
   args->argc--;
 
   const char *arg = strchr(flag, '=');
 
-  if (!(arg && strlen(arg)) && args->argc <= 0) {
-    clierror("No argument to flag '%s'.\n", flag);
-    return false;
-  }
+  if (!(arg && strlen(arg)) && args->argc <= 0)
+    return missing_flag_argument_error(flag, "nanoseconds");
 
   if (arg) {
     arg++;
@@ -1375,23 +1408,21 @@ bool busywait_handler(struct command_arguments *args) {
   nwait = atoll(arg);
   if (nwait == 0) {
     clierror("Specify a busy-wait greater than 0, or use none|no.");
-    return false;
+    return 1;
   }
 
 fin:
   args->wait = nwait;
-  return true;
+  return 0;
 }
 
-bool module_handler(struct command_arguments *args) {
+int module_handler(struct command_arguments *args) {
   const char *flag = *args->argv;
   args->argv++;
   args->argc--;
 
-  if (args->argc <= 0) {
-    clierror("No argument to flag '%s'.\n", flag);
-    return false;
-  }
+  if (args->argc <= 0)
+    return missing_flag_argument_error(flag, "module");
 
   const char *mod = *args->argv;
   args->argv++;
@@ -1415,7 +1446,7 @@ bool module_handler(struct command_arguments *args) {
   if (len)
     v_s_char_push(&args->packages, s_char_create(mod + begin, len));
 
-  return true;
+  return 0;
 }
 
 const struct option busywait_option = {
@@ -1469,7 +1500,8 @@ static struct command commands[] = {
     {
         "help",
         "Print this message, or describe the subcommand given by <arg>",
-        "\tWith no arguments, prints a general help message summarizing all "
+        "\tWith no arguments, prints a general help message summarizing "
+        "all "
         "available subcommands and their flags.\n\t"
         "With a subcommand given by <arg>, print more specific information "
         "related to that subcommand.",
@@ -1484,7 +1516,8 @@ static struct command commands[] = {
         "Install the package given by <arg>",
         "\tInstall packages from remote hosts.\n\n"
         "\t<arg> should resemble <package>@<tag>."
-        "\n\n\t<package> should correspond to either a valid package name or the reserved "
+        "\n\n\t<package> should correspond to either a valid package name "
+        "or the reserved "
         "'gab' package."
         "\n\n\t<tag> should be a valid tag of the aforementioned package."
         "\n\n\tWhen the <package> argument is the 'gab' package, gab "
@@ -1494,34 +1527,305 @@ static struct command commands[] = {
         "\n\tOtherwise, <package> is downloaded at <tag>, and installed "
         "among the modules for gab@" GAB_VERSION_TAG ".\n\n\t"
         "To download a package, gab needs:\n\n"
-        "\t\t1. A host for the repository. This is found in the package name "
+        "\t\t1. A host for the repository. This is found in the package "
+        "name "
         "itself.\n"
         "\t\t2. A tag, corresponding to a release.\n"
         "\t\t3. A supported gab platform.\n"
         "\t\t4. A supported gab version.\n\n\t"
-        "Using the last two items, gab constructs a bundle name like so:\n\n"
-        "\t\t"CYAN("cgab-<gab version>-<gab platform>")"\n\t\t"CYAN("cgab-" GAB_VERSION_TAG
-        "-" GAB_TARGET_TRIPLE)"\n\n\t"
-        "gab uses the package host, tag, and bundle name to construct a url for the package host, "
-        "like so:\n\n"
-        "\t\t"CYAN("http://<pkg>/releases/download/<tag>/<bundle name>")"\n\t\t"
-        CYAN("http://github.com/gab-language/cgab/releases/download/0.0.5/"
-        "cgab-0.0.5-x86_64-linux-gnu")"\n\n\t"
-        "gab downloads this artifact, and unzips it into the packages <install "
-        "location>.\n\t"
-        "At this point, the package is installed.\n\n\t"
-        "Applications work similarly, by defining a resource after the package name:\n\n\t"
-        "\t gab get github.com/gab-language/gwordle@0.1.0 " CYAN("gwordle@0.1.0")"\n\n\t"
-        "For the github host, gab constructs a url like so:\n\n\t"
-        "\t "CYAN("http://github.com/gab-language/gwordle/releases/download/0.1.0/"
-        "gwordle-cgab-0.0.5-x86_64-linux-gnu")"\n\n\t"
-        "gab downloads this artifact to the appropriate package directory, and then symlinks it to the "CYAN("gab/bin") " directory.\n\t"
-        "The symlinked name *includes* the tag, so that multiple version may coexist. To invoke the "CYAN("gwordle") " application above:\n\n\t"
-        "\t "GREEN("gwordle@0.1.0"),
+        "Using the last two items, gab constructs a bundle name like "
+        "so:\n\n"
+        "\t\t" CYAN("cgab-<gab version>-<gab platform>") "\n\t\t" CYAN(
+            "cgab-" GAB_VERSION_TAG
+            "-" GAB_TARGET_TRIPLE) "\n\n\t"
+                                   "gab uses the package host, tag, and "
+                                   "bundle name to construct a url for the "
+                                   "package host, "
+                                   "like so:\n\n"
+                                   "\t\t" CYAN(
+                                       "http://<pkg>/releases/"
+                                       "download/<tag>/<bundle "
+                                       "name>") "\n\t\t" CYAN("http://"
+                                                              "github."
+                                                              "com/"
+                                                              "gab-"
+                                                              "language"
+                                                              "/"
+                                                              "cgab/"
+                                                              "releases"
+                                                              "/downloa"
+                                                              "d/0.0.5/"
+                                                              "cgab-0."
+                                                              "0.5-x86_"
+                                                              "64-"
+                                                              "linux-"
+                                                              "gnu") "\n\n"
+                                                                     "\t"
+                                                                     "g"
+                                                                     "a"
+                                                                     "b"
+                                                                     " "
+                                                                     "d"
+                                                                     "o"
+                                                                     "w"
+                                                                     "n"
+                                                                     "l"
+                                                                     "o"
+                                                                     "a"
+                                                                     "d"
+                                                                     "s"
+                                                                     " "
+                                                                     "t"
+                                                                     "h"
+                                                                     "i"
+                                                                     "s"
+                                                                     " "
+                                                                     "a"
+                                                                     "r"
+                                                                     "t"
+                                                                     "i"
+                                                                     "f"
+                                                                     "a"
+                                                                     "c"
+                                                                     "t"
+                                                                     ","
+                                                                     " "
+                                                                     "a"
+                                                                     "n"
+                                                                     "d"
+                                                                     " "
+                                                                     "u"
+                                                                     "n"
+                                                                     "z"
+                                                                     "i"
+                                                                     "p"
+                                                                     "s"
+                                                                     " "
+                                                                     "i"
+                                                                     "t"
+                                                                     " "
+                                                                     "i"
+                                                                     "n"
+                                                                     "t"
+                                                                     "o"
+                                                                     " "
+                                                                     "t"
+                                                                     "h"
+                                                                     "e"
+                                                                     " "
+                                                                     "p"
+                                                                     "a"
+                                                                     "c"
+                                                                     "k"
+                                                                     "a"
+                                                                     "g"
+                                                                     "e"
+                                                                     "s"
+                                                                     " "
+                                                                     "<"
+                                                                     "i"
+                                                                     "n"
+                                                                     "s"
+                                                                     "t"
+                                                                     "a"
+                                                                     "l"
+                                                                     "l"
+                                                                     " "
+                                                                     "l"
+                                                                     "o"
+                                                                     "c"
+                                                                     "a"
+                                                                     "t"
+                                                                     "i"
+                                                                     "o"
+                                                                     "n"
+                                                                     ">"
+                                                                     "."
+                                                                     "\n\t"
+                                                                     "A"
+                                                                     "t"
+                                                                     " "
+                                                                     "t"
+                                                                     "h"
+                                                                     "i"
+                                                                     "s"
+                                                                     " "
+                                                                     "p"
+                                                                     "o"
+                                                                     "i"
+                                                                     "n"
+                                                                     "t"
+                                                                     ","
+                                                                     " "
+                                                                     "t"
+                                                                     "h"
+                                                                     "e"
+                                                                     " "
+                                                                     "p"
+                                                                     "a"
+                                                                     "c"
+                                                                     "k"
+                                                                     "a"
+                                                                     "g"
+                                                                     "e"
+                                                                     " "
+                                                                     "i"
+                                                                     "s"
+                                                                     " "
+                                                                     "i"
+                                                                     "n"
+                                                                     "s"
+                                                                     "t"
+                                                                     "a"
+                                                                     "l"
+                                                                     "l"
+                                                                     "e"
+                                                                     "d"
+                                                                     "."
+                                                                     "\n\n"
+                                                                     "\t"
+                                                                     "A"
+                                                                     "p"
+                                                                     "p"
+                                                                     "l"
+                                                                     "i"
+                                                                     "c"
+                                                                     "a"
+                                                                     "t"
+                                                                     "i"
+                                                                     "o"
+                                                                     "n"
+                                                                     "s"
+                                                                     " "
+                                                                     "w"
+                                                                     "o"
+                                                                     "r"
+                                                                     "k"
+                                                                     " "
+                                                                     "s"
+                                                                     "i"
+                                                                     "m"
+                                                                     "i"
+                                                                     "l"
+                                                                     "a"
+                                                                     "r"
+                                                                     "l"
+                                                                     "y"
+                                                                     ","
+                                                                     " "
+                                                                     "b"
+                                                                     "y"
+                                                                     " "
+                                                                     "d"
+                                                                     "e"
+                                                                     "f"
+                                                                     "i"
+                                                                     "n"
+                                                                     "i"
+                                                                     "n"
+                                                                     "g"
+                                                                     " "
+                                                                     "a"
+                                                                     " "
+                                                                     "r"
+                                                                     "e"
+                                                                     "s"
+                                                                     "o"
+                                                                     "u"
+                                                                     "r"
+                                                                     "c"
+                                                                     "e"
+                                                                     " "
+                                                                     "a"
+                                                                     "f"
+                                                                     "t"
+                                                                     "e"
+                                                                     "r"
+                                                                     " "
+                                                                     "t"
+                                                                     "h"
+                                                                     "e"
+                                                                     " "
+                                                                     "p"
+                                                                     "a"
+                                                                     "c"
+                                                                     "k"
+                                                                     "a"
+                                                                     "g"
+                                                                     "e"
+                                                                     " "
+                                                                     "n"
+                                                                     "a"
+                                                                     "m"
+                                                                     "e"
+                                                                     ":"
+                                                                     "\n"
+                                                                     "\n\t"
+                                                                     "\t "
+                                                                     "g"
+                                                                     "a"
+                                                                     "b"
+                                                                     " "
+                                                                     "g"
+                                                                     "e"
+                                                                     "t"
+                                                                     " "
+                                                                     "g"
+                                                                     "i"
+                                                                     "t"
+                                                                     "h"
+                                                                     "u"
+                                                                     "b"
+                                                                     "."
+                                                                     "c"
+                                                                     "o"
+                                                                     "m"
+                                                                     "/"
+                                                                     "g"
+                                                                     "a"
+                                                                     "b"
+                                                                     "-"
+                                                                     "l"
+                                                                     "a"
+                                                                     "n"
+                                                                     "g"
+                                                                     "u"
+                                                                     "a"
+                                                                     "g"
+                                                                     "e"
+                                                                     "/"
+                                                                     "g"
+                                                                     "w"
+                                                                     "o"
+                                                                     "r"
+                                                                     "d"
+                                                                     "l"
+                                                                     "e"
+                                                                     "@"
+                                                                     "0"
+                                                                     "."
+                                                                     "1"
+                                                                     "."
+                                                                     "0"
+                                                                     " " CYAN(
+                                                                         "gword"
+                                                                         "le@0."
+                                                                         "1.0") "\n\n\t"
+                                                                                "For the github host, gab constructs a url like so:\n\n\t"
+                                                                                "\t " CYAN(
+                                                                                    "http://github.com/gab-language/gwordle/releases/download/0.1.0/"
+                                                                                    "gwordle-cgab-0.0.5-x86_64-linux-gnu") "\n\n\t"
+                                                                                                                           "gab downloads this artifact to the appropriate package directory, and then symlinks it to the " CYAN(
+                                                                                                                               "gab/bin") " directory.\n\t"
+                                                                                                                                          "The symlinked name *includes* the tag, so that multiple version may coexist. To invoke the " CYAN(
+                                                                                                                                              "gwordle") " application above:\n\n\t"
+                                                                                                                                                         "\t " GREEN(
+                                                                                                                                                             "gwordle@0.1.0"),
         .example =
             {
-                GREEN("gab")" " YELLOW("get") " gab@0.0.5",
-                GREEN("gab")" " YELLOW("get") " github.com/<user>/<repository>@1.2 my_app",
+                GREEN("gab") " " YELLOW("get") " gab@0.0.5",
+                GREEN("gab") " " YELLOW(
+                    "get") " github.com/<user>/<repository>@1.2 my_app",
             },
         .handler = get,
         {
@@ -1538,11 +1842,12 @@ static struct command commands[] = {
     {
         "info",
         "Log information about the local gab environment.",
-        "\tDump compile-time configuration about this binary, as well as list "
+        "\tDump compile-time configuration about this binary, as well as "
+        "list "
         "the targets installed locally",
         .example =
             {
-                GREEN("gab")" "YELLOW("info"),
+                GREEN("gab") " " YELLOW("info"),
             },
         .handler = info,
     },
@@ -1553,29 +1858,40 @@ static struct command commands[] = {
         "single executable.\n\tWhen stdin is a file or a pipe, modules "
         "will be read line-by-line from stdin.\n\n\t"
         "Multiple platforms are supported:\n\t"
-        "\t"CYAN("x86_64-linux-gnu")"    (Linux Intel)\n\t"
-        "\t"CYAN("aarch64-linux-gnu")"   (Linux ARM)\n\t"
-        "\t"CYAN("x86_64-windows-gnu")"  (Windows Intel)\n\t"
-        "\t"CYAN("aarch64-windows-gnu")" (Windows ARM)\n\t"
-        "\t"CYAN("x86_64-macos-none")"   (MacOS Intel)\n\t"
-        "\t"CYAN("aarch64-macos-none")"  (MacOS ARM)\n\n\t"
-        "The executable produced will be named <arg>-cgab-<cgab_version>-<platform>.\n\tWhen invoked, the binary will "
-        "behave as if the user typed `gab run <arg>`.\n\t"
-        "The filename is used to determine the module entrypoint - therefore these binaries may not be renamed.\n\t"
-        "The executable itself is distributable as a stand-alone binary. "
-        "Users need not install anything, or even know anything about "
-        "gab.\n\n\t"
-        "If no entrypoint <arg> is supplied, then gab will build the modules "
-        "into a bundle instead.\n\t"
-        "These bundles are named for the gab version and platform they are "
-        "built for.\n\t"
-        "They look like this:\n\n\t"
-        "\t"CYAN("cgab-<cgab_version>-<platform>")"\n\n\t"
-        "See `gab help get` for more information on these bundles.",
+        "\t" CYAN("x86_64-linux-gnu") "    (Linux Intel)\n\t"
+                                      "\t" CYAN("aarch64-linux-gnu") "   "
+                                                                     "(Linu"
+                                                                     "x "
+                                                                     "ARM)"
+                                                                     "\n\t"
+                                                                     "\t" CYAN(
+                                                                         "x86_"
+                                                                         "64-"
+                                                                         "windo"
+                                                                         "ws-"
+                                                                         "gnu") "  (Windows Intel)\n\t"
+                                                                                "\t" CYAN("aarch64-windows-gnu") " (Windows ARM)\n\t"
+                                                                                                                 "\t" CYAN("x86_64-macos-none") "   (MacOS Intel)\n\t"
+                                                                                                                                                "\t" CYAN("aarch64-macos-none") "  (MacOS ARM)\n\n\t"
+                                                                                                                                                                                "The executable produced will be named <arg>-cgab-<cgab_version>-<platform>.\n\tWhen invoked, the binary will "
+                                                                                                                                                                                "behave as if the user typed `gab run <arg>`.\n\t"
+                                                                                                                                                                                "The filename is used to determine the module entrypoint - therefore these binaries may not be renamed.\n\t"
+                                                                                                                                                                                "The executable itself is distributable as a stand-alone binary. "
+                                                                                                                                                                                "Users need not install anything, or even know anything about "
+                                                                                                                                                                                "gab.\n\n\t"
+                                                                                                                                                                                "If no entrypoint <arg> is supplied, then gab will build the modules "
+                                                                                                                                                                                "into a bundle instead.\n\t"
+                                                                                                                                                                                "These bundles are named for the gab version and platform they are "
+                                                                                                                                                                                "built for.\n\t"
+                                                                                                                                                                                "They look like this:\n\n\t"
+                                                                                                                                                                                "\t" CYAN(
+                                                                                                                                                                                    "cgab-<cgab_version>-<platform>") "\n\n\t"
+                                                                                                                                                                                                                      "See `gab help get` for more information on these bundles.",
         .example =
             {
                 GREEN("gab") " " YELLOW("build") " -m IO,Strings my_app",
-                GREEN("gab") " " YELLOW("build") " my_app < list_of_modules.txt",
+                GREEN("gab") " " YELLOW(
+                    "build") " my_app < list_of_modules.txt",
             },
         .handler = build,
         {
@@ -1591,21 +1907,38 @@ static struct command commands[] = {
         "The module is invoked as if by '<arg>'.use.\n\n\t"
         "The search path begins at the first root. Roots and resources are "
         "checked in descending order.\n\t"
-        "Each resource is checked at each root before moving on to the next.\n"
+        "Each resource is checked at each root before moving on to the "
+        "next.\n"
         "\n\tThe roots are:\n"
-        "\n\t\t"CYAN("./")
-        "\n\t\t"CYAN("<install_dir>")
-        "\n\n\tThe resources are:\n"
-        "\n\t\t"CYAN("<arg>.gab")
-        "\n\t\t"CYAN("mod/<arg>.gab")
-        "\n\t\t"CYAN("<arg>/mod.gab")
-        "\n\t\t"CYAN("<arg>.[so | dylib | dll]")
-        "\n\t\t"CYAN("mod/<arg>.[so | dylib | dll]")
-        "\n\n\tThese resources are evaluated as gab modules."
-        "\n\tThere is also a special resource:\n"
-        "\n\t\t"CYAN("data/<arg>")
-        "\n\n\tThis resource is not evaluated as a gab module. The content of the file is returned as a gab\\binary."
-        "\n\tThis is useful for packaging resources into gab applications, such as images, fonts, or static data.",
+        "\n\t\t" CYAN("./") "\n\t\t" CYAN(
+            "<install_dir>") "\n\n\tThe resources are:\n"
+                             "\n\t\t" CYAN(
+                                 "<arg>.gab") "\n"
+                                              "\t"
+                                              "\t" CYAN(
+                                                  "mod/"
+                                                  "<arg"
+                                                  ">."
+                                                  "gab") "\n\t\t" CYAN("<arg>/"
+                                                                       "mod."
+                                                                       "gab") "\n\t\t" CYAN("<arg>.[so | dylib | dll]") "\n\t\t" CYAN("mod/<arg>.[so | dylib | dll]") "\n\n\tThe"
+                                                                                                                                                                      "se "
+                                                                                                                                                                      "resources"
+                                                                                                                                                                      " are "
+                                                                                                                                                                      "evaluated"
+                                                                                                                                                                      " as gab "
+                                                                                                                                                                      "modules."
+                                                                                                                                                                      "\n\tThere"
+                                                                                                                                                                      " is also "
+                                                                                                                                                                      "a "
+                                                                                                                                                                      "special "
+                                                                                                                                                                      "resource:"
+                                                                                                                                                                      "\n"
+                                                                                                                                                                      "\n\t"
+                                                                                                                                                                      "\t" CYAN("data/"
+                                                                                                                                                                                "<arg"
+                                                                                                                                                                                ">") "\n\n\tThis resource is not evaluated as a gab module. The content of the file is returned as a gab\\binary."
+                                                                                                                                                                                     "\n\tThis is useful for packaging resources into gab applications, such as images, fonts, or static data.",
         .example =
             {
                 GREEN("gab") " " YELLOW("run") " -m Json,http -j 16 my_project",
@@ -1642,7 +1975,8 @@ static struct command commands[] = {
         "repl",
         "Enter the REPL",
         "\tA REPL is a convenient tool for experimentation.\n"
-        "\tIt is useful for developement as well - set up with editor plugins "
+        "\tIt is useful for developement as well - set up with editor "
+        "plugins "
         "to evaluate code in the REPL.",
         .example =
             {
@@ -1677,8 +2011,6 @@ int checksteps(struct command_arguments *args, int len,
 
     if (ch != 'y' && ch != 'Y')
       return 1;
-
-    cliinfo("Confirmed - following plan.\n");
   }
 
   return 0;
@@ -1693,6 +2025,8 @@ struct command_arguments parse_options(int argc, const char **argv,
       .argv = argv,
       .njobs = cGAB_DEFAULT_NJOBS,
       .wait = cGAB_DEFAULT_WAIT_NS,
+      .platform = GAB_TARGET_TRIPLE,
+      .dynlib_fileending = GAB_DYNLIB_FILEENDING,
   };
 
   v_s_char_create(&args.packages, 32);
@@ -1726,8 +2060,9 @@ struct command_arguments parse_options(int argc, const char **argv,
 
         if (opt.name && arg[1] == opt.shorthand) {
           if (opt.handler_f) {
-            if (!opt.handler_f(&args))
-              exit(1);
+            int result = opt.handler_f(&args);
+            if (result)
+              exit(result);
           } else {
             args.flags |= opt.flag, args.argc--, args.argv++;
           }
@@ -1972,34 +2307,7 @@ int get_gab(v_step *steps, struct command_arguments *args,
   return 0;
 }
 
-const char *platform = GAB_TARGET_TRIPLE;
-const char *dynlib_fileending = GAB_DYNLIB_FILEENDING;
-int update_platform(struct command_arguments *args) {
-  platform = args->platform;
-
-  if (!strcmp(platform, "x86_64-linux-gnu"))
-    dynlib_fileending = ".so";
-  else if (!strcmp(platform, "x86_64-macos-none"))
-    dynlib_fileending = ".dylib";
-  else if (!strcmp(platform, "x86_64-windows-gnu"))
-    dynlib_fileending = ".dll";
-  else if (!strcmp(platform, "aarch64-linux-gnu"))
-    dynlib_fileending = ".so";
-  else if (!strcmp(platform, "aarch64-macos-none"))
-    dynlib_fileending = ".dylib";
-  else if (!strcmp(platform, "aarch64-windows-gnu"))
-    dynlib_fileending = ".dll";
-  else
-    return clierror("Unrecognized platform '%s'.\n", platform), 1;
-
-  return 0;
-};
-
 int get(struct command_arguments *args) {
-  if (args->flags & FLAG_BUILD_TARGET)
-    if (update_platform(args))
-      return 1;
-
   const char *pkg = args->argc ? args->argv[0] : "@";
   args->argc--;
   args->argv++;
@@ -2055,9 +2363,10 @@ int get(struct command_arguments *args) {
 
   // If we match the special Gab package, then defer to that helper.
   if (!strcmp(pkgbuf, "gab"))
-    res = get_gab(&steps, args, platform, tagbuf);
+    res = get_gab(&steps, args, args->platform, tagbuf);
   else
-    res = get_package(&steps, args, pkg, resource, platform, GAB_VERSION_TAG);
+    res = get_package(&steps, args, pkg, resource, args->platform,
+                      GAB_VERSION_TAG);
 
   if (res)
     return res;
@@ -2069,9 +2378,7 @@ int get(struct command_arguments *args) {
     return clierror("Operation cancelled.\n"), 1;
 
   if (execute_steps(steps.len, steps.data, args->flags & FLAG_STEP_VERBOSE))
-    return clierror("Operation failed.\n"), 1;
-
-  clisuccess("Operation complete.\n");
+    return 1;
 
   return 0;
 }
@@ -2102,10 +2409,8 @@ int init_modules(v_pkg *modules, struct command_arguments *args) {
 }
 
 int run(struct command_arguments *args) {
-  if (args->argc < 1) {
-    clierror("Missing module argument to subcommand 'run'.\n");
-    return 1;
-  }
+  if (args->argc < 1)
+    return missing_subcommand_argument_error("run", "module");
 
   const char *path = args->argv[0];
 
@@ -2121,10 +2426,8 @@ int run(struct command_arguments *args) {
 }
 
 int exec(struct command_arguments *args) {
-  if (args->argc < 1) {
-    clierror("Missing code argument to subcommand 'exec'.\n");
-    return 1;
-  }
+  if (args->argc < 1)
+    return missing_subcommand_argument_error("exec", "code"), 1;
 
   v_pkg modules = {0};
   int nmodules = init_modules(&modules, args);
@@ -2188,12 +2491,34 @@ void cmd_details(int i) {
   }
 }
 
+const char *check_installation(const char *target) {
+  v_char signal = {};
+  const char *loc = install_location(target, GAB_VERSION_TAG, nullptr);
+
+  v_char_spush(&signal, s_char_cstr(loc));
+  v_char_spush(&signal, s_char_cstr("/gab-cgab-" GAB_VERSION_TAG "-"));
+  v_char_spush(&signal, s_char_cstr(target));
+  v_char_push(&signal, '\0');
+
+  bool exists = file_exister(signal.data);
+  v_char_destroy(&signal);
+
+  if (exists)
+    return loc;
+
+  free((void *)loc);
+  return nullptr;
+}
+
 int welcome(struct command_arguments *args) {
-  printf(
-      "%s\n%s", welcome_message,
-      "To get started, run `gab help` for a list of commands."
-      "\n\nIf you've just downloaded gab, welcome! Run `gab get` to complete "
-      "your installation.");
+  printf("%s\n%s", welcome_message,
+         "To get started, run `gab help` for a list of commands."
+         "\n\n");
+
+  if (!check_installation(GAB_TARGET_TRIPLE))
+    printf(SECTION("INSTALLATION") "\n\n\tRun `gab get` to complete "
+                                   "your installation.\n");
+
   return 0;
 }
 
@@ -2218,48 +2543,36 @@ struct {
 };
 
 struct {
-  const char *name, *target, *signal;
+  const char *name, *target;
 } possible_targets[] = {
     {
         "x64 linux",
         "x86_64-linux-gnu",
-        "github.com/gab-language/cgab@" GAB_VERSION_TAG
-        "/gab-release-cgab-" GAB_VERSION_TAG "-x86_64-linux-gnu",
     },
     {
         "x64 macos",
         "x86_64-macos-none",
-        "github.com/gab-language/cgab@" GAB_VERSION_TAG
-        "/gab-release-cgab-" GAB_VERSION_TAG "-x86_64-macos-none",
     },
     {
         "x64 windows",
         "x86_64-windows-gnu",
-        "github.com/gab-language/cgab@" GAB_VERSION_TAG
-        "/gab-release-cgab-" GAB_VERSION_TAG "-x86_64-windows-gnu",
     },
     {
         "arm linux",
         "aarch64-linux-gnu",
-        "github.com/gab-language/cgab@" GAB_VERSION_TAG
-        "/gab-release-cgab-" GAB_VERSION_TAG "-aarch64-linux-gnu",
     },
     {
         "arm macos",
         "aarch64-macos-none",
-        "github.com/gab-language/cgab@" GAB_VERSION_TAG
-        "/gab-release-cgab-" GAB_VERSION_TAG "-aarch64-macos-none",
     },
     {
         "arm windows",
         "aarch64-windows-gnu",
-        "github.com/gab-language/cgab@" GAB_VERSION_TAG
-        "/gab-release-cgab-" GAB_VERSION_TAG "-aarch64-windows-gnu",
     },
 };
 
 int info(struct command_arguments *args) {
-  printf("%s\n%17s\n", welcome_message, SECTION("CONFIGURATION") "\n");
+  printf("%17s\n", SECTION("CONFIGURATION") "\n");
 
   for (int i = 0; i < LEN_CARRAY(compile_info); i++) {
     printf("%17s | %s\n", compile_info[i].name, compile_info[i].value);
@@ -2274,29 +2587,27 @@ int info(struct command_arguments *args) {
      * target.
      */
     const char *target = possible_targets[i].target;
-    v_char signal = {};
-    const char *loc = install_location(target, GAB_VERSION_TAG, nullptr);
 
-    v_char_spush(&signal, s_char_cstr(loc));
-    v_char_spush(&signal, s_char_cstr(possible_targets[i].signal));
-    v_char_push(&signal, '\0');
-
-    bool exists = file_exister(signal.data);
+    const char *exists = check_installation(target);
     printf("%17s | %s\n", possible_targets[i].name,
-           exists ? loc : "not installed");
-    v_char_destroy(&signal);
+           exists ? exists : "not installed");
+
+    free((void *)exists);
   }
   return 0;
 }
 
 int help(struct command_arguments *args) {
   if (args->argc < 1) {
-    printf("To see more details about each command, "
-           "run:\n\n\tgab help <cmd>\n\n"SECTION("COMMANDS")"\n");
+    printf(SECTION("HELP") "\n\n\tTo see more details about each command, "
+                           "run:\n\n\t" GREEN("gab") " " YELLOW(
+                               "help") " <cmd>\n\n" SECTION("COMMANDS") "\n");
 
     // Print command summaries
     for (int i = 0; i < N_COMMANDS; i++)
       cmd_summary(i);
+
+    printf("\n");
 
     return 0;
   }
@@ -2323,13 +2634,13 @@ int build_exe(struct command_arguments *args, const char *module) {
   v_char_spush(&bundle, s_char_cstr("-cgab-"));
   v_char_spush(&bundle, s_char_cstr(GAB_VERSION_TAG));
   v_char_push(&bundle, '-');
-  v_char_spush(&bundle, s_char_cstr(platform));
+  v_char_spush(&bundle, s_char_cstr(args->platform));
   v_char_push(&bundle, '\0');
 
   v_char exepath = {};
   v_char_spush(&exepath, s_char_cstr(GAB_VERSION_TAG));
   v_char_push(&exepath, '-');
-  v_char_spush(&exepath, s_char_cstr(platform));
+  v_char_spush(&exepath, s_char_cstr(args->platform));
   v_char_push(&exepath, '/');
   v_char_push(&exepath, '\0');
   const char *path = gab_osprefix_install(exepath.data);
@@ -2341,7 +2652,7 @@ int build_exe(struct command_arguments *args, const char *module) {
       &exepath,
       s_char_cstr("github.com/gab-language/cgab@" GAB_VERSION_TAG "/"));
   v_char_spush(&exepath, s_char_cstr("gab-release-cgab-" GAB_VERSION_TAG "-"));
-  v_char_spush(&exepath, s_char_cstr(platform));
+  v_char_spush(&exepath, s_char_cstr(args->platform));
   v_char_push(&exepath, '\0');
 
   v_s_char_push(&args->packages, s_char_cstr(module));
@@ -2357,8 +2668,8 @@ int build_exe(struct command_arguments *args, const char *module) {
   v_char_spush(&platform_dynlib_suffix, s_char_cstr(".cgab-"));
   v_char_spush(&platform_dynlib_suffix, s_char_cstr(GAB_VERSION_TAG));
   v_char_push(&platform_dynlib_suffix, '-');
-  v_char_spush(&platform_dynlib_suffix, s_char_cstr(platform));
-  v_char_spush(&platform_dynlib_suffix, s_char_cstr(dynlib_fileending));
+  v_char_spush(&platform_dynlib_suffix, s_char_cstr(args->platform));
+  v_char_spush(&platform_dynlib_suffix, s_char_cstr(args->dynlib_fileending));
   v_char_push(&platform_dynlib_suffix, '\0');
 
   // Replace the native DYNLIBFILEENDING with the platform-specific one.
@@ -2370,7 +2681,7 @@ int build_exe(struct command_arguments *args, const char *module) {
   v_char_spush(&platform_bundle_suffix, s_char_cstr("cgab-"));
   v_char_spush(&platform_bundle_suffix, s_char_cstr(GAB_VERSION_TAG));
   v_char_push(&platform_bundle_suffix, '-');
-  v_char_spush(&platform_bundle_suffix, s_char_cstr(platform));
+  v_char_spush(&platform_bundle_suffix, s_char_cstr(args->platform));
   v_char_push(&platform_bundle_suffix, '\0');
 
   platform_file_resources[0] = (struct gab_resource){
@@ -2387,7 +2698,7 @@ int build_exe(struct command_arguments *args, const char *module) {
    **/
   const char *platform_roots[] = {
       "./",
-      install_location(platform, GAB_VERSION_TAG, nullptr),
+      install_location(args->platform, GAB_VERSION_TAG, nullptr),
       nullptr,
   };
 
@@ -2395,7 +2706,7 @@ int build_exe(struct command_arguments *args, const char *module) {
 
   v_step steps = {0};
 
-  bool is_native = !strcmp(platform, GAB_TARGET_TRIPLE);
+  bool is_native = !strcmp(args->platform, GAB_TARGET_TRIPLE);
 
   v_step_push(&steps, (struct step){
                           kSTEP_ARCHIVE_OPEN,
@@ -2438,7 +2749,7 @@ int build_exe(struct command_arguments *args, const char *module) {
     return clierror("Installation cancelled.\n"), 1;
 
   if (execute_steps(steps.len, steps.data, args->flags & FLAG_STEP_VERBOSE))
-    return clierror("Bundle creation failed.\n"), 1;
+    return 1;
 
 #if GAB_PLATFORM_UNIX
   if (chmod(bundle.data, 0755) != 0) {
@@ -2446,7 +2757,7 @@ int build_exe(struct command_arguments *args, const char *module) {
   }
 #endif
 
-  clisuccess("Created bundled executable " GAB_CYAN "%s" GAB_RESET
+  clisuccess("Created application " GAB_CYAN "%s" GAB_RESET
              " (%2.2lf mb).\n",
              bundle.data, (double)size / 1024 / 1024);
 
@@ -2455,13 +2766,13 @@ int build_exe(struct command_arguments *args, const char *module) {
 
 int build_lib(struct command_arguments *args) {
   if (args->packages.len == 0)
-    return clierror("No modules were requested. See `gab help build`.\n"), 1;
+    return misuse_error("build", "No modules requested");
 
   v_char bundle = {0};
   v_char_spush(&bundle, s_char_cstr("cgab-"));
   v_char_spush(&bundle, s_char_cstr(GAB_VERSION_TAG));
   v_char_push(&bundle, '-');
-  v_char_spush(&bundle, s_char_cstr(platform));
+  v_char_spush(&bundle, s_char_cstr(args->platform));
   v_char_push(&bundle, '\0');
 
   struct gab_resource platform_file_resources[nnative_file_resources + 2];
@@ -2475,8 +2786,8 @@ int build_lib(struct command_arguments *args) {
   v_char_spush(&platform_dynlib_suffix, s_char_cstr(".cgab-"));
   v_char_spush(&platform_dynlib_suffix, s_char_cstr(GAB_VERSION_TAG));
   v_char_push(&platform_dynlib_suffix, '-');
-  v_char_spush(&platform_dynlib_suffix, s_char_cstr(platform));
-  v_char_spush(&platform_dynlib_suffix, s_char_cstr(dynlib_fileending));
+  v_char_spush(&platform_dynlib_suffix, s_char_cstr(args->platform));
+  v_char_spush(&platform_dynlib_suffix, s_char_cstr(args->dynlib_fileending));
   v_char_push(&platform_dynlib_suffix, '\0');
 
   // Replace the native DYNLIBFILEENDING with the platform-specific one.
@@ -2488,7 +2799,7 @@ int build_lib(struct command_arguments *args) {
   v_char_spush(&platform_bundle_suffix, s_char_cstr("/cgab-"));
   v_char_spush(&platform_bundle_suffix, s_char_cstr(GAB_VERSION_TAG));
   v_char_push(&platform_bundle_suffix, '-');
-  v_char_spush(&platform_bundle_suffix, s_char_cstr(platform));
+  v_char_spush(&platform_bundle_suffix, s_char_cstr(args->platform));
   v_char_push(&platform_bundle_suffix, '\0');
 
   /* Add an additional kind of resource for builds such as these:
@@ -2509,7 +2820,7 @@ int build_lib(struct command_arguments *args) {
    **/
   const char *platform_roots[] = {
       "./",
-      install_location(platform, GAB_VERSION_TAG, nullptr),
+      install_location(args->platform, GAB_VERSION_TAG, nullptr),
       nullptr,
   };
 
@@ -2549,9 +2860,9 @@ int build_lib(struct command_arguments *args) {
     return clierror("Installation cancelled.\n"), 1;
 
   if (execute_steps(steps.len, steps.data, args->flags & FLAG_STEP_VERBOSE))
-    return clierror("Bundle creation failed.\n"), 1;
+    return 1;
 
-  clisuccess("Created bundled library " GAB_CYAN "%s" GAB_RESET
+  clisuccess("Created bundle " GAB_CYAN "%s" GAB_RESET
              " (%2.2lf mb).\n",
              bundle.data, (double)size / 1024 / 1024);
 
@@ -2666,10 +2977,6 @@ int build(struct command_arguments *args) {
       v_s_char_push(&args->packages, s_char_create(module->data, module->len));
     }
   }
-
-  if (args->flags & FLAG_BUILD_TARGET)
-    if (update_platform(args))
-      return 1;
 
   v_s_char_push(&args->package_aliases, s_char_cstr(""));
 
