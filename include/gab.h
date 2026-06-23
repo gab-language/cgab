@@ -61,7 +61,7 @@
 // prefix will basically be in a linked-list. (hash-bucket-chaining, etc) If
 // this macro is 0, then gab will not limit hashing.
 #ifndef cGAB_STRING_HASHLEN
-#define cGAB_STRING_HASHLEN 0
+#define cGAB_STRING_HASHLEN 256
 #endif
 
 // Combine common consecutive instruction patterns into one superinstruction
@@ -79,7 +79,7 @@
 // New workers are spawned as needed up until a maximum is reached (specified at
 // runtime)
 #ifndef cGAB_WORKER_IDLE_TRIES
-#define cGAB_WORKER_IDLE_TRIES 2
+#define cGAB_WORKER_IDLE_TRIES 128
 #endif
 
 #ifndef cGAB_VM_CHANNEL_PUT_TRIES
@@ -127,7 +127,7 @@
 
 // Define how long the default busy-wait sleep should be.
 #ifndef cGAB_DEFAULT_WAIT_NS
-#define cGAB_DEFAULT_WAIT_NS 800
+#define cGAB_DEFAULT_WAIT_NS 10000
 #endif
 
 // Capacity at which point dictionaries are resized
@@ -241,7 +241,7 @@ enum gab_status {
 // VERSION
 #define GAB_VERSION_MAJOR "0"
 #define GAB_VERSION_MINOR "1"
-#define GAB_VERSION_PATCH "2"
+#define GAB_VERSION_PATCH "3"
 #define GAB_VERSION_TAG                                                        \
   GAB_VERSION_MAJOR "." GAB_VERSION_MINOR "." GAB_VERSION_PATCH
 
@@ -403,15 +403,16 @@ static inline void v_uint8_t_npush(v_uint8_t *self, size_t n, uint8_t *buff) {
 #define GAB_MAGENTA "\x1b[35m"
 #define GAB_CYAN "\x1b[36m"
 #define GAB_RESET "\x1b[0m"
+#define GAB_SWAP "\x1b[7m"
 #define GAB_CLEAR "\x1b[2J"
 
 #include <stdarg.h>
 #include <stdio.h>
 
 // TODO @cgab: Better 'asserts' which are self-describing.
-#ifdef NDEBUG
-#define gab_assert(expr, format, ...)
-#else
+// #ifdef NDEBUG
+// #define gab_assert(expr, format, ...)
+// #else
 [[noreturn]]
 static inline void __gab_assert_fail(const char *expr, const char *file,
                                      const char *function, size_t line,
@@ -433,7 +434,7 @@ static inline void __gab_assert_fail(const char *expr, const char *file,
           : __gab_assert_fail(#expr, __FILE__, __FUNCTION__, __LINE__,         \
                               format __VA_OPT__(, ) __VA_ARGS__))
 
-#endif
+// #endif
 
 #include <errno.h>
 #include <float.h>

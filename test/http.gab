@@ -1,5 +1,5 @@
-Http := 'github.com/gab-language/cgab@0.1.2' .use 'Http'
-Uri  := 'github.com/gab-language/cgab@0.1.2' .use 'Uri'
+Http := 'github.com/gab-language/cgab@0.1.3' .use 'Http'
+Uri  := 'github.com/gab-language/cgab@0.1.3' .use 'Uri'
 
 req := Http.Req.make('GET' '/' {} '')
 

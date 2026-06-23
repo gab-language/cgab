@@ -146,7 +146,7 @@ GAB_DYNLIB_NATIVE_FN(string, split) {
   uint64_t csep_len = gab_strlen(sep);
 
   if (cstr_len == 0 || csep_len == 0)
-    return gab_union_cvalid(gab_nil);
+    return gab_vmpush(gab_thisvm(gab), gab_none), gab_union_cvalid(gab_nil);
 
   const char *cstr = gab_strdata(&str);
   const char *csep = gab_strdata(&sep);
@@ -160,19 +160,19 @@ GAB_DYNLIB_NATIVE_FN(string, split) {
       // Memcmp to test for full sep match
       if (!memcmp(cstr + offset, csep, csep_len)) {
         // Full match found - push a string
-        gab_vmpush(gab_thisvm(gab),
-                   gab_nstring(gab, offset - begin, cstr + begin));
-        begin = offset + csep_len;
-        offset = begin;
-        continue;
+        gab_vmpush(gab_thisvm(gab), gab_ok,
+                   gab_nstring(gab, offset - begin, cstr + begin),
+                   gab_nstring(gab, cstr_len - offset - csep_len,
+                               cstr + begin + offset + csep_len));
+        return gab_union_cvalid(gab_nil);
       }
     }
 
     offset++;
   }
-
-  gab_vmpush(gab_thisvm(gab), gab_nstring(gab, cstr_len - begin, cstr + begin));
-
+  gab_vmpush(gab_thisvm(gab), gab_ok,
+             gab_nstring(gab, cstr_len - begin, cstr + begin),
+             gab_string(gab, ""));
   return gab_union_cvalid(gab_nil);
 }
 
@@ -420,58 +420,40 @@ GAB_DYNLIB_NATIVE_FN(string, slice) {
     return gab_pktypemismatch(gab, str, kGAB_STRING);
 
   const char *data = gab_strdata(&str);
+  uint64_t len = gab_strlen(str);
 
-  uint64_t len = gab_strlen(argv[0]);
-  if (len == 0) {
-    gab_vmpush(gab_thisvm(gab), gab_string(gab, ""));
-    return gab_union_cvalid(gab_nil);
+  gab_value vfrom = gab_arg(1);
+  gab_value vto = gab_arg(2);
+
+  if (vto == gab_nil) {
+    vto = vfrom;
+    vfrom = gab_nil;
   }
 
-  uint64_t start = 0, end = len;
-
-  switch (argc) {
-  case 2: {
-    if (gab_valkind(gab_arg(1)) != kGAB_NUMBER)
-      return gab_pktypemismatch(gab, gab_arg(1), kGAB_NUMBER);
-
-    int64_t a = gab_valtoi(gab_arg(1));
-    if (a < 0)
-      a += len;
-
-    end = CLAMP(a, len);
-    assert(end >= 0 && end < len);
-    break;
+  if (vfrom == gab_nil) {
+    vfrom = gab_number(0);
   }
 
-  default: {
-    if (gab_valkind(gab_arg(1)) != kGAB_NUMBER)
-      return gab_pktypemismatch(gab, gab_arg(1), kGAB_NUMBER);
+  if (gab_valkind(vfrom) != kGAB_NUMBER)
+    return gab_pktypemismatch(gab, vfrom, kGAB_NUMBER);
 
-    int64_t a = gab_valtoi(gab_arg(1));
-    if (a < 0)
-      a += len;
+  if (gab_valkind(vto) != kGAB_NUMBER)
+    return gab_pktypemismatch(gab, vto, kGAB_NUMBER);
 
-    start = CLAMP(a, len);
-    assert(start >= 0 && start <= len);
+  int64_t from = gab_valtoi(vfrom);
+  while (from < 0)
+    from += len;
+  from = CLAMP(from, len);
 
-    if (gab_valkind(gab_arg(2)) == kGAB_NUMBER) {
-      int64_t b = gab_valtoi(gab_arg(2));
-      if (b < 0)
-        b += len;
+  int64_t to = gab_valtoi(vto);
+  while (to < 0)
+    to += len;
+  to = CLAMP(to, len);
 
-      end = CLAMP(b, len);
-      assert(end >= 0 && end <= len);
-    }
-    break;
-  }
-  }
+  if (from > to)
+    return gab_panicf(gab, "Cannot slice from @ to @", vfrom, vto);
 
-  if (start > end)
-    return gab_panicf(
-        gab, "slice: expects the start to be before the end, got [$, $]", start,
-        end);
-
-  s_char result = utf8_slice(data, gab_strlen(str), start, end);
+  s_char result = utf8_slice(data, len, from, to);
 
   gab_value res = gab_nstring(gab, result.len, result.data);
 

@@ -35,9 +35,9 @@ enum gab_bcop_kind {
 struct gab_vm {
   uint8_t *ip;
 
-  gab_value *sp, *fp, *kb;
+  gab_value *sb, *sp, *fp, *kb;
 
-  gab_value sb[cGAB_STACK_MAX];
+  gab_value initial[cGAB_STACK_MAX];
 };
 
 /**

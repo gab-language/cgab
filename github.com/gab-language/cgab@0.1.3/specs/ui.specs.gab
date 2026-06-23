@@ -1,0 +1,190 @@
+s := 'github.com/gab-language/cgab@0.1.3'.use 'Specs'
+
+ui\run: .defspec {
+  help:
+  "
+  Begin running an application.
+
+  The platform argument defines how the application renders.
+  - `gui:` Render in a new, native operating system window
+  - `tui:` Render in the terminal
+  - `hui:` Render headlessly
+
+  The *events* and *frames* arguments are the entry/exit points for interacting with the running app.
+
+  Every frame, a new event will arrive on the *events* channel. For more on events, see `ui\event`.
+
+  It is the programmers's task to pull events off the `events` channel, process them, and put corresponding views onto the `frames` channel.
+  
+  A *view* is a data structure which describes the layout of the app. The `ui` library takes each view off the `frames` channel, walks the
+  data structure, and renders a new frame. The cycle then repeats.
+
+  For more information on views, see `ui\view`.
+  "
+  spec: s.message {
+    receiver: ui:
+    message:  run:
+    input: s.cat(
+      'platform' s.any(gui: tui: hui:)
+      'events' s.channel
+      'frames' s.channel
+    )
+    output: s.cat()
+  }
+}
+
+ui\event := ui\event: .defspec {
+  help:
+  "
+  A *ui\event* is a tuple of values describing some user interaction, or simply the passage of time.
+  "
+  spec: s.alt(
+    'mouse' s.cat(
+      'kind'    'mouse'
+      'event'   s.any('up' 'down')
+      'button'  s.any('left' 'right' 'unknown')
+      'target'  s.message
+    )
+    'key'   s.cat(
+      'kind'    'key'
+      'event'   s.any('up' 'down')
+      'value'   s.string
+    )
+    'tick'  s.cat(
+      'kind'    'tick'
+      'tick'    'tick'
+      'hovered' s.message
+    )
+  )
+}
+
+ui\component := ui\component: .defspec {
+  help:
+  "
+  A component is UI element, drawable to the screen.
+
+  The 'props' is a record containing layout/design information for the component.
+
+  The supported keys are listed below.
+
+  ### color
+  Colors are represented with numbers. Use the hex notation to write them easily. Here is a sample pallette. The most significant byte is the alpha - so you could even add an *empty/clear* color
+  by setting that to 00.
+
+  ```gab
+  bg:  # Set the background color
+  fg:  # Set the foreground color
+
+  # An example pallette
+  Colors := {
+    bg: 0xff161821
+    fg: 0xffcdd6f5
+    bg\hl: 0xff272c42
+    fg\hl: 0xffc6c8d1
+    r: 0xfff38ba9
+    o: 0xfffab388
+    y: 0xfff9e2b0
+    g: 0xffa6e3a2
+    b: 0xff89b4fb
+    i: 0xff94e2d6
+    v: 0xffcba6f8
+  }
+  ```
+
+  ### border
+  `box:` components support a border.
+
+  ```gab
+  border: # Set a border
+  # Should be a record with keys:
+  fg:  # Color of the border
+  w:   # Width of the border
+  # Example
+  border: { fg: Colors.r, w: 2 }
+  ```
+
+  ### padding
+  Padding is space on the inside of component between its edges and its conent.
+
+  ```gab
+  p:   # Set padding in all directions
+  p\x: # Set padding in left/right directions (along x axis)
+  p\y: # Set padding in top/bottom directions (along y axis)
+  p\l: # Set padding on left side
+  p\r: # Set padding on right side
+  p\t: # Set padding on top side
+  p\b: # Set padding on bottom side
+  ```
+
+  ### sizing
+  Control the size of components. Left unset, it defaults to the size of its content.
+
+  ```gab
+  w:   # Set width directly
+  w\g: # Set how much component should grow relative to others
+  w\r: # Set width relative to parent
+  h:   # Set height directly
+  h\g: # Set how much component should grow relative to others
+  h\r: # Set height relative to parent
+  ```
+
+  ### child layout
+  Control how child components are laid out.
+
+  ```gab
+  layout\direction: # Set the direction that children layout
+  align\x:          # Set how children align along x axis (left: right: center:)
+  align\y:          # Set how children align along y axis (top: bottom: center:)
+  ```
+
+  ### transitions
+  Transitions allow components to interpolate from one state to another over time.
+
+  In order for this to work properly, components need a stable `id:`. By default, components are
+  given ids based on the order they are rendered. When using transitions, it is better to not rely on this
+  and instead provide unique id's for the transitioning components.
+
+  ```gab
+  id:                    # A stable id required for transitioning components. Any string value will work.
+  transition\duration:   # Set durations for *all* transitions on this element. Default is 0.5 seconds.
+  transition\properties: # Set which properties should transition on this element. Leave unset for *all*.
+  # Available transition properties:
+  #  r:      Corner radius
+  #  bg:     Background color
+  #  fg:     Foreground color
+  #  w:      Width
+  #  h:      Height
+  #  x:      X Position
+  #  y:      Y Position
+  #  border: Border properties
+  #  pos:    x: and y:
+  #  dim:    w: and h:
+  #  box:    pos: and dim:
+  ```
+  "
+  spec: s.alt(
+    'text' s.pat(
+      'kind' text:
+      'props' s.record
+      'content' s.string
+    )
+    'img' s.pat(
+      'kind' img:
+      'props' s.record
+      'content' s.binary
+    )
+    'box' s.pat(
+      'kind' box:
+      'props' s.record
+      'content' ui\view:
+    )
+  )
+}
+
+ui\view := ui\view: .defspec {
+  help:
+  "
+  A list of UI components. Box components have a list of child components.
+  "
+  spec: s.list(ui\component)
+}

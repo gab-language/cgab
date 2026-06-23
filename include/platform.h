@@ -36,6 +36,12 @@
  * gab_osrm(path)
  * Remove the file at a path.
  *
+ * gab_ossymlink(from, to)
+ * Create a symlink
+ *
+ * gab_oschmod(path, perms)
+ * Modify a files permissions.
+ *
  * %----------------------%
  * | Directory Operations |
  * %----------------------%
@@ -178,6 +184,9 @@ GAB_API_INLINE const char *gab_osexepath() {
 #define gab_osdynlib void *
 #define gab_oslibopen(path) dlopen(path, RTLD_NOW)
 #define gab_oslibfind(dynlib, name) (void *)dlsym(dynlib, name)
+
+#define gab_oschmod(path, perms) (chmod(path, perms))
+#define gab_ossymlink(from, to) (symlink(to, from))
 
 GAB_API_INLINE const int gab_osmkdirp(const char *path) {
   char *dup = strdup(path);
@@ -377,6 +386,10 @@ static inline void *gab_oslibopen(const char *path) {
   return LoadLibraryA(path);
 }
 
+// Not relevant on windows
+#define gab_oschmod(path, perms) (0)
+#define gab_ossymlink(from, to) (!CreateSymbolicLinkA(from, to, 0))
+
 GAB_API_INLINE const int gab_osmkdirp(const char *path) {
   char *dup = strdup(path);
 
@@ -531,10 +544,13 @@ GAB_API_INLINE int gab_nosproc(char *cmd, size_t nargs, char *args[]) {
   // Wait until child process exits.
   WaitForSingleObject(pi.hProcess, INFINITE);
 
+  DWORD code = 0;
+  GetExitCodeProcess(pi.hProcess, &code);
+
   // Close process and thread handles.
   CloseHandle(pi.hProcess);
   CloseHandle(pi.hThread);
-  return 0;
+  return code;
 }
 
 #elifdef GAB_PLATFORM_WASI
