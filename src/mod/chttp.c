@@ -276,7 +276,8 @@ gab_value build_http(llhttp_t *parser) {
   }
   }
 
-  assert(false && "UNREACHABLE");
+  gab_assert(false ,"UNREACHABLE");
+  return gab_cundefined;
 }
 
 #define defstatus_handlers(code, name, desc)                                   \

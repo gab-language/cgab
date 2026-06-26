@@ -1,7 +1,36 @@
-ZIG         ?= zig
-DLLTOOL     ?= dlltool
-#x86_64-w64-mingw32-dlltool
-NATIVECC    = $(ZIG) cc
+# While cgab supports windows, it does so entirely through cross-compilation.
+# Building cgab on windows is *not supported*. You may try through wsl2, though.
+
+ZIG                  ?= zig
+DLLTOOL              ?= x86_64-w64-mingw32-dlltool
+
+UNAME_OS := $(shell uname)
+UNAME_ARCH := $(shell uname -m)
+
+# Default values. If building with clide, these are overridden by the generated configuration script.
+# However, sensible defaults are provided here such that running `make` just works.
+GAB_CCFLAGS          ?= -Os -DcGAB_THREADS_NATIVE -DNDEBUG -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -D_GNU_SOURCE=1 -DGAB_PLATFORM_UNIX
+GAB_BINARYFLAGS      ?=  
+GAB_BUILDTYPE        ?= release
+
+ifeq ($(UNAME_OS), Darwin)
+# Building on macos
+GAB_DYNLIB_FILENDING ?=.dylib
+GAB_CCFLAGS += -DGAB_PLATFORM_MACOS
+GAB_TARGETS ?= $(UNAME_ARCH)-macos-none
+cui_FLAGS   ?= -isystem vendor/xcode-frameworks/include -L vendor/xcode-frameworks/lib -F vendor/xcode-frameworks/Frameworks -framework Cocoa
+cio_FLAGS   ?= -lbearssl
+else
+# Assume building on linux
+GAB_DYNLIB_FILENDING ?=.so
+GAB_CCFLAGS += -DGAB_PLATFORM_LINUX
+GAB_TARGETS ?= $(UNAME_ARCH)-linux-gnu
+cui_FLAGS   ?= -isystem vendor/x11-headers
+cio_FLAGS   ?= -lbearssl
+endif
+
+# Actual commands used by the rest of the makefile.
+NATIVECC    = $(ZIG) cc --target=native
 TARGETCC	  = $(ZIG) cc --target=$(GAB_TARGETS)
 TARGETCXX   = $(ZIG) c++ --target=$(GAB_TARGETS)
 AR          = $(ZIG) ar
@@ -92,9 +121,15 @@ CMOD_SHARED = $(CMOD_SRC:src/mod/%.c=$(BUILD_PREFIX)/mod/%.cgab-$(GAB_VERSION_TA
 CXXMOD_SRC 	 = $(wildcard src/mod/*.cc)
 CXXMOD_SHARED = $(CXXMOD_SRC:src/mod/%.cc=$(BUILD_PREFIX)/mod/%.cgab-$(GAB_VERSION_TAG)-$(GAB_TARGETS)$(GAB_DYNLIB_FILEENDING))
 
-all: gab cmodules cxxmodules
+all: build-dir gab cmodules cxxmodules
 
 -include $(CGAB_OBJ:.o=.d) $(GAB_OBJ:.o=.d) $(CMOD_SHARED:$(GAB_DYNLIB_FILEENDING)=.d)
+
+build-dir:
+	mkdir -p $(BUILD_PREFIX)
+	mkdir -p $(BUILD_PREFIX)/mod
+	mkdir -p $(BUILD_PREFIX)/gab
+	mkdir -p $(BUILD_PREFIX)/cgab
 
 # This rule builds object files out of c source files
 # Somewhat confusing that miniz amalgamation needs to be made here,
@@ -147,7 +182,7 @@ cacert.pem:
 # This rule is the bear-ssl generated file equating to our certificate.
 # Used in TLS clients.
 $(VENDOR_PREFIX)/ta.h: cacert.pem
-	make CC="$(NATIVECC)" -C $(VENDOR_PREFIX)/BearSSL
+	make CC="$(NATIVECC)" -s -C $(VENDOR_PREFIX)/BearSSL
 	$(VENDOR_PREFIX)/BearSSL/build/brssl ta cacert.pem > vendor/ta.h
 	make clean -s -C $(VENDOR_PREFIX)/BearSSL
 
@@ -155,7 +190,7 @@ $(VENDOR_PREFIX)/sqlite3.c:
 	mkdir -p $(VENDOR_PREFIX)/sqlite/$(BUILD_PREFIX)
 	cd $(VENDOR_PREFIX)/sqlite/$(BUILD_PREFIX) && \
 		../configure --enable-all
-	make -C $(VENDOR_PREFIX)/sqlite/$(BUILD_PREFIX) sqlite3.c
+	make -s -C $(VENDOR_PREFIX)/sqlite/$(BUILD_PREFIX) sqlite3.c
 	cp $(VENDOR_PREFIX)/sqlite/$(BUILD_PREFIX)/sqlite3.c $(VENDOR_PREFIX)/
 
 $(VENDOR_PREFIX)/duckdb.cpp:
@@ -166,11 +201,11 @@ $(VENDOR_PREFIX)/duckdb.cpp:
 
 # These rules generates header files for libgrapheme
 $(VENDOR_PREFIX)/libgrapheme/gen/%.h: 
-	make CC="$(NATIVECC)" -C $(VENDOR_PREFIX)/libgrapheme gen/$*.h
+	make CC="$(NATIVECC)" -s -C $(VENDOR_PREFIX)/libgrapheme gen/$*.h
 
 $(VENDOR_PREFIX)/llhttp.h:
 	cd $(VENDOR_PREFIX)/llhttp && npm i
-	make -C $(VENDOR_PREFIX)/llhttp
+	make -s -C $(VENDOR_PREFIX)/llhttp
 	cp $(VENDOR_PREFIX)/llhttp/build/llhttp.h $(VENDOR_PREFIX)/
 	make clean -s -C $(VENDOR_PREFIX)/llhttp
 
@@ -202,7 +237,7 @@ $(BUILD_PREFIX)/libgrapheme.a:  $(VENDOR_PREFIX)/libgrapheme/gen/bidirectional.h
 	# We do this instead of make clean, bc we want the .h generated files.
 	rm -f $(VENDOR_PREFIX)/libgrapheme/src/*.o
 
-	make CC="$(TARGETCC)" -C $(VENDOR_PREFIX)/libgrapheme libgrapheme.a 
+	make CC="$(TARGETCC)" -s -C $(VENDOR_PREFIX)/libgrapheme libgrapheme.a 
 	# Copy the library in.
 	mv $(VENDOR_PREFIX)/libgrapheme/libgrapheme.a $(BUILD_PREFIX)/
 
@@ -241,10 +276,10 @@ clean:
 	rm -f etag.txt
 
 clean-mod:
-	make clean -C vendor/BearSSL
-	make clean -C vendor/libgrapheme
-	make clean -C vendor/llhttp
-	make clean -C vendor/unthread
+	make clean -s -C vendor/BearSSL
+	make clean -s -C vendor/libgrapheme
+	make clean -s -C vendor/llhttp
+	make clean -s -C vendor/unthread
 
 compile_commands:
 	make clean

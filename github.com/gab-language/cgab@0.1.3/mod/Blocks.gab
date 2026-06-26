@@ -10,8 +10,8 @@ is\block: .def (Blocks.t, true:)
     (args*) :: second.(first.(args*))
   end)
 
-# Implement the reducer protocol for blocks
 [Blocks.t] .defmodule {
+# Implement the reducer protocol for blocks
   reduce\step: (acc, xs*) :: do
     (next:, self, self.(acc, xs*))
   end

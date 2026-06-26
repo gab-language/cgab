@@ -435,7 +435,8 @@ int32_t gc_job(void *data) {
       gab_sigclear(gab);
 
       struct gab_sig sig = atomic_load(&gab.eg->sig);
-      assert(!(sig.schedule == 0 && sig.signal == sGAB_IGN));
+      gab_assert(!(sig.schedule == 0 && sig.signal == sGAB_IGN),
+                 "Signal should have been cleared");
 
       continue;
     }
@@ -6409,8 +6410,7 @@ gab_value gab_tchntake(struct gab_triple gab, gab_value channel,
 
   gab_int n = gab_valtoi(res);
 
-  /* We should have received at least one value */
-  assert(n >= 1);
+  gab_assert(n >= 1, "We should always receive at least one value.");
 
   return out;
 };
@@ -9629,10 +9629,11 @@ void build_upvdata(gab_value env, uint8_t len, char *data) {
 
     size_t idx = is_local ? lookup_local(parent, k) : lookup_upv(parent, k);
 
-    assert((is_local && idx < nlocals) || (!is_local && idx < nupvalues));
+    gab_assert((is_local && idx < nlocals) || (!is_local && idx < nupvalues),
+               "Should be a local or upvalue within respective range");
 
     uint64_t nth_upvalue = gab_valtou(v);
-    assert(nth_upvalue < len);
+    gab_assert(nth_upvalue < len, "Should have space for this upvalue");
 
     data[nth_upvalue] = (idx << 1) | is_local;
   }
@@ -10741,7 +10742,8 @@ cGAB_VM_OPCODE_ATTRIBUTES union gab_value_pair vm_eerror(OP_HANDLER_ARGS) {
     return vm_error(GAB(), status, FMT_TYPEMISMATCH, SP()[2], SP()[3], SP()[4],
                     SP()[5], SP()[6]);
   default:
-    assert(false && "Unreachable");
+    gab_assert(false, "Unreachable");
+    return (union gab_value_pair){};
   }
 }
 
@@ -11046,10 +11048,11 @@ extern void putcs(char *arg);
   })
 
 /*
- * NOTE: crucially, this micro op gives the native function an option to handle the signal *itself*
- * before CHECK_SIGNAL() is encountered.
+ * NOTE: crucially, this micro op gives the native function an option to handle
+ * the signal *itself* before CHECK_SIGNAL() is encountered.
  *
- * This is because some re-entrant natives may need to see terminate/gc signals in order to be correct.
+ * This is because some re-entrant natives may need to see terminate/gc signals
+ * in order to be correct.
  */
 #define MICRO_OP_CALL_NATIVE(native, have, below_have, message)                \
   ({                                                                           \
@@ -11094,7 +11097,8 @@ extern void putcs(char *arg);
                                                                                \
     SET_HV(below_have + have);                                                 \
                                                                                \
-    assert(returnptr == RETURN_FB());                                          \
+    gab_assert(returnptr == RETURN_FB(),                                       \
+               "Should not have overwritten return frame");                    \
   })
 
 /*
@@ -11972,11 +11976,8 @@ extern void putcs(char *arg);
 
 // TODO @cgab @vm @perf: Handle undefined and record case
 CASE_CODE(MATCHTAILSEND_BLOCK) {
-  bool istail;
-  gab_value *ks = READ_SENDCONSTANTS_ANDTAIL(istail);
+  gab_value *ks = READ_SENDCONSTANTS;
   uint64_t have = HV();
-
-  assert(istail);
 
   SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);
 
@@ -11992,11 +11993,8 @@ CASE_CODE(MATCHTAILSEND_BLOCK) {
 }
 
 CASE_CODE(MATCHSEND_BLOCK) {
-  bool istail;
-  gab_value *ks = READ_SENDCONSTANTS_ANDTAIL(istail);
+  gab_value *ks = READ_SENDCONSTANTS;
   uint64_t have = HV();
-
-  assert(!istail);
 
   SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);
 
@@ -12127,10 +12125,8 @@ CASE_CODE(SEND_NATIVE) {
 }
 
 CASE_CODE(SEND_BLOCK) {
-  bool istail;
-  gab_value *ks = READ_SENDCONSTANTS_ANDTAIL(istail);
+  gab_value *ks = READ_SENDCONSTANTS;
   uint64_t have = HV();
-  assert(!istail);
 
   gab_value r = PEEK_N(have);
 
@@ -12152,10 +12148,8 @@ CASE_CODE(SEND_BLOCK) {
  * by the compiler, as the have argument would be compile-time.
  */
 CASE_CODE(TAILSEND_BLOCK) {
-  bool istail;
-  gab_value *ks = READ_SENDCONSTANTS_ANDTAIL(istail);
+  gab_value *ks = READ_SENDCONSTANTS;
   uint64_t have = HV();
-  assert(istail);
 
   gab_value r = PEEK_N(have);
 
@@ -12171,11 +12165,8 @@ CASE_CODE(TAILSEND_BLOCK) {
 }
 
 CASE_CODE(LOCALSEND_BLOCK) {
-  bool istail;
-  gab_value *ks = READ_SENDCONSTANTS_ANDTAIL(istail);
+  gab_value *ks = READ_SENDCONSTANTS;
   uint64_t have = HV();
-
-  assert(!istail);
 
   gab_value r = PEEK_N(have);
 
@@ -12191,11 +12182,8 @@ CASE_CODE(LOCALSEND_BLOCK) {
 }
 
 CASE_CODE(LOCALTAILSEND_BLOCK) {
-  bool istail;
-  gab_value *ks = READ_SENDCONSTANTS_ANDTAIL(istail);
+  gab_value *ks = READ_SENDCONSTANTS;
   uint64_t have = HV();
-
-  assert(istail);
 
   gab_value r = PEEK_N(have);
 
@@ -12211,11 +12199,8 @@ CASE_CODE(LOCALTAILSEND_BLOCK) {
 }
 
 CASE_CODE(SEND_PRIMITIVE_CALL_BLOCK) {
-  bool istail;
-  gab_value *ks = READ_SENDCONSTANTS_ANDTAIL(istail);
+  gab_value *ks = READ_SENDCONSTANTS;
   uint64_t have = HV();
-
-  assert(!istail);
 
   gab_value r = PEEK_N(have);
 
@@ -12231,11 +12216,9 @@ CASE_CODE(SEND_PRIMITIVE_CALL_BLOCK) {
 }
 
 CASE_CODE(TAILSEND_PRIMITIVE_CALL_BLOCK) {
-  bool istail;
-  gab_value *ks = READ_SENDCONSTANTS_ANDTAIL(istail);
+  SKIP_SHORT;
+  // gab_value *ks = READ_SENDCONSTANTS;
   uint64_t have = HV();
-
-  assert(istail);
 
   gab_value r = PEEK_N(have);
 

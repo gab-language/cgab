@@ -107,7 +107,7 @@
 #endif
 
 #ifndef cGAB_VM_OPCODE_ATTRIBUTES
-#define cGAB_VM_OPCODE_ATTRIBUTES [[clang::preserve_none, gnu::hot]]
+#define cGAB_VM_OPCODE_ATTRIBUTES [[clang::preserve_none]]
 #endif
 
 // Log what is happening during execution.
@@ -411,7 +411,7 @@ static inline void v_uint8_t_npush(v_uint8_t *self, size_t n, uint8_t *buff) {
 
 // TODO @cgab: Better 'asserts' which are self-describing.
 // #ifdef NDEBUG
-// #define gab_assert(expr, format, ...)
+// #define gab_assert(expr, format, ...) (void)(expr)
 // #else
 [[noreturn]]
 static inline void __gab_assert_fail(const char *expr, const char *file,
@@ -3566,7 +3566,7 @@ GAB_API_INLINE void gab_sigpropagate(struct gab_triple gab) {
 
   int wkid = gab.wkid + 1;
   bool res = gab_signext(gab, wkid);
-  assert(res);
+  gab_assert(res, "Propagation should not fail");
 };
 
 /**

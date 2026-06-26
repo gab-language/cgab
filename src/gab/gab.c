@@ -2327,6 +2327,7 @@ int get_gab(v_step *steps, struct command_arguments *args,
 
   get_package(steps, args, package.data, nullptr, gab_target, gab_tag);
 
+  // TODO @cli @bug: Should this have the tag in the resource?
   get_package(steps, args, package.data, "gab", gab_target, gab_tag);
 
   return 0;

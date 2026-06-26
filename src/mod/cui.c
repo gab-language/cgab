@@ -49,6 +49,8 @@
 #undef GLAD_GL_IMPLEMENTATION
 #undef GLAD_GLX_IMPLEMENTATION
 
+#define RGFW_USE_XDL
+#define RGFW_NO_IOKIT
 #define RGFW_IMPLEMENTATION
 #define RGFW_OPENGL
 #define RGFW_PRINT_ERRORS
@@ -102,6 +104,7 @@ unsigned char fontData[] = {
 #define SOKOL_CLAY_NO_SOKOL_APP
 #define SOKOL_CLAY_IMPL
 #include "Clay/renderers/sokol/sokol_clay.h"
+
 
 #include "gab.h"
 
@@ -419,7 +422,7 @@ bool clay_termbox_update(struct gab_triple gab, struct ui *gui,
   }
 
 err:
-  assert(false && "UNREACHABLE");
+  gab_assert(false, "UNREACHABLE");
   return false;
 }
 
@@ -796,7 +799,7 @@ union gab_value_pair render_rect(struct gab_triple gab, struct ui *gui,
 
 const struct ui_image *image_cache_read(struct gab_triple gab, struct ui *gui,
                                         gab_value data) {
-  assert(gab.wkid == 1);
+  gab_assert(gab.wkid == 1, "Can only run on main thread");
 
   size_t idx = d_ui_image_index_of(&gui->image_cache, data);
   if (d_ui_image_iexists(&gui->image_cache, idx))
@@ -830,14 +833,14 @@ const struct ui_image *image_cache_read(struct gab_triple gab, struct ui *gui,
     });
 
     sg_resource_state state = sg_query_image_state(insert.as.gui.img);
-    assert(state == SG_RESOURCESTATE_VALID);
+    gab_assert(state == SG_RESOURCESTATE_VALID, "Image state should be valid");
 
     insert.as.gui.view = sg_make_view(&(struct sg_view_desc){
         .texture.image = insert.as.gui.img,
     });
 
     state = sg_query_view_state(insert.as.gui.view);
-    assert(state == SG_RESOURCESTATE_VALID);
+    gab_assert(state == SG_RESOURCESTATE_VALID, "View state should be valid");
 
     insert.as.gui.sclay = (sclay_image){
         .view = insert.as.gui.view,
@@ -856,7 +859,7 @@ const struct ui_image *image_cache_read(struct gab_triple gab, struct ui *gui,
   }
 
   bool inserted = d_ui_image_insert(&gui->image_cache, data, insert);
-  assert(inserted);
+  gab_assert(inserted, "Image should have inserted");
 
   return &gui->image_cache.buckets[idx].val;
 };
@@ -915,7 +918,7 @@ union gab_value_pair render_text(struct gab_triple gab, struct ui *gui,
   // This leaks every time
   uint64_t len = gab_strlen(content);
   char *str = malloc(len + 1);
-  assert(str != nullptr);
+  gab_assert(str != nullptr, "Assume malloc can't fail");
   strcpy(str, gab_strdata(&content));
 
   // not guaranteed to work here.
@@ -1226,7 +1229,8 @@ GAB_DYNLIB_NATIVE_FN(ui, hui_render) {
     /* Try to render, so that we can see errors */
     res = render_componentlist(gab, gui, app, CLAY_TOP_TO_BOTTOM,
                                (Clay_ChildAlignment){});
-    Clay_RenderCommandArray cmd = Clay_EndLayout(step.dt_d);
+
+    Clay_EndLayout(step.dt_d);
 
     if (res.status != gab_cundefined)
       goto err;
@@ -1326,7 +1330,7 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
 
       // Assert we have a number of bytes which is reasonable for a list of
       // gab_values
-      assert(gab_fibsize(gab_thisfiber(gab)) % sizeof(gab_value) == 0);
+      gab_assert(gab_fibsize(gab_thisfiber(gab)) % sizeof(gab_value) == 0, "Bytes should be divisible by sizeof(gab_value)");
       // Determine the number of values
       size_t len = gab_fibsize(gab_thisfiber(gab)) / sizeof(gab_value);
       // Get the ptr
@@ -1377,7 +1381,7 @@ yield:
   if (gab_chnisclosed(gui->evch))
     goto fin;
 
-  assert(res != 0);
+  gab_assert(res != 0, "Cannot timeout with res == 0");
   return gab_union_ctimeout(res);
 
 fin:
@@ -1730,8 +1734,8 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_event) {
 
       // Assert we have a number of bytes which is reasonable for a list of
       // gab_values
-      assert(gab_fibsize(gab_thisfiber(gab)) % sizeof(gab_value) == 0);
-      assert(gab_fibsize(gab_thisfiber(gab)) > 0);
+      gab_assert(gab_fibsize(gab_thisfiber(gab)) % sizeof(gab_value) == 0, "Bytes should be divisible by sizeof(gab_value)");
+      gab_assert(gab_fibsize(gab_thisfiber(gab)) > 0, "Should have bytes");
       // Determine the number of values
       size_t len = gab_fibsize(gab_thisfiber(gab)) / sizeof(gab_value);
       // Get the ptr
@@ -1768,7 +1772,7 @@ yield:
   if (gab_chnisclosed(gui->evch))
     goto fin;
 
-  assert(res != 0);
+  gab_assert(res != 0, "Cannot yield res == 0");
   return gab_union_ctimeout(res);
 
 fin:
