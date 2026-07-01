@@ -425,6 +425,8 @@ static inline void __gab_assert_fail(const char *expr, const char *file,
 
   vfprintf(stderr, reason, va);
 
+  fputc('\n', stderr);
+
   exit(EXIT_FAILURE);
   va_end(va);
 };
@@ -2592,8 +2594,6 @@ GAB_API_INLINE uint64_t gab_shpfind(gab_value shp, gab_value key) {
 GAB_API_INLINE bool gab_shphas(gab_value shape, gab_value key) {
   return gab_shpfind(shape, key) != -1;
 }
-
-GAB_API_INLINE uint64_t gab_shptfind(gab_value shp, gab_value key);
 
 GAB_API gab_value gab_shpwith(struct gab_triple gab, gab_value shp,
                               gab_value key);

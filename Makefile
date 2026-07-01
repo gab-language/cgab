@@ -37,6 +37,7 @@ AR          = $(ZIG) ar
 
 CGAB_SRC_PREFIX     = src/cgab
 GAB_SRC_PREFIX      = src/gab
+GABTEST_SRC_PREFIX  = src/gabtest
 MOD_SRC_PREFIX      = src/mod
 
 BUILD_PREFIX 	 	= build-$(GAB_TARGETS)
@@ -46,8 +47,6 @@ VENDOR_PREFIX   = vendor
 GAB_VERSION_TAG = 0.1.3
 
 GAB_ISWINDOWS   = $(findstring windows,$(GAB_TARGETS))
-
-BINARY_NAME = gab
 
 INCLUDE		= $(INCLUDE_PREFIX) -isystem$(VENDOR_PREFIX) -L$(BUILD_PREFIX)
 
@@ -106,6 +105,9 @@ CXXSHARED_FLAGS = -shared -undefined dynamic_lookup $(CXXMOD_LINK_DEPS) $(CXXMOD
 # There are corresponding *determinstic* versions, prefixed with d.
 GAB_SRC = $(wildcard src/gab/*.c)
 GAB_OBJ = $(GAB_SRC:src/gab/%.c=$(BUILD_PREFIX)/gab/%.o)
+
+GABTEST_SRC = $(wildcard src/gabtest/*.c)
+GABTEST_OBJ = $(GABTEST_SRC:src/gabtest/%.c=$(BUILD_PREFIX)/gabtest/%.o)
  
 # Source files in src/cgab are part of libcgab.
 # Their object files are compiled and archived together into libcgab.a
@@ -129,6 +131,7 @@ build-dir:
 	mkdir -p $(BUILD_PREFIX)
 	mkdir -p $(BUILD_PREFIX)/mod
 	mkdir -p $(BUILD_PREFIX)/gab
+	mkdir -p $(BUILD_PREFIX)/gabtest
 	mkdir -p $(BUILD_PREFIX)/cgab
 
 # This rule builds object files out of c source files
@@ -141,6 +144,9 @@ $(BUILD_PREFIX)/gab/%.o: $(GAB_SRC_PREFIX)/%.c $(VENDOR_PREFIX)/miniz/amalgamati
 $(BUILD_PREFIX)/cgab/%.o: $(CGAB_SRC_PREFIX)/%.c
 	$(TARGETCC) $(CFLAGS) -DGAB_CORE $< -c -o $@
 
+$(BUILD_PREFIX)/gabtest/%.o: $(GABTEST_SRC_PREFIX)/%.c
+	$(TARGETCC) $(CFLAGS) -DGAB_CORE $< -c -o $@
+
 # This rule builds libcgab by archiving the cgab object files together.
 $(BUILD_PREFIX)/libcgab.a: $(CGAB_OBJ)
 	$(AR) rcs $@ $^
@@ -151,13 +157,16 @@ $(BUILD_PREFIX)/cgab/cgab.def: $(CGAB_OBJ)
 # This rule builds the gab executable, linking with libcgab.a
 # On windows, it also creates a .def file, and then creates a delay-loaded gab.lib.
 ifneq (,$(GAB_ISWINDOWS))
-$(BUILD_PREFIX)/gab/$(BINARY_NAME): $(GAB_OBJ) $(BUILD_PREFIX)/libcgab.a $(BUILD_PREFIX)/cgab/cgab.def
+$(BUILD_PREFIX)/gab/gab: $(GAB_OBJ) $(BUILD_PREFIX)/libcgab.a $(BUILD_PREFIX)/cgab/cgab.def
 	$(TARGETCC) $(CFLAGS) $(BINARY_FLAGS) -DGAB_CORE -o $@ $^
 	$(DLLTOOL) --input-def $(BUILD_PREFIX)/cgab/cgab.def --output-delaylib $(BUILD_PREFIX)/gab/gab.lib --dllname gab/gab
 else
-$(BUILD_PREFIX)/gab/$(BINARY_NAME): $(GAB_OBJ) $(BUILD_PREFIX)/libcgab.a
+$(BUILD_PREFIX)/gab/gab: $(GAB_OBJ) $(BUILD_PREFIX)/libcgab.a
 	$(TARGETCC) $(CFLAGS) $(BINARY_FLAGS) -DGAB_CORE -o $@ $^
 endif
+
+$(BUILD_PREFIX)/gabtest/gabtest: $(GABTEST_OBJ) $(BUILD_PREFIX)/libcgab.a
+	$(TARGETCC) $(CFLAGS) $(BINARY_FLAGS) -o $@ $^
 
 # This rule builds each c module shared library.
 # per-library flags are declared in the configuration.
@@ -253,15 +262,15 @@ $(BUILD_PREFIX)/libbearssl.a:
 
 # These are some convenience rules for making the cli simpler.
 
-gab: $(BUILD_PREFIX)/gab/$(BINARY_NAME)
+gab: build-dir $(BUILD_PREFIX)/gab/gab $(BUILD_PREFIX)/gabtest/gabtest
 
-lib: $(BUILD_PREFIX)/libcgab.a
+lib: build-dir $(BUILD_PREFIX)/libcgab.a
+
+cxxmodules: build-dir $(CXXMOD_SHARED)
+
+cmodules: build-dir $(VENDOR_PREFIX)/ta.h $(CMOD_SHARED)
 
 amalgamation: $(BUILD_PREFIX)/gab.c
-
-cxxmodules: $(CXXMOD_SHARED)
-
-cmodules: $(VENDOR_PREFIX)/ta.h $(CMOD_SHARED)
 
 unthread: $(VENDOR_PREFIX)/unthread/bin/unthread.o
 
@@ -283,6 +292,6 @@ clean-mod:
 
 compile_commands:
 	make clean
-	bear -- make
+	bear -- make lib
 
 .PHONY: clean

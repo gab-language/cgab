@@ -104,9 +104,9 @@ struct gab_onative {
  *     /
  *   [
  *
- *   big_int len;
- *
- *   gab_value edge;
+ *   size_t len;
+ *   gab_value edges[];
+ *   gab_value nodes[];
  *
  *   The data array contains the keys, edges, and child values.
  *
@@ -115,23 +115,27 @@ struct gab_onative {
  *   There is no O(log(n)) happening, its just O(n) back up bc each shape
  *   needs its own node.
  *
- *   Maybe I can introduce *shortcut edges* somehow?
- *
  *   Most code doesn't traverse down the whole tree, it puts from one shape to
- * another. That does still require traversing up the tree and copying nodes in
- * O(n)
+ *   another. That does still require traversing up the tree and copying nodes in
+ *   O(n)
  *
- *   gab_value data[]
+ *   It is an option to use an intern table like we do for strings.
+ *   This introduces the same gc issue that strings had - threads can no longer create shapes
+ *   during a gc.
+ *
+ *   This means *all* of the record & shape apis will need timeout variants.
  *
  */
 struct gab_oshape {
   struct gab_obj header;
+  /**
+   * A pre-computed hash of the bytes in 'data'.
+   */
+  uint64_t hash;
 
   uint64_t len;
 
-  v_gab_value transitions;
-
-  gab_value keys[];
+  gab_value data[];
 };
 
 /**
@@ -361,6 +365,13 @@ struct gab_oprototype {
 #define LOAD cGAB_DICT_MAX_LOAD
 #include "dict.h"
 
+#define NAME shapes
+#define K struct gab_oshape *
+#define HASH(a) (a->hash)
+#define EQUAL(a, b) (a == b)
+#define LOAD cGAB_DICT_MAX_LOAD
+#include "dict.h"
+
 #define NAME gab_modules
 #define K uint64_t
 #define V a_gab_value *
@@ -480,6 +491,9 @@ struct gab_eg {
 
   gab_value types[kGAB_NKINDS];
 
+  size_t sizes[kGAB_NKINDS];
+  size_t counts[kGAB_NKINDS];
+
   // The arguments to the engine.
   gab_value args;
 
@@ -519,9 +533,8 @@ struct gab_eg {
   // The global work queue, where jobs push fibers to other jobs.
   gab_value work_channel;
 
-  // The root shape and a mutex locking it.
-  mtx_t shapes_mtx;
-  gab_value shapes;
+  // Intern table of shapes.
+  d_shapes shapes;
 
   // Intern table of strings.
   d_strings strings;
@@ -712,7 +725,7 @@ void gab_jbalive(struct gab_triple gab, int32_t wkid);
 
 void gab_jbunalive(struct gab_triple gab, int32_t wkid);
 
-gab_value __gab_shape(struct gab_triple gab, uint64_t len);
+gab_value __gab_shape(struct gab_triple gab, uint64_t hash, uint64_t len, gab_value* data);
 
 static inline uint8_t *proto_srcbegin(struct gab_triple gab,
                                       struct gab_oprototype *p) {
