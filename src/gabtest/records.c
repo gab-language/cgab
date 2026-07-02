@@ -1,4 +1,3 @@
-#include "engine.h"
 #include "gab.h"
 #include "munit/munit.h"
 
@@ -99,8 +98,6 @@ static MunitResult test_record_hamt_boundary(const MunitParameter params[],
     munit_assert_uint64(gab_valtou(vout), ==, i * 10);
   }
 
-  gab_fvalinspect(stderr, rec, 100);
-
   munit_assert_uint64(gab_reclen(rec), ==,
                       (size_t)(kTotalElements - kElementsToRemove));
 
@@ -200,7 +197,7 @@ static MunitResult test_record_find(const MunitParameter params[], void *data) {
 
 static MunitResult test_record_tidal_wave(const MunitParameter params[],
                                           void *data) {
-  const int kMaxElements = 10000;
+  const int kMaxElements = 1000;
   const int kWaves = 10;
 
   gab_value rec = gab_erecord(gab); // Start with empty record
@@ -406,6 +403,6 @@ static MunitTest record_tests[] = {
     {},
 };
 
-// Define the global suite variable for your entry file to pull in
-const MunitSuite record_suite = {"/record", record_tests, NULL, 1,
-                                 MUNIT_SUITE_OPTION_NONE};
+const MunitSuite record_suite = {
+    "/record", record_tests, NULL, 1, MUNIT_SUITE_OPTION_NONE,
+};

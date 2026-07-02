@@ -472,7 +472,7 @@ int32_t gc_job(void *data) {
       for (int i = 0; i < kGAB_NKINDS; i++) {
         size_t count = gab.eg->counts[i];
         size_t total = gab.eg->sizes[i];
-        fprintf(stderr, "\t[%s] => %lu objects, %lu avg. %lu total bytes.\n",
+        fprintf(stderr, "\t[%s] => %li objects, %li avg. %li total bytes.\n",
                 kind_strs[i], count, count ? total / count : 0, total);
       }
       gab_gcdocollect(gab);
@@ -899,6 +899,8 @@ union gab_value_pair gab_create(struct gab_create_argt args,
   mtx_init(&eg->modules_mtx, mtx_plain);
 
   d_gab_src_create(&eg->sources, 8);
+  d_strings_create(&eg->strings, 8);
+  d_shapes_create(&eg->shapes, 8);
 
   gab_out->eg = eg;
   gab_out->flags = args.flags;
@@ -1601,7 +1603,7 @@ struct gab_oshape *gab_egshpfind(struct gab_eg *self, uint64_t hash,
       return nullptr;
     case D_FULL:
       if (key->len == len && key->hash == hash &&
-          (len && !memcmp(key->data, data, len * sizeof(*data))))
+          (!len || !memcmp(key->data, data, len * sizeof(*data))))
         return key;
     }
 
@@ -1628,7 +1630,7 @@ struct gab_oshape *gab_legshpfind(struct gab_eg *self, uint64_t hash,
       return nullptr;
     case D_FULL:
       if (key->len == len && key->hash == hash &&
-          (len && !memcmp(key->data, data, (len - 1) * sizeof(*data))) &&
+          (!len || !memcmp(key->data, data, (len - 1) * sizeof(*data))) &&
           key->data[len - 1] == last)
         return key;
     }
@@ -3311,18 +3313,14 @@ static inline void for_child_do(struct gab_obj *obj,
         fnc(gab, gab_valtoo(v));
     }
 
-    /*for (uint64_t i = 0; i < s->transitions.len; i++) {*/
-    /*  gab_value v = v_gab_value_val_at(&s->transitions, i);*/
-    /*  if (gab_valiso(v))*/
-    /*    fnc(gab, gab_valtoo(v));*/
-    /*}*/
-
     break;
   }
 
   case kGAB_RECORD: {
     struct gab_orec *rec = (struct gab_orec *)obj;
     uint64_t len = (rec->len);
+
+    fnc(gab, gab_valtoo(rec->shape));
 
     for (uint64_t i = 0; i < len; i++)
       if (gab_valiso(rec->data[i]))
@@ -4318,6 +4316,7 @@ struct gab_obj *gab_objcreate(struct gab_triple gab, uint64_t sz,
 uint64_t gab_objsize(struct gab_obj *obj) {
   switch (obj->kind) {
   case kGAB_CHANNEL:
+  case kGAB_CHANNELCLOSED:
     return sizeof(struct gab_ochannel);
   case kGAB_BOX: {
     struct gab_obox *o = (struct gab_obox *)obj;
@@ -4349,19 +4348,20 @@ uint64_t gab_objsize(struct gab_obj *obj) {
     return sizeof(struct gab_ostring) + (o->len + 1) * sizeof(char);
   }
   case kGAB_FIBER:
+  case kGAB_FIBERRUNNING:
+  case kGAB_FIBERDONE:
     return sizeof(struct gab_ofiber);
   case kGAB_NATIVE:
     return sizeof(struct gab_onative);
   default:
     break;
   }
-  assert(false && "unreachable");
+  gab_assert(false, "UNREACHABLE: OBJSIZE of unknown kind %d", obj->kind);
   return 0;
 }
 
 int sshape_dumpkeys(char **dest, size_t *n, gab_value shape, int depth) {
-  struct gab_oshape *shp = GAB_VAL_TO_SHAPE(shape);
-  uint64_t len = shp->len;
+  uint64_t len = gab_shplen(shape);
 
   if (len == 0)
     return 0;
@@ -4373,7 +4373,7 @@ int sshape_dumpkeys(char **dest, size_t *n, gab_value shape, int depth) {
     return -1;
 
   for (uint64_t i = 0; i < len; i++) {
-    if (gab_svalinspect(dest, n, shp->data[i], depth - 1) < 0)
+    if (gab_svalinspect(dest, n, gab_ushpat(shape, i), depth - 1) < 0)
       return -1;
 
     if (i + 1 < len)
@@ -5213,7 +5213,11 @@ void recassoc(gab_value rec, gab_value v, uint64_t i) {
   assert(false && "UNREACHABLE");
 }
 
-gab_value recpop(struct gab_triple gab, int level, gab_value node, uint64_t i,
+/*
+ * Implemented with a recursive algorithm bc its easier.
+ * I'd *like* it to be procedural, to line up with other algorithms.
+ */
+gab_value dissoc(struct gab_triple gab, int level, gab_value node, uint64_t i,
                  gab_value v, gab_value *vout) {
   uint64_t idx = (i >> level) & GAB_PVEC_MASK;
   bool isleaf = !level;
@@ -5253,7 +5257,7 @@ gab_value recpop(struct gab_triple gab, int level, gab_value node, uint64_t i,
   // Converged
   if (isConverged && !diverging) {
     gab_value child =
-        recpop(gab, level - GAB_PVEC_BITS, recnth(node, idx), i, v, vout);
+        dissoc(gab, level - GAB_PVEC_BITS, recnth(node, idx), i, v, vout);
 
     // If this recursion is empty, we return a copy of ourselves with one node
     // trimmed. This may itself return an empty node.
@@ -5271,13 +5275,13 @@ gab_value recpop(struct gab_triple gab, int level, gab_value node, uint64_t i,
   if (isConverged && diverging) {
 
     gab_value rightmost_child =
-        recpop(gab, level - GAB_PVEC_BITS, recnth(node, rightmost_idx), i,
+        dissoc(gab, level - GAB_PVEC_BITS, recnth(node, rightmost_idx), i,
                gab_cinvalid, vout);
 
     gab_assert(v != gab_cinvalid,
                "Cannot recurse into chosen branch with invalid v");
     gab_value chosen_child =
-        recpop(gab, level - GAB_PVEC_BITS, recnth(node, idx), i, v, nullptr);
+        dissoc(gab, level - GAB_PVEC_BITS, recnth(node, idx), i, v, nullptr);
 
     // Shrink if we saw an empty rightmost node.
     gab_value newnode =
@@ -5296,7 +5300,7 @@ gab_value recpop(struct gab_triple gab, int level, gab_value node, uint64_t i,
   // Diverged rightmost branch
   if (vout) {
     gab_value rightmost_child =
-        recpop(gab, level - GAB_PVEC_BITS, recnth(node, rightmost_idx), i,
+        dissoc(gab, level - GAB_PVEC_BITS, recnth(node, rightmost_idx), i,
                gab_cinvalid, vout);
 
     // Shrink if we saw an empty rightmost node.
@@ -5312,7 +5316,7 @@ gab_value recpop(struct gab_triple gab, int level, gab_value node, uint64_t i,
   // Diverged chosen branch
   gab_assert(v != gab_cinvalid, "Invalid state");
   gab_value chosen_child =
-      recpop(gab, level - GAB_PVEC_BITS, recnth(node, idx), i, v, nullptr);
+      dissoc(gab, level - GAB_PVEC_BITS, recnth(node, idx), i, v, nullptr);
 
   gab_value newnode = reccpy(gab, node, 0);
 
@@ -5359,91 +5363,6 @@ gab_value recsetshp(gab_value rec, gab_value shp) {
   struct gab_orec *r = GAB_VAL_TO_REC(rec);
   r->shape = shp;
   return rec;
-}
-
-/*
- * Since order is always dictated by shape, we can do a cheeky optimization for
- * dissoc.
- *
- * The bit-partitioned vector trie data structure used for records only supports
- * push-and-pop operations.
- *
- * To do a dissoc from anywhere within the record, we need to swap the value at
- * the end and of the record with the chosen value, and then perform the pop.
- * This means we need to clone two paths through the trie -
- *  1. one down to the chosen value
- *  2. one down to the last node
- *
- * then, perform the swap and pop
- *
- * we can do this because shapes dictate order, not records themselves.
- * this will create a new shape. (to account for the swapped value, not seen
- * here)
- *
- * There is a fast case, where the value popped *is* the last value.
- */
-gab_value dissoc(struct gab_triple gab, gab_value rec, uint64_t i) {
-  assert(gab_valkind(rec) == kGAB_RECORD);
-  struct gab_orec *r = GAB_VAL_TO_REC(rec);
-
-  gab_value chosen_node = rec;
-  gab_value root = chosen_node;
-  gab_value chosen_path = root;
-  gab_value rightmost_node = rec;
-  gab_value rightmost_path = root;
-  gab_value rightmost_child = recnth(rec, reclen(rec) - 1);
-
-  // Underflow root
-  /*
-   * Keep track of if the path to chosen elem has diverged
-   * from the path to the last elem.
-   *
-   * While they converge, we only have to copy one path.
-   */
-  bool diverged = false;
-
-  for (int64_t level = r->shift; level > 0; level -= GAB_PVEC_BITS) {
-
-    uint64_t idx = (i >> level) & GAB_PVEC_MASK;
-    uint64_t rightmost_idx = reclen(rightmost_node) - 1;
-
-    diverged = diverged || idx != rightmost_idx;
-    bool isleaf = (level == GAB_PVEC_BITS);
-
-    gab_value chosen_child = recnth(chosen_node, idx);
-
-    chosen_node = reccpy(gab, chosen_child, -1 * (isleaf && !diverged));
-
-    recassoc(chosen_path, chosen_node, idx);
-    chosen_path = chosen_node;
-
-    if (!diverged && idx == rightmost_idx) {
-      rightmost_node = chosen_node;
-      rightmost_path = chosen_path;
-      rightmost_child = recnth(chosen_node, reclen(chosen_node) - 1);
-      continue;
-    }
-
-    diverged = true;
-
-    gab_assert(rightmost_idx < reclen(rightmost_node),
-               "Rightmost node must be within range");
-
-    rightmost_child = recnth(rightmost_node, rightmost_idx);
-    rightmost_node = reccpy(gab, rightmost_child, -1 * isleaf);
-
-    recassoc(rightmost_path, rightmost_node, rightmost_idx);
-    rightmost_path = rightmost_node;
-    rightmost_child = recnth(rightmost_child, reclen(rightmost_child) - 1);
-  }
-
-  gab_assert(chosen_node != gab_cinvalid,
-             "Cannot assoc into invalid chosen node");
-
-  // Update the chosen node with the value we're popping
-  recassoc(chosen_node, rightmost_child, i & GAB_PVEC_MASK);
-
-  return root;
 }
 
 gab_value assoc(struct gab_triple gab, gab_value rec, gab_value v, uint64_t i) {
@@ -5590,16 +5509,15 @@ gab_value gab_rectake(struct gab_triple gab, gab_value rec, gab_value key,
   if (gab_reclen(rec) == 1)
     return gab_erecord(gab);
 
-  gab_value poptest;
-  gab_value poptestr = recpop(gab, GAB_VAL_TO_REC(rec)->shift, rec, idx,
-                              gab_uvrecat(rec, gab_reclen(rec) - 1), &poptest);
+  gab_value dissoc_out;
+  gab_value result = dissoc(gab, GAB_VAL_TO_REC(rec)->shift, rec, idx,
+                            gab_uvrecat(rec, gab_reclen(rec) - 1), &dissoc_out);
 
   gab_value s = gab_shpwithout(gab, gab_recshp(rec), key);
 
-  // gab_value result = recsetshp(r, s);
-  gab_value poptestresult = recsetshp(poptestr, s);
+  result = recsetshp(result, s);
 
-  return gab_gcunlock(gab), poptestresult;
+  return gab_gcunlock(gab), result;
 }
 
 gab_value gab_nlstpush(struct gab_triple gab, gab_value list, uint64_t len,
@@ -5714,6 +5632,13 @@ gab_value gab_shptorec(struct gab_triple gab, gab_value shp) {
 gab_value gab_recordfrom(struct gab_triple gab, gab_value shape,
                          uint64_t stride, uint64_t len, gab_value *vals,
                          uint64_t *km) {
+  if (shape == gab_ctimeout || shape == gab_cinvalid)
+    return shape;
+
+  gab_assert(gab_valkind(shape) == kGAB_SHAPE ||
+                 gab_valkind(shape) == kGAB_SHAPELIST,
+             "Shape must be a shape at this point");
+
   gab_gclock(gab);
 
   uint64_t real_len = gab_shplen(shape);
@@ -5907,8 +5832,6 @@ gab_value gab_list(struct gab_triple gab, uint64_t stride, uint64_t size,
   if (!size)
     return gab_record(gab, 0, 0, nullptr, nullptr);
 
-  gab_gclock(gab);
-
   gab_value keys[size * stride] = {};
 
   for (uint64_t i = 0; i < size; i++)
@@ -5916,7 +5839,7 @@ gab_value gab_list(struct gab_triple gab, uint64_t stride, uint64_t size,
 
   gab_value v = gab_record(gab, stride, size, keys, values);
 
-  return gab_gcunlock(gab), v;
+  return v;
 }
 
 // TODO @cgab @opt: See gab_tnstring. Same stuff applies.
@@ -5972,7 +5895,7 @@ gab_value gab_shape(struct gab_triple gab, uint64_t stride, uint64_t len,
 
   if (len && stride > 1) {
     for (uint64_t i = 0; i < len; i++) {
-          keys[i] = data[i * stride];
+      keys[i] = data[i * stride];
     }
 
     data = keys;
@@ -5992,14 +5915,16 @@ gab_value gab_shape(struct gab_triple gab, uint64_t stride, uint64_t len,
     }
 
     gab_value shp = gab_tshape(gab, len, data);
+
     if (shp == gab_cinvalid)
       return shp;
 
     if (shp == gab_ctimeout)
       continue;
 
-    assert(gab_valkind(shp) == kGAB_SHAPE ||
-           gab_valkind(shp) == kGAB_SHAPELIST);
+    gab_assert(gab_valkind(shp) == kGAB_SHAPE ||
+                   gab_valkind(shp) == kGAB_SHAPELIST,
+               "Invalid shape kind: %d", gab_valkind(shp));
     return shp;
   }
 }
@@ -6063,10 +5988,18 @@ gab_value __gab_shapewith(struct gab_triple gab, uint64_t hash, uint64_t len,
 gab_value gab_shpwithout(struct gab_triple gab, gab_value shape,
                          gab_value key) {
 
-  uint64_t len = gab_shplen(shape) - 1;
+  // We may be passed an empty shape.
+  uint64_t len = gab_shplen(shape);
+
+  if (!len)
+    return gab_shape(gab, 0, 0, nullptr, nullptr);
+
+  len--;
+
   gab_value last_key = gab_ushpat(shape, len);
 
-  gab_value keys[len];
+  gab_value keys[len + 1]; // Don't ever do 0
+
   for (uint64_t i = 0; i < len; i++) {
     gab_value this_key = gab_ushpat(shape, i);
 
@@ -10784,15 +10717,18 @@ union gab_value_pair vvm_error(struct gab_triple gab, enum gab_status s,
   GAB_VAL_TO_FIBER(fiber)->res_values = res;
   if (frame_block(vm->fp)) {
     gab_value p = frame_block(vm->fp)->p;
+
     gab_value shape = gab_prtshp(p);
 
     gab_value env =
         gab_recordfrom(gab, shape, 1, gab_shplen(shape), vm->fp, nullptr);
+
     gab_egkeep(gab.eg, gab_iref(gab, env));
     assert(GAB_VAL_TO_FIBER(fiber)->res_env == gab_cinvalid);
     GAB_VAL_TO_FIBER(fiber)->res_env = env;
   }
   GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERDONE;
+
 #if cGAB_LOG_EG
   gab_fprintf(stderr, "($) VVMERR finished fiber $.\n", gab_number(gab.wkid),
               __gab_obj(fiber));
@@ -11918,42 +11854,104 @@ extern void putcs(char *arg);
   ({                                                                           \
     STORE_SP();                                                                \
     uint64_t sz = len;                                                         \
-    gab_record(GAB(), 2, sz / 2, SP() - sz, SP() + 1 - sz);                    \
+    gab_value record = gab_record(GAB(), 2, sz / 2, SP() - sz, SP() + 1 - sz); \
+                                                                               \
+    CHECK_SIGNAL();                                                            \
+                                                                               \
+    if (record == gab_cinvalid)                                                \
+      VM_TERM();                                                               \
+                                                                               \
+    if (record == gab_ctimeout)                                                \
+      VM_YIELD(gab_nil);                                                       \
+                                                                               \
+    record;                                                                    \
   })
 
 #define MICRO_OP_RECORDFROM(shape, len)                                        \
   ({                                                                           \
     STORE_SP();                                                                \
     uint64_t sz = len;                                                         \
-    gab_recordfrom(GAB(), shape, 1, sz, SP() - sz, nullptr);                   \
+    gab_value record =                                                         \
+        gab_recordfrom(GAB(), shape, 1, sz, SP() - sz, nullptr);               \
+                                                                               \
+    CHECK_SIGNAL();                                                            \
+                                                                               \
+    if (record == gab_cinvalid)                                                \
+      VM_TERM();                                                               \
+                                                                               \
+    if (record == gab_ctimeout)                                                \
+      VM_YIELD(gab_nil);                                                       \
+                                                                               \
+    record;                                                                    \
   })
 
 #define MICRO_OP_SHAPE(len)                                                    \
   ({                                                                           \
     STORE_SP();                                                                \
     uint64_t sz = len;                                                         \
-    gab_shape(GAB(), 1, sz, SP() - sz, nullptr);                               \
+                                                                               \
+    gab_value shape = gab_shape(GAB(), 1, sz, SP() - sz, nullptr);             \
+                                                                               \
+    CHECK_SIGNAL();                                                            \
+                                                                               \
+    if (shape == gab_cinvalid)                                                 \
+      VM_TERM();                                                               \
+                                                                               \
+    if (shape == gab_ctimeout)                                                 \
+      VM_YIELD(gab_nil);                                                       \
+                                                                               \
+    shape;                                                                     \
   })
 
 #define MICRO_OP_LIST(n, len)                                                  \
   ({                                                                           \
     STORE_SP();                                                                \
     uint64_t sz = len;                                                         \
-    gab_list(GAB(), 1, sz, SP() - ((n) + sz));                                 \
+    gab_value list = gab_list(GAB(), 1, sz, SP() - ((n) + sz));                \
+                                                                               \
+    CHECK_SIGNAL();                                                            \
+                                                                               \
+    if (list == gab_cinvalid)                                                  \
+      VM_TERM();                                                               \
+                                                                               \
+    if (list == gab_ctimeout)                                                  \
+      VM_YIELD(gab_nil);                                                       \
+                                                                               \
+    list;                                                                      \
   })
 
 #define MICRO_OP_STRING(n, len)                                                \
   ({                                                                           \
     STORE_SP();                                                                \
     uint64_t sz = len;                                                         \
-    gab_nvstring(GAB(), sz, SP() - ((n) + sz));                                \
+    gab_value str = gab_nvstring(GAB(), sz, SP() - ((n) + sz));                \
+                                                                               \
+    CHECK_SIGNAL();                                                            \
+                                                                               \
+    if (str == gab_cinvalid)                                                   \
+      VM_TERM();                                                               \
+                                                                               \
+    if (str == gab_ctimeout)                                                   \
+      VM_YIELD(gab_nil);                                                       \
+                                                                               \
+    str;                                                                       \
   })
 
 #define MICRO_OP_BINARY(n, len)                                                \
   ({                                                                           \
     STORE_SP();                                                                \
     uint64_t sz = len;                                                         \
-    gab_nvbinary(GAB(), sz, SP() - ((n) + sz));                                \
+    gab_value bin = gab_nvbinary(GAB(), sz, SP() - ((n) + sz));                \
+                                                                               \
+    CHECK_SIGNAL();                                                            \
+                                                                               \
+    if (bin == gab_cinvalid)                                                   \
+      VM_TERM();                                                               \
+                                                                               \
+    if (bin == gab_ctimeout)                                                   \
+      VM_YIELD(gab_nil);                                                       \
+                                                                               \
+    bin;                                                                       \
   })
 
 #define MICRO_OP_CHANNEL()                                                     \
@@ -11971,6 +11969,8 @@ extern void putcs(char *arg);
     while (have < want)                                                        \
       PUSH(MICRO_OP_NIL()), have++;                                            \
                                                                                \
+    SET_HV(have);                                                              \
+                                                                               \
     assert(have >= want);                                                      \
     int64_t len = have - want;                                                 \
                                                                                \
@@ -11979,6 +11979,14 @@ extern void putcs(char *arg);
     STORE_SP();                                                                \
                                                                                \
     gab_value rec = gab_list(GAB(), 1, len, ap - len);                         \
+                                                                               \
+    CHECK_SIGNAL();                                                            \
+                                                                               \
+    if (rec == gab_cinvalid)                                                   \
+      VM_TERM();                                                               \
+                                                                               \
+    if (rec == gab_ctimeout)                                                   \
+      VM_YIELD(gab_nil);                                                       \
                                                                                \
     DROP_N(len - 1);                                                           \
                                                                                \
@@ -12001,6 +12009,8 @@ extern void putcs(char *arg);
     while (have < want)                                                        \
       PUSH(MICRO_OP_NIL()), have++;                                            \
                                                                                \
+    SET_HV(have);                                                              \
+                                                                               \
     assert(have >= want);                                                      \
     int64_t len = have - want;                                                 \
                                                                                \
@@ -12009,6 +12019,14 @@ extern void putcs(char *arg);
     STORE_SP();                                                                \
                                                                                \
     gab_value rec = gab_record(GAB(), 2, len / 2, ap - len, ap - len + 1);     \
+                                                                               \
+    CHECK_SIGNAL();                                                            \
+                                                                               \
+    if (rec == gab_cinvalid)                                                   \
+      VM_TERM();                                                               \
+                                                                               \
+    if (rec == gab_ctimeout)                                                   \
+      VM_YIELD(gab_nil);                                                       \
                                                                                \
     DROP_N(len - 1);                                                           \
                                                                                \

@@ -116,27 +116,98 @@ struct gab_onative {
  *   needs its own node.
  *
  *   Most code doesn't traverse down the whole tree, it puts from one shape to
- *   another. That does still require traversing up the tree and copying nodes in
- *   O(n)
+ *   another. That does still require traversing up the tree and copying nodes
+ * in O(n)
  *
  *   It is an option to use an intern table like we do for strings.
- *   This introduces the same gc issue that strings had - threads can no longer create shapes
- *   during a gc.
+ *   This introduces the same gc issue that strings had - threads can no longer
+ * create shapes during a gc.
  *
  *   This means *all* of the record & shape apis will need timeout variants.
  *
+ *   Constraints:
+ *    - I want shapes to be collected. Otherwise, their memory will grow
+ *     indefinitely and this is not tenable.
+ *    - I want the key-data to be structurally shared. Users are expected to
+ *     use records for everything (including large data sets). Taking on large
+ *     record and adding another key should not double the memory.
+ *    - The operations are create, insert, remove. We can maybe do away with
+ * shpdata if necessary.
+ *
+ *   Implement the keys with a persistent HAMT.
+ *
+ *   Problem - hashing on removal.
+ *   When interning, we need to compute a hash of the shape
+ *   we are looking for in-order to check if its been interned.
+ *
+ *   on
+ *    - create: We see all keys. Hash the words together and voila
+ *    - insert: We see current hash state and a word to continue the hash with.
+ *    - remove: :( We see current hash state, but not a way to *remove* the
+ * impact a key had on the hash. We must traverse the tree and produce a new
+ * hash.
+ *
+ *   Removal is kind of a pathological case in general
+ *   even with a HAMT, we have to update the chosen and last element in the tree
+ * also.
+ *
+ *   This might not totally make sense. Shapes have keys appended at the end,
+ * they need to be iterated, and can be removed from anywhere. This definitely
+ * makes we want to do a linear array. We can do an optimization however, where
+ * some shapes have a *prefix shape*, followed by a list of other keys.
+ *
+ *   Then we can lazily assemble them together when shpdata is called, and
+ * promote it to a whole shape. gab_shpwithout can use a prefix shape before the
+ * index of removal, and then a suffix after
+ *
+ *   The good news is that we can cache the shapes in the bytecode. We can
+ * basically cache the transitions from one shape -> with(out) key -> new shape,
+ * and eliminate all that computation.
  */
 struct gab_oshape {
   struct gab_obj header;
-  /**
-   * A pre-computed hash of the bytes in 'data'.
-   */
+
+  uint32_t mask, leaf;
+
   uint64_t hash;
 
   uint64_t len;
 
   gab_value data[];
 };
+
+struct gab_oshapenode {
+  struct gab_obj header;
+
+  uint32_t mask, leaf;
+
+  uint64_t _padding[2];
+
+  gab_value data[];
+};
+
+/*
+ * We make some static assertions about shapes and shapenodes.
+ *
+ * It is useful for the mask, flag, and data fields to have the same offset
+ * so that both structs can pass through the same codepaths. We could use
+ * the same struct for both, but when creating intermediate nodes, the hash and
+ * len fields aren't meaningful - they may actually be confusing to the
+ * programmer.
+ *
+ * For this reason, we define the shapenode kind and struct.
+ *
+ * Sharing struct layout like this also makes *promotion* from a shapenode to a
+ * shape simpler. (For example, if we allocate a shapenode, and then realize we
+ * can just promote it to the shape, we can)
+ *
+ */
+static_assert(offsetof(struct gab_oshapenode, data) ==
+              offsetof(struct gab_oshape, data));
+static_assert(offsetof(struct gab_oshapenode, mask) ==
+              offsetof(struct gab_oshape, mask));
+static_assert(offsetof(struct gab_oshapenode, leaf) ==
+              offsetof(struct gab_oshape, leaf));
 
 /**
  * @brief A block - aka a prototype and it's captures.
@@ -291,7 +362,7 @@ struct gab_ochannel {
   /* Number of values held at member *data* */
   _Atomic uint64_t len;
   /* Values held */
-  _Atomic(gab_value *)data;
+  _Atomic(gab_value *) data;
 };
 
 /**
@@ -491,8 +562,8 @@ struct gab_eg {
 
   gab_value types[kGAB_NKINDS];
 
-  size_t sizes[kGAB_NKINDS];
-  size_t counts[kGAB_NKINDS];
+  int64_t sizes[kGAB_NKINDS];
+  int64_t counts[kGAB_NKINDS];
 
   // The arguments to the engine.
   gab_value args;
@@ -647,7 +718,7 @@ struct gab_err_argt {
  * @brief Construct a panic.
  */
 GAB_API gab_value gab_vspanicf(struct gab_triple gab, va_list vastruct,
-                       struct gab_err_argt args);
+                               struct gab_err_argt args);
 
 /**
  * @brief Print the bytecode to the stream - useful for debugging.
@@ -725,7 +796,8 @@ void gab_jbalive(struct gab_triple gab, int32_t wkid);
 
 void gab_jbunalive(struct gab_triple gab, int32_t wkid);
 
-gab_value __gab_shape(struct gab_triple gab, uint64_t hash, uint64_t len, gab_value* data);
+gab_value __gab_shape(struct gab_triple gab, uint64_t hash, uint64_t len,
+                      gab_value *data);
 
 static inline uint8_t *proto_srcbegin(struct gab_triple gab,
                                       struct gab_oprototype *p) {
@@ -742,15 +814,13 @@ static inline uint8_t *proto_ip(struct gab_triple gab,
   return proto_srcbegin(gab, p) + p->offset;
 }
 
-cGAB_VM_OPCODE_ATTRIBUTES
-union gab_value_pair vm_eerror(struct gab_triple *__gab, struct gab_vm *__vm,
-                               uint8_t *__ip, gab_value *__kb, gab_value *__fb,
-                               gab_value *__sp);
+cGAB_VM_OPCODE_ATTRIBUTES union gab_value_pair
+vm_eerror(struct gab_triple *__gab, struct gab_vm *__vm, uint8_t *__ip,
+          gab_value *__kb, gab_value *__fb, gab_value *__sp);
 
-cGAB_VM_OPCODE_ATTRIBUTES
-union gab_value_pair vm_ok(struct gab_triple *__gab, struct gab_vm *__vm,
-                           uint8_t *__ip, gab_value *__kb, gab_value *__fb,
-                           gab_value *__sp);
+cGAB_VM_OPCODE_ATTRIBUTES union gab_value_pair
+vm_ok(struct gab_triple *__gab, struct gab_vm *__vm, uint8_t *__ip,
+      gab_value *__kb, gab_value *__fb, gab_value *__sp);
 
 union gab_value_pair vm_terminate(struct gab_triple gab, const char *fmt, ...);
 

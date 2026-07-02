@@ -4,6 +4,7 @@
 #include "munit/munit.h"
 
 extern const MunitSuite record_suite;
+extern const MunitSuite shape_suite;
 
 struct gab_triple gab;
 
@@ -20,6 +21,7 @@ int main(int argc, char *argv[MUNIT_ARRAY_PARAM(argc + 1)]) {
 
   MunitSuite suites[] = {
       record_suite,
+      shape_suite,
       {},
   };
 

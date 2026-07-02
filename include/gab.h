@@ -666,6 +666,7 @@ enum gab_kind {
   kGAB_RECORDNODE,
   kGAB_SHAPE,
   kGAB_SHAPELIST,
+  kGAB_SHAPENODE,
   kGAB_FIBER,
   kGAB_FIBERDONE,
   kGAB_FIBERRUNNING,
@@ -890,7 +891,7 @@ struct gab_obj {
    * @brief The number of live references to this object.
    *
    * If this number is overflowed, gab keeps track  of this object's
-   * references in a separate, slower rec<gab_obj, uint64_t>. When the
+   * references in a separate, slower dict<gab_obj, uint64_t>. When the
    * reference count drops back under 255, rc returns to the fast path.
    */
   uint8_t references;
@@ -2492,6 +2493,7 @@ GAB_API_INLINE gab_value gab_nbincat(struct gab_triple gab, gab_value a,
 GAB_API gab_value gab_block(struct gab_triple gab, gab_value prototype);
 
 #define GAB_VAL_TO_SHAPE(value) ((struct gab_oshape *)gab_valtoo(value))
+#define GAB_VAL_TO_SHAPENODE(value) ((struct gab_oshapenode *)gab_valtoo(value))
 
 #define gab_shapeof(gab, ...)                                                  \
   ({                                                                           \
@@ -2545,7 +2547,8 @@ GAB_API gab_value *gab_shpdata(gab_value shp);
  */
 GAB_API_INLINE gab_value gab_ushpat(gab_value shp, uint64_t idx) {
   assert(gab_valkind(shp) == kGAB_SHAPE || gab_valkind(shp) == kGAB_SHAPELIST);
-  assert(idx < gab_shplen(shp));
+  gab_assert(idx < gab_shplen(shp), "Index %lu out of range %lu", idx, gab_shplen(shp));
+
   return gab_shpdata(shp)[idx];
 }
 
@@ -2717,7 +2720,8 @@ GAB_API gab_value gab_recshp(gab_value record);
  * @return The number of key-value pairs in the record
  */
 GAB_API_INLINE uint64_t gab_reclen(gab_value record) {
-  assert(gab_valkind(record) == kGAB_RECORD);
+  gab_assert(gab_valkind(record) == kGAB_RECORD,
+             "Cannot get len of non-record of type %i", gab_valkind(record));
   return gab_shplen(gab_recshp(record));
 }
 
