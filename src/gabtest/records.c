@@ -119,13 +119,12 @@ static MunitResult test_record_shapes(const MunitParameter params[],
 
   gab_value rec1 =
       gab_recordof(gab, key_a, gab_number(100), key_b, gab_number(200));
+
   gab_value rec2 =
       gab_recordof(gab, key_a, gab_number(300), key_b, gab_number(400));
 
   gab_value shape1 = gab_recshp(rec1);
   gab_value shape2 = gab_recshp(rec2);
-
-  gab_fprintf(stderr, "$ vs $\n", shape1, shape2);
 
   munit_assert_uint64(shape1, ==, shape2);
 
@@ -350,6 +349,28 @@ static MunitResult test_record_fuzz_walk(const MunitParameter params[],
   return MUNIT_OK;
 }
 
+static MunitResult test_record_list_transitions(const MunitParameter params[], void* data) {
+    gab_value list = gab_listof(gab, gab_string(gab, "Hello"), gab_string(gab, "World"));
+
+    gab_fprintf(stderr, "$\n", list);
+
+    munit_assert_true(gab_recisl(list));
+
+    gab_value with_key = gab_recput(gab, list, gab_message(gab, "val"), gab_number(10));
+
+    munit_assert_false(gab_recisl(with_key));
+
+    gab_value val;
+    gab_value without_key = gab_rectake(gab, with_key, gab_message(gab, "val"), &val);
+
+    gab_fprintf(stderr, "$ => $\n", without_key, val);
+
+    munit_assert_true(gab_recisl(without_key));
+    munit_assert_uint64(val, ==, gab_number(10));
+    
+    return MUNIT_OK;
+}
+
 // Map individual tests to an munit array
 static MunitTest record_tests[] = {
     {
@@ -391,6 +412,10 @@ static MunitTest record_tests[] = {
     {
         "/push-pop",
         test_record_push_pop,
+    },
+    {
+        "/list_transitions",
+        test_record_list_transitions,
     },
     {
         "/tidal_wave",

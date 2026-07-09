@@ -37,7 +37,7 @@ static MunitResult test_shape_transitions(const MunitParameter params[],
   gab_value k_name = gab_string(gab, "name");
 
   // Start with an empty shape
-  gab_value root = gab_shape(gab, 0, 0, NULL, NULL);
+  gab_value root = gab_shape(gab, 0, 0, NULL);
 
   // Transition 1: Add 'id'
   gab_value shp_id = gab_shpwith(gab, root, k_id);
@@ -109,7 +109,7 @@ static MunitResult test_shape_concatenation(const MunitParameter params[],
 
 static MunitResult test_shape_fuzz_transitions(const MunitParameter params[],
                                                void *data) {
-  const int kIterations = 1000;
+  const int kIterations = 3000;
   const int kPoolSize = 10;
 
   gab_value keys[kPoolSize];
@@ -121,16 +121,13 @@ static MunitResult test_shape_fuzz_transitions(const MunitParameter params[],
     gab_iref(gab, keys[i]);
   }
 
-  // Two shapes that will take different random walks but eventually synchronize
-  gab_value shp_a = gab_shape(gab, 0, 0, NULL, NULL);
+  gab_value shp_a = gab_shape(gab, 0, 0, nullptr);
   gab_iref(gab, shp_a);
 
-  gab_value shp_b = gab_shape(gab, 0, 0, NULL, NULL);
+  gab_value shp_b = gab_shape(gab, 0, 0, nullptr);
   gab_iref(gab, shp_b);
 
   munit_assert_uint64(shp_a, ==, shp_b);
-
-  gab_fprintf(stderr, "A: $\nB: $\n", shp_a, shp_b);
 
   for (int i = 0; i < kIterations; i++) {
     gab_value rand_key = keys[munit_rand_int_range(0, kPoolSize - 1)];
@@ -151,12 +148,8 @@ static MunitResult test_shape_fuzz_transitions(const MunitParameter params[],
       gab_iref(gab, shp_b);
     }
 
-    gab_fprintf(stderr, "A: $\nB: $\n", shp_a, shp_b);
-
-    // Invariant: Their identities must remain perfectly locked
     munit_assert_uint64(shp_a, ==, shp_b);
 
-    // Spot check: shape length must never exceed the key pool size
     munit_assert_uint64(gab_shplen(shp_a), <=, (size_t)kPoolSize);
   }
 
@@ -172,11 +165,8 @@ static MunitResult test_shape_deduplication(const MunitParameter params[], void*
     gab_value raw_keys[] = { k_alpha, k_beta, k_alpha, k_gamma, k_beta };
     size_t raw_len = sizeof(raw_keys) / sizeof(gab_value);
     
-    // We can also pass a keymask pointer to see how gab_shape flags the repeats
-    uint64_t keymask = 0; 
-
     // Create the shape from the raw duplicated array
-    gab_value deduplicated_shp = gab_shape(gab, 1, raw_len, raw_keys, &keymask);
+    gab_value deduplicated_shp = gab_shape(gab, 1, raw_len, raw_keys);
 
     // 1. The length must be exactly 3 (the number of unique keys)
     munit_assert_uint64(gab_shplen(deduplicated_shp), ==, 3);
@@ -189,14 +179,34 @@ static MunitResult test_shape_deduplication(const MunitParameter params[], void*
     // 3. Structural Identity Verification
     // A shape built from an explicitly clean array MUST match our deduplicated shape
     gab_value clean_keys[] = { k_alpha, k_beta, k_gamma };
-    gab_value clean_shp = gab_shape(gab, 1, 3, clean_keys, NULL);
-    
+    gab_value clean_shp = gab_shape(gab, 1, 3, clean_keys);
+
     munit_assert_uint64(deduplicated_shp, ==, clean_shp);
 
     // 4. Test Macro deduplication
     // (Ensure the vararg macro gab_shapeof behaves the same way)
     gab_value macro_shp = gab_shapeof(gab, k_alpha, k_beta, k_alpha, k_gamma);
     munit_assert_uint64(macro_shp, ==, clean_shp);
+
+    return MUNIT_OK;
+}
+
+static MunitResult test_shape_list_transitions(const MunitParameter params[], void* data) {
+    gab_value list = gab_shapeof(gab, gab_number(0), gab_number(1));
+
+    munit_assert_true(gab_shpisl(list));
+
+    gab_value with_key = gab_shpwith(gab, list, gab_message(gab, "val"));
+
+    munit_assert_false(gab_shpisl(with_key));
+
+    gab_value without_key = gab_shpwithout(gab, with_key, gab_message(gab, "val"));
+
+    munit_assert_true(gab_shpisl(without_key));
+
+    gab_value without_zero = gab_shpwithout(gab, without_key, gab_number(0));
+    
+    munit_assert_false(gab_shpisl(without_zero));
 
     return MUNIT_OK;
 }
@@ -225,6 +235,10 @@ static MunitTest shape_tests[] = {
     {
         "/deduplication",
         test_shape_deduplication,
+    },
+    {
+        "/list_transitions",
+        test_shape_list_transitions,
     },
     {},
 };

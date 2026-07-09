@@ -244,12 +244,12 @@ GAB_DYNLIB_NATIVE_FN(shp, from_list) {
     return gab_panicf(gab, "Should be a list, not @", gab_recshp(list));
 
   uint64_t len = gab_reclen(list);
-  gab_value* keys = malloc(len * sizeof(gab_value));
+  gab_value *keys = malloc(len * sizeof(gab_value));
   for (uint64_t i = 0; i < len; i++) {
     keys[i] = gab_uvrecat(list, i);
   }
 
-  gab_value shp = gab_shape(gab, 1, len, keys, nullptr);
+  gab_value shp = gab_shape(gab, 1, len, keys);
   gab_push(gab, shp);
   free(keys);
 

@@ -467,6 +467,8 @@ static inline void __gab_assert_fail(const char *expr, const char *file,
 #endif
 #endif
 
+#define GAB_INTERNAL static inline
+
 #ifdef __cplusplus
 #define GAB_PROMISE_CLINKAGE extern "C"
 #else
@@ -992,14 +994,6 @@ typedef union gab_value_pair (*gab_native_f)(struct gab_triple, uint64_t argc,
 
 typedef void (*gab_boxdestroy_f)(struct gab_triple gab, uint64_t len,
                                  char *data);
-
-/**
- * @brief INTERNAL: Free memory held by an object.
- *
- * @param eg The engine responsible for the object.
- * @param obj The object.
- */
-GAB_API void gab_objdestroy(struct gab_triple gab, struct gab_obj *obj);
 
 /**
  * @brief Return the size of the object's allocation, in bytes.
@@ -2498,7 +2492,7 @@ GAB_API gab_value gab_block(struct gab_triple gab, gab_value prototype);
 #define gab_shapeof(gab, ...)                                                  \
   ({                                                                           \
     gab_value keys[] = {__VA_ARGS__};                                          \
-    gab_shape(gab, 1, sizeof(keys) / sizeof(gab_value), keys, nullptr);        \
+    gab_shape(gab, 1, sizeof(keys) / sizeof(gab_value), keys);        \
   })
 
 #define gab_mshapeof(gab, ...)                                                 \
@@ -2508,7 +2502,7 @@ GAB_API gab_value gab_block(struct gab_triple gab, gab_value prototype);
     gab_value mkeys[len];                                                      \
     for (uint64_t i = 0; i < len; i++)                                         \
       mkeys[i] = gab_message(gab, keys[i]);                                    \
-    gab_shape(gab, 1, sizeof(keys) / sizeof(gab_value), mkeys, nullptr);       \
+    gab_shape(gab, 1, sizeof(keys) / sizeof(gab_value), mkeys);       \
   })
 
 /*
@@ -2522,7 +2516,7 @@ GAB_API gab_value gab_block(struct gab_triple gab, gab_value prototype);
  * @return The new shape.
  */
 GAB_API gab_value gab_shape(struct gab_triple gab, uint64_t stride,
-                            uint64_t len, gab_value *keys, uint64_t *km_out);
+                            uint64_t len, gab_value *keys);
 
 /*
  * @brief Check if the given shape is a list.
@@ -2538,19 +2532,9 @@ GAB_API_INLINE uint64_t gab_shpisl(gab_value shp) {
 GAB_API uint64_t gab_shplen(gab_value shp);
 
 /*
- * @brief Get a pointer to the underlying list of keys.
- */
-GAB_API gab_value *gab_shpdata(gab_value shp);
-
-/*
  * @brief Get the key at the given index, without bounds checking.
  */
-GAB_API_INLINE gab_value gab_ushpat(gab_value shp, uint64_t idx) {
-  assert(gab_valkind(shp) == kGAB_SHAPE || gab_valkind(shp) == kGAB_SHAPELIST);
-  gab_assert(idx < gab_shplen(shp), "Index %lu out of range %lu", idx, gab_shplen(shp));
-
-  return gab_shpdata(shp)[idx];
-}
+GAB_API gab_value gab_ushpat(gab_value shp, uint64_t idx);
 
 GAB_API_INLINE gab_value gab_shpat(gab_value shp, uint64_t idx) {
   assert(gab_valkind(shp) == kGAB_SHAPE || gab_valkind(shp) == kGAB_SHAPELIST);
@@ -2561,38 +2545,7 @@ GAB_API_INLINE gab_value gab_shpat(gab_value shp, uint64_t idx) {
   return gab_ushpat(shp, idx);
 }
 
-GAB_API_INLINE uint64_t gab_shpfind(gab_value shp, gab_value key) {
-  assert(gab_valkind(shp) == kGAB_SHAPE || gab_valkind(shp) == kGAB_SHAPELIST);
-  switch (gab_valkind(shp)) {
-  case kGAB_SHAPELIST:
-  case kGAB_SHAPE: {
-    uint64_t len = gab_shplen(shp);
-    gab_value *keys = gab_shpdata(shp);
-
-    // TODO @cgab @perf: SIMDIFY ME (or use trees, sure)
-    for (uint64_t i = 0; i < len; i++) {
-      if (gab_valeq(key, keys[i]))
-        return i;
-    }
-
-    return -1;
-  }
-    // Fastpath for lists.
-  // case kGAB_SHAPELIST: {
-  //   if (gab_valkind(key) != kGAB_NUMBER)
-  //     return -1;
-  //
-  //   uint64_t len = s->len;
-  //
-  //   int64_t i = gab_valtoi(key);
-  //
-  //   return i < len ? i : -1;
-  // }
-  default:
-    assert(false && "UNREACHABLE");
-    return -1;
-  }
-}
+GAB_API uint64_t gab_shpfind(gab_value shp, gab_value key);
 
 GAB_API_INLINE bool gab_shphas(gab_value shape, gab_value key) {
   return gab_shpfind(shape, key) != -1;
@@ -2654,8 +2607,8 @@ GAB_API gab_value gab_record(struct gab_triple gab, uint64_t stride,
  * @return The new record
  */
 GAB_API gab_value gab_recordfrom(struct gab_triple gab, gab_value shape,
-                                 uint64_t stride, uint64_t len, gab_value *vals,
-                                 uint64_t *km);
+                                 uint64_t stride, uint64_t len,
+                                 gab_value *vals);
 
 GAB_API_INLINE gab_value gab_erecord(struct gab_triple gab) {
   return gab_record(gab, 0, 0, nullptr, nullptr);

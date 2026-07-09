@@ -160,6 +160,60 @@ struct gab_onative {
  * promote it to a whole shape. gab_shpwithout can use a prefix shape before the
  * index of removal, and then a suffix after
  *
+ *   The linear array is absolutely pathological to dedupe. Is there
+ * a way to use some extra memory to speed this up?
+ *
+ *  I could allocate them in a dictionary-esque array and use linear probing.
+ *  I could keep keys in a sorted array and use binary search 
+ *  I could maintain a rb-tree in the array
+ *
+ *  The problem with a sort is that the *hash* isn't on sorted keys when we compute it.
+ *   - This means arriving at the same shape in different orders will result in different
+ *     hashes, and thus different shapes. But the shapes will *appear* the same because
+ *     the keys are sorted. There ought to be a way to sort the keys, then hash, then create.
+ *     This sort step will take care of de-duplication too.
+ *
+ *     However, it will complicate with/take, which will now require a re-sort of the new keys
+ *
+ *   Shapes (and their tree) need to be able to be collected. The tree can be persistent and shared.
+ *
+ *   gab_ushpat needs to be supported - fetching the nth value of a shape.
+ *   - This is hard to do in a HAMT type ds.
+ *   - Maybe each node could maintain how many leaves descend from it?
+ *   - Then I can check branches and their leafcounts against n and descend.
+ *   - This could work because I have to replace all nodes on the way *down* to a put anyway - I simply up each of their leafcounts by one.
+ *
+ *   Persistent HAMT for storing keys.
+ *    - To construct any given shape, I have to construct the n-1 shapes before it?. (Not tenable)
+ *
+ *   CREATE:
+ *    - construct hash, even with stride.
+ *    - check for intern
+ *    - construct a HAMT (No way other than doing N inserts. We can maybe write a mutable version like massoc, but we will waste an allocation
+ *      when we collide and expand the tree
+ *    - return
+ *
+ *   PUT:
+ *    - step hash with new keys to produce new hash.
+ *    - Check for intern
+ *    - hamt_insert the new keys
+ *    - return
+ *
+ *    TAKE:
+ *    - rehash with only remaining keys
+ *    - Check for intern
+ *    - hamt_remove the old keys
+ *    - return
+ *
+ *    DATA:
+ *    - Lazily linearize the keys into a pointer subfield.
+ *    - This supports all the linear operations we need
+ *    - (ushpat, finding last key, finding first key, next key)
+ *
+ *    NOTE:
+ *    - After hashing keys, we have to compare N keys. I don't think we can avoid this
+ *    - Its either that, or traversing a tree of N nodes.
+ *
  *   The good news is that we can cache the shapes in the bytecode. We can
  * basically cache the transitions from one shape -> with(out) key -> new shape,
  * and eliminate all that computation.
@@ -167,11 +221,11 @@ struct gab_onative {
 struct gab_oshape {
   struct gab_obj header;
 
-  uint32_t mask, leaf;
+  uint8_t datalen;
 
-  uint64_t hash;
+  uint64_t hash, len;
 
-  uint64_t len;
+  uint32_t nmask, lmask;
 
   gab_value data[];
 };
@@ -179,35 +233,19 @@ struct gab_oshape {
 struct gab_oshapenode {
   struct gab_obj header;
 
-  uint32_t mask, leaf;
+  uint8_t datalen;
 
   uint64_t _padding[2];
+
+  uint32_t nmask, lmask;
 
   gab_value data[];
 };
 
-/*
- * We make some static assertions about shapes and shapenodes.
- *
- * It is useful for the mask, flag, and data fields to have the same offset
- * so that both structs can pass through the same codepaths. We could use
- * the same struct for both, but when creating intermediate nodes, the hash and
- * len fields aren't meaningful - they may actually be confusing to the
- * programmer.
- *
- * For this reason, we define the shapenode kind and struct.
- *
- * Sharing struct layout like this also makes *promotion* from a shapenode to a
- * shape simpler. (For example, if we allocate a shapenode, and then realize we
- * can just promote it to the shape, we can)
- *
- */
-static_assert(offsetof(struct gab_oshapenode, data) ==
-              offsetof(struct gab_oshape, data));
-static_assert(offsetof(struct gab_oshapenode, mask) ==
-              offsetof(struct gab_oshape, mask));
-static_assert(offsetof(struct gab_oshapenode, leaf) ==
-              offsetof(struct gab_oshape, leaf));
+static_assert(offsetof(struct gab_oshape, nmask) == offsetof(struct gab_oshapenode, nmask));
+static_assert(offsetof(struct gab_oshape, lmask) == offsetof(struct gab_oshapenode, lmask));
+static_assert(offsetof(struct gab_oshape, data) == offsetof(struct gab_oshapenode, data));
+static_assert(offsetof(struct gab_oshape, datalen) == offsetof(struct gab_oshapenode, datalen));
 
 /**
  * @brief A block - aka a prototype and it's captures.
@@ -795,9 +833,6 @@ bool gab_wkspawn(struct gab_triple gab, gab_value fiber);
 void gab_jbalive(struct gab_triple gab, int32_t wkid);
 
 void gab_jbunalive(struct gab_triple gab, int32_t wkid);
-
-gab_value __gab_shape(struct gab_triple gab, uint64_t hash, uint64_t len,
-                      gab_value *data);
 
 static inline uint8_t *proto_srcbegin(struct gab_triple gab,
                                       struct gab_oprototype *p) {

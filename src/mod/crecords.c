@@ -275,7 +275,7 @@ GAB_DYNLIB_NATIVE_FN(rec, keys) {
 
   gab_value shp = gab_recshp(rec);
 
-  gab_value keys = gab_list(gab, 1, gab_shplen(shp), gab_shpdata(shp));
+  gab_value keys = gab_listof(gab);
 
   gab_vmpush(gab_thisvm(gab), keys);
 

@@ -29,10 +29,7 @@ int main(int argc, char *argv[MUNIT_ARRAY_PARAM(argc + 1)]) {
       "libcgab", NULL, suites, 1, MUNIT_SUITE_OPTION_NONE,
   };
 
-  /* Finally, we'll actually run our test suite!  That second argument
-   * is the user_data parameter which will be passed either to the
-   * test or (if provided) the fixture setup function. */
-  return munit_suite_main(&gab_suite, (void *)"gab", argc, argv);
+  return munit_suite_main(&gab_suite, nullptr, argc, argv);
 }
 
 // Include munit implementation
