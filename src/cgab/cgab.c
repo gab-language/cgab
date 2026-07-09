@@ -31,7 +31,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// -- EG --
+/*
+ *
+ *    GAB ENGINE
+ *
+ */
 
 struct errdetails {
   const char *src_name, *tok_name, *msg_name;
@@ -40,9 +44,9 @@ struct errdetails {
   int wkid;
 };
 
-uint64_t gab_eglen(struct gab_eg *eg) { return eg->len; }
+GAB_API uint64_t gab_eglen(struct gab_eg *eg) { return eg->len; }
 
-gab_value *gab_egerrs(struct gab_eg *eg) {
+GAB_API gab_value *gab_egerrs(struct gab_eg *eg) {
   v_gab_value_thrd errs;
   v_gab_value_thrd_drain(&eg->err, &errs);
 
@@ -322,7 +326,7 @@ struct native {
   gab_native_f native;
 };
 
-enum gab_signal gab_yield(struct gab_triple gab) {
+GAB_API enum gab_signal gab_yield(struct gab_triple gab) {
   if (gab_sigwaiting(gab)) {
     struct gab_sig sig = atomic_load(&gab.eg->sig);
 #if cGAB_LOG_EG
@@ -334,7 +338,7 @@ enum gab_signal gab_yield(struct gab_triple gab) {
   return sGAB_IGN;
 }
 
-void gab_busywait(struct gab_triple gab) {
+GAB_API void gab_busywait(struct gab_triple gab) {
   if (gab.eg->wait > 0) {
     thrd_sleep(&(const struct timespec){.tv_nsec = gab.eg->wait}, nullptr);
   }
@@ -342,12 +346,12 @@ void gab_busywait(struct gab_triple gab) {
   thrd_yield();
 }
 
-int32_t gab_njobs(struct gab_triple gab) {
+GAB_API int32_t gab_njobs(struct gab_triple gab) {
   struct gab_sig sig = atomic_load(&gab.eg->sig);
   return __builtin_popcountl(sig.mask);
 }
 
-void gab_jbalive(struct gab_triple gab, int32_t wkid) {
+GAB_INTERNAL void __gab_jbalive(struct gab_triple gab, int32_t wkid) {
   for (;;) {
     struct gab_sig sig = atomic_load(&gab.eg->sig);
     struct gab_sig next = {
@@ -365,12 +369,12 @@ void gab_jbalive(struct gab_triple gab, int32_t wkid) {
   }
 }
 
-bool gab_jbisalive(struct gab_triple gab, int32_t wkid) {
+GAB_INTERNAL bool __gab_jbisalive(struct gab_triple gab, int32_t wkid) {
   struct gab_sig sig = atomic_load(&gab.eg->sig);
   return sig.mask & (1 << wkid);
 }
 
-void gab_jbunalive(struct gab_triple gab, int32_t wkid) {
+GAB_INTERNAL void __gab_jbunalive(struct gab_triple gab, int32_t wkid) {
   for (;;) {
     switch (gab_yield(gab)) {
     case sGAB_TERM:
@@ -422,7 +426,7 @@ const char *kind_strs[] = {
     [kGAB_NKINDS] = "none",
 };
 
-int32_t gc_job(void *data) {
+int32_t __gab_jbgc(void *data) {
   struct gab_triple *g = data;
   struct gab_triple gab = *g;
   gab_assert(gab.wkid == 0, "The GC worker shall have wkid = 0");
@@ -517,7 +521,7 @@ int32_t gc_job(void *data) {
 /*
  * TODO @cgab @runtime: Implement some form of work stealing (Or preemption).
  */
-static inline bool worker_isrunning(struct gab_triple gab,
+GAB_INTERNAL bool __gab_jbisrunning(struct gab_triple gab,
                                     struct gab_job *job) {
   if (q_gab_value_is_empty(&job->queue))
     return false;
@@ -533,7 +537,7 @@ static const char *gab_opcode_names[] = {
 #undef GAB_OPCODE_NAMES_IMPL
 };
 
-static inline bool worker_step(struct gab_triple gab, struct gab_job *job) {
+GAB_INTERNAL bool __gab_jbstep(struct gab_triple gab, struct gab_job *job) {
   switch (gab_yield(gab)) {
   case sGAB_COLL:
     gab_gcepochnext(gab);
@@ -693,7 +697,7 @@ static inline bool worker_step(struct gab_triple gab, struct gab_job *job) {
   return true;
 }
 
-static inline void worker_bail(struct gab_triple gab, struct gab_job *job) {
+GAB_INTERNAL void __gab_jbbail(struct gab_triple gab, struct gab_job *job) {
 #if cGAB_LOG_EG
   fprintf(stderr, "(%i) BAILING\n", gab.wkid);
 #endif
@@ -762,24 +766,24 @@ bail:
       "Saw %d.",
       gab.wkid, job->locked);
 
-  gab_jbunalive(gab, gab.wkid);
+  __gab_jbunalive(gab, gab.wkid);
 
   v_gab_value_destroy(&job->lock_keep);
 }
 
-uint64_t gab_egalive(struct gab_eg *eg) {
+GAB_API uint64_t gab_egalive(struct gab_eg *eg) {
   struct gab_sig sig = atomic_load(&eg->sig);
   return __builtin_popcountl(sig.mask);
 }
 
-int32_t worker_job(void *data) {
+int32_t __gab_jbworker(void *data) {
   struct gab_triple *g = data;
   struct gab_triple gab = *g;
 
   gab_assert(gab.wkid > 1,
              "A workers id shall be greater than 1 (0 and 1 are reserved)");
 
-  gab_jbalive(gab, gab.wkid);
+  __gab_jbalive(gab, gab.wkid);
 
   struct gab_job *job = gab.eg->jobs + gab.wkid;
 
@@ -787,10 +791,10 @@ int32_t worker_job(void *data) {
   gab_fprintf(stderr, "($) SPAWNED\n", gab_number(gab.wkid));
 #endif
 
-  while (worker_step(gab, job))
+  while (__gab_jbstep(gab, job))
     ;
 
-  worker_bail(gab, job);
+  __gab_jbbail(gab, job);
 
 #if cGAB_LOG_EG
   fprintf(stderr, "(%i) CLOSING\n", gab.wkid);
@@ -801,7 +805,7 @@ int32_t worker_job(void *data) {
   return 0;
 }
 
-struct gab_job *next_available_job(struct gab_triple gab) {
+GAB_INTERNAL struct gab_job *__gab_jbnext(struct gab_triple gab) {
   for (;;) {
     struct gab_sig sig = atomic_load(&gab.eg->sig);
     uint64_t shifted = sig.mask >> gab.wkid;
@@ -829,7 +833,7 @@ struct gab_job *next_available_job(struct gab_triple gab) {
   return nullptr;
 }
 
-bool gab_jbcreate(struct gab_triple gab, struct gab_job *job, int(fn)(void *),
+GAB_INTERNAL bool __gab_job(struct gab_triple gab, struct gab_job *job, int(fn)(void *),
                   gab_value fiber) {
   if (!job)
     return false;
@@ -863,11 +867,11 @@ bool gab_jbcreate(struct gab_triple gab, struct gab_job *job, int(fn)(void *),
   return thrd_create(&job->td, fn, gabcpy) == thrd_success;
 }
 
-bool gab_wkspawn(struct gab_triple gab, gab_value fiber) {
-  return gab_jbcreate(gab, next_available_job(gab), worker_job, fiber);
+GAB_INTERNAL bool __gab_jbspawn(struct gab_triple gab, gab_value fiber) {
+  return __gab_job(gab, __gab_jbnext(gab), __gab_jbworker, fiber);
 }
 
-union gab_value_pair gab_create(struct gab_create_argt args,
+GAB_API union gab_value_pair gab_create(struct gab_create_argt args,
                                 struct gab_triple gab_out[static 1]) {
   uint64_t njobs = args.jobs ? args.jobs : cGAB_DEFAULT_NJOBS;
 
@@ -914,17 +918,17 @@ union gab_value_pair gab_create(struct gab_create_argt args,
   // gab wkid 1 can always be main thread.
   // we can have a flag that says 'detatch' or something
   // and will allow the main thread to begin contributing to the system.
-  bool res = gab_jbcreate(gab, gab.eg->jobs + 1, nullptr, gab_cundefined);
+  bool res = __gab_job(gab, gab.eg->jobs + 1, nullptr, gab_cundefined);
   gab_assert(res, "Job creation shall not fail for the main thread");
 
-  gab_jbalive(gab, 1);
+  __gab_jbalive(gab, 1);
 
   gab_gccreate(gab);
 
-  res = gab_jbcreate(gab, gab.eg->jobs, gc_job, gab_cundefined);
+  res = __gab_job(gab, gab.eg->jobs, __gab_jbgc, gab_cundefined);
   gab_assert(res, "Job creation shall not fail for the gc thread");
 
-  gab_jbalive(gab, 0);
+  __gab_jbalive(gab, 0);
 
   gab_gclock(gab);
 
@@ -951,7 +955,6 @@ union gab_value_pair gab_create(struct gab_create_argt args,
   gab_negkeep(gab.eg, kGAB_NKINDS, eg->types);
 
   atomic_init(&eg->messages, gab_erecord(gab));
-  atomic_init(&eg->macros, gab_erecord(gab));
 
   eg->work_channel = gab_iref(gab, gab_channel(gab));
 
@@ -1070,14 +1073,14 @@ union gab_value_pair gab_create(struct gab_create_argt args,
   };
 }
 
-void gab_destroy(struct gab_triple gab) {
+GAB_API void gab_destroy(struct gab_triple gab) {
   gab_assert(gab.wkid == 1, "Shall only be called from the main thread");
 
   bool res = gab_sigterm(gab);
   gab_assert(res, "Sigterm shall not fail when destryoing");
 
-  if (gab_jbisalive(gab, gab.wkid))
-    worker_bail(gab, gab.eg->jobs + 1);
+  if (__gab_jbisalive(gab, gab.wkid))
+    __gab_jbbail(gab, gab.eg->jobs + 1);
 
   while (gab_njobs(gab) > 1)
     gab_busywait(gab);
@@ -1183,7 +1186,7 @@ void gab_destroy(struct gab_triple gab) {
   free(gab.eg);
 }
 
-bool repl_check_res(struct gab_triple gab, union gab_value_pair res) {
+GAB_INTERNAL bool __gab_replchkres(struct gab_triple gab, union gab_value_pair res) {
   gab_value *err = gab_egerrs(gab.eg);
 
   while (gab_signaling(gab))
@@ -1232,7 +1235,7 @@ bool repl_check_res(struct gab_triple gab, union gab_value_pair res) {
   return err != nullptr;
 }
 
-bool repl_check_needmore(struct gab_triple gab, union gab_value_pair res) {
+GAB_INTERNAL bool __gab_replchkmore(struct gab_triple gab, union gab_value_pair res) {
   if (res.status != gab_cinvalid)
     return false;
 
@@ -1255,7 +1258,7 @@ bool repl_check_needmore(struct gab_triple gab, union gab_value_pair res) {
 /*
  * Should be able to take work here on 1st worker maybe.
  */
-void repl_wait_for(struct gab_triple gab, struct gab_repl_argt *args,
+GAB_INTERNAL void __gab_replwait(struct gab_triple gab, struct gab_repl_argt *args,
                    gab_value fib) {
   while (!gab_fibisdone(fib)) {
     switch (gab_yield(gab)) {
@@ -1272,7 +1275,7 @@ void repl_wait_for(struct gab_triple gab, struct gab_repl_argt *args,
   }
 }
 
-void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
+GAB_API void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
   uint64_t iterations = 0;
   gab_value env = gab_cinvalid;
 
@@ -1373,10 +1376,10 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
                                                     .len = n,
                                                     .argv = keys,
                                                 });
-    if (repl_check_needmore(gab, block))
+    if (__gab_replchkmore(gab, block))
       goto readmore;
 
-    if (repl_check_res(gab, block))
+    if (__gab_replchkres(gab, block))
       goto fin;
 
     // gab_value before_env = gab_blkshp(block.vresult);
@@ -1388,10 +1391,10 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
                                                    .main = block.vresult,
                                                });
 
-    if (repl_check_res(gab, fiber))
+    if (__gab_replchkres(gab, fiber))
       goto fin;
 
-    repl_wait_for(gab, &args, fiber.vresult);
+    __gab_replwait(gab, &args, fiber.vresult);
 
     union gab_value_pair res = gab_fibawait(gab, fiber.vresult);
 
@@ -1416,7 +1419,7 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
 
     // assert(env != gab_cinvalid);
 
-    if (repl_check_res(gab, res))
+    if (__gab_replchkres(gab, res))
       goto fin;
 
     for (int32_t i = 1; i < res.aresult->len; i++) {
@@ -1438,7 +1441,7 @@ void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
   }
 }
 
-union gab_value_pair gab_aexec(struct gab_triple gab,
+GAB_API union gab_value_pair gab_aexec(struct gab_triple gab,
                                struct gab_exec_argt args) {
   gab.flags |= args.flags;
 
@@ -1460,7 +1463,7 @@ union gab_value_pair gab_aexec(struct gab_triple gab,
                        });
 }
 
-union gab_value_pair gab_exec(struct gab_triple gab,
+GAB_API union gab_value_pair gab_exec(struct gab_triple gab,
                               struct gab_exec_argt args) {
   union gab_value_pair fib = gab_aexec(gab, args);
 
@@ -1472,7 +1475,7 @@ union gab_value_pair gab_exec(struct gab_triple gab,
     return gab_fibawait(gab, fib.vresult);
 
   // Prevent running the below loop recursively.
-  if (worker_isrunning(gab, gab.eg->jobs + gab.wkid))
+  if (__gab_jbisrunning(gab, gab.eg->jobs + gab.wkid))
     return gab_fibawait(gab, fib.vresult);
 
   // If we are on the main thread, we
@@ -1483,16 +1486,16 @@ union gab_value_pair gab_exec(struct gab_triple gab,
     if (res.status != gab_ctimeout)
       return res;
 
-    if (!gab_jbisalive(gab, gab.wkid) ||
-        !worker_step(gab, gab.eg->jobs + gab.wkid))
-      return worker_bail(gab, gab.eg->jobs + gab.wkid),
+    if (!__gab_jbisalive(gab, gab.wkid) ||
+        !__gab_jbstep(gab, gab.eg->jobs + gab.wkid))
+      return __gab_jbbail(gab, gab.eg->jobs + gab.wkid),
              gab_tfibawait(gab, fib.vresult, 1);
   }
 
   assert(false && "UNREACHABLE");
 }
 
-gab_value dodef(struct gab_triple gab, gab_value messages, uint64_t len,
+GAB_INTERNAL gab_value __gab_egdodef(struct gab_triple gab, gab_value messages, uint64_t len,
                 struct gab_def_argt args[static len]) {
 
   gab_gclock(gab);
@@ -1514,44 +1517,14 @@ gab_value dodef(struct gab_triple gab, gab_value messages, uint64_t len,
   return gab_gcunlock(gab), messages;
 }
 
-gab_value dodefmacro(struct gab_triple gab, gab_value messages, uint64_t len,
-                     struct gab_def_argt args[static len]) {
-
-  gab_gclock(gab);
-
-  for (uint64_t i = 0; i < len; i++) {
-    struct gab_def_argt arg = args[i];
-
-    messages = gab_recput(gab, messages, arg.message, arg.specialization);
-  }
-
-  return gab_gcunlock(gab), messages;
-}
-
-// TODO @feat: Implement macro equivalent
-bool gab_ndef(struct gab_triple gab, uint64_t len,
+GAB_API bool gab_ndef(struct gab_triple gab, uint64_t len,
               struct gab_def_argt args[static len]) {
   gab_value messages = atomic_load(&gab.eg->messages);
 
   for (;;) {
     if (atomic_compare_exchange_weak(&gab.eg->messages, &messages,
-                                     dodef(gab, messages, len, args)))
+                                     __gab_egdodef(gab, messages, len, args)))
       return atomic_fetch_add(&gab.eg->messages_epoch, 1), true;
-
-    gab_busywait(gab);
-  }
-
-  return false;
-}
-
-bool gab_ndefmacro(struct gab_triple gab, uint64_t len,
-                   struct gab_def_argt args[static len]) {
-  gab_value messages = atomic_load(&gab.eg->macros);
-
-  for (;;) {
-    if (atomic_compare_exchange_weak(&gab.eg->macros, &messages,
-                                     dodefmacro(gab, messages, len, args)))
-      return atomic_fetch_add(&gab.eg->macros_epoch, 1), true;
 
     gab_busywait(gab);
   }
@@ -2629,7 +2602,7 @@ union gab_value_pair gab_tarun(struct gab_triple gab, size_t tries,
   // run). We should also *skip* incrementing/decrementing stacks for Fibers
   // which have never been run in GC.
 
-  if (!gab_wkspawn(gab, fb))
+  if (!__gab_jbspawn(gab, fb))
     if (gab_tchnput(gab, gab.eg->work_channel, fb, tries) == gab_ctimeout)
       return (union gab_value_pair){{gab_ctimeout, fb}};
 
@@ -2681,7 +2654,7 @@ union gab_value_pair gab_asend(struct gab_triple gab,
     if (args.pin > gab.eg->len)
       return (union gab_value_pair){{gab_cinvalid}};
 
-    if (!gab_jbisalive(gab, args.pin))
+    if (!__gab_jbisalive(gab, args.pin))
       return (union gab_value_pair){{gab_cinvalid}};
 
     if (gab.wkid == args.pin)
@@ -2689,7 +2662,7 @@ union gab_value_pair gab_asend(struct gab_triple gab,
     else
       gab_chnput(gab, gab.eg->jobs[args.pin].work_channel, fb);
 
-  } else if (!gab_wkspawn(gab, fb)) {
+  } else if (!__gab_jbspawn(gab, fb)) {
     gab_chnput(gab, gab.eg->work_channel, fb);
   }
 
@@ -2737,18 +2710,7 @@ bool gab_sigcoll(struct gab_triple gab) {
 // I think that should be sufficient for executing macros.
 struct gab_impl_rest gab_impl(struct gab_triple gab, gab_value message,
                               gab_value receiver) {
-  gab_value messages = atomic_load(&gab.eg->macros);
-  gab_value macro = gab_recat(messages, message);
-
-  if (macro != gab_cundefined)
-    return (struct gab_impl_rest){
-        .messages = messages,
-        .type = gab_cundefined,
-        .as.spec = macro,
-        .status = kGAB_IMPL_MACRO,
-    };
-
-  messages = gab_thisfibmsg(gab);
+  gab_value messages = gab_thisfibmsg(gab);
   gab_value specs = gab_recat(messages, message);
 
   // There are no specs for this message.
@@ -3954,8 +3916,8 @@ GAB_INTERNAL gab_value __gab_shortstrcat(gab_value _a, gab_value _b) {
   return v;
 }
 
-GAB_INTERNAL gab_value __gab_nstring(struct gab_triple gab, uint64_t hash, uint64_t len,
-                        const char *data) {
+GAB_INTERNAL gab_value __gab_nstring(struct gab_triple gab, uint64_t hash,
+                                     uint64_t len, const char *data) {
   s_char str = s_char_create(data, len);
 
   struct gab_ostring *self =
@@ -3972,7 +3934,8 @@ GAB_INTERNAL gab_value __gab_nstring(struct gab_triple gab, uint64_t hash, uint6
   return __gab_obj(self);
 }
 
-GAB_API gab_value gab_tnstring(struct gab_triple gab, uint64_t len, const char *data) {
+GAB_API gab_value gab_tnstring(struct gab_triple gab, uint64_t len,
+                               const char *data) {
   if (len <= 5)
     return gab_shorstr(len, data);
 
@@ -4034,7 +3997,8 @@ GAB_API gab_value gab_tnstring(struct gab_triple gab, uint64_t len, const char *
   return s;
 }
 
-GAB_API gab_value gab_nstring(struct gab_triple gab, uint64_t len, const char *data) {
+GAB_API gab_value gab_nstring(struct gab_triple gab, uint64_t len,
+                              const char *data) {
   for (;;) {
     switch (gab_yield(gab)) {
     case sGAB_IGN:
@@ -4060,7 +4024,8 @@ GAB_API gab_value gab_nstring(struct gab_triple gab, uint64_t len, const char *d
   }
 };
 
-GAB_API gab_value gab_strcat(struct gab_triple gab, gab_value _a, gab_value _b) {
+GAB_API gab_value gab_strcat(struct gab_triple gab, gab_value _a,
+                             gab_value _b) {
   // Helpfully forward cinvalid. This helps strings flow through this code.
   if (_a == gab_cinvalid || _b == gab_cinvalid)
     return gab_cinvalid;
@@ -4146,7 +4111,8 @@ GAB_API int gab_binat(gab_value str, size_t idx) {
 /*
   Given two strings, create a third which is the concatenation a+b
 */
-GAB_API gab_value gab_tstrcat(struct gab_triple gab, gab_value _a, gab_value _b) {
+GAB_API gab_value gab_tstrcat(struct gab_triple gab, gab_value _a,
+                              gab_value _b) {
   assert(gab_valkind(_a) == kGAB_STRING);
   assert(gab_valkind(_b) == kGAB_STRING);
 
@@ -4224,8 +4190,8 @@ GAB_API gab_value gab_tstrcat(struct gab_triple gab, gab_value _a, gab_value _b)
 };
 
 GAB_API gab_value gab_prototype(struct gab_triple gab, struct gab_src *src,
-                        uint64_t offset, uint64_t len,
-                        struct gab_prototype_argt args) {
+                                uint64_t offset, uint64_t len,
+                                struct gab_prototype_argt args) {
 
   struct gab_oprototype *self = GAB_CREATE_FLEX_OBJ(
       gab_oprototype, uint8_t, args.nupvalues, kGAB_PROTOTYPE);
@@ -4275,7 +4241,8 @@ GAB_API gab_value gab_prtparams(struct gab_triple gab, gab_value prt) {
   return gab_shape(gab, 1, nargs, vargs);
 }
 
-GAB_API gab_value gab_native(struct gab_triple gab, gab_value name, gab_native_f f) {
+GAB_API gab_value gab_native(struct gab_triple gab, gab_value name,
+                             gab_native_f f) {
   assert(gab_valkind(name) == kGAB_STRING || gab_valkind(name) == kGAB_MESSAGE);
 
   struct gab_onative *self = GAB_CREATE_OBJ(gab_onative, kGAB_NATIVE);
@@ -4286,7 +4253,8 @@ GAB_API gab_value gab_native(struct gab_triple gab, gab_value name, gab_native_f
   return __gab_obj(self);
 }
 
-GAB_API gab_value gab_snative(struct gab_triple gab, const char *name, gab_native_f f) {
+GAB_API gab_value gab_snative(struct gab_triple gab, const char *name,
+                              gab_native_f f) {
   return gab_native(gab, gab_string(gab, name), f);
 }
 
@@ -4346,9 +4314,10 @@ GAB_API gab_value gab_boxtype(gab_value value) {
 
 #define popcountl(n) __builtin_popcountl(n)
 
-GAB_INTERNAL gab_value __gab_shape(struct gab_triple gab, uint64_t hash, uint64_t len,
-                      uint32_t nmask, uint32_t lmask, uint64_t datalen,
-                      int64_t adjustment, gab_value *data) {
+GAB_INTERNAL gab_value __gab_shape(struct gab_triple gab, uint64_t hash,
+                                   uint64_t len, uint32_t nmask, uint32_t lmask,
+                                   uint64_t datalen, int64_t adjustment,
+                                   gab_value *data) {
   gab_assert(datalen + adjustment >= 0,
              "Shapes must have size >= 0. Got len %lu and adjustment %li.",
              datalen, adjustment);
@@ -4383,18 +4352,19 @@ GAB_INTERNAL gab_value __gab_shape(struct gab_triple gab, uint64_t hash, uint64_
   return __gab_obj(self);
 }
 
-GAB_INTERNAL gab_value __gab_shapelist(struct gab_triple gab, uint64_t hash, uint64_t len,
-                          uint32_t nmask, uint32_t lmask, uint64_t datalen,
-                          int64_t adjustment, gab_value *data) {
+GAB_INTERNAL gab_value __gab_shapelist(struct gab_triple gab, uint64_t hash,
+                                       uint64_t len, uint32_t nmask,
+                                       uint32_t lmask, uint64_t datalen,
+                                       int64_t adjustment, gab_value *data) {
   gab_value shp =
       __gab_shape(gab, hash, len, nmask, lmask, datalen, adjustment, data);
   GAB_VAL_TO_SHAPE(shp)->header.kind = kGAB_SHAPELIST;
   return shp;
 }
 
-GAB_INTERNAL gab_value __gab_shapenode(struct gab_triple gab, uint32_t nmask, uint32_t lmask,
-                          uint64_t datalen, int64_t adjustment,
-                          gab_value *data) {
+GAB_INTERNAL gab_value __gab_shapenode(struct gab_triple gab, uint32_t nmask,
+                                       uint32_t lmask, uint64_t datalen,
+                                       int64_t adjustment, gab_value *data) {
   gab_assert(datalen + adjustment > 0,
              "Shape nodes must have size > 0. Got len %lu and adjustment %li.",
              datalen, adjustment);
@@ -4429,6 +4399,11 @@ GAB_INTERNAL gab_value __gab_shapenode(struct gab_triple gab, uint32_t nmask, ui
 
   return __gab_obj(self);
 };
+
+struct gab_oshape* shpobj(gab_value shape) {
+  struct gab_oshape *s = GAB_VAL_TO_SHAPE(shape);
+  return s;
+}
 
 GAB_INTERNAL uint64_t shpnth(gab_value shape, uint64_t midx) {
   gab_assert(gab_valkind(shape) == kGAB_SHAPE ||
@@ -4482,7 +4457,8 @@ GAB_INTERNAL gab_value shpval(gab_value shape, uint64_t sidx) {
   return s->data[sidx];
 }
 
-GAB_INTERNAL gab_value shpcpy(struct gab_triple gab, gab_value shape, int64_t adjustment) {
+GAB_INTERNAL gab_value shpcpy(struct gab_triple gab, gab_value shape,
+                              int64_t adjustment) {
   gab_assert(gab_valkind(shape) == kGAB_SHAPE ||
                  gab_valkind(shape) == kGAB_SHAPELIST ||
                  gab_valkind(shape) == kGAB_SHAPENODE,
@@ -4518,7 +4494,8 @@ GAB_INTERNAL void shpassoc(gab_value shape, gab_value node, uint64_t sidx) {
   s->data[sidx] = node;
 }
 
-GAB_INTERNAL void shpbshrink(gab_value shape, uint64_t midx, gab_value src_shape) {
+GAB_INTERNAL void shpbshrink(gab_value shape, uint64_t midx,
+                             gab_value src_shape) {
   gab_assert(gab_valkind(shape) == kGAB_SHAPE ||
                  gab_valkind(shape) == kGAB_SHAPELIST ||
                  gab_valkind(shape) == kGAB_SHAPENODE,
@@ -4550,7 +4527,8 @@ GAB_INTERNAL void shpbshrink(gab_value shape, uint64_t midx, gab_value src_shape
   s->lmask &= ~((uint32_t)1 << midx);
 }
 
-GAB_INTERNAL void shplext(gab_value shape, uint64_t midx, gab_value key, uint64_t val) {
+GAB_INTERNAL void shplext(gab_value shape, uint64_t midx, gab_value key,
+                          uint64_t val) {
   gab_assert(gab_valkind(shape) == kGAB_SHAPE ||
                  gab_valkind(shape) == kGAB_SHAPELIST ||
                  gab_valkind(shape) == kGAB_SHAPENODE,
@@ -5477,6 +5455,8 @@ gab_value gab_recordfrom(struct gab_triple gab, gab_value shape,
 
   gab_value res = __gab_obj(self);
 
+  len = real_len < len ? real_len : len;
+
   if (real_len) {
     recfillchildren(gab, res, shift, real_len, rootlen, true);
 
@@ -5682,25 +5662,26 @@ gab_value gab_tshape(struct gab_triple gab, uint64_t stride, uint64_t len,
   if (interned)
     return __gab_obj(interned);
 
+  gab_gclock(gab);
+
   gab_value s = __gab_nshape(gab, hash, 1, newlen, newdata);
 
   switch (mtx_trylock(&gab.eg->gc_mtx)) {
   case thrd_success:
     break;
   case thrd_busy:
-    return gab_ctimeout;
+    return gab_gcunlock(gab), gab_ctimeout;
   case thrd_error:
-    return gab_cinvalid;
+    return gab_gcunlock(gab), gab_cinvalid;
   }
 
   d_shapes_insert(&gab.eg->shapes, GAB_VAL_TO_SHAPE(s), 0);
 
   mtx_unlock(&gab.eg->gc_mtx);
 
-  return s;
+  return gab_gcunlock(gab), s;
 }
 
-// TODO @bug @cgab: Handle duplicate keys
 // TODO @opt @cgab: Don't hash in tshape, we loop that fn. Same for str.
 gab_value gab_shape(struct gab_triple gab, uint64_t stride, uint64_t len,
                     gab_value *data) {
@@ -5733,7 +5714,7 @@ gab_value gab_shape(struct gab_triple gab, uint64_t stride, uint64_t len,
 }
 
 uint64_t gab_shplen(gab_value shp) {
-  assert(gab_valkind(shp) == kGAB_SHAPE || gab_valkind(shp) == kGAB_SHAPELIST);
+  gab_assert(gab_valkind(shp) == kGAB_SHAPE || gab_valkind(shp) == kGAB_SHAPELIST, "Expected a shape kind, not %d", gab_valkind(shp));
   struct gab_oshape *s = GAB_VAL_TO_SHAPE(shp);
   return s->len;
 }
@@ -5834,6 +5815,8 @@ gab_value gab_tshpwithout(struct gab_triple gab, gab_value shape,
 
   if (interned)
     return __gab_obj(interned);
+  
+  gab_gclock(gab);
 
   gab_value new_shape = shptake(gab, shape, key, last_key, res.found);
 
@@ -5848,16 +5831,16 @@ gab_value gab_tshpwithout(struct gab_triple gab, gab_value shape,
   case thrd_success:
     break;
   case thrd_busy:
-    return gab_ctimeout;
+    return gab_gcunlock(gab), gab_ctimeout;
   case thrd_error:
-    return gab_cinvalid;
+    return gab_gcunlock(gab), gab_cinvalid;
   }
 
   d_shapes_insert(&gab.eg->shapes, self, 0);
 
   mtx_unlock(&gab.eg->gc_mtx);
 
-  return new_shape;
+  return gab_gcunlock(gab), new_shape;
 }
 
 gab_value gab_shpwithout(struct gab_triple gab, gab_value shape,
@@ -5903,7 +5886,6 @@ gab_value gab_tshpwith(struct gab_triple gab, gab_value shp, gab_value key) {
   assert(gab_valkind(shp) == kGAB_SHAPE || gab_valkind(shp) == kGAB_SHAPELIST);
   struct gab_oshape *s = GAB_VAL_TO_SHAPE(shp);
 
-  // TODO @cgab @bug: Don't return undefined for duplicate keys
   uint64_t idx = gab_shpfind(shp, key);
   if (idx != -1)
     return shp;
@@ -5927,6 +5909,8 @@ gab_value gab_tshpwith(struct gab_triple gab, gab_value shp, gab_value key) {
   if (interned)
     return __gab_obj(interned);
 
+  gab_gclock(gab);
+
   gab_value new_shape = shpput(gab, shp, key, s->len);
 
   struct gab_oshape *self = GAB_VAL_TO_SHAPE(new_shape);
@@ -5937,9 +5921,9 @@ gab_value gab_tshpwith(struct gab_triple gab, gab_value shp, gab_value key) {
   case thrd_success:
     break;
   case thrd_busy:
-    return gab_ctimeout;
+    return gab_gcunlock(gab), gab_ctimeout;
   case thrd_error:
-    return gab_cinvalid;
+    return gab_gcunlock(gab), gab_cinvalid;
   }
 
   // demote to a SHAPE if we were shapelist, but put the wrong key.
@@ -5949,7 +5933,7 @@ gab_value gab_tshpwith(struct gab_triple gab, gab_value shp, gab_value key) {
 
   mtx_unlock(&gab.eg->gc_mtx);
 
-  return new_shape;
+  return gab_gcunlock(gab), new_shape;
 }
 
 gab_value gab_shpwith(struct gab_triple gab, gab_value shape, gab_value data) {
@@ -9646,7 +9630,6 @@ gab_value compile_record(struct gab_triple gab, struct bc *bc, gab_value tuple,
     gab_value rhs_node = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_RHS);
     gab_value msg = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_MSG);
 
-    gab_fprintf(stderr, "NODE: $\n", node);
     gab_assert(lhs_node != gab_cundefined, "Invalid node kind");
 
     if (msg_is_builtin(gab, msg))
@@ -10481,7 +10464,7 @@ void gab_gccreate(struct gab_triple gab) {
 void gab_gcdestroy(struct gab_triple gab) {
   d_gab_obj_destroy(&gab.eg->gc.overflow_rc);
   v_gab_obj_destroy(&gab.eg->gc.dead);
-  gab_jbunalive(gab, 0);
+  __gab_jbunalive(gab, 0);
 }
 
 static inline void collect_dead(struct gab_triple gab) {
@@ -10651,7 +10634,6 @@ void gab_gcdocollect(struct gab_triple gab) {
    * of it now.
    */
   gab.eg->gc.msg[epoch] = atomic_load(&gab.eg->messages);
-  gab.eg->gc.mac[epoch] = atomic_load(&gab.eg->macros);
 
   gab_value messages = gab.eg->gc.msg[epoch];
   gab_value macros = gab.eg->gc.mac[epoch];
@@ -10692,7 +10674,6 @@ void gab_gcdocollect(struct gab_triple gab) {
   expected_e = (gab.eg->jobs[gab.wkid].epoch) % 3;
   assert_workers_have_epoch(gab, expected_e);
 }
-
 
 // -- VM --
 
@@ -12098,7 +12079,7 @@ extern void putcs(char *arg);
                             });                                                \
     }                                                                          \
                                                                                \
-    bool spawned = gab_wkspawn(GAB(), fb);                                     \
+    bool spawned = __gab_jbspawn(GAB(), fb);                                     \
                                                                                \
     if (spawned)                                                               \
       goto fin;                                                                \

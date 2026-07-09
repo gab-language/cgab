@@ -178,19 +178,6 @@ GAB_DYNLIB_NATIVE_FN(message, def) {
   return gab_union_cvalid(gab_nil);
 }
 
-GAB_DYNLIB_NATIVE_FN(message, defmacro) {
-  gab_value msg = gab_arg(0);
-  gab_value spec = gab_arg(1);
-
-  if (gab_valkind(msg) != kGAB_MESSAGE)
-    return gab_pktypemismatch(gab, msg, kGAB_MESSAGE);
-
-  if (!gab_defmacro(gab, {msg, .specialization = spec}))
-    return gab_panicf(gab, "$ already specializes as macro", msg);
-
-  return gab_union_cvalid(gab_nil);
-}
-
 GAB_DYNLIB_NATIVE_FN(message, case) {
   gab_value msg = gab_arg(0);
   gab_value cases = gab_arg(1);
@@ -260,13 +247,6 @@ GAB_DYNLIB_NATIVE_FN(message, module) {
 GAB_DYNLIB_MAIN_FN {
   gab_value t = gab_type(gab, kGAB_MESSAGE);
   gab_value mod = gab_strtomsg(t);
-
-  gab_def(gab, {
-                   gab_message(gab, "defmacro"),
-                   t,
-                   .specialization =
-                       gab_snative(gab, "defmacro", gab_mod_message_defmacro),
-               });
 
   gab_def(gab,
           {

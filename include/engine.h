@@ -636,9 +636,6 @@ struct gab_eg {
   // Used to check inline caches.
   _Atomic uint64_t messages_epoch;
 
-  _Atomic gab_value macros;
-  _Atomic uint64_t macros_epoch;
-
   // The global work queue, where jobs push fibers to other jobs.
   gab_value work_channel;
 
@@ -693,8 +690,6 @@ struct gab_eg {
 };
 
 union gab_value_pair gab_vmexec(struct gab_triple gab, gab_value fiber);
-
-bool gab_wkspawn(struct gab_triple gab, gab_value fiber);
 
 void gab_gccreate(struct gab_triple gab);
 
@@ -827,12 +822,6 @@ static inline int gsnprintf_through(char **dst, size_t *n, const char *fmt,
 
   return res;
 }
-
-bool gab_wkspawn(struct gab_triple gab, gab_value fiber);
-
-void gab_jbalive(struct gab_triple gab, int32_t wkid);
-
-void gab_jbunalive(struct gab_triple gab, int32_t wkid);
 
 static inline uint8_t *proto_srcbegin(struct gab_triple gab,
                                       struct gab_oprototype *p) {
