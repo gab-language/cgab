@@ -522,7 +522,6 @@ struct gab_gc {
   d_gab_obj overflow_rc;
   v_gab_obj dead;
   gab_value msg[GAB_GCNEPOCHS];
-  gab_value mac[GAB_GCNEPOCHS];
 };
 
 typedef enum gab_token {

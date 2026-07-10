@@ -101,9 +101,13 @@ GAB_DYNLIB_NATIVE_FN(rec, cat) {
   if (gab_valkind(oth) != kGAB_RECORD)
     return gab_pktypemismatch(gab, oth, kGAB_RECORD);
 
+  gab_gclock(gab);
+
   gab_value res = gab_lstcat(gab, rec, oth);
 
   gab_vmpush(gab_thisvm(gab), res);
+
+  gab_gcunlock(gab);
   return gab_union_cvalid(gab_nil);
 }
 

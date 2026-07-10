@@ -833,8 +833,8 @@ GAB_INTERNAL struct gab_job *__gab_jbnext(struct gab_triple gab) {
   return nullptr;
 }
 
-GAB_INTERNAL bool __gab_job(struct gab_triple gab, struct gab_job *job, int(fn)(void *),
-                  gab_value fiber) {
+GAB_INTERNAL bool __gab_job(struct gab_triple gab, struct gab_job *job,
+                            int(fn)(void *), gab_value fiber) {
   if (!job)
     return false;
 
@@ -872,7 +872,7 @@ GAB_INTERNAL bool __gab_jbspawn(struct gab_triple gab, gab_value fiber) {
 }
 
 GAB_API union gab_value_pair gab_create(struct gab_create_argt args,
-                                struct gab_triple gab_out[static 1]) {
+                                        struct gab_triple gab_out[static 1]) {
   uint64_t njobs = args.jobs ? args.jobs : cGAB_DEFAULT_NJOBS;
 
   if (njobs > 29)
@@ -1186,7 +1186,8 @@ GAB_API void gab_destroy(struct gab_triple gab) {
   free(gab.eg);
 }
 
-GAB_INTERNAL bool __gab_replchkres(struct gab_triple gab, union gab_value_pair res) {
+GAB_INTERNAL bool __gab_replchkres(struct gab_triple gab,
+                                   union gab_value_pair res) {
   gab_value *err = gab_egerrs(gab.eg);
 
   while (gab_signaling(gab))
@@ -1235,7 +1236,8 @@ GAB_INTERNAL bool __gab_replchkres(struct gab_triple gab, union gab_value_pair r
   return err != nullptr;
 }
 
-GAB_INTERNAL bool __gab_replchkmore(struct gab_triple gab, union gab_value_pair res) {
+GAB_INTERNAL bool __gab_replchkmore(struct gab_triple gab,
+                                    union gab_value_pair res) {
   if (res.status != gab_cinvalid)
     return false;
 
@@ -1258,8 +1260,8 @@ GAB_INTERNAL bool __gab_replchkmore(struct gab_triple gab, union gab_value_pair 
 /*
  * Should be able to take work here on 1st worker maybe.
  */
-GAB_INTERNAL void __gab_replwait(struct gab_triple gab, struct gab_repl_argt *args,
-                   gab_value fib) {
+GAB_INTERNAL void __gab_replwait(struct gab_triple gab,
+                                 struct gab_repl_argt *args, gab_value fib) {
   while (!gab_fibisdone(fib)) {
     switch (gab_yield(gab)) {
     case sGAB_COLL:
@@ -1442,7 +1444,7 @@ GAB_API void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
 }
 
 GAB_API union gab_value_pair gab_aexec(struct gab_triple gab,
-                               struct gab_exec_argt args) {
+                                       struct gab_exec_argt args) {
   gab.flags |= args.flags;
 
   union gab_value_pair main = gab_build(gab, (struct gab_parse_argt){
@@ -1464,7 +1466,7 @@ GAB_API union gab_value_pair gab_aexec(struct gab_triple gab,
 }
 
 GAB_API union gab_value_pair gab_exec(struct gab_triple gab,
-                              struct gab_exec_argt args) {
+                                      struct gab_exec_argt args) {
   union gab_value_pair fib = gab_aexec(gab, args);
 
   if (fib.status != gab_cvalid)
@@ -1495,8 +1497,9 @@ GAB_API union gab_value_pair gab_exec(struct gab_triple gab,
   assert(false && "UNREACHABLE");
 }
 
-GAB_INTERNAL gab_value __gab_egdodef(struct gab_triple gab, gab_value messages, uint64_t len,
-                struct gab_def_argt args[static len]) {
+GAB_INTERNAL gab_value __gab_egdodef(struct gab_triple gab, gab_value messages,
+                                     uint64_t len,
+                                     struct gab_def_argt args[static len]) {
 
   gab_gclock(gab);
 
@@ -1518,7 +1521,7 @@ GAB_INTERNAL gab_value __gab_egdodef(struct gab_triple gab, gab_value messages, 
 }
 
 GAB_API bool gab_ndef(struct gab_triple gab, uint64_t len,
-              struct gab_def_argt args[static len]) {
+                      struct gab_def_argt args[static len]) {
   gab_value messages = atomic_load(&gab.eg->messages);
 
   for (;;) {
@@ -1571,6 +1574,8 @@ struct gab_oshape *gab_egshpfind(struct gab_eg *self, uint64_t hash,
     d_status status = d_shapes_istatus(&self->shapes, index);
     struct gab_oshape *key = d_shapes_ikey(&self->shapes, index);
 
+    fprintf(stderr, "FIND AGAINST %p\n", key);
+
     switch (status) {
     case D_TOMBSTONE:
       break;
@@ -1609,6 +1614,8 @@ struct gab_oshape *gab_legshpfind(struct gab_eg *self, uint64_t hash,
   for (;;) {
     d_status status = d_shapes_istatus(&self->shapes, index);
     struct gab_oshape *key = d_shapes_ikey(&self->shapes, index);
+
+    fprintf(stderr, "LFIND AGAINST %p\n", key);
 
     switch (status) {
     case D_TOMBSTONE:
@@ -3558,6 +3565,9 @@ struct gab_obj *gab_objcreate(struct gab_triple gab, uint64_t sz,
   struct gab_job *wk = gab.eg->jobs + gab.wkid;
   if (wk->locked) {
     v_gab_value_push(&wk->lock_keep, __gab_obj(self));
+    // TODO @cgab @bug: Is buffering when locked correct?
+    // I think this would just leak memory
+    // if it actually did anything. 
     GAB_OBJ_BUFFERED(self);
 #if cGAB_LOG_GC
     fprintf(stderr, "(%i) QLOCK\t%p\n", gab.wkid, (void *)self);
@@ -3859,16 +3869,25 @@ GAB_API void __gab_objdestroy(struct gab_triple gab, struct gab_obj *self) {
     break;
   }
   case kGAB_SHAPE:
-  case kGAB_SHAPELIST:
+  case kGAB_SHAPELIST: {
     gab_assert(mtx_trylock(&gab.eg->gc_mtx) == thrd_busy,
                "This thread must be holding the gc_mtx already.");
-    d_shapes_remove(&gab.eg->shapes, (struct gab_oshape *)self);
+    // TODO @cgab @opt: Shapes aren't guaranteed to be in here, if they were
+    // created intermittently.
+    bool removed = d_shapes_remove(&gab.eg->shapes, (struct gab_oshape *)self);
+    fprintf(stderr, "(%i) DSHAPE REMOVE %p %s\n", gab.wkid, self,
+            removed ? "SUCCEEDED" : "FAILED");
+    // gab_assert(removed, "Must succeed in removing shape %p", self);
     break;
-  case kGAB_STRING:
+  }
+  case kGAB_STRING: {
     gab_assert(mtx_trylock(&gab.eg->gc_mtx) == thrd_busy,
                "This thread must be holding the gc_mtx already.");
+    fprintf(stderr, "(%i) DSTRING REMOVE %p\n", gab.wkid, self);
     d_strings_remove(&gab.eg->strings, (struct gab_ostring *)self);
+    // gab_assert(removed, "Must succeed in removing string");
     break;
+  }
   default:
     break;
   }
@@ -4400,7 +4419,7 @@ GAB_INTERNAL gab_value __gab_shapenode(struct gab_triple gab, uint32_t nmask,
   return __gab_obj(self);
 };
 
-struct gab_oshape* shpobj(gab_value shape) {
+struct gab_oshape *shpobj(gab_value shape) {
   struct gab_oshape *s = GAB_VAL_TO_SHAPE(shape);
   return s;
 }
@@ -4409,7 +4428,7 @@ GAB_INTERNAL uint64_t shpnth(gab_value shape, uint64_t midx) {
   gab_assert(gab_valkind(shape) == kGAB_SHAPE ||
                  gab_valkind(shape) == kGAB_SHAPELIST ||
                  gab_valkind(shape) == kGAB_SHAPENODE,
-             "Invalid kind: %d", gab_valkind(shape));
+             "Invalid kind: %d for %p", gab_valkind(shape), gab_valtoo(shape));
   struct gab_oshape *s = GAB_VAL_TO_SHAPE(shape);
   // Count the number of bits in smask before the bit midx
   // (1 << midx) - 1 creates a mask of ones beneath midx.
@@ -4457,6 +4476,34 @@ GAB_INTERNAL gab_value shpval(gab_value shape, uint64_t sidx) {
   return s->data[sidx];
 }
 
+GAB_INTERNAL void validate_node(gab_value shape) {
+  gab_assert(gab_valkind(shape) == kGAB_SHAPE ||
+                 gab_valkind(shape) == kGAB_SHAPELIST ||
+                 gab_valkind(shape) == kGAB_SHAPENODE,
+             "Invalid kind");
+  struct gab_oshape *s = GAB_VAL_TO_SHAPE(shape);
+
+  gab_assert(popcountl(s->nmask) * 2 == s->datalen,
+             "DATALEN should be popcount * 2. Saw %u for %b", s->datalen,
+             s->nmask);
+
+  for (uint64_t midx = 0; midx < 32; midx++) {
+    uint32_t sidx = shpnth(shape, midx);
+
+    if (shpisl(shape, midx))
+      gab_assert(shpisn(shape, midx), "Leaves must also be nodes");
+
+    if (shpisn(shape, midx)) {
+      if (shpisl(shape, midx)) {
+        gab_assert(shpkey(shape, sidx) != gab_cinvalid, "Invalid key in leaf");
+      } else {
+        gab_value c = shpkey(shape, sidx);
+        validate_node(c);
+      }
+    }
+  }
+}
+
 GAB_INTERNAL gab_value shpcpy(struct gab_triple gab, gab_value shape,
                               int64_t adjustment) {
   gab_assert(gab_valkind(shape) == kGAB_SHAPE ||
@@ -4469,12 +4516,24 @@ GAB_INTERNAL gab_value shpcpy(struct gab_triple gab, gab_value shape,
 
   switch (s->header.kind) {
   case kGAB_SHAPELIST:
+    for (uint64_t i = 0; i < s->datalen; i++) {
+      if (gab_valiso(s->data[i]))
+        fprintf(stderr, "COPY %p WITH %p\n", s, gab_valtoo(s->data[i]));
+    }
     return __gab_shapelist(gab, s->hash, s->len, s->nmask, s->lmask, s->datalen,
                            adjustment, s->data);
   case kGAB_SHAPE:
+    for (uint64_t i = 0; i < s->datalen; i++) {
+      if (gab_valiso(s->data[i]))
+        fprintf(stderr, "COPY %p WITH %p\n", s, gab_valtoo(s->data[i]));
+    }
     return __gab_shape(gab, s->hash, s->len, s->nmask, s->lmask, s->datalen,
                        adjustment, s->data);
   case kGAB_SHAPENODE:
+    for (uint64_t i = 0; i < s->datalen; i++) {
+      if (gab_valiso(s->data[i]))
+        fprintf(stderr, "COPY %p WITH %p\n", s, gab_valtoo(s->data[i]));
+    }
     return __gab_shapenode(gab, s->nmask, s->lmask, s->datalen, adjustment,
                            s->data);
   default:
@@ -4597,6 +4656,7 @@ uint64_t gab_shpfind(gab_value shape, gab_value key) {
 }
 
 gab_value __gab_ushpat(gab_value shape, uint64_t idx) {
+  // validate_node(shape);
   // Eh, just brute force all 32 possible nodes.
   for (uint64_t midx = 0; midx < 32; midx++) {
     uint32_t sidx = shpnth(shape, midx);
@@ -4739,6 +4799,10 @@ gab_value shpput(struct gab_triple gab, gab_value shape, gab_value key,
 
       branch = shpcpy(gab, branch, needs_space);
 
+      fprintf(stderr, "(%i) BRANCH %p BY %p COPY %p\n", gab.wkid,
+              GAB_VAL_TO_SHAPE(root), GAB_VAL_TO_SHAPE(branch),
+              GAB_VAL_TO_SHAPE(shpkey(node, sidx)));
+
       shpassoc(node, branch, sidx * 2);
 
       node = branch;
@@ -4776,6 +4840,9 @@ gab_value shpput(struct gab_triple gab, gab_value shape, gab_value key,
       int64_t extra_space = 1 + (ckey_midx != midx);
       gab_value branch = __gab_shapenode(gab, 0, 0, 0, extra_space, nullptr);
       shpassoc(node, branch, sidx * 2);
+
+      fprintf(stderr, "(%i) BRANCH %p BY %p\n", gab.wkid,
+              GAB_VAL_TO_SHAPE(root), GAB_VAL_TO_SHAPE(branch));
 
       node = branch;
 
@@ -4841,7 +4908,7 @@ uint64_t prepkeys(uint64_t stride, uint64_t len, gab_value *keys,
   return widx;
 };
 
-gab_value shpchkdemote(gab_value shp, gab_value key, uint64_t n) {
+GAB_INTERNAL gab_value shpchkdemote(gab_value shp, gab_value key, uint64_t n) {
   if (gab_valkind(shp) == kGAB_SHAPELIST && key != gab_number(n))
     GAB_VAL_TO_SHAPE(shp)->header.kind = kGAB_SHAPE;
 
@@ -4853,8 +4920,12 @@ gab_value __gab_nshape(struct gab_triple gab, uint64_t hash, uint64_t stride,
                        uint64_t len, gab_value *keys) {
   gab_value s = __gab_shape(gab, hash, len, 0, 0, 0, 0, nullptr);
 
-  for (uint64_t i = 0; i < len; i++)
+  for (uint64_t i = 0; i < len; i++) {
     s = shpchkdemote(shpput(gab, s, keys[i * stride], i), keys[i * stride], i);
+    if (i + 1 < len)
+      fprintf(stderr, "(%i) NSHAPE DROP_ON_FLOOR %p\n", gab.wkid,
+              GAB_VAL_TO_SHAPE(s));
+  }
 
   return s;
 };
@@ -5263,8 +5334,9 @@ gab_value gab_recput(struct gab_triple gab, gab_value rec, gab_value key,
   gab_gclock(gab);
 
   if (idx == -1) {
-    gab_value result =
-        cons(gab, rec, val, gab_shpwith(gab, gab_recshp(rec), key));
+    gab_value newshp = gab_shpwith(gab, gab_recshp(rec), key);
+
+    gab_value result = cons(gab, rec, val, newshp);
 
     return gab_gcunlock(gab), result;
   }
@@ -5670,12 +5742,20 @@ gab_value gab_tshape(struct gab_triple gab, uint64_t stride, uint64_t len,
   case thrd_success:
     break;
   case thrd_busy:
+    fprintf(stderr, "(%i) NSHAPE BUSY DROP_ON_FLOOR %p\n", gab.wkid,
+            GAB_VAL_TO_SHAPE(s));
     return gab_gcunlock(gab), gab_ctimeout;
   case thrd_error:
+    fprintf(stderr, "(%i) NSHAPE ERR DROP_ON_FLOOR %p\n", gab.wkid,
+            GAB_VAL_TO_SHAPE(s));
     return gab_gcunlock(gab), gab_cinvalid;
   }
 
   d_shapes_insert(&gab.eg->shapes, GAB_VAL_TO_SHAPE(s), 0);
+  fprintf(stderr, "(%i) INSERT %p\n", gab.wkid, GAB_VAL_TO_SHAPE(s));
+
+  gab_iref(gab, s);
+  gab_dref(gab, s);
 
   mtx_unlock(&gab.eg->gc_mtx);
 
@@ -5714,7 +5794,9 @@ gab_value gab_shape(struct gab_triple gab, uint64_t stride, uint64_t len,
 }
 
 uint64_t gab_shplen(gab_value shp) {
-  gab_assert(gab_valkind(shp) == kGAB_SHAPE || gab_valkind(shp) == kGAB_SHAPELIST, "Expected a shape kind, not %d", gab_valkind(shp));
+  gab_assert(gab_valkind(shp) == kGAB_SHAPE ||
+                 gab_valkind(shp) == kGAB_SHAPELIST,
+             "Expected a shape kind, not %d", gab_valkind(shp));
   struct gab_oshape *s = GAB_VAL_TO_SHAPE(shp);
   return s->len;
 }
@@ -5724,11 +5806,13 @@ gab_value gab_nshpcat(struct gab_triple gab, uint64_t len,
   assert(len > 0);
   gab_value shp = shapes[0];
 
+  gab_gclock(gab);
+
   for (uint64_t i = 1; i < len; i++)
     for (uint64_t k = 0; k < gab_shplen(shapes[i]); k++)
       shp = gab_shpwith(gab, shp, gab_ushpat(shapes[i], k));
 
-  return shp;
+  return gab_gcunlock(gab), shp;
 }
 
 struct popkey_res {
@@ -5815,7 +5899,7 @@ gab_value gab_tshpwithout(struct gab_triple gab, gab_value shape,
 
   if (interned)
     return __gab_obj(interned);
-  
+
   gab_gclock(gab);
 
   gab_value new_shape = shptake(gab, shape, key, last_key, res.found);
@@ -5831,12 +5915,18 @@ gab_value gab_tshpwithout(struct gab_triple gab, gab_value shape,
   case thrd_success:
     break;
   case thrd_busy:
+    fprintf(stderr, "(%i) TAKE BUSY DROP_ON_FLOOR %p\n", gab.wkid, self);
     return gab_gcunlock(gab), gab_ctimeout;
   case thrd_error:
+    fprintf(stderr, "(%i) TAKE ERR DROP_ON_FLOOR %p\n", gab.wkid, self);
     return gab_gcunlock(gab), gab_cinvalid;
   }
 
   d_shapes_insert(&gab.eg->shapes, self, 0);
+  fprintf(stderr, "(%i) INSERT %p\n", gab.wkid, self);
+
+  gab_iref(gab, new_shape);
+  gab_dref(gab, new_shape);
 
   mtx_unlock(&gab.eg->gc_mtx);
 
@@ -5875,12 +5965,6 @@ gab_value gab_shpwithout(struct gab_triple gab, gab_value shape,
   }
 }
 
-int compare_value(const void *l, const void *r) {
-  gab_value lhs = *(gab_value *)l;
-  gab_value rhs = *(gab_value *)r;
-  return lhs - rhs;
-};
-
 // TODO @cgab @opt: See gab_tnstring. Same stuff applies.
 gab_value gab_tshpwith(struct gab_triple gab, gab_value shp, gab_value key) {
   assert(gab_valkind(shp) == kGAB_SHAPE || gab_valkind(shp) == kGAB_SHAPELIST);
@@ -5917,19 +6001,25 @@ gab_value gab_tshpwith(struct gab_triple gab, gab_value shp, gab_value key) {
   self->hash = hash;
   self->len++;
 
+  // demote to a SHAPE if we were shapelist, but put the wrong key.
+  new_shape = shpchkdemote(new_shape, key, s->len);
+
   switch (mtx_trylock(&gab.eg->gc_mtx)) {
   case thrd_success:
     break;
   case thrd_busy:
+    fprintf(stderr, "(%i) PUT BUSY DROP_ON_FLOOR %p\n", gab.wkid, self);
     return gab_gcunlock(gab), gab_ctimeout;
   case thrd_error:
+    fprintf(stderr, "(%i) PUT ERR DROP_ON_FLOOR %p\n", gab.wkid, self);
     return gab_gcunlock(gab), gab_cinvalid;
   }
 
-  // demote to a SHAPE if we were shapelist, but put the wrong key.
-  new_shape = shpchkdemote(new_shape, key, s->len);
+  d_shapes_insert(&gab.eg->shapes, self, 0);
+  fprintf(stderr, "(%i) INSERT %p\n", gab.wkid, self);
 
-  d_shapes_insert(&gab.eg->shapes, GAB_VAL_TO_SHAPE(new_shape), 0);
+  gab_iref(gab, new_shape);
+  gab_dref(gab, new_shape);
 
   mtx_unlock(&gab.eg->gc_mtx);
 
@@ -10250,6 +10340,15 @@ static inline void for_child_do(struct gab_obj *obj,
 
     for (uint64_t i = 0; i < s->datalen; i++) {
       gab_value v = s->data[i];
+
+      if (gab_valiso(v))
+        fprintf(stderr, "(%i) RECURSE %p INTO %p\n", gab.wkid, obj,
+                gab_valtoo(v));
+    }
+
+    for (uint64_t i = 0; i < s->datalen; i++) {
+      gab_value v = s->data[i];
+
       if (gab_valiso(v))
         fnc(gab, gab_valtoo(v));
     }
@@ -10292,22 +10391,20 @@ static inline void _destroy(struct gab_triple gab, struct gab_obj *obj,
 #else
 static inline void destroy(struct gab_triple gab, struct gab_obj *obj) {
 #endif
-
-#if cGAB_LOG_GC
-  if (GAB_OBJ_IS_FREED(obj)) {
-    fprintf(stderr, "(%i) DFREE\t%p\t%s:%i\n", gab.wkid, obj, func, line);
-    exit(1);
-  } else {
-    fprintf(stderr, "(%i) FREE\t%i\t%p\t%i\t%s:%d\n", gab.wkid, epochget(gab),
-            obj, obj->references, func, line);
-  }
-  GAB_OBJ_FREED(obj);
-  gab_objdestroy(gab, obj);
-  gab_egalloc(gab, obj, 0);
-#else
   gab_assert(obj->references == 0,
              "Shall only destroy objects with 0 references, not %i on kind %d",
              obj->references, obj->kind);
+
+#if cGAB_LOG_GC
+  gab_assert(!GAB_OBJ_IS_FREED(obj), "(%i) DFREE\t%p\t%s:%i\n", gab.wkid, obj,
+             func, line);
+
+  fprintf(stderr, "(%i) FREE\t%i\t%p\t%i\t%s:%d\n", gab.wkid, epochget(gab),
+          obj, obj->references, func, line);
+  GAB_OBJ_FREED(obj);
+  __gab_objdestroy(gab, obj);
+  // gab_egalloc(gab, obj, 0);
+#else
   __gab_objdestroy(gab, obj);
   gab_egalloc(gab, obj, 0);
 
@@ -10479,9 +10576,9 @@ void gab_gclock(struct gab_triple gab) {
 }
 
 /*
- * There was a bug where objects were beging freed *while they were in the locke
- * queue*. This was resolved by marking locked objects as *buffered* until they
- * are unlocked.
+ * There was a bug where objects were beging freed *while they were in the
+ * locke queue*. This was resolved by marking locked objects as *buffered*
+ * until they are unlocked.
  */
 void gab_gcunlock(struct gab_triple gab) {
   struct gab_job *wk = gab.eg->jobs + gab.wkid;
@@ -10546,8 +10643,8 @@ void processepoch(struct gab_triple gab, int32_t e) {
     goto fin;
 
 #if cGAB_LOG_GC
-  fprintf(stderr, "QUEUENOTEMPTY\t%lu\t%lu\t%lu\n", wk->queue.head,
-          wk->queue.tail, wk->queue.size);
+  fprintf(stderr, "QUEUENOTEMPTY\t%u\t%u\t%u\n", wk->queue.head, wk->queue.tail,
+          wk->queue.head - wk->queue.tail);
 #endif
 
   for (size_t idx = wk->queue.head; idx != wk->queue.tail; idx++) {
@@ -10564,9 +10661,8 @@ void processepoch(struct gab_triple gab, int32_t e) {
 
     struct gab_vm *vm = &fb->vm;
 
-    gab_assert(
-        vm->sp >= vm->sb,
-        "By design, the stack pointer should always be above the stack base.");
+    gab_assert(vm->sp >= vm->sb, "By design, the stack pointer should always "
+                                 "be above the stack base.");
     uint64_t stack_size = vm->sp - vm->sb;
 
     gab_assert(stack_size < cGAB_STACK_MAX,
@@ -10636,10 +10732,8 @@ void gab_gcdocollect(struct gab_triple gab) {
   gab.eg->gc.msg[epoch] = atomic_load(&gab.eg->messages);
 
   gab_value messages = gab.eg->gc.msg[epoch];
-  gab_value macros = gab.eg->gc.mac[epoch];
 
   gab_value last_messages = gab.eg->gc.msg[last];
-  gab_value last_macros = gab.eg->gc.mac[last];
 
 #if cGAB_LOG_GC
   fprintf(stderr, "CEPOCH %i (last: %i, raw: %i)\n", epoch, last,
@@ -10652,16 +10746,10 @@ void gab_gcdocollect(struct gab_triple gab) {
   if (gab_valiso(messages))
     inc_obj_ref(gab, gab_valtoo(messages));
 
-  if (gab_valiso(macros))
-    inc_obj_ref(gab, gab_valtoo(macros));
-
   processincrements(gab, epoch);
 
   if (gab_valiso(last_messages))
     dec_obj_ref(gab, gab_valtoo(last_messages));
-
-  if (gab_valiso(last_macros))
-    dec_obj_ref(gab, gab_valtoo(last_macros));
 
   processdecrements(gab, last);
 
@@ -11033,13 +11121,15 @@ static handler handlers[] = {
 // - Return block is also a pointer, which is 48 bits of data.
 // - Return have should really be 32, but we can make it 8
 //
-// - A send is always followed by a trim or a pack, so storing anything further
+// - A send is always followed by a trim or a pack, so storing anything
+// further
 // - up on the stack doesn't really work either.
 // - Maybe I can store the block @ the IP somehow?
 //
 // - If I am returning from a frame, I am returning to an IP which should have
 // - send with a block in ks[GAB_SEND_KSPEC].
-// - Problem - without knowing what the block is, we can't actually know *where*
+// - Problem - without knowing what the block is, we can't actually know
+// *where*
 // - the ks are. So its a chicken and egg situation.
 //
 // - Also, that returning send block in ks[GAB_SEND_KSPEC] is also the frame
@@ -11478,7 +11568,8 @@ void gab_fvminspect(FILE *stream, struct gab_vm *vm, int depth) {
   // struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(f->b->p);
   //
   // fprintf(stream,
-  //         GAB_GREEN " %03lu" GAB_RESET " closure:" GAB_CYAN "%-20s" GAB_RESET
+  //         GAB_GREEN " %03lu" GAB_RESET " closure:" GAB_CYAN "%-20s"
+  //         GAB_RESET
   //                   " %d upvalues\n",
   //         frame_count - value, gab_strdata(&p->src->name), p->nupvalues);
 
@@ -11594,12 +11685,11 @@ cGAB_VM_OPCODE_ATTRIBUTES union gab_value_pair vm_ok(OP_HANDLER_ARGS) {
   uint64_t have = *VM()->sp;
   gab_value *from = VM()->sp - have;
 
-  // TODO @bug: When gab_sending just a send constant call, we hit a seg fault.
-  // This catches the issue - we overwrite the frame here without updating fb
-  // I think.
-  // assert(FB() < SP());
-  // Once the fiber has returned, the local values have been overwritten
-  // with return values. This makes extracting new locals impossible.
+  // TODO @bug: When gab_sending just a send constant call, we hit a seg
+  // fault. This catches the issue - we overwrite the frame here without
+  // updating fb I think. assert(FB() < SP()); Once the fiber has returned,
+  // the local values have been overwritten with return values. This makes
+  // extracting new locals impossible.
 
   a_gab_value *results = a_gab_value_empty(have + 1);
   results->data[0] = gab_ok;
@@ -12079,7 +12169,7 @@ extern void putcs(char *arg);
                             });                                                \
     }                                                                          \
                                                                                \
-    bool spawned = __gab_jbspawn(GAB(), fb);                                     \
+    bool spawned = __gab_jbspawn(GAB(), fb);                                   \
                                                                                \
     if (spawned)                                                               \
       goto fin;                                                                \
@@ -13328,6 +13418,8 @@ CASE_CODE(SEND_PRIMITIVE_CONS) {
 
   STORE_SP();
 
+  gab_gclock(GAB());
+
   gab_value res = MICRO_OP_CONS(a, b);
 
   DROP_N(have + 1 + FRAME_SIZE);
@@ -13335,6 +13427,8 @@ CASE_CODE(SEND_PRIMITIVE_CONS) {
   PUSH(res);
 
   SET_HV(below_have + 1);
+
+  gab_gcunlock(GAB());
 
   NEXT();
 }
@@ -13356,6 +13450,8 @@ CASE_CODE(SEND_PRIMITIVE_CONS_RECORD) {
 
   gab_value arg = PEEK_N(have - 1);
 
+  gab_gclock(GAB());
+
   gab_value res = MICRO_OP_CONS_RECORD(r, arg);
 
   DROP_N(have + 1 + FRAME_SIZE);
@@ -13363,6 +13459,8 @@ CASE_CODE(SEND_PRIMITIVE_CONS_RECORD) {
   PUSH(res);
 
   SET_HV(below_have + 1);
+
+  gab_gcunlock(GAB());
 
   NEXT();
 }

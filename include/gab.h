@@ -98,7 +98,7 @@
 
 // Log what is happening during collection.
 #ifndef cGAB_LOG_GC
-#define cGAB_LOG_GC 0
+#define cGAB_LOG_GC 1
 #endif
 
 // Log what is happening to workers as the gab engine spins.
@@ -839,7 +839,7 @@ GAB_API_INLINE gab_uint __gab_valtou(gab_value v) {
         (struct gab_obj *)(uintptr_t)((val) & ~(__GAB_SIGN_BIT | __GAB_QNAN |  \
                                                 __GAB_TAGBITS));               \
     gab_assert(!GAB_OBJ_IS_FREED(__o),                                         \
-               "Shall not use an object after its been freed.");               \
+               "UAF %p\n", __o);               \
     __o;                                                                       \
   })
 #else
@@ -864,11 +864,11 @@ GAB_API_INLINE gab_uint __gab_valtou(gab_value v) {
  * The algorithm is described in this paper:
  * https://researcher.watson.ibm.com/researcher/files/us-bacon/Bacon03Pure.pdf
  */
-#define fGAB_OBJ_BUFFERED (1 << 6)
-#define fGAB_OBJ_NEW (1 << 7)
+#define fGAB_OBJ_BUFFERED ((uint8_t)1 << 0)
+#define fGAB_OBJ_NEW ((uint8_t)1 << 1)
 
 // DEBUG purposes only
-#define fGAB_OBJ_FREED (1 << 8)
+#define fGAB_OBJ_FREED ((uint8_t)1 << 2)
 
 #define GAB_OBJ_IS_BUFFERED(obj) ((obj)->flags & fGAB_OBJ_BUFFERED)
 #define GAB_OBJ_IS_NEW(obj) ((obj)->flags & fGAB_OBJ_NEW)
@@ -2074,18 +2074,6 @@ GAB_API gab_value gab_dref(struct gab_triple gab, gab_value value);
  */
 GAB_API void gab_niref(struct gab_triple gab, uint64_t stride, uint64_t len,
                        gab_value *values);
-
-/**
- * @brief Increment all the following values' reference counts.
- *
- * @param gab The triple.
- */
-#define gab_irefall(gab, ...)                                                  \
-  ({                                                                           \
-    gab_value values[] = {__VA_ARGS__};                                        \
-    gab_niref(gab, 1, sizeof(values) / sizeof(gab_value), values);             \
-  })
-
 /**
  * @brief Decrement the reference count of the value(s)
  *
@@ -2094,12 +2082,6 @@ GAB_API void gab_niref(struct gab_triple gab, uint64_t stride, uint64_t len,
  */
 GAB_API void gab_ndref(struct gab_triple gab, uint64_t stride, uint64_t len,
                        gab_value *values);
-
-#define gab_drefall(gab, ...)                                                  \
-  ({                                                                           \
-    gab_value values[] = {__VA_ARGS__};                                        \
-    gab_ndref(gab, 1, sizeof(values) / sizeof(gab_value), values);             \
-  })
 
 #endif
 
@@ -2113,6 +2095,24 @@ GAB_API void __gab_gcepochnext(struct gab_triple gab, const char *func,
 #else
 GAB_API void gab_gcepochnext(struct gab_triple gab);
 #endif
+
+/**
+ * @brief Increment all the following values' reference counts.
+ *
+ * @param gab The triple.
+ */
+#define gab_irefall(gab, ...)                                                  \
+  ({                                                                           \
+    gab_value values[] = {__VA_ARGS__};                                        \
+    gab_niref(gab, 1, sizeof(values) / sizeof(gab_value), values);             \
+  })
+
+
+#define gab_drefall(gab, ...)                                                  \
+  ({                                                                           \
+    gab_value values[] = {__VA_ARGS__};                                        \
+    gab_ndref(gab, 1, sizeof(values) / sizeof(gab_value), values);             \
+  })
 
 /**
  * @brief Signal the engine to terminate.
