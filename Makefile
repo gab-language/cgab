@@ -41,14 +41,14 @@ GABTEST_SRC_PREFIX  = src/gabtest
 MOD_SRC_PREFIX      = src/mod
 
 BUILD_PREFIX 	 	= build-$(GAB_TARGETS)
-INCLUDE_PREFIX 	= -Iinclude -I$(BUILD_PREFIX)
+INCLUDE_PREFIX 	= include 
 VENDOR_PREFIX   = vendor
 
 GAB_VERSION_TAG = 0.1.3
 
 GAB_ISWINDOWS   = $(findstring windows,$(GAB_TARGETS))
 
-INCLUDE		= $(INCLUDE_PREFIX) -isystem$(VENDOR_PREFIX) -L$(BUILD_PREFIX)
+INCLUDE		= -I$(INCLUDE_PREFIX) -I$(BUILD_PREFIX) -isystem$(VENDOR_PREFIX) -L$(BUILD_PREFIX)
 
 CFLAGS = -std=c23 \
 				 -fPIC \

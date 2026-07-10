@@ -1574,8 +1574,6 @@ struct gab_oshape *gab_egshpfind(struct gab_eg *self, uint64_t hash,
     d_status status = d_shapes_istatus(&self->shapes, index);
     struct gab_oshape *key = d_shapes_ikey(&self->shapes, index);
 
-    fprintf(stderr, "FIND AGAINST %p\n", key);
-
     switch (status) {
     case D_TOMBSTONE:
       break;
@@ -1614,8 +1612,6 @@ struct gab_oshape *gab_legshpfind(struct gab_eg *self, uint64_t hash,
   for (;;) {
     d_status status = d_shapes_istatus(&self->shapes, index);
     struct gab_oshape *key = d_shapes_ikey(&self->shapes, index);
-
-    fprintf(stderr, "LFIND AGAINST %p\n", key);
 
     switch (status) {
     case D_TOMBSTONE:
@@ -2966,18 +2962,6 @@ GAB_API inline bool gab_signal(struct gab_triple gab, enum gab_signal s,
       fprintf(stderr, "(%i) SIGNAL %i TO %b\n", gab.wkid, s, sig.mask);
 #endif
 
-      /*
-       * Depending on the signal we have successfully begun,
-       * we may need to do some different work.
-       *
-       * For collections, we need to signal a wakeup (and therefore lock)
-       * of the gc worker and gc_mtx. Then we wait for an ack from that thread.
-       *
-       * For other signals, we can just begin signalling - no setup work is
-       * required.
-       */
-      // switch (s) {
-      // case sGAB_COLL:
       mtx_lock(&gab.eg->gc_mtx);
       cnd_signal(&gab.eg->gc_cnd);
       mtx_unlock(&gab.eg->gc_mtx);
@@ -2990,10 +2974,6 @@ GAB_API inline bool gab_signal(struct gab_triple gab, enum gab_signal s,
           break;
       }
       return gab_signext(gab, wkid);
-      // default:
-      //   atomic_store(&gab.eg->sig, ((struct gab_sig){sig.mask, -1, s}));
-      //   return gab_signext(gab, wkid);
-      // }
     }
   }
 };
@@ -3567,7 +3547,7 @@ struct gab_obj *gab_objcreate(struct gab_triple gab, uint64_t sz,
     v_gab_value_push(&wk->lock_keep, __gab_obj(self));
     // TODO @cgab @bug: Is buffering when locked correct?
     // I think this would just leak memory
-    // if it actually did anything. 
+    // if it actually did anything.
     GAB_OBJ_BUFFERED(self);
 #if cGAB_LOG_GC
     fprintf(stderr, "(%i) QLOCK\t%p\n", gab.wkid, (void *)self);
@@ -3875,15 +3855,15 @@ GAB_API void __gab_objdestroy(struct gab_triple gab, struct gab_obj *self) {
     // TODO @cgab @opt: Shapes aren't guaranteed to be in here, if they were
     // created intermittently.
     bool removed = d_shapes_remove(&gab.eg->shapes, (struct gab_oshape *)self);
-    fprintf(stderr, "(%i) DSHAPE REMOVE %p %s\n", gab.wkid, self,
-            removed ? "SUCCEEDED" : "FAILED");
+    // fprintf(stderr, "(%i) DSHAPE REMOVE %p %s\n", gab.wkid, self,
+    //         removed ? "SUCCEEDED" : "FAILED");
     // gab_assert(removed, "Must succeed in removing shape %p", self);
     break;
   }
   case kGAB_STRING: {
     gab_assert(mtx_trylock(&gab.eg->gc_mtx) == thrd_busy,
                "This thread must be holding the gc_mtx already.");
-    fprintf(stderr, "(%i) DSTRING REMOVE %p\n", gab.wkid, self);
+    // fprintf(stderr, "(%i) DSTRING REMOVE %p\n", gab.wkid, self);
     d_strings_remove(&gab.eg->strings, (struct gab_ostring *)self);
     // gab_assert(removed, "Must succeed in removing string");
     break;
@@ -4516,24 +4496,12 @@ GAB_INTERNAL gab_value shpcpy(struct gab_triple gab, gab_value shape,
 
   switch (s->header.kind) {
   case kGAB_SHAPELIST:
-    for (uint64_t i = 0; i < s->datalen; i++) {
-      if (gab_valiso(s->data[i]))
-        fprintf(stderr, "COPY %p WITH %p\n", s, gab_valtoo(s->data[i]));
-    }
     return __gab_shapelist(gab, s->hash, s->len, s->nmask, s->lmask, s->datalen,
                            adjustment, s->data);
   case kGAB_SHAPE:
-    for (uint64_t i = 0; i < s->datalen; i++) {
-      if (gab_valiso(s->data[i]))
-        fprintf(stderr, "COPY %p WITH %p\n", s, gab_valtoo(s->data[i]));
-    }
     return __gab_shape(gab, s->hash, s->len, s->nmask, s->lmask, s->datalen,
                        adjustment, s->data);
   case kGAB_SHAPENODE:
-    for (uint64_t i = 0; i < s->datalen; i++) {
-      if (gab_valiso(s->data[i]))
-        fprintf(stderr, "COPY %p WITH %p\n", s, gab_valtoo(s->data[i]));
-    }
     return __gab_shapenode(gab, s->nmask, s->lmask, s->datalen, adjustment,
                            s->data);
   default:
@@ -4799,9 +4767,9 @@ gab_value shpput(struct gab_triple gab, gab_value shape, gab_value key,
 
       branch = shpcpy(gab, branch, needs_space);
 
-      fprintf(stderr, "(%i) BRANCH %p BY %p COPY %p\n", gab.wkid,
-              GAB_VAL_TO_SHAPE(root), GAB_VAL_TO_SHAPE(branch),
-              GAB_VAL_TO_SHAPE(shpkey(node, sidx)));
+      // fprintf(stderr, "(%i) BRANCH %p BY %p COPY %p\n", gab.wkid,
+      //         GAB_VAL_TO_SHAPE(root), GAB_VAL_TO_SHAPE(branch),
+      //         GAB_VAL_TO_SHAPE(shpkey(node, sidx)));
 
       shpassoc(node, branch, sidx * 2);
 
@@ -4841,8 +4809,8 @@ gab_value shpput(struct gab_triple gab, gab_value shape, gab_value key,
       gab_value branch = __gab_shapenode(gab, 0, 0, 0, extra_space, nullptr);
       shpassoc(node, branch, sidx * 2);
 
-      fprintf(stderr, "(%i) BRANCH %p BY %p\n", gab.wkid,
-              GAB_VAL_TO_SHAPE(root), GAB_VAL_TO_SHAPE(branch));
+      // fprintf(stderr, "(%i) BRANCH %p BY %p\n", gab.wkid,
+      //         GAB_VAL_TO_SHAPE(root), GAB_VAL_TO_SHAPE(branch));
 
       node = branch;
 
@@ -4922,9 +4890,6 @@ gab_value __gab_nshape(struct gab_triple gab, uint64_t hash, uint64_t stride,
 
   for (uint64_t i = 0; i < len; i++) {
     s = shpchkdemote(shpput(gab, s, keys[i * stride], i), keys[i * stride], i);
-    if (i + 1 < len)
-      fprintf(stderr, "(%i) NSHAPE DROP_ON_FLOOR %p\n", gab.wkid,
-              GAB_VAL_TO_SHAPE(s));
   }
 
   return s;
@@ -5742,18 +5707,29 @@ gab_value gab_tshape(struct gab_triple gab, uint64_t stride, uint64_t len,
   case thrd_success:
     break;
   case thrd_busy:
-    fprintf(stderr, "(%i) NSHAPE BUSY DROP_ON_FLOOR %p\n", gab.wkid,
-            GAB_VAL_TO_SHAPE(s));
+    // fprintf(stderr, "(%i) NSHAPE BUSY DROP_ON_FLOOR %p\n", gab.wkid,
+    //         GAB_VAL_TO_SHAPE(s));
     return gab_gcunlock(gab), gab_ctimeout;
   case thrd_error:
-    fprintf(stderr, "(%i) NSHAPE ERR DROP_ON_FLOOR %p\n", gab.wkid,
-            GAB_VAL_TO_SHAPE(s));
+    // fprintf(stderr, "(%i) NSHAPE ERR DROP_ON_FLOOR %p\n", gab.wkid,
+    //         GAB_VAL_TO_SHAPE(s));
     return gab_gcunlock(gab), gab_cinvalid;
   }
 
   d_shapes_insert(&gab.eg->shapes, GAB_VAL_TO_SHAPE(s), 0);
-  fprintf(stderr, "(%i) INSERT %p\n", gab.wkid, GAB_VAL_TO_SHAPE(s));
+  // fprintf(stderr, "(%i) INSERT %p\n", gab.wkid, GAB_VAL_TO_SHAPE(s));
 
+  // TODO @cgab @opt: Find more efficient fix
+  // When creating and interning shapes, we need to explicitly increment
+  // This shape so that all of its children are acknowledged.
+  // This bug is present because shapes are persistent and share nodes.
+  // If a shape is created which shares a node with
+  // another shape created in an earlier epoch, and *that* shape is collected,
+  // the shared node will be collected out from underneath the new shape.
+  // this inc/dec pattern guarantees that each shape *acknowledges ownership* of
+  // its children. This is a problem because the intern table holds *weak
+  // references* to its shapes. So a shape can be re-used from the table without
+  // ever having been incremented (and therefore, kept its children alive).
   gab_iref(gab, s);
   gab_dref(gab, s);
 
@@ -5915,15 +5891,15 @@ gab_value gab_tshpwithout(struct gab_triple gab, gab_value shape,
   case thrd_success:
     break;
   case thrd_busy:
-    fprintf(stderr, "(%i) TAKE BUSY DROP_ON_FLOOR %p\n", gab.wkid, self);
+    // fprintf(stderr, "(%i) TAKE BUSY DROP_ON_FLOOR %p\n", gab.wkid, self);
     return gab_gcunlock(gab), gab_ctimeout;
   case thrd_error:
-    fprintf(stderr, "(%i) TAKE ERR DROP_ON_FLOOR %p\n", gab.wkid, self);
+    // fprintf(stderr, "(%i) TAKE ERR DROP_ON_FLOOR %p\n", gab.wkid, self);
     return gab_gcunlock(gab), gab_cinvalid;
   }
 
   d_shapes_insert(&gab.eg->shapes, self, 0);
-  fprintf(stderr, "(%i) INSERT %p\n", gab.wkid, self);
+  // fprintf(stderr, "(%i) INSERT %p\n", gab.wkid, self);
 
   gab_iref(gab, new_shape);
   gab_dref(gab, new_shape);
@@ -6008,15 +5984,15 @@ gab_value gab_tshpwith(struct gab_triple gab, gab_value shp, gab_value key) {
   case thrd_success:
     break;
   case thrd_busy:
-    fprintf(stderr, "(%i) PUT BUSY DROP_ON_FLOOR %p\n", gab.wkid, self);
+    // fprintf(stderr, "(%i) PUT BUSY DROP_ON_FLOOR %p\n", gab.wkid, self);
     return gab_gcunlock(gab), gab_ctimeout;
   case thrd_error:
-    fprintf(stderr, "(%i) PUT ERR DROP_ON_FLOOR %p\n", gab.wkid, self);
+    // fprintf(stderr, "(%i) PUT ERR DROP_ON_FLOOR %p\n", gab.wkid, self);
     return gab_gcunlock(gab), gab_cinvalid;
   }
 
   d_shapes_insert(&gab.eg->shapes, self, 0);
-  fprintf(stderr, "(%i) INSERT %p\n", gab.wkid, self);
+  // fprintf(stderr, "(%i) INSERT %p\n", gab.wkid, self);
 
   gab_iref(gab, new_shape);
   gab_dref(gab, new_shape);
@@ -10107,35 +10083,40 @@ static inline void bufclear(struct gab_triple gab, uint8_t b, uint8_t wkid,
   gab.eg->jobs[wkid].buffers[b][epoch].len = 0;
 }
 
-static inline uint64_t do_increment(struct gab_gc *gc, struct gab_obj *obj) {
-  if (__gab_unlikely(obj->references == INT8_MAX)) {
+static inline void do_increment(struct gab_gc *gc, struct gab_obj *obj) {
+  if (__gab_unlikely(obj->references == UINT8_MAX)) {
+    // The default value returned when the object doesn't exist is UINT8_MAX
+    // So we can always use and increment the rc value here.
     uint64_t rc = d_gab_obj_read(&gc->overflow_rc, obj);
 
     d_gab_obj_insert(&gc->overflow_rc, obj, rc + 1);
 
-    return rc + 1;
+    return;
   }
 
-  return obj->references++;
+  obj->references++;
 }
 
-static inline uint64_t do_decrement(struct gab_gc *gc, struct gab_obj *obj) {
-  if (__gab_unlikely(obj->references == INT8_MAX)) {
+static inline void do_decrement(struct gab_gc *gc, struct gab_obj *obj) {
+  if (__gab_unlikely(obj->references == UINT8_MAX)) {
     uint64_t rc = d_gab_obj_read(&gc->overflow_rc, obj);
 
     if (__gab_unlikely(rc == UINT8_MAX)) {
       d_gab_obj_remove(&gc->overflow_rc, obj);
-      return obj->references--;
+      obj->references--;
+      return;
     }
 
     d_gab_obj_insert(&gc->overflow_rc, obj, rc - 1);
-    return rc - 1;
+    return;
   }
 
   gab_assert(obj->references != 0,
              "Shall not underflow reference count of object with kind %d.",
              obj->kind);
-  return obj->references--;
+
+  obj->references--;
+  return;
 }
 
 #if cGAB_LOG_GC
@@ -10222,7 +10203,7 @@ void queue_destroy(struct gab_triple gab, struct gab_obj *obj) {
 
   GAB_OBJ_BUFFERED(obj);
 
-  v_gab_obj_push(&gab.eg->gc.dead, obj);
+  v_gab_obj_push(&gab.eg->gc.dead[epochget(gab)], obj);
 
   assert(obj->references == 0);
 
@@ -10342,14 +10323,6 @@ static inline void for_child_do(struct gab_obj *obj,
       gab_value v = s->data[i];
 
       if (gab_valiso(v))
-        fprintf(stderr, "(%i) RECURSE %p INTO %p\n", gab.wkid, obj,
-                gab_valtoo(v));
-    }
-
-    for (uint64_t i = 0; i < s->datalen; i++) {
-      gab_value v = s->data[i];
-
-      if (gab_valiso(v))
         fnc(gab, gab_valtoo(v));
     }
 
@@ -10391,6 +10364,11 @@ static inline void _destroy(struct gab_triple gab, struct gab_obj *obj,
 #else
 static inline void destroy(struct gab_triple gab, struct gab_obj *obj) {
 #endif
+
+  // TODO @cgab @doc: Test/Fix resurrection
+  if (obj->references > 0)
+    return; // resurrected
+
   gab_assert(obj->references == 0,
              "Shall only destroy objects with 0 references, not %i on kind %d",
              obj->references, obj->kind);
@@ -10401,13 +10379,11 @@ static inline void destroy(struct gab_triple gab, struct gab_obj *obj) {
 
   fprintf(stderr, "(%i) FREE\t%i\t%p\t%i\t%s:%d\n", gab.wkid, epochget(gab),
           obj, obj->references, func, line);
-  GAB_OBJ_FREED(obj);
   __gab_objdestroy(gab, obj);
-  // gab_egalloc(gab, obj, 0);
+  GAB_OBJ_FREED(obj);
 #else
   __gab_objdestroy(gab, obj);
   gab_egalloc(gab, obj, 0);
-
 #endif
 }
 
@@ -10547,7 +10523,9 @@ gab_value gab_dref(struct gab_triple gab, gab_value value) {
 
 void gab_gccreate(struct gab_triple gab) {
   d_gab_obj_create(&gab.eg->gc.overflow_rc, 8);
-  v_gab_obj_create(&gab.eg->gc.dead, 8);
+  for (int e = 0; e < GAB_GCNEPOCHS; e++) {
+    v_gab_obj_create(&gab.eg->gc.dead[e], 8);
+  }
 
   for (int i = 0; i < gab.eg->len; i++) {
     for (int b = 0; b < kGAB_NBUF; b++) {
@@ -10560,13 +10538,16 @@ void gab_gccreate(struct gab_triple gab) {
 
 void gab_gcdestroy(struct gab_triple gab) {
   d_gab_obj_destroy(&gab.eg->gc.overflow_rc);
-  v_gab_obj_destroy(&gab.eg->gc.dead);
+  for (int e = 0; e < GAB_GCNEPOCHS; e++) {
+    v_gab_obj_destroy(&gab.eg->gc.dead[e]);
+  }
   __gab_jbunalive(gab, 0);
 }
 
 static inline void collect_dead(struct gab_triple gab) {
-  while (gab.eg->gc.dead.len)
-    destroy(gab, v_gab_obj_pop(&gab.eg->gc.dead));
+  // TODO @cgab @bug: In theory, collect from *last* epoch.
+  while (gab.eg->gc.dead[epochget(gab)].len)
+    destroy(gab, v_gab_obj_pop(&gab.eg->gc.dead[epochget(gab)]));
 }
 
 void gab_gclock(struct gab_triple gab) {

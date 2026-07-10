@@ -98,7 +98,7 @@
 
 // Log what is happening during collection.
 #ifndef cGAB_LOG_GC
-#define cGAB_LOG_GC 1
+#define cGAB_LOG_GC 0
 #endif
 
 // Log what is happening to workers as the gab engine spins.

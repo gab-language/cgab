@@ -506,6 +506,7 @@ struct gab_oprototype {
 #define V uint64_t
 #define HASH(a) ((intptr_t)a)
 #define EQUAL(a, b) (a == b)
+// See do_increment
 #define DEF_V (UINT8_MAX)
 #include "dict.h"
 
@@ -520,7 +521,7 @@ enum {
 
 struct gab_gc {
   d_gab_obj overflow_rc;
-  v_gab_obj dead;
+  v_gab_obj dead[GAB_GCNEPOCHS];
   gab_value msg[GAB_GCNEPOCHS];
 };
 
