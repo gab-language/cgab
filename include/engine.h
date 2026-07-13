@@ -668,8 +668,6 @@ struct gab_eg {
   } jobs[];
 };
 
-union gab_value_pair gab_vmexec(struct gab_triple gab, gab_value fiber);
-
 void gab_gccreate(struct gab_triple gab);
 
 void gab_gcdestroy(struct gab_triple gab);
@@ -681,10 +679,6 @@ void gab_gcdestroy(struct gab_triple gab);
 bool gab_gctrigger(struct gab_triple gab);
 
 void gab_gcdocollect(struct gab_triple gab);
-
-void gab_gcloglen(struct gab_triple gab);
-
-void gab_gcassertdone(struct gab_triple gab);
 
 enum variable_flag {
   fLOCAL_LOCAL = 1 << 0,
@@ -767,10 +761,4 @@ cGAB_VM_OPCODE_ATTRIBUTES union gab_value_pair
 vm_ok(struct gab_triple *__gab, struct gab_vm *__vm, uint8_t *__ip,
       gab_value *__kb, gab_value *__fb, gab_value *__sp);
 
-union gab_value_pair vm_terminate(struct gab_triple gab, const char *fmt, ...);
-
-union gab_value_pair vm_error(struct gab_triple gab, enum gab_status s,
-                              const char *fmt, ...);
-
-union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
 #endif

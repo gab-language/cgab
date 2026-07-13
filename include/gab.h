@@ -995,13 +995,6 @@ typedef union gab_value_pair (*gab_native_f)(struct gab_triple, uint64_t argc,
 typedef void (*gab_boxdestroy_f)(struct gab_triple gab, uint64_t len,
                                  char *data);
 
-/**
- * @brief Return the size of the object's allocation, in bytes.
- *
- * @param obj The object.
- */
-GAB_API uint64_t gab_objsize(struct gab_obj *obj);
-
 /*
  * @enum Gab Flags
  *
