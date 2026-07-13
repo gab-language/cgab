@@ -566,27 +566,6 @@ struct gab_src {
   } thread_bytecode[];
 };
 
-struct gab_src *gab_src(struct gab_triple gab, gab_value name, const char *src,
-                        uint64_t len);
-
-uint64_t gab_srcappend(struct gab_src *self, uint64_t len,
-                       uint8_t bc[static len], uint64_t toks[static len]);
-
-static inline void gab_srccomplete(struct gab_triple gab,
-                                   struct gab_src *self) {
-  for (int i = 0; i < self->len; i++) {
-    uint8_t *bc = malloc(self->bytecode.len);
-    memcpy(bc, self->bytecode.data, self->bytecode.len);
-
-    gab_value *ks = malloc(self->constants.len * sizeof(gab_value));
-    memcpy(ks, self->constants.data, self->constants.len * sizeof(gab_value));
-
-    self->thread_bytecode[i] = (struct src_bytecode){bc, ks};
-  }
-}
-
-void gab_srcdestroy(struct gab_src *self);
-
 /**
  * @class The 'engine'. Stores the long-lived data
  * needed for the gab environment.
@@ -731,9 +710,6 @@ static inline void *gab_egalloc(struct gab_triple gab, struct gab_obj *obj,
   return calloc(1, size);
 }
 
-struct gab_ostring *gab_egstrfind(struct gab_eg *gab, uint64_t hash,
-                                  uint64_t len, const char *data);
-
 struct gab_err_argt {
   enum gab_status status;
   const char *note_fmt;
@@ -767,61 +743,6 @@ GAB_API int64_t gab_fmodinspect(FILE *stream, gab_value prototype);
  */
 int64_t gab_fvalinspect(FILE *stream, gab_value self, int depth);
 
-/* Helpers used by all the sprintf methods */
-static inline int vsnprintf_through(char **dst, size_t *n, const char *fmt,
-                                    va_list va) {
-  int res = vsnprintf(*dst, *n, fmt, va);
-
-  if (res > *n) {
-    *dst += *n;
-    *n = 0;
-    return -1;
-  }
-
-  *dst += res;
-  *n -= res;
-
-  return res;
-}
-
-static inline int snprintf_through(char **dst, size_t *n, const char *fmt,
-                                   ...) {
-  va_list va;
-  va_start(va, fmt);
-
-  int res = vsnprintf_through(dst, n, fmt, va);
-  va_end(va);
-
-  return res;
-}
-
-/* Helpers used by all the sprintf methods */
-static inline int gvsnprintf_through(char **dst, size_t *n, const char *fmt,
-                                     va_list va) {
-  int res = gab_vsprintf(*dst, *n, fmt, va);
-
-  if (res < 0) {
-    *dst += *n;
-    *n = 0;
-    return -1;
-  }
-
-  *dst += res;
-  *n -= res;
-
-  return res;
-}
-
-static inline int gsnprintf_through(char **dst, size_t *n, const char *fmt,
-                                    ...) {
-  va_list va;
-  va_start(va, fmt);
-
-  int res = gvsnprintf_through(dst, n, fmt, va);
-  va_end(va);
-
-  return res;
-}
 
 static inline uint8_t *proto_srcbegin(struct gab_triple gab,
                                       struct gab_oprototype *p) {

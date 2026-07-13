@@ -349,26 +349,54 @@ static MunitResult test_record_fuzz_walk(const MunitParameter params[],
   return MUNIT_OK;
 }
 
-static MunitResult test_record_list_transitions(const MunitParameter params[], void* data) {
-    gab_value list = gab_listof(gab, gab_string(gab, "Hello"), gab_string(gab, "World"));
+static MunitResult test_record_list_transitions(const MunitParameter params[],
+                                                void *data) {
+  gab_value list =
+      gab_listof(gab, gab_string(gab, "Hello"), gab_string(gab, "World"));
 
-    gab_fprintf(stderr, "$\n", list);
+  gab_fprintf(stderr, "$\n", list);
 
-    munit_assert_true(gab_recisl(list));
+  munit_assert_true(gab_recisl(list));
 
-    gab_value with_key = gab_recput(gab, list, gab_message(gab, "val"), gab_number(10));
+  gab_value with_key =
+      gab_recput(gab, list, gab_message(gab, "val"), gab_number(10));
 
-    munit_assert_false(gab_recisl(with_key));
+  munit_assert_false(gab_recisl(with_key));
 
-    gab_value val;
-    gab_value without_key = gab_rectake(gab, with_key, gab_message(gab, "val"), &val);
+  gab_value val;
+  gab_value without_key =
+      gab_rectake(gab, with_key, gab_message(gab, "val"), &val);
 
-    gab_fprintf(stderr, "$ => $\n", without_key, val);
+  gab_fprintf(stderr, "$ => $\n", without_key, val);
 
-    munit_assert_true(gab_recisl(without_key));
-    munit_assert_uint64(val, ==, gab_number(10));
-    
-    return MUNIT_OK;
+  munit_assert_true(gab_recisl(without_key));
+  munit_assert_uint64(val, ==, gab_number(10));
+
+  return MUNIT_OK;
+}
+
+static MunitResult test_record_deduplication(const MunitParameter params[],
+                                             void *data) {
+  gab_value keys[] = {
+      gab_string(gab, "a"),
+      gab_string(gab, "b"),
+      gab_string(gab, "c"),
+  };
+
+  gab_value rec = gab_recordof(gab, keys[0], gab_number(0), keys[1],
+                               gab_number(1), keys[2], gab_number(2), keys[1],
+                               gab_number(3), keys[0], gab_number(4));
+
+  gab_value a = gab_srecat(gab, rec, "a");
+  munit_assert_uint64(gab_valtou(a), ==, 4);
+
+  gab_value b = gab_srecat(gab, rec, "b");
+  munit_assert_uint64(gab_valtou(b), ==, 3);
+
+  gab_value c = gab_srecat(gab, rec, "c");
+  munit_assert_uint64(gab_valtou(c), ==, 2);
+
+  return MUNIT_OK;
 }
 
 // Map individual tests to an munit array
@@ -416,6 +444,10 @@ static MunitTest record_tests[] = {
     {
         "/list_transitions",
         test_record_list_transitions,
+    },
+    {
+        "/deduplication",
+        test_record_deduplication,
     },
     {
         "/tidal_wave",

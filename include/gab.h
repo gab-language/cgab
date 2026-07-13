@@ -223,7 +223,7 @@
 #define MATCH_HASHT(t) (GAB_SEND_HASH(t) * GAB_SEND_CACHE_SIZE)
 
 #if GAB_PVEC_SIZE > 64
-#error "HAMT_SIZE is larger than is indexable by a size_t"
+#error "HAMT_SIZE is larger than is indexable by a uint64_t"
 #endif
 
 #define VAR_EXP 255
@@ -378,13 +378,13 @@ static inline s_char s_char_tok(s_char str, uint64_t start, char ch) {
 }
 
 static inline void v_char_spush(v_char *self, s_char slice) {
-  for (size_t i = 0; i < slice.len; i++) {
+  for (uint64_t i = 0; i < slice.len; i++) {
     v_char_push(self, slice.data[i]);
   }
 }
 
-static inline void v_uint8_t_npush(v_uint8_t *self, size_t n, uint8_t *buff) {
-  for (size_t i = 0; i < n; i++) {
+static inline void v_uint8_t_npush(v_uint8_t *self, uint64_t n, uint8_t *buff) {
+  for (uint64_t i = 0; i < n; i++) {
     v_uint8_t_push(self, buff[i]);
   }
 }
@@ -415,7 +415,7 @@ static inline void v_uint8_t_npush(v_uint8_t *self, size_t n, uint8_t *buff) {
 // #else
 [[noreturn]]
 static inline void __gab_assert_fail(const char *expr, const char *file,
-                                     const char *function, size_t line,
+                                     const char *function, uint64_t line,
                                      const char *reason, ...) {
   va_list va;
   va_start(va, reason);
@@ -1077,7 +1077,7 @@ struct gab_create_argt {
      * that are passed to the module. The names of the arguments are passed in
      * sargs, and the values in vargs.
      **/
-    union gab_value_pair (*loader)(struct gab_triple, const char *, size_t len,
+    union gab_value_pair (*loader)(struct gab_triple, const char *, uint64_t len,
                                    const char *sargs[len],
                                    gab_value vargs[len]);
     /*
@@ -1170,8 +1170,8 @@ GAB_API void gab_destroy(struct gab_triple gab);
  * @param depth The depth to recurse to
  * @return the number of bytes written to the stream.
  */
-GAB_API int gab_svalinspect(char **dest, size_t *n, gab_value value, int depth);
-GAB_API int gab_psvalinspect(char **dest, size_t *n, gab_value value,
+GAB_API int64_t gab_svalinspect(char **dest, uint64_t *n, gab_value value, int depth);
+GAB_API int64_t gab_psvalinspect(char **dest, uint64_t *n, gab_value value,
                              const char *prefix, int depth);
 
 /**
@@ -1191,8 +1191,8 @@ GAB_API int gab_psvalinspect(char **dest, size_t *n, gab_value value,
  * @param fmt The format string
  * @return the number of bytes written to the buffer, or -1.
  */
-GAB_API int gab_sprintf(char *dst, size_t n, const char *fmt, ...);
-GAB_API int gab_psprintf(char *dst, size_t n, const char *prefix,
+GAB_API int64_t gab_sprintf(char *dst, uint64_t n, const char *fmt, ...);
+GAB_API int64_t gab_psprintf(char *dst, uint64_t n, const char *prefix,
                          const char *fmt, ...);
 
 /**
@@ -1209,7 +1209,7 @@ GAB_API int gab_psprintf(char *dst, size_t n, const char *prefix,
  * @param fmt The format string
  * @return the number of bytes written to the stream.
  */
-GAB_API int gab_fprintf(FILE *stream, const char *fmt, ...);
+GAB_API int64_t gab_fprintf(FILE *stream, const char *fmt, ...);
 
 /**
  * @brief Format the given string into the given buffer, with varargs. @see
@@ -1221,8 +1221,8 @@ GAB_API int gab_fprintf(FILE *stream, const char *fmt, ...);
  * @param varargs The format arguments
  * @return the number of bytes written to the buffer, or -1.
  */
-GAB_API int gab_vsprintf(char *dst, size_t n, const char *fmt, va_list varargs);
-GAB_API int gab_vpsprintf(char *dst, size_t n, const char *prefix,
+GAB_API int64_t gab_vsprintf(char *dst, uint64_t n, const char *fmt, va_list varargs);
+GAB_API int64_t gab_vpsprintf(char *dst, uint64_t n, const char *prefix,
                           const char *fmt, va_list varargs);
 
 /**
@@ -1236,9 +1236,9 @@ GAB_API int gab_vpsprintf(char *dst, size_t n, const char *prefix,
  * @param argv The format arguments
  * @return the number of bytes written to the buffer, or -1.
  */
-GAB_API int gab_nsprintf(char *dst, size_t n, const char *fmt, uint64_t argc,
+GAB_API int64_t gab_nsprintf(char *dst, uint64_t n, const char *fmt, uint64_t argc,
                          gab_value *argv);
-GAB_API int gab_npsprintf(char *dst, size_t n, const char *prefix,
+GAB_API int64_t gab_npsprintf(char *dst, uint64_t n, const char *prefix,
                           const char *fmt, uint64_t argc, gab_value *argv);
 
 /**
@@ -1711,7 +1711,7 @@ GAB_API union gab_value_pair gab_arun(struct gab_triple gab,
  * @param args The arguments.
  * @return The fiber that was queued.
  */
-GAB_API union gab_value_pair gab_tarun(struct gab_triple gab, size_t tries,
+GAB_API union gab_value_pair gab_tarun(struct gab_triple gab, uint64_t tries,
                                        struct gab_run_argt args);
 
 /**
@@ -2172,6 +2172,7 @@ GAB_API gab_value gab_srcname(struct gab_src *src);
  * @return The line in the source code
  */
 GAB_API uint64_t gab_srcline(struct gab_src *src, uint64_t bytecode_offset);
+
 GAB_API uint64_t gab_tsrcline(struct gab_src *src, uint64_t token_offset);
 
 /**
@@ -2320,7 +2321,7 @@ GAB_API uint64_t gab_strlen(gab_value str);
 /**
  * @brief Get the byte at the given index in the binary.
  */
-GAB_API int gab_binat(gab_value bin, size_t idx);
+GAB_API int gab_binat(gab_value bin, uint64_t idx);
 
 /**
  * @brief Get the number multi-byte codepoints in a string. This is
@@ -2455,7 +2456,7 @@ GAB_API_INLINE gab_value gab_binary(struct gab_triple gab, const char *data) {
   return gab_strtobin(gab_string(gab, data));
 }
 
-GAB_API_INLINE gab_value gab_nbinary(struct gab_triple gab, size_t len,
+GAB_API_INLINE gab_value gab_nbinary(struct gab_triple gab, uint64_t len,
                                      const uint8_t *data) {
   return gab_strtobin(gab_nstring(gab, len, (const char *)data));
 }
@@ -2942,7 +2943,7 @@ GAB_API union gab_value_pair gab_fibawait(struct gab_triple gab,
                                           gab_value fiber);
 
 GAB_API union gab_value_pair gab_tfibawait(struct gab_triple gab,
-                                           gab_value fiber, size_t tries);
+                                           gab_value fiber, uint64_t tries);
 
 GAB_API gab_value gab_fibawaite(struct gab_triple gab, gab_value fiber);
 
@@ -3435,12 +3436,12 @@ GAB_API_INLINE gab_value gab_valintostr(struct gab_triple gab,
   case kGAB_STRING:
     return value;
   default:
-    for (size_t len = 4096;; len *= 2) {
+    for (uint64_t len = 4096;; len *= 2) {
       char *buffer = (char *)malloc(len);
       assert(buffer);
 
       char *cursor = buffer;
-      size_t remaining = len;
+      uint64_t remaining = len;
 
       if (gab_svalinspect(&cursor, &remaining, value, -1) < 0)
         continue;
@@ -3460,12 +3461,12 @@ GAB_API_INLINE gab_value gab_valintobin(struct gab_triple gab,
   case kGAB_BINARY:
     return value;
   default:
-    for (size_t len = 4096;; len *= 2) {
+    for (uint64_t len = 4096;; len *= 2) {
       char *buffer = (char *)malloc(len);
       assert(buffer);
 
       char *cursor = buffer;
-      size_t remaining = len;
+      uint64_t remaining = len;
 
       if (gab_svalinspect(&cursor, &remaining, value, -1) < 0)
         continue;
@@ -3484,12 +3485,12 @@ GAB_API_INLINE gab_value gab_valintobin(struct gab_triple gab,
  */
 GAB_API_INLINE gab_value gab_pvalintos(struct gab_triple gab, gab_value value,
                                        const char *prefix) {
-  for (size_t len = 4096;; len *= 2) {
+  for (uint64_t len = 4096;; len *= 2) {
     char *buffer = (char *)malloc(len);
     assert(buffer);
 
     char *cursor = buffer;
-    size_t remaining = len;
+    uint64_t remaining = len;
 
     if (gab_psvalinspect(&cursor, &remaining, value, prefix, -1) < 0)
       continue;

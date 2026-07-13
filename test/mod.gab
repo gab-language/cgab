@@ -211,13 +211,11 @@ numbers\shift_negative_amount\test: .def t :: do
 end
 
 numbers\shift_negative_integer\test: .def t :: do
-  #t.expect(-1 >> 1, ==:, 1 << 31)
   t.expect(-1 << 1 ==: -2)
   t.expect(-4 >> 1 << 1 ==: -4)
 end
 
 numbers\shift_intwidth\test: .def t :: do
-  #t.expect(-1 >> 1, ==:, 1 << 31)
   t.expect(1 << 52 x :: x == 0!)
   t.expect(1 << 53 ==: 0)
 end
@@ -225,6 +223,10 @@ end
 numbers\test_corner_cases\test: .def t :: do
   t.expect(0 / 0 is\nan:)
   t.expect(1 / 0 is\inf:)
+end
+
+numbers\test_mod_by_zero\test: .def t :: do
+  t.expect(10 % 0 ==: 0)
 end
 
 strings\equal_itself\test: .def (t :: do
