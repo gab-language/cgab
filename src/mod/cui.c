@@ -1509,11 +1509,14 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_render) {
   struct ui *gui = gab_boxdata(vgui);
 
   if (!gui->ready) {
+    RGFW_init("gab", RGFW_initOpenGL);
+
     RGFW_glHints *hints = RGFW_getGlobalHints_OpenGL();
     hints->samples = 1;
     hints->major = 3;
     hints->minor = 1;
     RGFW_setGlobalHints_OpenGL(hints);
+
 
     gui->win.userPtr = &gui;
     if (!RGFW_createWindowPtr("", 500, 500, 500, 500, RGFW_windowOpenGL,

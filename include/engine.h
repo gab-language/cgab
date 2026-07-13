@@ -760,12 +760,12 @@ GAB_API gab_value gab_vspanicf(struct gab_triple gab, va_list vastruct,
  * @param proto The prototype to inspect
  * @return non-zero if an error occured.
  */
-GAB_API int gab_fmodinspect(FILE *stream, gab_value prototype);
+GAB_API int64_t gab_fmodinspect(FILE *stream, gab_value prototype);
 
 /**
  * @brief Inspect a gab_value out to stream, recursing depth times.
  */
-int gab_fvalinspect(FILE *stream, gab_value self, int depth);
+int64_t gab_fvalinspect(FILE *stream, gab_value self, int depth);
 
 /* Helpers used by all the sprintf methods */
 static inline int vsnprintf_through(char **dst, size_t *n, const char *fmt,

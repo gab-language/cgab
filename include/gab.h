@@ -2532,7 +2532,9 @@ GAB_API_INLINE uint64_t gab_shpisl(gab_value shp) {
 GAB_API uint64_t gab_shplen(gab_value shp);
 
 /*
- * @brief Get the key at the given index, without bounds checking.
+ * @brief Get the key at the given index.
+ *
+ * This performs an O(n) search of the tree to find the key with index 'idx'.
  */
 GAB_API gab_value gab_ushpat(gab_value shp, uint64_t idx);
 
