@@ -188,7 +188,7 @@ GAB_DYNLIB_NATIVE_FN(binary, tos) {
 
   gab_value str = gab_bintostr(bin);
 
-  if (str == gab_cvalid)
+  if (str == gab_cinvalid)
     gab_vmpush(gab_thisvm(gab), gab_err,
                gab_string(gab, "Binary is not valid UTF-8"));
   else

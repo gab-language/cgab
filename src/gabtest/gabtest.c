@@ -5,6 +5,8 @@
 
 extern const MunitSuite record_suite;
 extern const MunitSuite shape_suite;
+extern const MunitSuite string_suite;
+extern const MunitSuite binary_suite;
 
 struct gab_triple gab;
 
@@ -22,6 +24,8 @@ int main(int argc, char *argv[MUNIT_ARRAY_PARAM(argc + 1)]) {
   MunitSuite suites[] = {
       record_suite,
       shape_suite,
+      string_suite,
+      binary_suite,
       {},
   };
 

@@ -3028,11 +3028,6 @@ int main(int argc, const char **argv) {
   /*register_printf_specifier('V', gab_val_printf_handler,*/
   /*                          gab_val_printf_arginfo);*/
 
-  /**
-   * Pull locale from ENV
-   */
-  setlocale(LC_ALL, "");
-
   /*
    * Populate roots list.
    */

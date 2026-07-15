@@ -663,7 +663,7 @@ struct gab_eg {
     // GC inc/dec ref count tracking buffer.
     struct gab_gcbuf {
       uint64_t len;
-      struct gab_obj *data[cGAB_GC_MOD_BUFF_MAX];
+      struct gab_obj *data[GAB_GC_MOD_BUFF_MAX];
     } buffers[kGAB_NBUF][GAB_GCNEPOCHS];
   } jobs[];
 };

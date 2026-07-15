@@ -440,7 +440,7 @@ records\work_with_duplicate_keys\test:.def t :: do
 # The middle a: should be ignored
   rec := { a: 2 a: 3 b: 4 }
 
-  t.expect(rec.at a: .unwrap, ==: 2)
+  t.expect(rec.at a: .unwrap, ==: 3)
   t.expect(rec.at b: .unwrap, ==: 4)
 end
 

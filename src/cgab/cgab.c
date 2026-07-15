@@ -1192,7 +1192,7 @@ GAB_INTERNAL bool __gab_jbstep(struct gab_triple gab, struct gab_job *job) {
    * Pull a value form the global work queue.
    */
   gab_value fiber =
-      gab_tchntake(gab, gab.eg->work_channel, cGAB_WORKER_IDLE_TRIES);
+      gab_tchntake(gab, gab.eg->work_channel, cGAB_JOB_IDLE_TRIES);
 
 #if cGAB_LOG_EG
   gab_fprintf(stderr, "($) chntake result: $\n", gab_number(gab.wkid), fiber);
@@ -1208,7 +1208,7 @@ GAB_INTERNAL bool __gab_jbstep(struct gab_triple gab, struct gab_job *job) {
 
   // If we timed out or closed, pull from our specific work_channel.
   if (fiber == gab_ctimeout)
-    fiber = gab_tchntake(gab, job->work_channel, cGAB_WORKER_IDLE_TRIES);
+    fiber = gab_tchntake(gab, job->work_channel, cGAB_JOB_IDLE_TRIES);
 
   // Terminate if requested.
   if (fiber == gab_cinvalid)
@@ -1520,12 +1520,10 @@ GAB_API union gab_value_pair gab_create(struct gab_create_argt args,
   struct gab_eg *eg = malloc(egsize);
   memset(eg, 0, egsize);
 
-  eg->wait = args.wait;
+  eg->wait = args.wait ? args.wait : cGAB_DEFAULT_WAIT_NS;
   eg->len = actual_njobs;
   eg->hash_seed = time(nullptr);
   atomic_init(&eg->sig, (struct gab_sig){0, -1, 0});
-
-  eg->args = gab_nil;
 
   // The only non-zero initialization that jobs need is epoch = 1
   for (uint64_t i = 0; i < eg->len; i++)
@@ -1591,8 +1589,6 @@ GAB_API union gab_value_pair gab_create(struct gab_create_argt args,
   atomic_init(&eg->messages, gab_erecord(gab));
 
   eg->work_channel = gab_iref(gab, gab_channel(gab));
-
-  eg->args = gab_iref(gab, gab_slist(gab, 1, args.nargs, args.args));
 
   int nroots = 0;
 
@@ -1720,7 +1716,6 @@ GAB_API void gab_destroy(struct gab_triple gab) {
     gab_busywait(gab);
 
   gab_dref(gab, gab.eg->work_channel);
-  gab_dref(gab, gab.eg->args);
   gab_ndref(gab, 1, gab.eg->scratch.len, gab.eg->scratch.data);
 
   atomic_store(&gab.eg->messages, gab_cinvalid);
@@ -2406,6 +2401,95 @@ GAB_API int64_t gab_npsprintf(char *dest, uint64_t n, const char *prefix,
   return n - remaining;
 }
 
+/*
+ *
+ * UTF8-DECODING
+ *
+ * License
+ *
+ * Copyright (c) 2008-2009 Bjoern Hoehrmann <bjoern@hoehrmann.de>
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ *
+ * Copyright (c) 2008-2009 Bjoern Hoehrmann <bjoern@hoehrmann.de>
+ * See http://bjoern.hoehrmann.de/utf-8/decoder/dfa/ for details.
+ */
+
+#define UTF8_ACCEPT 0
+#define UTF8_REJECT 12
+
+// clang-format off
+static const uint8_t utf8d[] = {
+  // The first part of the table maps bytes to character classes that
+  // to reduce the size of the transition table and create bitmasks.
+   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+   1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,  9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+   7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,  7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
+   8,8,2,2,2,2,2,2,2,2,2,2,2,2,2,2,  2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
+  10,3,3,3,3,3,3,3,3,3,3,3,3,4,3,3, 11,6,6,6,5,8,8,8,8,8,8,8,8,8,8,8,
+
+  // The second part is a transition table that maps a combination
+  // of a state of the automaton and a character class to a state.
+   0,12,24,36,60,96,84,12,12,12,48,72, 12,12,12,12,12,12,12,12,12,12,12,12,
+  12, 0,12,12,12,12,12, 0,12, 0,12,12, 12,24,12,12,12,12,12,24,12,24,12,12,
+  12,12,12,12,12,12,12,24,12,12,12,12, 12,24,12,12,12,12,12,12,12,24,12,12,
+  12,12,12,12,12,12,12,36,12,36,12,12, 12,36,12,12,12,12,12,36,12,36,12,12,
+  12,36,12,12,12,12,12,12,12,12,12,12, 
+};
+// clang-format on
+
+GAB_INTERNAL uint32_t __utf8_decode(uint32_t *state, uint32_t *codep,
+                                    uint32_t byte) {
+  uint32_t type = utf8d[byte];
+
+  *codep = (*state != UTF8_ACCEPT) ? (byte & 0x3fu) | (*codep << 6)
+                                   : (0xff >> type) & (byte);
+
+  *state = utf8d[256 + *state + type];
+  return *state;
+}
+
+GAB_INTERNAL int __utf8_codepoints(uint8_t *s, uint64_t *count) {
+  uint32_t codepoint;
+  uint32_t state = UTF8_ACCEPT;
+
+  for (*count = 0; *s; ++s)
+    if (!__utf8_decode(&state, &codepoint, *s))
+      *count += 1;
+
+  return state != UTF8_ACCEPT;
+}
+
+GAB_INTERNAL int __utf8_next(uint8_t *s) {
+  uint32_t codepoint;
+  uint32_t state = UTF8_ACCEPT;
+
+  for (uint32_t width = 1; *s; ++s, ++width)
+    if (!__utf8_decode(&state, &codepoint, *s))
+      return width;
+
+  return 0;
+}
+
 GAB_API int64_t gab_nsprintf(char *dest, uint64_t n, const char *fmt,
                              uint64_t argc, gab_value *argv) {
   const char *c = fmt;
@@ -2413,10 +2497,8 @@ GAB_API int64_t gab_nsprintf(char *dest, uint64_t n, const char *fmt,
   uint64_t remaining = n;
   uint64_t i = 0;
 
-  mbstate_t state = {0};
-
   while (true) {
-    uint64_t width = mbrlen(c, MB_CUR_MAX, &state);
+    int64_t width = __utf8_next((uint8_t *)c);
 
     // Null char encountered, we are done.
     if (width == 0)
@@ -3729,7 +3811,7 @@ GAB_INTERNAL int64_t __gab_sshpdumpkeys(char **dest, uint64_t *n,
   if (len == 0)
     return 0;
 
-  if (len > 64 && depth >= 0)
+  if (len > cGAB_SHAPE_LEN_CUTOFF && depth >= 0)
     return __gab_snprintf_through(dest, n, "... ");
 
   if (__gab_snprintf_through(dest, n, " ") < 0)
@@ -3755,7 +3837,7 @@ GAB_INTERNAL int64_t __gab_srecdumpvals(char **dest, uint64_t *n, gab_value rec,
   if (len == 0)
     return 0;
 
-  if (len > 64 && depth >= 0)
+  if (len > cGAB_LIST_LEN_CUTOFF && depth >= 0)
     return __gab_snprintf_through(dest, n, " ... ");
 
   if (__gab_snprintf_through(dest, n, " ") < 0)
@@ -3781,7 +3863,7 @@ GAB_INTERNAL int64_t __gab_srecdumpprops(char **dest, uint64_t *n,
   if (len == 0)
     return 0;
 
-  if (len > 64 && depth >= 0)
+  if (len > cGAB_DICT_LEN_CUTOFF && depth >= 0)
     return __gab_snprintf_through(dest, n, " ... ");
 
   if (__gab_snprintf_through(dest, n, " ") < 0)
@@ -4042,9 +4124,10 @@ GAB_INTERNAL gab_value __gab_nstring(struct gab_triple gab, uint64_t hash,
   self->len = str.len;
   self->hash = hash;
 
-  mbstate_t state = {0};
-  const char *cursor = self->data;
-  self->mb_len = mbsrtowcs(NULL, &cursor, 0, &state);
+  uint64_t count = 0;
+  bool pass = !__utf8_codepoints((uint8_t *)self->data, &count);
+
+  self->mb_len = pass ? count : -1;
 
   return __gab_obj(self);
 }
@@ -4197,9 +4280,10 @@ GAB_API uint64_t gab_strmblen(gab_value str) {
     return GAB_VAL_TO_STRING(str)->mb_len;
 
   // This is a small string. No space to store mb_len, so just recompute.
-  mbstate_t state = {0};
-  const char *cursor = gab_strdata(&str);
-  return mbsrtowcs(NULL, &cursor, 0, &state);
+  uint64_t count = 0;
+  bool pass = !__utf8_codepoints((uint8_t *)&str, &count);
+
+  return pass ? count : -1;
 };
 
 GAB_API uint64_t gab_strhash(gab_value str) {
@@ -5629,7 +5713,32 @@ GAB_API gab_value gab_record(struct gab_triple gab, uint64_t stride,
                              uint64_t len, gab_value *keys, gab_value *vals) {
   gab_gclock(gab);
 
+  // TODO @cgab @bug: Handle duplicate values somehow.
   gab_value shp = gab_shape(gab, stride, len, keys);
+
+  if (shp == gab_ctimeout || shp == gab_cinvalid)
+    return gab_gcunlock(gab), shp;
+
+  uint64_t actual_len = gab_shplen(shp);
+
+  if (actual_len < len) {
+    // In the slow case where we saw duplicate keys
+    gab_value dedup_values[actual_len];
+
+    // O(n) iterate through each key
+    for (uint64_t i = 0; i < len; i++) {
+      gab_value key = keys[i * stride];
+
+      // O(log32(n)) find the index of the nth key
+      uint64_t idx = gab_shpfind(shp, key);
+
+      // Overwite the value at that index with nth val
+      dedup_values[idx] = vals[i * stride];
+    }
+
+    gab_value rec = gab_recordfrom(gab, shp, 1, actual_len, dedup_values);
+    return gab_gcunlock(gab), rec;
+  }
 
   gab_value rec = gab_recordfrom(gab, shp, stride, len, vals);
 
@@ -5759,7 +5868,7 @@ GAB_API gab_value gab_nvstring(struct gab_triple gab, uint64_t n,
 GAB_API gab_value gab_nvbinary(struct gab_triple gab, uint64_t n,
                                gab_value *data) {
   if (n == 0)
-    return gab_binary(gab, "");
+    return gab_binary(gab, (uint8_t *)"");
 
   gab_value str = gab_valintobin(gab, data[0]);
 
@@ -5770,16 +5879,16 @@ GAB_API gab_value gab_nvbinary(struct gab_triple gab, uint64_t n,
 }
 
 GAB_API gab_value gab_list(struct gab_triple gab, uint64_t stride,
-                           uint64_t size, gab_value *values) {
-  if (!size)
+                           uint64_t len, gab_value *values) {
+  if (!len)
     return gab_record(gab, 0, 0, nullptr, nullptr);
 
-  gab_value keys[size * stride] = {};
+  gab_value keys[len * stride];
 
-  for (uint64_t i = 0; i < size; i++)
+  for (uint64_t i = 0; i < len; i++)
     keys[i * stride] = gab_number(i);
 
-  gab_value v = gab_record(gab, stride, size, keys, values);
+  gab_value v = gab_record(gab, stride, len, keys, values);
 
   return v;
 }
@@ -7735,10 +7844,10 @@ GAB_INTERNAL bool __gab_prsisbuiltin(struct gab_triple gab, gab_value msg) {
   if (gab_valkind(msg) != kGAB_BINARY)
     return false;
 
-  if (msg == gab_binary(gab, mGAB_ASSIGN))
+  if (msg == gab_binary(gab, (uint8_t *)mGAB_ASSIGN))
     return true;
 
-  if (msg == gab_binary(gab, mGAB_BLOCK))
+  if (msg == gab_binary(gab, (uint8_t *)mGAB_BLOCK))
     return true;
 
   return false;
@@ -7777,7 +7886,7 @@ GAB_INTERNAL int64_t __gab_cpencode(char *out, int64_t utf) {
 GAB_INTERNAL a_char *__gab_prsstrraw(struct parser *parser, s_char raw_str) {
   // The parsed string will be at most as long as the raw string.
   // (\n -> one char)
-  char buffer[raw_str.len];
+  char buffer[raw_str.len + 1];
   uint64_t buf_end = 0;
 
   // Skip the first and last bytes of the string.
@@ -7860,6 +7969,13 @@ GAB_INTERNAL a_char *__gab_prsstrraw(struct parser *parser, s_char raw_str) {
       buffer[buf_end++] = c;
     }
   }
+
+  buffer[buf_end] = '\0';
+
+  uint64_t count;
+  gab_assert(!__utf8_codepoints((uint8_t *)buffer, &count),
+             "The buffer %.*s should be valid utf8-encoded", (int)buf_end,
+             (char *)buffer);
 
   return a_char_create(buffer, buf_end);
 };
@@ -9677,7 +9793,7 @@ GAB_INTERNAL gab_value __gab_bclmb(struct gab_triple gab, struct bc *bc,
   gab_value LHS = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_LHS);
   gab_value RHS = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_RHS);
 
-  gab_value lst = gab_listof(gab, gab_binary(gab, "self"));
+  gab_value lst = gab_listof(gab, gab_binary(gab, (uint8_t *)"self"));
 
   env = gab_lstpush(gab, env, gab_erecord(gab));
 
@@ -9728,10 +9844,10 @@ GAB_INTERNAL gab_value __gab_bcspc(struct gab_triple gab, struct bc *bc,
                                    gab_value env) {
   gab_value msg = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_MSG);
 
-  if (msg == gab_binary(gab, mGAB_ASSIGN))
+  if (msg == gab_binary(gab, (uint8_t *)mGAB_ASSIGN))
     return __gab_bcasn(gab, bc, node, env);
 
-  if (msg == gab_binary(gab, mGAB_BLOCK))
+  if (msg == gab_binary(gab, (uint8_t *)mGAB_BLOCK))
     return __gab_bclmb(gab, bc, node, env);
 
   assert(false && "UNHANDLED SPECIAL FORM");
@@ -10019,25 +10135,25 @@ GAB_API union gab_value_pair gab_build(struct gab_triple gab,
     gab_value vargs[args.len];
 
     for (int i = 0; i < args.len; i++)
-      vargs[i] = gab_binary(gab, args.argv[i]);
+      vargs[i] = gab_binary(gab, (uint8_t *)args.argv[i]);
 
     bindings = gab_list(gab, 1, args.len, vargs);
   }
 
   __gab_nodeinfoput(src, bindings, 0, 0);
 
-  gab_value env =
-      gab_listof(gab, gab_recordof(gab, gab_binary(gab, "self"), gab_nil));
+  gab_value env = gab_listof(
+      gab, gab_recordof(gab, gab_binary(gab, (uint8_t *)"self"), gab_nil));
 
   if (ast.status == gab_cinvalid)
     return gab_gcunlock(gab), ast;
 
   union gab_value_pair res = gab_compile(gab, (struct gab_compile_argt){
-                             .ast = ast.vresult,
-                             .env = env,
-                             .mod = mod,
-                             .bindings = bindings,
-                         });
+                                                  .ast = ast.vresult,
+                                                  .env = env,
+                                                  .mod = mod,
+                                                  .bindings = bindings,
+                                              });
   assert(res.vresult != gab_cundefined);
 
   if (res.status == gab_cinvalid)
@@ -10113,7 +10229,7 @@ GAB_INTERNAL void __gab_gcbufpush(struct gab_triple gab, uint8_t b,
   assert(b < kGAB_NBUF);
   assert(wkid < gab.eg->len);
   uint64_t len = __gab_gcbuflen(gab, b, wkid, epoch);
-  assert(len < cGAB_GC_MOD_BUFF_MAX);
+  assert(len < GAB_GC_MOD_BUFF_MAX);
 
   struct gab_obj **buf = __gab_gcbufdata(gab, b, wkid, epoch);
   buf[len] = o;
@@ -10175,7 +10291,7 @@ GAB_INTERNAL void __gab_gcqdec(struct gab_triple gab, struct gab_obj *obj) {
   int32_t e = __gab_gcepoch(gab);
 
   while (__gab_gcbuflen(gab, kGAB_BUF_DEC, gab.wkid, e) >=
-         cGAB_GC_MOD_BUFF_MAX) {
+         GAB_GC_MOD_BUFF_MAX) {
     // Try to signal a collection
     gab_asigcoll(gab);
 
@@ -10210,7 +10326,7 @@ GAB_INTERNAL void __gab_gcqinc(struct gab_triple gab, struct gab_obj *obj) {
   int32_t e = __gab_gcepoch(gab);
 
   while (__gab_gcbuflen(gab, kGAB_BUF_INC, gab.wkid, e) >=
-         cGAB_GC_MOD_BUFF_MAX) {
+         GAB_GC_MOD_BUFF_MAX) {
     // Try to signal a collection
     gab_asigcoll(gab);
 
@@ -10265,11 +10381,11 @@ GAB_INTERNAL void __gab_gcbufeachdo(uint8_t b, uint8_t wkid, uint8_t epoch,
                                     struct gab_triple gab) {
   struct gab_obj **buf = __gab_gcbufdata(gab, b, wkid, epoch);
   uint64_t len = __gab_gcbuflen(gab, b, wkid, epoch);
-  assert(len <= cGAB_GC_MOD_BUFF_MAX);
+  assert(len <= GAB_GC_MOD_BUFF_MAX);
 
 #if cGAB_LOG_GC
   fprintf(stderr, "(%i) FORDO\t%i\t(%lu / %i)\n", wkid, epoch, len,
-          cGAB_GC_MOD_BUFF_MAX);
+          GAB_GC_MOD_BUFF_MAX);
 #endif
 
   for (uint64_t i = 0; i < len; i++) {
@@ -10697,9 +10813,9 @@ GAB_INTERNAL void __gab_gcdoepoch(struct gab_triple gab, int32_t e) {
     gab_assert(stack_size < cGAB_STACK_MAX,
                "The stack size is requred to be less than %lu", cGAB_STACK_MAX);
 
-    gab_assert(stack_size + wk->lock_keep.len + 2 < cGAB_GC_MOD_BUFF_MAX,
+    gab_assert(stack_size + wk->lock_keep.len + 2 < GAB_GC_MOD_BUFF_MAX,
                "The total amount of queued modifications cannot exceed %lu",
-               cGAB_GC_MOD_BUFF_MAX);
+               GAB_GC_MOD_BUFF_MAX);
 
     __gab_gcbufpush(gab, kGAB_BUF_STK, gab.wkid, e, gab_valtoo(fiber));
 
@@ -11091,7 +11207,7 @@ static handler handlers[] = {
     assert(GAB_VAL_TO_FIBER(gab_thisfiber(GAB()))->vm.sb[2] == 0);             \
   })
 
-#if cGAB_DEBUG_VM
+#if cGAB_LOG_VM
 #define PUSH(value)                                                            \
   ({                                                                           \
     if (SP() > (FB() + BLOCK_PROTO()->nslots + 1)) {                           \
@@ -11795,7 +11911,8 @@ cGAB_VM_OPCODE_ATTRIBUTES union gab_value_pair vm_ok(OP_HANDLER_ARGS) {
   return res;
 }
 
-GAB_INTERNAL union gab_value_pair __gab_vmexec(struct gab_triple gab, gab_value f) {
+GAB_INTERNAL union gab_value_pair __gab_vmexec(struct gab_triple gab,
+                                               gab_value f) {
   gab_assert(gab_valkind(f) == kGAB_FIBER,
              "Only gab\\fiber shall be exec'd. Not a value of type: %d",
              gab_valkind(f));
@@ -12458,7 +12575,7 @@ extern void putcs(char *arg);
   }
 
 #define PANIC_GUARD_ISB(value)                                                 \
-  if (__gab_unlikely(!__gab_valisb(value))) {                                  \
+  if (__gab_unlikely(!gab_valisb(value))) {                                  \
     STORE_MICRO_OP_VM_PANIC_FRAME(have);                                       \
     VM_PANIC5(GAB_TYPE_MISMATCH, ks[GAB_SEND_KMESSAGE], ks[GAB_SEND_KSPEC],    \
               value, gab_valtype(GAB(), value),                                \
@@ -12466,7 +12583,7 @@ extern void putcs(char *arg);
   }
 
 #define PANIC_GUARD_ISN(value)                                                 \
-  if (__gab_unlikely(!__gab_valisn(value))) {                                  \
+  if (__gab_unlikely(!gab_valisn(value))) {                                  \
     STORE_MICRO_OP_VM_PANIC_FRAME(have);                                       \
     VM_PANIC5(GAB_TYPE_MISMATCH, ks[GAB_SEND_KMESSAGE], ks[GAB_SEND_KSPEC],    \
               value, gab_valtype(GAB(), value), gab_type(GAB(), kGAB_NUMBER)); \
@@ -12482,8 +12599,8 @@ extern void putcs(char *arg);
 
 #define SEND_GUARD_KIND(r, k) SEND_GUARD(gab_valkind(r) == k, "Unexpected kind")
 
-#define SEND_GUARD_ISN(value) SEND_GUARD(__gab_valisn(value), "Not number")
-#define SEND_GUARD_ISB(value) SEND_GUARD(__gab_valisb(value), "Not number")
+#define SEND_GUARD_ISN(value) SEND_GUARD(gab_valisn(value), "Not number")
+#define SEND_GUARD_ISB(value) SEND_GUARD(gab_valisb(value), "Not number")
 
 /*
  * SEND guard which checks that the

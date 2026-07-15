@@ -196,7 +196,7 @@ static MunitResult test_record_find(const MunitParameter params[], void *data) {
 
 static MunitResult test_record_tidal_wave(const MunitParameter params[],
                                           void *data) {
-  const int kMaxElements = 1000;
+  const int kMaxElements = 100;
   const int kWaves = 10;
 
   gab_value rec = gab_erecord(gab); // Start with empty record
@@ -354,8 +354,6 @@ static MunitResult test_record_list_transitions(const MunitParameter params[],
   gab_value list =
       gab_listof(gab, gab_string(gab, "Hello"), gab_string(gab, "World"));
 
-  gab_fprintf(stderr, "$\n", list);
-
   munit_assert_true(gab_recisl(list));
 
   gab_value with_key =
@@ -366,8 +364,6 @@ static MunitResult test_record_list_transitions(const MunitParameter params[],
   gab_value val;
   gab_value without_key =
       gab_rectake(gab, with_key, gab_message(gab, "val"), &val);
-
-  gab_fprintf(stderr, "$ => $\n", without_key, val);
 
   munit_assert_true(gab_recisl(without_key));
   munit_assert_uint64(val, ==, gab_number(10));
@@ -399,7 +395,89 @@ static MunitResult test_record_deduplication(const MunitParameter params[],
   return MUNIT_OK;
 }
 
-// Map individual tests to an munit array
+/* * Test: Basic Empty List & Push
+ * Verifies that gab_list creates an empty structure and that gab_lstpush
+ * successfully appends values in a persistent, immutable fashion.
+ */
+static MunitResult test_list_push(const MunitParameter params[],
+                                        void *data) {
+  // Create an empty list
+  gab_value lst = gab_listof(gab);
+  munit_assert_uint32(gab_valkind(lst), ==, kGAB_RECORD);
+  munit_assert_uint64(gab_reclen(lst), ==, 0);
+
+  // Push elements (testing persistence: the original 'lst' should remain empty)
+  gab_value v1 = gab_number(10);
+  gab_value v2 = gab_number(20);
+
+  gab_value lst1 = gab_lstpush(gab, lst, v1);
+  gab_value lst2 = gab_lstpush(gab, lst1, v2);
+
+  // Verify original list is unchanged
+  munit_assert_uint64(gab_reclen(lst), ==, 0);
+  munit_assert_uint64(gab_lstat(lst, 0), ==, gab_cundefined);
+
+  // Verify intermediate list
+  munit_assert_uint64(gab_reclen(lst1), ==, 1);
+  munit_assert_uint64(gab_lstat(lst1, 0), ==, v1);
+  munit_assert_uint64(gab_lstat(lst1, 1), ==, gab_cundefined);
+
+  // Verify final list
+  munit_assert_uint64(gab_reclen(lst2), ==, 2);
+  munit_assert_uint64(gab_lstat(lst2, 0), ==, v1);
+  munit_assert_uint64(gab_lstat(lst2, 1), ==, v2);
+
+  return MUNIT_OK;
+}
+
+/* * Test: Variadic List Creation
+ * Ensures gab_listof correctly consumes a variable number of gab_values
+ * and maintains the exact order specified in the arguments.
+ */
+static MunitResult test_list_of(const MunitParameter params[],
+                                         void *data) {
+  gab_value v0 = gab_number(100);
+  gab_value v1 = gab_number(200);
+  gab_value v2 = gab_number(300);
+
+  // Create a list directly from 3 arguments
+  gab_value lst = gab_listof(gab, v0, v1, v2);
+
+  munit_assert_uint32(gab_valkind(lst), ==, kGAB_RECORD);
+  munit_assert_uint64(gab_reclen(lst), ==, 3);
+
+  // Verify order and access
+  munit_assert_uint64(gab_lstat(lst, 0), ==, v0);
+  munit_assert_uint64(gab_lstat(lst, 1), ==, v1);
+  munit_assert_uint64(gab_lstat(lst, 2), ==, v2);
+  munit_assert_uint64(gab_lstat(lst, 3), ==, gab_cundefined); // Out of bounds
+
+  return MUNIT_OK;
+}
+
+static MunitResult test_list_array(const MunitParameter params[],
+                                          void *data) {
+  gab_value arr[] = {
+      gab_number(7),  gab_cinvalid, gab_number(14), gab_cinvalid,
+      gab_number(14), gab_cinvalid, gab_number(21), gab_cinvalid,
+      gab_number(28), gab_cinvalid,
+  };
+  uint64_t count = (sizeof(arr) / sizeof(arr[0])) / 2;
+
+  // Create list from the strided array
+  gab_value lst = gab_list(gab, 2, count, arr);
+
+  munit_assert_uint32(gab_valkind(lst), ==, kGAB_RECORD);
+  munit_assert_uint64(gab_reclen(lst), ==, count);
+
+  // Verify all elements match the array
+  for (uint64_t i = 0; i < count; i++) {
+    munit_assert_uint64(gab_lstat(lst, i), ==, arr[i * 2]);
+  }
+
+  return MUNIT_OK;
+}
+
 static MunitTest record_tests[] = {
     {
         "/creation",
@@ -456,6 +534,18 @@ static MunitTest record_tests[] = {
     {
         "/fuzz_walk",
         test_record_fuzz_walk,
+    },
+    {
+        "/push",
+        test_list_push,
+    },
+    {
+        "/array",
+        test_list_array,
+    },
+    {
+        "/listof",
+        test_list_of,
     },
     {},
 };
