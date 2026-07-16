@@ -1,9 +1,8 @@
 #include "miniz/amalgamation/miniz.c"
 #include "miniz/amalgamation/miniz.h"
 
-#include "gab.h"
+#include "cgab.h"
 #include "platform.h"
-#include <locale.h>
 #include <stddef.h>
 
 #include "crossline/crossline.c"
@@ -1487,511 +1486,204 @@ const struct option jobs_option = {
     .handler_f = jobs_handler,
 };
 
-static struct command commands[] = {
+static struct command commands[] =
     {
-        "welcome",
-        "Print the welcome message",
-        "\tPrint the welcome message",
-        .example =
-            {
-                GREEN("gab"),
-            },
-        .handler = welcome,
-    },
-    {
-        "help",
-        "Print this message, or describe the subcommand given by <arg>",
-        "\tWith no arguments, prints a general help message summarizing "
-        "all "
-        "available subcommands and their flags.\n\t"
-        "With a subcommand given by <arg>, print more specific information "
-        "related to that subcommand.",
-        .example =
-            {
-                GREEN("gab") " " YELLOW("help") " get",
-            },
-        .handler = help,
-    },
-    {
-        "get",
-        "Install the package given by <arg>",
-        "\tInstall packages from remote hosts.\n\n"
-        "\t<arg> should resemble <package>@<tag>."
-        "\n\n\t<package> should correspond to either a valid package name "
-        "or the reserved "
-        "'gab' package."
-        "\n\n\t<tag> should be a valid tag of the aforementioned package."
-        "\n\n\tWhen the <package> argument is the 'gab' package, gab "
-        "*itself* is installed for the version <tag>."
-        "\n\tThis installation includes the `github.com/gab-language/cgab` "
-        "package, among other binary and development files.\n\t"
-        "\n\tOtherwise, <package> is downloaded at <tag>, and installed "
-        "among the modules for gab@" GAB_VERSION_TAG ".\n\n\t"
-        "To download a package, gab needs:\n\n"
-        "\t\t1. A host for the repository. This is found in the package "
-        "name "
-        "itself.\n"
-        "\t\t2. A tag, corresponding to a release.\n"
-        "\t\t3. A supported gab platform.\n"
-        "\t\t4. A supported gab version.\n\n\t"
-        "Using the last two items, gab constructs a bundle name like "
-        "so:\n\n"
-        "\t\t" CYAN("cgab-<gab version>-<gab platform>") "\n\t\t" CYAN(
-            "cgab-" GAB_VERSION_TAG
-            "-" GAB_TARGET_TRIPLE) "\n\n\t"
-                                   "gab uses the package host, tag, and "
-                                   "bundle name to construct a url for the "
-                                   "package host, "
-                                   "like so:\n\n"
-                                   "\t\t" CYAN(
-                                       "http://<pkg>/releases/"
-                                       "download/<tag>/<bundle "
-                                       "name>") "\n\t\t" CYAN("http://"
-                                                              "github."
-                                                              "com/"
-                                                              "gab-"
-                                                              "language"
-                                                              "/"
-                                                              "cgab/"
-                                                              "releases"
-                                                              "/downloa"
-                                                              "d/0.0.5/"
-                                                              "cgab-0."
-                                                              "0.5-x86_"
-                                                              "64-"
-                                                              "linux-"
-                                                              "gnu") "\n\n"
-                                                                     "\t"
-                                                                     "g"
-                                                                     "a"
-                                                                     "b"
-                                                                     " "
-                                                                     "d"
-                                                                     "o"
-                                                                     "w"
-                                                                     "n"
-                                                                     "l"
-                                                                     "o"
-                                                                     "a"
-                                                                     "d"
-                                                                     "s"
-                                                                     " "
-                                                                     "t"
-                                                                     "h"
-                                                                     "i"
-                                                                     "s"
-                                                                     " "
-                                                                     "a"
-                                                                     "r"
-                                                                     "t"
-                                                                     "i"
-                                                                     "f"
-                                                                     "a"
-                                                                     "c"
-                                                                     "t"
-                                                                     ","
-                                                                     " "
-                                                                     "a"
-                                                                     "n"
-                                                                     "d"
-                                                                     " "
-                                                                     "u"
-                                                                     "n"
-                                                                     "z"
-                                                                     "i"
-                                                                     "p"
-                                                                     "s"
-                                                                     " "
-                                                                     "i"
-                                                                     "t"
-                                                                     " "
-                                                                     "i"
-                                                                     "n"
-                                                                     "t"
-                                                                     "o"
-                                                                     " "
-                                                                     "t"
-                                                                     "h"
-                                                                     "e"
-                                                                     " "
-                                                                     "p"
-                                                                     "a"
-                                                                     "c"
-                                                                     "k"
-                                                                     "a"
-                                                                     "g"
-                                                                     "e"
-                                                                     "s"
-                                                                     " "
-                                                                     "<"
-                                                                     "i"
-                                                                     "n"
-                                                                     "s"
-                                                                     "t"
-                                                                     "a"
-                                                                     "l"
-                                                                     "l"
-                                                                     " "
-                                                                     "l"
-                                                                     "o"
-                                                                     "c"
-                                                                     "a"
-                                                                     "t"
-                                                                     "i"
-                                                                     "o"
-                                                                     "n"
-                                                                     ">"
-                                                                     "."
-                                                                     "\n\t"
-                                                                     "A"
-                                                                     "t"
-                                                                     " "
-                                                                     "t"
-                                                                     "h"
-                                                                     "i"
-                                                                     "s"
-                                                                     " "
-                                                                     "p"
-                                                                     "o"
-                                                                     "i"
-                                                                     "n"
-                                                                     "t"
-                                                                     ","
-                                                                     " "
-                                                                     "t"
-                                                                     "h"
-                                                                     "e"
-                                                                     " "
-                                                                     "p"
-                                                                     "a"
-                                                                     "c"
-                                                                     "k"
-                                                                     "a"
-                                                                     "g"
-                                                                     "e"
-                                                                     " "
-                                                                     "i"
-                                                                     "s"
-                                                                     " "
-                                                                     "i"
-                                                                     "n"
-                                                                     "s"
-                                                                     "t"
-                                                                     "a"
-                                                                     "l"
-                                                                     "l"
-                                                                     "e"
-                                                                     "d"
-                                                                     "."
-                                                                     "\n\n"
-                                                                     "\t"
-                                                                     "A"
-                                                                     "p"
-                                                                     "p"
-                                                                     "l"
-                                                                     "i"
-                                                                     "c"
-                                                                     "a"
-                                                                     "t"
-                                                                     "i"
-                                                                     "o"
-                                                                     "n"
-                                                                     "s"
-                                                                     " "
-                                                                     "w"
-                                                                     "o"
-                                                                     "r"
-                                                                     "k"
-                                                                     " "
-                                                                     "s"
-                                                                     "i"
-                                                                     "m"
-                                                                     "i"
-                                                                     "l"
-                                                                     "a"
-                                                                     "r"
-                                                                     "l"
-                                                                     "y"
-                                                                     ","
-                                                                     " "
-                                                                     "b"
-                                                                     "y"
-                                                                     " "
-                                                                     "d"
-                                                                     "e"
-                                                                     "f"
-                                                                     "i"
-                                                                     "n"
-                                                                     "i"
-                                                                     "n"
-                                                                     "g"
-                                                                     " "
-                                                                     "a"
-                                                                     " "
-                                                                     "r"
-                                                                     "e"
-                                                                     "s"
-                                                                     "o"
-                                                                     "u"
-                                                                     "r"
-                                                                     "c"
-                                                                     "e"
-                                                                     " "
-                                                                     "a"
-                                                                     "f"
-                                                                     "t"
-                                                                     "e"
-                                                                     "r"
-                                                                     " "
-                                                                     "t"
-                                                                     "h"
-                                                                     "e"
-                                                                     " "
-                                                                     "p"
-                                                                     "a"
-                                                                     "c"
-                                                                     "k"
-                                                                     "a"
-                                                                     "g"
-                                                                     "e"
-                                                                     " "
-                                                                     "n"
-                                                                     "a"
-                                                                     "m"
-                                                                     "e"
-                                                                     ":"
-                                                                     "\n"
-                                                                     "\n\t"
-                                                                     "\t "
-                                                                     "g"
-                                                                     "a"
-                                                                     "b"
-                                                                     " "
-                                                                     "g"
-                                                                     "e"
-                                                                     "t"
-                                                                     " "
-                                                                     "g"
-                                                                     "i"
-                                                                     "t"
-                                                                     "h"
-                                                                     "u"
-                                                                     "b"
-                                                                     "."
-                                                                     "c"
-                                                                     "o"
-                                                                     "m"
-                                                                     "/"
-                                                                     "g"
-                                                                     "a"
-                                                                     "b"
-                                                                     "-"
-                                                                     "l"
-                                                                     "a"
-                                                                     "n"
-                                                                     "g"
-                                                                     "u"
-                                                                     "a"
-                                                                     "g"
-                                                                     "e"
-                                                                     "/"
-                                                                     "g"
-                                                                     "w"
-                                                                     "o"
-                                                                     "r"
-                                                                     "d"
-                                                                     "l"
-                                                                     "e"
-                                                                     "@"
-                                                                     "0"
-                                                                     "."
-                                                                     "1"
-                                                                     "."
-                                                                     "0"
-                                                                     " " CYAN(
-                                                                         "gword"
-                                                                         "le@0."
-                                                                         "1.0") "\n\n\t"
-                                                                                "For the github host, gab constructs a url like so:\n\n\t"
-                                                                                "\t " CYAN(
-                                                                                    "http://github.com/gab-language/gwordle/releases/download/0.1.0/"
-                                                                                    "gwordle-cgab-0.0.5-x86_64-linux-gnu") "\n\n\t"
-                                                                                                                           "gab downloads this artifact to the appropriate package directory, and then symlinks it to the " CYAN(
-                                                                                                                               "gab/bin") " directory.\n\t"
-                                                                                                                                          "The symlinked name *includes* the tag, so that multiple version may coexist. To invoke the " CYAN(
-                                                                                                                                              "gwordle") " application above:\n\n\t"
-                                                                                                                                                         "\t " GREEN(
-                                                                                                                                                             "gwordle@0.1.0"),
-        .example =
-            {
-                GREEN("gab") " " YELLOW("get") " gab@0.0.5",
-                GREEN("gab") " " YELLOW(
-                    "get") " github.com/<user>/<repository>@1.2 my_app",
-            },
-        .handler = get,
         {
-            step_verbose_option,
-            target_option,
+            "welcome",
+            "Print the welcome message",
+            "\tPrint the welcome message",
+            .example =
+                {
+                    GREEN("gab"),
+                },
+            .handler = welcome,
+        },
+        {
+            "help",
+            "Print this message, or describe the subcommand given by <arg>",
+            // clang-format off
+            "\tWith no arguments, prints a general help message summarizing all available subcommands and their flags.\n"
+            "\tWith a subcommand given by <arg>, print more specific information related to that subcommand.",
+            // clang-format on
+            .example =
+                {
+                    GREEN("gab") " " YELLOW("help") " get",
+                },
+            .handler = help,
+        },
+        {
+            "get",
+            "Install the package given by <arg>",
+            // clang-format off
+            "\tInstall packages from remote hosts.\n\n"
+            "\t<arg> should resemble <package>@<tag>.\n\n"
+            "\t<package> should correspond to either a valid package name or the reserved 'gab' package.\n\n"
+            "\t<tag> should be a valid tag of the aforementioned package.\n\n"
+            "\tWhen the <package> argument is the 'gab' package, gab *itself* is installed for the version <tag>.\n"
+            "\tThis installation includes the `github.com/gab-language/cgab` package, among other binary and development files.\n\n"
+            "\tOtherwise, <package> is downloaded at <tag>, and installed among the modules for gab@" GAB_VERSION_TAG ".\n\n"
+            "\tTo download a package, gab needs:\n\n"
+              "\t\t1. A host for the repository. This is found in the package name itself.\n"
+              "\t\t2. A tag, corresponding to a release.\n"
+              "\t\t3. A supported gab platform.\n"
+              "\t\t4. A supported gab version.\n\n"
+            "\tUsing the last two items, gab constructs a bundle name like so:\n\n"
+              "\t\t" CYAN("cgab-<gab version>-<gab platform>") "\n"
+            "\t\t" CYAN("cgab-" GAB_VERSION_TAG "-" GAB_TARGET_TRIPLE)"\n\n"
+            "\tgab uses the package host, tag, and bundle name to construct a url for the package host, like so:\n\n"
+              "\t\t" CYAN("http://<pkg>/releases/download/<tag>/<bundle name>\n")
+              "\t\t" CYAN("http://github.com/gab-language/cgab/releases/download/0.0.5/cgab-0.0.5-x86_64-linux-gnu") "\n\n"
+            "\tgab downloads this artifact, and unzips it into the packages <install location>.\n"
+            "\tAt this point, the package is installed.\n"
+            "\tApplications work similarly, by defining a resource after the package name:\n\n"
+              "\t\t gab get github.com/gab-language/gwordle@0.1.0 " CYAN( "gwordle@0.1.0") "\n\n"
+            "\tFor the github host, gab constructs a url like so:\n\n"
+              "\t\t " CYAN("http://github.com/gab-language/gwordle/releases/download/0.1.0/gwordle-cgab-0.0.5-x86_64-linux-gnu\n\n")
+            "\tgab downloads this artifact to the appropriate package directory, and then symlinks it to the " CYAN( "gab/bin") " directory.\n"
+            "\t" "The symlinked name *includes* the tag, so that multiple version may coexist. To invoke the " CYAN( "gwordle") " application above:\n\n"
+              "\t\t " GREEN( "gwordle@0.1.0"),
+            // clang-format on
+            .example =
+                {
+                    GREEN("gab") " " YELLOW("get") " gab@0.0.5",
+                    GREEN("gab") " " YELLOW(
+                        "get") " github.com/<user>/<repository>@1.2 my_app",
+                },
+            .handler = get,
             {
-                "yes",
-                "Automatically confirm 'yes' when prompted",
-                'y',
-                .flag = FLAG_STEP_AUTOCONFIRM,
+                step_verbose_option,
+                target_option,
+                {
+                    "yes",
+                    "Automatically confirm 'yes' when prompted",
+                    'y',
+                    .flag = FLAG_STEP_AUTOCONFIRM,
+                },
             },
         },
-    },
-    {
-        "info",
-        "Log information about the local gab environment.",
-        "\tDump compile-time configuration about this binary, as well as "
-        "list "
-        "the targets installed locally",
-        .example =
-            {
-                GREEN("gab") " " YELLOW("info"),
-            },
-        .handler = info,
-    },
-    {
-        "build",
-        "Build a standalone executable for the module <arg>.",
-        "\tBundle the module <arg> and any modules given with -m into a "
-        "single executable.\n\tWhen stdin is a file or a pipe, modules "
-        "will be read line-by-line from stdin.\n\n\t"
-        "Multiple platforms are supported:\n\t"
-        "\t" CYAN("x86_64-linux-gnu") "    (Linux Intel)\n\t"
-                                      "\t" CYAN("aarch64-linux-gnu") "   "
-                                                                     "(Linu"
-                                                                     "x "
-                                                                     "ARM)"
-                                                                     "\n\t"
-                                                                     "\t" CYAN(
-                                                                         "x86_"
-                                                                         "64-"
-                                                                         "windo"
-                                                                         "ws-"
-                                                                         "gnu") "  (Windows Intel)\n\t"
-                                                                                "\t" CYAN("aarch64-windows-gnu") " (Windows ARM)\n\t"
-                                                                                                                 "\t" CYAN("x86_64-macos-none") "   (MacOS Intel)\n\t"
-                                                                                                                                                "\t" CYAN("aarch64-macos-none") "  (MacOS ARM)\n\n\t"
-                                                                                                                                                                                "The executable produced will be named <arg>-cgab-<cgab_version>-<platform>.\n\tWhen invoked, the binary will "
-                                                                                                                                                                                "behave as if the user typed `gab run <arg>`.\n\t"
-                                                                                                                                                                                "The filename is used to determine the module entrypoint - therefore these binaries may not be renamed.\n\t"
-                                                                                                                                                                                "The executable itself is distributable as a stand-alone binary. "
-                                                                                                                                                                                "Users need not install anything, or even know anything about "
-                                                                                                                                                                                "gab.\n\n\t"
-                                                                                                                                                                                "If no entrypoint <arg> is supplied, then gab will build the modules "
-                                                                                                                                                                                "into a bundle instead.\n\t"
-                                                                                                                                                                                "These bundles are named for the gab version and platform they are "
-                                                                                                                                                                                "built for.\n\t"
-                                                                                                                                                                                "They look like this:\n\n\t"
-                                                                                                                                                                                "\t" CYAN(
-                                                                                                                                                                                    "cgab-<cgab_version>-<platform>") "\n\n\t"
-                                                                                                                                                                                                                      "See `gab help get` for more information on these bundles.",
-        .example =
-            {
-                GREEN("gab") " " YELLOW("build") " -m IO,Strings my_app",
-                GREEN("gab") " " YELLOW(
-                    "build") " my_app < list_of_modules.txt",
-            },
-        .handler = build,
         {
-            modules_option,
-            step_verbose_option,
-            target_option,
+            "info",
+            "Log information about the local gab environment.",
+            // clang-format off
+            "\tDump compile-time configuration about this binary, as well as list the targets installed locally",
+            // clang-format on
+            .example =
+                {
+                    GREEN("gab") " " YELLOW("info"),
+                },
+            .handler = info,
         },
-    },
-    {
-        "run",
-        "Compile and run the module at path <args>",
-        "\tExpects one argument, the name of the module to run. "
-        "The module is invoked as if by '<arg>'.use.\n\n\t"
-        "The search path begins at the first root. Roots and resources are "
-        "checked in descending order.\n\t"
-        "Each resource is checked at each root before moving on to the "
-        "next.\n"
-        "\n\tThe roots are:\n"
-        "\n\t\t" CYAN("./") "\n\t\t" CYAN(
-            "<install_dir>") "\n\n\tThe resources are:\n"
-                             "\n\t\t" CYAN(
-                                 "<arg>.gab") "\n"
-                                              "\t"
-                                              "\t" CYAN(
-                                                  "mod/"
-                                                  "<arg"
-                                                  ">."
-                                                  "gab") "\n\t\t" CYAN("<arg>/"
-                                                                       "mod."
-                                                                       "gab") "\n\t\t" CYAN("<arg>.[so | dylib | dll]") "\n\t\t" CYAN("mod/<arg>.[so | dylib | dll]") "\n\n\tThe"
-                                                                                                                                                                      "se "
-                                                                                                                                                                      "resources"
-                                                                                                                                                                      " are "
-                                                                                                                                                                      "evaluated"
-                                                                                                                                                                      " as gab "
-                                                                                                                                                                      "modules."
-                                                                                                                                                                      "\n\tThere"
-                                                                                                                                                                      " is also "
-                                                                                                                                                                      "a "
-                                                                                                                                                                      "special "
-                                                                                                                                                                      "resource:"
-                                                                                                                                                                      "\n"
-                                                                                                                                                                      "\n\t"
-                                                                                                                                                                      "\t" CYAN("data/"
-                                                                                                                                                                                "<arg"
-                                                                                                                                                                                ">") "\n\n\tThis resource is not evaluated as a gab module. The content of the file is returned as a gab\\binary."
-                                                                                                                                                                                     "\n\tThis is useful for packaging resources into gab applications, such as images, fonts, or static data.",
-        .example =
-            {
-                GREEN("gab") " " YELLOW("run") " -m Json,http -j 16 my_project",
-            },
-        .handler = run,
         {
-            dumpast_option,
-            dumpbytecode_option,
-            structured_err_option,
-            modules_option,
-            busywait_option,
-            jobs_option,
-        },
-    },
-    {
-        "exec",
-        "Execute the string <args>",
-        "\tExecute the string <arg>",
-        .example =
+            "build",
+            "Build a standalone executable for the module <arg>.",
+            // clang-format off
+            "\tBundle the module <arg> and any modules given with -m into a single executable.\n"
+            "\tWhen stdin is a file or a pipe, modules will be read line-by-line from stdin.\n\n"
+            "\tMultiple platforms are supported:\n"
+              "\t\t" CYAN("x86_64-linux-gnu") "    (Linux Intel)\n"
+              "\t\t" CYAN("aarch64-linux-gnu") "   (Linux ARM)\n"
+              "\t\t" CYAN("x86_64-windows-gnu") "  (Windows Intel)\n"
+              "\t\t" CYAN("aarch64-windows-gnu") " (Windows ARM)\n"
+              "\t\t" CYAN("x86_64-macos-none") "   (MacOS Intel)\n"
+              "\t\t" CYAN("aarch64-macos-none") "  (MacOS ARM)\n\n"
+            "\tThe executable produced will be named <arg>-cgab-<cgab_version>-<platform>.\n"
+            "\tWhen invoked, the binary will " "behave as if the user typed `gab run <arg>`.\n"
+            "\tThe filename is used to determine the module entrypoint - therefore these binaries may not be renamed.\n"
+            "\tThe executable itself is distributable as a stand-alone binary. Users need not install anything, or even know anything about gab.\n\n"
+            "\tIf no entrypoint <arg> is supplied, then gab will build the modules into a bundle instead.\n"
+            "\tThese bundles are named for the gab version and platform they are built for.\n"
+            "\tThey look like this:\n\n"
+              "\t\t" CYAN( "cgab-<cgab_version>-<platform>") "\n\n"
+            "\t" "See `gab help get` for more information on these bundles.",
+            // clang-format on
+            .example =
+                {
+                    GREEN("gab") " " YELLOW("build") " -m IO,Strings my_app",
+                    GREEN("gab") " " YELLOW(
+                        "build") " my_app < list_of_modules.txt",
+                },
+            .handler = build,
             {
-                GREEN("gab") " " YELLOW("exec") " -a -d \"'hello'.println\"",
+                modules_option,
+                step_verbose_option,
+                target_option,
             },
-        .handler = exec,
-        {
-            dumpast_option,
-            dumpbytecode_option,
-            structured_err_option,
-            modules_option,
-            busywait_option,
-            jobs_option,
         },
-    },
-    {
-        "repl",
-        "Enter the REPL",
-        "\tA REPL is a convenient tool for experimentation.\n"
-        "\tIt is useful for developement as well - set up with editor "
-        "plugins "
-        "to evaluate code in the REPL.",
-        .example =
+        {
+            "run",
+            "Compile and run the module at path <args>",
+            // clang-format off
+            "\tExpects one argument, the name of the module to run. The module is invoked as if by '<arg>'.use.\n\n"
+            "\tThe search path begins at the first root. Roots and resources are checked in descending order.\n"
+            "\tEach resource is checked at each root before moving on to the next.\n\n"
+            "\tThe roots are:\n\n"
+              "\t\t" CYAN("./") "\n"
+              "\t\t" CYAN( "<install_dir>") "\n\n"
+            "\tThe resources are:\n\n"
+              "\t\t" CYAN( "<arg>.gab") "\n"
+              "\t\t" CYAN( "mod/<arg>.gab") "\n"
+              "\t\t" CYAN("<arg>/mod.gab") "\n"
+              "\t\t" CYAN("<arg>.[so | dylib | dll]") "\n"
+              "\t\t" CYAN("mod/<arg>.[so | dylib | dll]") "\n\n"
+            "\tThese resources are evaluated as gab modules.\n"
+            "\tThere is also a special resource:\n\n"
+              "\t\t" CYAN("data/<arg>") "\n\n"
+            "\tThis resource is not evaluated as a gab module. The content of the file is returned as a gab\\binary.",
+            // clang-format on
+            .example =
+                {
+                    GREEN("gab") " " YELLOW(
+                        "run") " -m Json,http -j 16 my_project",
+                },
+            .handler = run,
             {
-                GREEN("gab") " " YELLOW("repl") " -m Json",
+                dumpast_option,
+                dumpbytecode_option,
+                structured_err_option,
+                modules_option,
+                busywait_option,
+                jobs_option,
             },
-        .handler = repl,
-        {
-            dumpast_option,
-            dumpbytecode_option,
-            modules_option,
-            busywait_option,
-            jobs_option,
         },
-    },
+        {
+            "exec",
+            "Execute the string <args>",
+            "\tExecute the string <arg>",
+            .example =
+                {
+                    GREEN("gab") " " YELLOW(
+                        "exec") " -a -d \"'hello'.println\"",
+                },
+            .handler = exec,
+            {
+                dumpast_option,
+                dumpbytecode_option,
+                structured_err_option,
+                modules_option,
+                busywait_option,
+                jobs_option,
+            },
+        },
+        {
+            "repl",
+            "Enter the REPL",
+            // clang-format off
+            "\tA REPL is a convenient tool for experimentation.\n"
+            "\tIt is useful for developement as well - set up with editor plugins to evaluate code in the REPL.",
+            // clang-format on
+            .example =
+                {
+                    GREEN("gab") " " YELLOW("repl") " -m Json",
+                },
+            .handler = repl,
+            {
+                dumpast_option,
+                dumpbytecode_option,
+                modules_option,
+                busywait_option,
+                jobs_option,
+            },
+        },
 };
 
 int checksteps(struct command_arguments *args, int len,

@@ -22,7 +22,7 @@
  * IN THE SOFTWARE.
  */
 
-#include "gab.h"
+#include "cgab.h"
 #include "libgrapheme/grapheme.h"
 #include <ctype.h>
 

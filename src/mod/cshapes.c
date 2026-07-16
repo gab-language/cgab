@@ -22,7 +22,7 @@
  * IN THE SOFTWARE.
  */
 
-#include "gab.h"
+#include "cgab.h"
 #include <stdint.h>
 
 GAB_DYNLIB_NATIVE_FN(shp, at) {
@@ -32,7 +32,7 @@ GAB_DYNLIB_NATIVE_FN(shp, at) {
   if (!gab_valisshp(shp))
     return gab_pktypemismatch(gab, shp, kGAB_SHAPE);
 
-  if (!gab_valisnum(key))
+  if (!gab_valisn(key))
     return gab_pktypemismatch(gab, shp, kGAB_NUMBER);
 
   gab_uint idx = gab_valtou(key);
@@ -210,7 +210,7 @@ GAB_DYNLIB_NATIVE_FN(shp, seq_next) {
   if (gab_valkind(shp) != kGAB_SHAPE)
     return gab_pktypemismatch(gab, shp, kGAB_SHAPE);
 
-  if (!gab_valisnum(old_key))
+  if (!gab_valisn(old_key))
     return gab_pktypemismatch(gab, old_key, kGAB_NUMBER);
 
   uint64_t len = gab_shplen(shp);

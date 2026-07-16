@@ -1,7 +1,7 @@
 #ifndef GAB_PLATFORM_H
 #define GAB_PLATFORM_H
 
-#include "gab.h"
+#include "cgab.h"
 #include <stdio.h>
 
 /**

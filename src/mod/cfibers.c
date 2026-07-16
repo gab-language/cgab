@@ -22,7 +22,7 @@
  *  SOFTWARE.
  */
 
-#include "gab.h"
+#include "cgab.h"
 
 GAB_DYNLIB_NATIVE_FN(fib, await) {
   gab_value fib = gab_arg(0);

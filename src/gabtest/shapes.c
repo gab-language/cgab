@@ -1,4 +1,4 @@
-#include "gab.h"
+#include "cgab.h"
 #include "munit/munit.h"
 
 // Reference the global gab runtime triple set up by your runner/main file

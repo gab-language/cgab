@@ -1,5 +1,5 @@
 #include "munit/munit.h"
-#include "gab.h"
+#include "cgab.h"
 
 extern struct gab_triple gab;
 

@@ -24,8 +24,7 @@
 
 #include "BearSSL/inc/bearssl.h"
 
-#include "gab.h"
-#include "platform.h"
+#include "cgab.h"
 #include <stdio.h>
 
 #ifdef GAB_PLATFORM_LINUX
@@ -1690,7 +1689,7 @@ GAB_DYNLIB_NATIVE_FN(io, recv) {
     return gab_ptypemismatch(gab, vsock, gab_string(gab, tGAB_IOSOCK));
 
   gab_uint len = 0;
-  if (gab_valisnum(vlen))
+  if (gab_valisn(vlen))
     len = gab_valtou(vlen);
 
   if (gab_valkind(vlen) != kGAB_NUMBER && vlen != gab_nil)

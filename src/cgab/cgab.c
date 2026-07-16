@@ -23,7 +23,7 @@
  */
 
 #include "engine.h"
-#include "gab.h"
+#include "cgab.h"
 #include "hash.h"
 
 #include <ctype.h>

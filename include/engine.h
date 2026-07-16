@@ -1,7 +1,7 @@
 #ifndef GAB_ENGINE_H
 #define GAB_ENGINE_H
 
-#include "gab.h"
+#include "cgab.h"
 #include <stdint.h>
 
 #ifndef GAB_COLORS_IMPL

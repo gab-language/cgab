@@ -54,4 +54,4 @@ If clide is unavailable, it is simple to just use make. To install a release bui
   1. `GAB_PREFIX="<path>" GAB_INSTALL_PREFIX="<path>" GAB_CCFLAGS="-O3" make build`
   2. `sudo make install`
 # C-API Documentation
-The c-api is contained in the single header file `gab.h`. You can generate documentation with `clide docs`, or by just running `doxygen`.
+The c-api is contained in the single header file `cgab.h`. You can generate documentation with `clide docs`, or by just running `doxygen`.

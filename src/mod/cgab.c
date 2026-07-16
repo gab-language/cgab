@@ -22,7 +22,7 @@
  *  SOFTWARE.
  */
 
-#include "gab.h"
+#include "cgab.h"
 
 const char *modules[] = {
     "Strings", "Binaries", "Messages", "Numbers", "Blocks", "Records", "Shapes",

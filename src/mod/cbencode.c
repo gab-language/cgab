@@ -25,7 +25,7 @@
 #define BENCODE_IMPL
 #include "bencode-c/bencode.h"
 
-#include "gab.h"
+#include "cgab.h"
 
 int push_value(struct gab_triple gab, struct bencode *bncd,
                v_gab_value *stack) {

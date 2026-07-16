@@ -1,6 +1,6 @@
 #include <stdlib.h>
 
-#include "gab.h"
+#include "cgab.h"
 #include "munit/munit.h"
 
 extern const MunitSuite record_suite;

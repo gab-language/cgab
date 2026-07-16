@@ -22,7 +22,7 @@
  *  SOFTWARE.
  */
 
-#include "gab.h"
+#include "cgab.h"
 
 GAB_DYNLIB_NATIVE_FN(channel, close) {
   gab_chnclose(gab_arg(0));

@@ -25,7 +25,7 @@
 #define JSMN_STATIC
 #include "jsmn/jsmn.h"
 
-#include "gab.h"
+#include "cgab.h"
 
 bool unescape_into(char *buf, const char *str, size_t len) {
   size_t buflen = 0;

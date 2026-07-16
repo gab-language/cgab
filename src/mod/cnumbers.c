@@ -22,7 +22,7 @@
  * IN THE SOFTWARE.
  */
 
-#include "gab.h"
+#include "cgab.h"
 
 // Required for windows
 #define _USE_MATH_DEFINES

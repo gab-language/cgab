@@ -22,7 +22,7 @@
  * IN THE SOFTWARE.
  */
 
-#include "gab.h"
+#include "cgab.h"
 
 // Sqlite3 fails to compile with mremap for some reason
 #define HAVE_MREMAP 0
