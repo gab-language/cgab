@@ -5934,6 +5934,8 @@ GAB_API gab_value gab_tshape(struct gab_triple gab, uint64_t stride,
 
   d_shapes_insert(&gab.eg->shapes, GAB_VAL_TO_SHAPE(s), 0);
 
+  mtx_unlock(&gab.eg->gc_mtx);
+
   // TODO @cgab @opt: Find more efficient fix
   // When creating and interning shapes, we need to explicitly increment
   // This shape so that all of its children are acknowledged.
@@ -5945,10 +5947,10 @@ GAB_API gab_value gab_tshape(struct gab_triple gab, uint64_t stride,
   // its children. This is a problem because the intern table holds *weak
   // references* to its shapes. So a shape can be re-used from the table without
   // ever having been incremented (and therefore, kept its children alive).
+
+  // These must occur after unlocking the mutex, as they may trigger a collection.
   gab_iref(gab, s);
   gab_dref(gab, s);
-
-  mtx_unlock(&gab.eg->gc_mtx);
 
   return gab_gcunlock(gab), s;
 }
@@ -6117,10 +6119,11 @@ GAB_API gab_value gab_tshpwithout(struct gab_triple gab, gab_value shape,
   d_shapes_insert(&gab.eg->shapes, self, 0);
   // fprintf(stderr, "(%i) INSERT %p\n", gab.wkid, self);
 
+  mtx_unlock(&gab.eg->gc_mtx);
+
+  // These must occur after unlocking the mutex, as they may trigger a collection.
   gab_iref(gab, new_shape);
   gab_dref(gab, new_shape);
-
-  mtx_unlock(&gab.eg->gc_mtx);
 
   return gab_gcunlock(gab), new_shape;
 }
@@ -6211,10 +6214,11 @@ GAB_API gab_value gab_tshpwith(struct gab_triple gab, gab_value shp,
   d_shapes_insert(&gab.eg->shapes, self, 0);
   // fprintf(stderr, "(%i) INSERT %p\n", gab.wkid, self);
 
+  mtx_unlock(&gab.eg->gc_mtx);
+
+  // These must occur after unlocking the mutex, as they may trigger a collection.
   gab_iref(gab, new_shape);
   gab_dref(gab, new_shape);
-
-  mtx_unlock(&gab.eg->gc_mtx);
 
   return gab_gcunlock(gab), new_shape;
 }

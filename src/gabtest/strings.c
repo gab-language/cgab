@@ -27,12 +27,10 @@ static MunitResult test_string_multibyte(const MunitParameter params[],
   munit_assert_uint64(gab_strlen(s_ascii), ==, 3);
   munit_assert_uint64(gab_strmblen(s_ascii), ==, 3);
 
-  // Emoji test: "🔥" - 1 character, 4 bytes
-  gab_value s_fire = gab_string(gab, "🚀");
+  gab_value s_fire = gab_string(gab, "🔥");
   munit_assert_uint64(gab_strlen(s_fire), ==, 4);
   munit_assert_uint64(gab_strmblen(s_fire), ==, 1);
 
-  // "こんにちは" (Konnichiwa) - 5 characters, 15 bytes in UTF-8
   gab_value s_jp = gab_string(gab, "こんにちは");
   munit_assert_uint64(gab_strmblen(s_jp), !=, -1);
 
@@ -93,14 +91,15 @@ static MunitResult test_string_grapheme(const MunitParameter params[],
   // 👨 (4 bytes) + ZWJ (3 bytes) + 👩 (4 bytes) + ZWJ (3 bytes) + 👧 (4 bytes)
   // = 18 bytes
   const char *family_emoji = "👨‍👩‍👧";
-  uint64_t expected_bytes = 18;
 
   gab_value str_val = gab_string(gab, family_emoji);
 
   munit_assert_uint32(gab_valkind(str_val), ==, kGAB_STRING);
+
   // There are 18 expected bytes.
-  munit_assert_uint64(gab_strlen(str_val), ==, expected_bytes);
-  // There are 5 codepoints.
+  munit_assert_uint64(gab_strlen(str_val), ==, 18);
+
+  // There are 5 codepoints, even though there is one grapheme.
   munit_assert_uint64(gab_strmblen(str_val), ==, 5);
 
   return MUNIT_OK;
