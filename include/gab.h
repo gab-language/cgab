@@ -26,7 +26,6 @@
  * language
  */
 
-#include <errno.h>
 #include <float.h>
 #include <inttypes.h>
 #include <stdarg.h>
@@ -35,7 +34,6 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <wchar.h>
 
 /* ----------------------------------------
  *
@@ -3922,7 +3920,5 @@ GAB_API bool gab_signal(struct gab_triple gab, enum gab_signal s, int wkid);
 #ifdef __cplusplus
 }
 #endif
-
-#include "platform.h"
 
 #endif

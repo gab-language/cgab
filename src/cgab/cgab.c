@@ -2504,12 +2504,6 @@ GAB_API int64_t gab_nsprintf(char *dest, uint64_t n, const char *fmt,
     if (width == 0)
       break;
 
-    if (width == (uint64_t)-1)
-      return -EILSEQ;
-
-    if (width == (uint64_t)-2)
-      return -1;
-
     // Success, encountered a full glyph
     if (width == 1 && *c == '$') {
       if (i >= argc)
@@ -2602,22 +2596,13 @@ GAB_API int64_t gab_vsprintf(char *dest, uint64_t n, const char *fmt,
   char *cursor = dest;
   uint64_t remaining = n;
 
-  mbstate_t state = {0};
-
   // This logic has a bug with codepoints. Jenkies
   while (*c != '\0') {
 
-    uint64_t width = mbrlen(c, MB_CUR_MAX, &state);
+    uint64_t width = __utf8_next((uint8_t *)c);
 
-    // Success, encountered a full glyph
     if (width == 0)
       break;
-
-    if (width == (uint64_t)-1)
-      return -EILSEQ;
-
-    if (width == (uint64_t)-2)
-      return -1;
 
     if (width == 1 && *c == '$') {
       gab_value arg = va_arg(varargs, gab_value);
@@ -5878,8 +5863,8 @@ GAB_API gab_value gab_nvbinary(struct gab_triple gab, uint64_t n,
   return str;
 }
 
-GAB_API gab_value gab_list(struct gab_triple gab, uint64_t stride,
-                           uint64_t len, gab_value *values) {
+GAB_API gab_value gab_list(struct gab_triple gab, uint64_t stride, uint64_t len,
+                           gab_value *values) {
   if (!len)
     return gab_record(gab, 0, 0, nullptr, nullptr);
 
@@ -5948,7 +5933,8 @@ GAB_API gab_value gab_tshape(struct gab_triple gab, uint64_t stride,
   // references* to its shapes. So a shape can be re-used from the table without
   // ever having been incremented (and therefore, kept its children alive).
 
-  // These must occur after unlocking the mutex, as they may trigger a collection.
+  // These must occur after unlocking the mutex, as they may trigger a
+  // collection.
   gab_iref(gab, s);
   gab_dref(gab, s);
 
@@ -6121,7 +6107,8 @@ GAB_API gab_value gab_tshpwithout(struct gab_triple gab, gab_value shape,
 
   mtx_unlock(&gab.eg->gc_mtx);
 
-  // These must occur after unlocking the mutex, as they may trigger a collection.
+  // These must occur after unlocking the mutex, as they may trigger a
+  // collection.
   gab_iref(gab, new_shape);
   gab_dref(gab, new_shape);
 
@@ -6216,7 +6203,8 @@ GAB_API gab_value gab_tshpwith(struct gab_triple gab, gab_value shp,
 
   mtx_unlock(&gab.eg->gc_mtx);
 
-  // These must occur after unlocking the mutex, as they may trigger a collection.
+  // These must occur after unlocking the mutex, as they may trigger a
+  // collection.
   gab_iref(gab, new_shape);
   gab_dref(gab, new_shape);
 
@@ -12579,7 +12567,7 @@ extern void putcs(char *arg);
   }
 
 #define PANIC_GUARD_ISB(value)                                                 \
-  if (__gab_unlikely(!gab_valisb(value))) {                                  \
+  if (__gab_unlikely(!gab_valisb(value))) {                                    \
     STORE_MICRO_OP_VM_PANIC_FRAME(have);                                       \
     VM_PANIC5(GAB_TYPE_MISMATCH, ks[GAB_SEND_KMESSAGE], ks[GAB_SEND_KSPEC],    \
               value, gab_valtype(GAB(), value),                                \
@@ -12587,7 +12575,7 @@ extern void putcs(char *arg);
   }
 
 #define PANIC_GUARD_ISN(value)                                                 \
-  if (__gab_unlikely(!gab_valisn(value))) {                                  \
+  if (__gab_unlikely(!gab_valisn(value))) {                                    \
     STORE_MICRO_OP_VM_PANIC_FRAME(have);                                       \
     VM_PANIC5(GAB_TYPE_MISMATCH, ks[GAB_SEND_KMESSAGE], ks[GAB_SEND_KSPEC],    \
               value, gab_valtype(GAB(), value), gab_type(GAB(), kGAB_NUMBER)); \
