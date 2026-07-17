@@ -26,3 +26,4 @@ key_pubkey.pem
 /elf2stencil
 /vendor/duckdb.hpp
 /vendor/duckdb.cpp
+/eout
