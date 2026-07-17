@@ -72,22 +72,8 @@ static MunitResult test_string_concat(const MunitParameter params[],
   return MUNIT_OK;
 }
 
-static MunitResult test_string_timeouts(const MunitParameter params[],
-                                        void *data) {
-  // tnstring (tries/timeout variant)
-  gab_value s = gab_tnstring(gab, 4, "safe_string");
-  munit_assert_uint64(gab_strlen(s), ==, 4);
-  munit_assert_string_equal(gab_strdata(&s), "safe");
-
-  // tstrcat
-  gab_value appended = gab_tstrcat(gab, s, gab_string(gab, "_mode"));
-  munit_assert_string_equal(gab_strdata(&appended), "safe_mode");
-
-  return MUNIT_OK;
-}
-
 static MunitResult test_string_grapheme(const MunitParameter params[],
-                                          void *data) {
+                                        void *data) {
   // 👨 (4 bytes) + ZWJ (3 bytes) + 👩 (4 bytes) + ZWJ (3 bytes) + 👧 (4 bytes)
   // = 18 bytes
   const char *family_emoji = "👨‍👩‍👧";
@@ -133,14 +119,6 @@ static MunitTest string_tests[] = {
     {
         "/concat",
         test_string_concat,
-        NULL,
-        NULL,
-        MUNIT_TEST_OPTION_NONE,
-        NULL,
-    },
-    {
-        "/timeouts",
-        test_string_timeouts,
         NULL,
         NULL,
         MUNIT_TEST_OPTION_NONE,

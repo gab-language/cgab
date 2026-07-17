@@ -279,9 +279,18 @@ GAB_DYNLIB_NATIVE_FN(rec, keys) {
 
   gab_value shp = gab_recshp(rec);
 
-  gab_value keys = gab_listof(gab);
+  gab_value len = gab_shplen(shp);
 
-  gab_vmpush(gab_thisvm(gab), keys);
+  gab_value keys[len];
+
+
+  for (uint64_t i = 0; i < gab_shplen(shp); i++) {
+    keys[i] = gab_ushpat(shp, i);
+  }
+
+  gab_value list = gab_list(gab, 1, len, keys);
+
+  gab_vmpush(gab_thisvm(gab), list);
 
   return gab_union_cvalid(gab_nil);
 }

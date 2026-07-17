@@ -52,14 +52,14 @@ mz_zip_archive zip = {0};
  *
  *  On an intel linux machine, this looks like:
  *
- *  ~/gab/0.1.3-x86_64-linux-gnu
+ *  ~/gab/0.1.4-x86_64-linux-gnu
  *
  *  When installing a package, gab installs it in the appropriate directory
  *  for its cgab abi and platform.
  *
- *  For a package like github.com/gab-language/cgab@0.1.3, gab installs it at:
+ *  For a package like github.com/gab-language/cgab@0.1.4, gab installs it at:
  *
- *  ~/gab/0.1.3-x86_64-linux-gnu/github.com/gab-language/cgab@0.1.3
+ *  ~/gab/0.1.4-x86_64-linux-gnu/github.com/gab-language/cgab@0.1.4
  *        ^^^^^                                               ^^^^^
  *
  *  Note that the cgab-abi and the cgab library version here are there same.
@@ -68,8 +68,8 @@ mz_zip_archive zip = {0};
  *
  *  Other packages may have multiple versions compiled against the same abi.
  *
- *  ~/gab/0.1.3-x86_64-linux-gnu/github.com/gab-language/gwordle@0.a.b
- *  ~/gab/0.1.3-x86_64-linux-gnu/github.com/gab-language/gwordle@0.x.y
+ *  ~/gab/0.1.4-x86_64-linux-gnu/github.com/gab-language/gwordle@0.a.b
+ *  ~/gab/0.1.4-x86_64-linux-gnu/github.com/gab-language/gwordle@0.x.y
  *
  *  When downloading binaries like above, they are chmod'ed as the permissions
  * are lost across the wire.
@@ -259,7 +259,7 @@ union gab_value_pair gab_use_dynlib(struct gab_triple gab, const char *path,
 
   if (lib == nullptr) {
 #ifdef GAB_PLATFORM_UNIX
-    return gab_panicf(gab, "Failed to load module '$': $",
+    return gab_panicf(gab, "Failed to load module.\n\n$",
                       gab_string(gab, path), gab_string(gab, dlerror()));
 #elifdef GAB_PLATFORM_WASI
     return gab_panicf(gab, "Failed to load module '$'", gab_string(gab, path));
@@ -609,6 +609,7 @@ int run_repl(int flags, uint32_t wait, size_t nmodules,
           .packages = packages,
           .roots = roots,
           .resources = native_file_resources,
+          .flags = flags,
       },
       &gab);
 
@@ -650,6 +651,7 @@ int run_string(const char *string, int flags, uint32_t wait, size_t jobs,
           .packages = packages,
           .roots = roots,
           .resources = native_file_resources,
+          .flags = flags,
       },
       &gab);
 
@@ -763,6 +765,7 @@ int run_file(const char *package, int flags, uint32_t wait, size_t jobs,
           .packages = packages,
           .roots = roots,
           .resources = native_file_resources,
+          .flags = flags,
       },
       &gab);
 
@@ -968,7 +971,7 @@ int step(struct step *step) {
       /*
        * Each filename should begin with the same prefix as in *dst*.
        *
-       * For example, the package `github.com/gab-language/cgab@0.1.3`
+       * For example, the package `github.com/gab-language/cgab@0.1.4`
        *
        * will resolve to url, which will fetch a bundle `cgab-<gab
        * version>-<platform-triple>`
@@ -978,7 +981,7 @@ int step(struct step *step) {
        *
        * These modules should start with a path which matches the package name.
        *
-       * `github.com/gab-language/cgab@0.1.3/<module>`
+       * `github.com/gab-language/cgab@0.1.4/<module>`
        *
        * We should only do this if we are unzipping a package, and not a generic
        * zip we downloaded.
@@ -1720,6 +1723,7 @@ struct command_arguments parse_options(int argc, const char **argv,
       .wait = cGAB_DEFAULT_WAIT_NS,
       .platform = GAB_TARGET_TRIPLE,
       .dynlib_fileending = GAB_DYNLIB_FILEENDING,
+      .flags = fGAB_SIGTERM_ON_ERR,
   };
 
   v_s_char_create(&args.packages, 32);
@@ -2506,7 +2510,7 @@ int build_lib(struct command_arguments *args) {
 
   /* Add an additional kind of resource for builds such as these:
    * A BUNDLE loading resource.
-   * cgab@0.1.3 -> gab-language/cgab/cgab-0.1.3-x86_64-linux-gnu
+   * cgab@0.1.4 -> gab-language/cgab/cgab-0.1.4-x86_64-linux-gnu
    */
   platform_file_resources[0] = (struct gab_resource){
       .prefix = "",

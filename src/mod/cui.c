@@ -148,6 +148,7 @@ struct ui {
 };
 
 #define MAX_MS_PER_FRAME 15
+#define CHNTAKE_WAITTIME 0
 
 struct timestep {
   clock_t dt;
@@ -1207,7 +1208,7 @@ GAB_DYNLIB_NATIVE_FN(ui, hui_render) {
     if (gab_chnisclosed(gui->evch))
       goto fin;
 
-    gab_value app = gab_tchntake(gab, gui->appch, 1);
+    gab_value app = gab_tchntake(gab, gui->appch, CHNTAKE_WAITTIME);
 
     if (app == gab_cundefined)
       goto fin;
@@ -1428,7 +1429,7 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
   union gab_value_pair res;
 
   for (;;) {
-    gab_value app = gab_tchntake(gab, gui->appch, 1);
+    gab_value app = gab_tchntake(gab, gui->appch, CHNTAKE_WAITTIME);
 
     if (gab_chnisclosed(gui->appch))
       goto fin;
@@ -1587,7 +1588,7 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_render) {
     if (gab_chnisclosed(gui->evch))
       goto fin;
 
-    gab_value app = gab_tchntake(gab, gui->appch, 1);
+    gab_value app = gab_tchntake(gab, gui->appch, CHNTAKE_WAITTIME);
 
     if (app == gab_cundefined)
       goto fin;

@@ -146,7 +146,7 @@
  * This may be useful, as there is significant cost to spawning os threads.
  */
 #ifndef cGAB_JOB_IDLE_TRIES
-#define cGAB_JOB_IDLE_TRIES 128
+#define cGAB_JOB_IDLE_TRIES 100
 #endif
 
 /*
@@ -309,11 +309,11 @@
  * running, and one for fibers it hasn't touched yet. This actually also an
  * optimization, and can even facilitate some future work-stealing.
  *
- * By limiting the size of the running-queue, we can statically know the maximum
+ * By limiting the size of the working-queue, we can statically know the maximum
  * number of reachable values from a job. Fibers that have never been run don't
  * even need their stack's tracked yet.
  *
- * The number of fibers a given job may hold in its local queue.
+ * The number of fibers a given job may hold in its working queue.
  */
 #ifndef cGAB_WORKER_LOCALQUEUE_MAX
 #define cGAB_WORKER_LOCALQUEUE_MAX 32
@@ -333,7 +333,7 @@
  * an overflow.
  */
 #ifndef cGAB_STACK_MAX
-#define cGAB_STACK_MAX (cGAB_FRAMES_MAX * 32)
+#define cGAB_STACK_MAX (cGAB_FRAMES_MAX * 16)
 #endif
 
 /*
@@ -429,17 +429,7 @@
  * Maximum value of an upvalues.
  * Upvalues must be addressable by a uint8_t
  */
-#define GAB_UPVALUE_MAX (256 >> 1)
-
-/*
- * Maximum number of function arguments.
- */
-#define GAB_ARG_MAX (256 >> 2)
-
-/*
- * Maximum number of function return values.
- */
-#define GAB_RET_MAX 128
+#define GAB_UPVALUE_MAX 256
 
 /*
  * The width of integers representable by cgab.
@@ -507,7 +497,7 @@ enum gab_status {
 /* VERSION */
 #define GAB_VERSION_MAJOR "0"
 #define GAB_VERSION_MINOR "1"
-#define GAB_VERSION_PATCH "3"
+#define GAB_VERSION_PATCH "4"
 #define GAB_VERSION_TAG                                                        \
   GAB_VERSION_MAJOR "." GAB_VERSION_MINOR "." GAB_VERSION_PATCH
 
@@ -1307,6 +1297,11 @@ struct gab_obj {
 #include "queue.h"
 
 #define T gab_value
+#define NAME gab_value_dyn
+#define DEF_T gab_cinvalid
+#include "queue.h"
+
+#define T gab_value
 #include "array.h"
 
 #define T gab_value
@@ -1410,6 +1405,11 @@ enum gab_flags {
    * when used.
    */
   fGAB_USE_RELOAD = 1 << 4,
+
+  /*
+   * When any fiber panics, send SIGTERM to the engine.
+   */
+  fGAB_SIGTERM_ON_ERR = 1 << 5,
 };
 
 /**

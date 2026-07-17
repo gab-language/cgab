@@ -16,10 +16,6 @@
 #define TYPENAME CONCAT(q_, NAME)
 #endif
 
-#ifndef SIZE
-#define SIZE 128
-#endif
-
 #define MASK(q) (q->cap - 1)
 
 #ifndef DEF_T
@@ -32,12 +28,17 @@
 
 typedef struct TYPENAME TYPENAME;
 struct TYPENAME {
-  T *data;
   uint32_t head, tail, cap;
+  #ifdef SIZE
+  T data[SIZE];
+  #else
+  T *data;
+  #endif
 };
 
 LINKAGE uint64_t METHOD(len)(TYPENAME *self) { return self->tail - self->head; }
 
+#ifndef SIZE
 LINKAGE void METHOD(cap)(TYPENAME *self, uint32_t cap) {
   assert((cap > 0) && ((cap & (cap - 1)) == 0));
 
@@ -50,15 +51,21 @@ LINKAGE void METHOD(cap)(TYPENAME *self, uint32_t cap) {
 
   if (self->data)
     free(self->data);
+
   self->data = newdata;
   self->cap = cap;
   self->head = 0;
   self->tail = len;
 }
+#endif
 
 LINKAGE void METHOD(create)(TYPENAME *self, uint32_t cap) {
   memset(self, 0, sizeof(*self));
+#ifdef SIZE
+  self->cap = SIZE;
+#else
   METHOD(cap)(self, cap);
+#endif
 }
 
 LINKAGE bool METHOD(is_empty)(TYPENAME *self) {
@@ -71,7 +78,11 @@ LINKAGE bool METHOD(is_full)(TYPENAME *self) {
 
 LINKAGE bool METHOD(push)(TYPENAME *self, T value) {
   if (METHOD(is_full)(self))
+#ifdef SIZE
+    return false;
+#else
     METHOD(cap)(self, self->cap * 2);
+#endif
 
   self->data[self->tail++ & MASK(self)] = value;
 

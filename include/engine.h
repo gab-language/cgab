@@ -22,7 +22,7 @@ enum gab_bcop_kind {
 /**
  * Structure used to actually execute bytecode
  *
- * This structure is pretty large (8kb).
+ * This structure is pretty large.
  *
  * Since a lot of fibers are small and short lived, this is overkill.
  *
@@ -35,9 +35,9 @@ enum gab_bcop_kind {
 struct gab_vm {
   uint8_t *ip;
 
-  gab_value *sb, *sp, *fp, *kb;
+  gab_value *sp, *fp, *kb;
 
-  gab_value initial[cGAB_STACK_MAX];
+  gab_value sb[cGAB_STACK_MAX];
 };
 
 /**
@@ -164,33 +164,39 @@ struct gab_onative {
  * a way to use some extra memory to speed this up?
  *
  *  I could allocate them in a dictionary-esque array and use linear probing.
- *  I could keep keys in a sorted array and use binary search 
+ *  I could keep keys in a sorted array and use binary search
  *  I could maintain a rb-tree in the array
  *
- *  The problem with a sort is that the *hash* isn't on sorted keys when we compute it.
- *   - This means arriving at the same shape in different orders will result in different
- *     hashes, and thus different shapes. But the shapes will *appear* the same because
- *     the keys are sorted. There ought to be a way to sort the keys, then hash, then create.
- *     This sort step will take care of de-duplication too.
+ *  The problem with a sort is that the *hash* isn't on sorted keys when we
+ * compute it.
+ *   - This means arriving at the same shape in different orders will result in
+ * different hashes, and thus different shapes. But the shapes will *appear* the
+ * same because the keys are sorted. There ought to be a way to sort the keys,
+ * then hash, then create. This sort step will take care of de-duplication too.
  *
- *     However, it will complicate with/take, which will now require a re-sort of the new keys
+ *     However, it will complicate with/take, which will now require a re-sort
+ * of the new keys
  *
- *   Shapes (and their tree) need to be able to be collected. The tree can be persistent and shared.
+ *   Shapes (and their tree) need to be able to be collected. The tree can be
+ * persistent and shared.
  *
  *   gab_ushpat needs to be supported - fetching the nth value of a shape.
  *   - This is hard to do in a HAMT type ds.
  *   - Maybe each node could maintain how many leaves descend from it?
  *   - Then I can check branches and their leafcounts against n and descend.
- *   - This could work because I have to replace all nodes on the way *down* to a put anyway - I simply up each of their leafcounts by one.
+ *   - This could work because I have to replace all nodes on the way *down* to
+ * a put anyway - I simply up each of their leafcounts by one.
  *
  *   Persistent HAMT for storing keys.
- *    - To construct any given shape, I have to construct the n-1 shapes before it?. (Not tenable)
+ *    - To construct any given shape, I have to construct the n-1 shapes before
+ * it?. (Not tenable)
  *
  *   CREATE:
  *    - construct hash, even with stride.
  *    - check for intern
- *    - construct a HAMT (No way other than doing N inserts. We can maybe write a mutable version like massoc, but we will waste an allocation
- *      when we collide and expand the tree
+ *    - construct a HAMT (No way other than doing N inserts. We can maybe write
+ * a mutable version like massoc, but we will waste an allocation when we
+ * collide and expand the tree
  *    - return
  *
  *   PUT:
@@ -211,7 +217,8 @@ struct gab_onative {
  *    - (ushpat, finding last key, finding first key, next key)
  *
  *    NOTE:
- *    - After hashing keys, we have to compare N keys. I don't think we can avoid this
+ *    - After hashing keys, we have to compare N keys. I don't think we can
+ * avoid this
  *    - Its either that, or traversing a tree of N nodes.
  *
  *   The good news is that we can cache the shapes in the bytecode. We can
@@ -242,10 +249,14 @@ struct gab_oshapenode {
   gab_value data[];
 };
 
-static_assert(offsetof(struct gab_oshape, nmask) == offsetof(struct gab_oshapenode, nmask));
-static_assert(offsetof(struct gab_oshape, lmask) == offsetof(struct gab_oshapenode, lmask));
-static_assert(offsetof(struct gab_oshape, data) == offsetof(struct gab_oshapenode, data));
-static_assert(offsetof(struct gab_oshape, datalen) == offsetof(struct gab_oshapenode, datalen));
+static_assert(offsetof(struct gab_oshape, nmask) ==
+              offsetof(struct gab_oshapenode, nmask));
+static_assert(offsetof(struct gab_oshape, lmask) ==
+              offsetof(struct gab_oshapenode, lmask));
+static_assert(offsetof(struct gab_oshape, data) ==
+              offsetof(struct gab_oshapenode, data));
+static_assert(offsetof(struct gab_oshape, datalen) ==
+              offsetof(struct gab_oshapenode, datalen));
 
 /**
  * @brief A block - aka a prototype and it's captures.
@@ -658,7 +669,8 @@ struct gab_eg {
     // (global or local), it is tracked in this queue. Once a fiber has
     // begun running in a job, *it may not migrate*. If it yields, it returns
     // to this queue.
-    q_gab_value queue;
+    q_gab_value working_queue;
+    q_gab_value_dyn waiting_queue;
 
     // GC inc/dec ref count tracking buffer.
     struct gab_gcbuf {
@@ -736,7 +748,6 @@ GAB_API int64_t gab_fmodinspect(FILE *stream, gab_value prototype);
  * @brief Inspect a gab_value out to stream, recursing depth times.
  */
 int64_t gab_fvalinspect(FILE *stream, gab_value self, int depth);
-
 
 static inline uint8_t *proto_srcbegin(struct gab_triple gab,
                                       struct gab_oprototype *p) {
