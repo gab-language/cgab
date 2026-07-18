@@ -146,7 +146,7 @@
  * This may be useful, as there is significant cost to spawning os threads.
  */
 #ifndef cGAB_JOB_IDLE_TRIES
-#define cGAB_JOB_IDLE_TRIES 100
+#define cGAB_JOB_IDLE_TRIES 1000
 #endif
 
 /*
