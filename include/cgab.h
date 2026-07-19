@@ -3425,10 +3425,6 @@ GAB_API gab_value gab_ntchnput(struct gab_triple gab, gab_value channel,
 GAB_API gab_value gab_untchnput(struct gab_triple gab, gab_value channel,
                                 uint64_t len, gab_value *value, uint64_t tries);
 
-GAB_API gab_value gab_untchntake(struct gab_triple gab, gab_value channel,
-                                 uint64_t len, gab_value *value,
-                                 uint64_t tries);
-
 /**
  * @brief Take a value from the given channel. This will block the caller
  * until a value is available to take.

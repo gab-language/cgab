@@ -134,5 +134,6 @@ static MunitTest string_tests[] = {
     },
 };
 
-const MunitSuite string_suite = {"/string", string_tests, NULL, 1,
-                                 MUNIT_SUITE_OPTION_NONE};
+const MunitSuite string_suite = {
+    "/string", string_tests, NULL, 1, MUNIT_SUITE_OPTION_NONE,
+};

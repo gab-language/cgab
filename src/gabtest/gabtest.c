@@ -7,6 +7,7 @@ extern const MunitSuite record_suite;
 extern const MunitSuite shape_suite;
 extern const MunitSuite string_suite;
 extern const MunitSuite binary_suite;
+extern const MunitSuite channel_suite;
 extern const MunitSuite exec_suite;
 
 struct gab_triple gab;
@@ -27,6 +28,7 @@ int main(int argc, char *argv[MUNIT_ARRAY_PARAM(argc + 1)]) {
       shape_suite,
       string_suite,
       binary_suite,
+      channel_suite,
       exec_suite,
       {},
   };

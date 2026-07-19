@@ -1212,26 +1212,8 @@ GAB_INTERNAL bool __gab_jbstep(struct gab_triple gab, struct gab_job *job) {
                 gab_number(i));
   }
 #endif
-  gab_value fiber = gab_cinvalid;
 
   bool workqempty = q_gab_value_is_empty(&job->working_queue);
-
-  if (q_gab_value_is_full(&job->working_queue))
-    goto work;
-
-  fiber = q_gab_value_dyn_pop(&job->waiting_queue);
-  // TODO @cgab @bug: Properly handle these lifetimes.
-  // gab_dref(gab, fiber);
-
-  if (fiber != gab_cinvalid) {
-#if cGAB_LOG_EG
-    gab_fprintf(stderr, "($) TRANSFER $ WAITING => WORKING\n",
-                gab_number(gab.wkid), fiber);
-#endif
-
-    if (!q_gab_value_push(&job->working_queue, fiber))
-      gab_assert(false, "May not fail to push to working queue\n");
-  }
 
 #if cGAB_LOG_EG
   gab_fprintf(stderr, "($) TAKING WITH $ tries\n", gab_number(gab.wkid),
@@ -1244,7 +1226,7 @@ GAB_INTERNAL bool __gab_jbstep(struct gab_triple gab, struct gab_job *job) {
    * If our working queue is empty, we wait IDLE_TRIES.
    * If it isn't, don't waste cycles waiting.
    */
-  fiber =
+  gab_value fiber =
       gab_tchntake(gab, job->work_channel, cGAB_JOB_IDLE_TRIES * workqempty);
 
 #if cGAB_LOG_EG
@@ -1253,11 +1235,8 @@ GAB_INTERNAL bool __gab_jbstep(struct gab_triple gab, struct gab_job *job) {
 #endif
 
   // Terminate if requested.
-  if (fiber == gab_cinvalid)
-    return false;
-
   // If the channel closed, terminate
-  if (fiber == gab_cundefined)
+  if (fiber == gab_cinvalid || fiber == gab_cundefined)
     return false;
 
   // If we timed out, pull from the global work_channel
@@ -1271,11 +1250,8 @@ GAB_INTERNAL bool __gab_jbstep(struct gab_triple gab, struct gab_job *job) {
 #endif
 
   // Terminate if requested.
-  if (fiber == gab_cinvalid)
-    return false;
-
   // If the channel closed, terminate
-  if (fiber == gab_cundefined)
+  if (fiber == gab_cinvalid || fiber == gab_cundefined)
     return false;
 
   if (fiber != gab_ctimeout) {
@@ -1285,16 +1261,29 @@ GAB_INTERNAL bool __gab_jbstep(struct gab_triple gab, struct gab_job *job) {
                gab.wkid, gab_valkind(fiber));
 
     // Our global take succeeded - append to our local queue.
-    if (!q_gab_value_push(&job->working_queue, fiber))
+    if (!q_gab_value_dyn_push(&job->waiting_queue, fiber))
       gab_assert(false, "Shall not fail to append fiber to waiting queue.");
   }
 
+  if (!q_gab_value_is_full(&job->working_queue)) {
+    fiber = q_gab_value_dyn_pop(&job->waiting_queue);
+    // TODO @cgab @bug: Properly handle these lifetimes.
+    // gab_dref(gab, fiber);
+
+    if (fiber != gab_cinvalid) {
+#if cGAB_LOG_EG
+      gab_fprintf(stderr, "($) TRANSFER $ WAITING => WORKING\n",
+                  gab_number(gab.wkid), fiber);
+#endif
+      if (!q_gab_value_push(&job->working_queue, fiber))
+        gab_assert(false, "May not fail to push to working queue\n");
+    }
+  }
+
   if (q_gab_value_is_empty(&job->working_queue))
-    if (q_gab_value_dyn_is_empty(&job->waiting_queue))
-      return gab_busywait(gab), true;
+    return gab_busywait(gab), true;
 
   // Peek at job to do on the queue.
-work:
   fiber = q_gab_value_peek(&job->working_queue);
 
   gab_assert(
@@ -6714,9 +6703,8 @@ GAB_INTERNAL gab_value __gab_chnwaitempty(struct gab_triple gab,
 }
 
 GAB_INTERNAL gab_value __gab_chnwaitmatches(struct gab_triple gab,
-                                          gab_value *data,
-                                          gab_value c, uint64_t tries,
-                                          uint64_t *sofar) {
+                                            gab_value *data, gab_value c,
+                                            uint64_t tries, uint64_t *sofar) {
   while (gab_chnmatches(c, data)) {
     if (gab_chnisclosed(c))
       return gab_cundefined;
@@ -6787,6 +6775,10 @@ GAB_INTERNAL gab_value __gab_ubchnput(struct gab_triple gab,
 
     if (__gab_chnput(channel, len, vs))
       return res;
+
+    // if (!__gab_jbisalive(gab, gab.wkid) ||
+    //     !__gab_jbstep(gab, gab.eg->jobs + gab.wkid))
+    //   return __gab_jbbail(gab, gab.eg->jobs + gab.wkid), res;
   }
 
   return gab_cinvalid;
@@ -6809,8 +6801,9 @@ GAB_INTERNAL gab_value __gab_bchnput(struct gab_triple gab,
   case gab_cundefined:
     return res;
   }
-  // TODO @cgab @bug: What if *before we start waiting*, someone takes, and some one puts?
-  // Then we accidentally wait for a put which isn't ours, and may timeout?
+  // TODO @cgab @bug: What if *before we start waiting*, someone takes, and some
+  // one puts? Then we accidentally wait for a put which isn't ours, and may
+  // timeout?
 
   // Wait for a taker.
   res = __gab_chnwaitmatches(gab, vs, c, tries, &sofar);
@@ -6822,8 +6815,7 @@ GAB_INTERNAL gab_value __gab_bchnput(struct gab_triple gab,
   case gab_cundefined:
     // If a taker never arrives, we should remove our value as if our put
     // failed and return a timeout.
-    bool abndn = __gab_chnabandon(channel, len);
-    return abndn ? res : gab_cvalid;
+    return __gab_chnabandon(channel, len) ? res : gab_cvalid;
   // A taker arrived.
   default:
     return gab_cvalid;
@@ -6856,6 +6848,10 @@ GAB_INTERNAL gab_value __gab_bchntake(struct gab_triple gab,
       return res;
 
     res = __gab_chntake(channel, len, vs);
+
+    // if (!__gab_jbisalive(gab, gab.wkid) ||
+    //     !__gab_jbstep(gab, gab.eg->jobs + gab.wkid))
+    //   return __gab_jbbail(gab, gab.eg->jobs + gab.wkid), res;
   }
 
   return res;
