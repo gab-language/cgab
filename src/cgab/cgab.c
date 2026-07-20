@@ -1183,36 +1183,6 @@ GAB_INTERNAL bool __gab_jbstep(struct gab_triple gab, struct gab_job *job) {
     break;
   }
 
-#if cGAB_LOG_EG
-  gab_fprintf(stderr, "($) WORKINGQUEUE\n", gab_number(gab.wkid));
-
-  uint64_t i = 0;
-  for (uint64_t h = job->working_queue.head; h < job->working_queue.tail;
-       h++, i++) {
-    gab_value d = job->working_queue.data[h & (job->working_queue.cap - 1)];
-    gab_assert(gab_valkind(d) == kGAB_FIBER,
-               "(%i) Fibers in queue shall only have kind "
-               "kGAB_FIBER, not %d (%p).\n",
-               gab.wkid, gab_valkind(d), gab_valtoo(d));
-    gab_fprintf(stderr, "($) $ is working at $\n", gab_number(gab.wkid), d,
-                gab_number(i));
-  }
-
-  gab_fprintf(stderr, "($) WAITINGQUEUE\n", gab_number(gab.wkid));
-
-  i = 0;
-  for (uint64_t h = job->waiting_queue.head; h < job->waiting_queue.tail;
-       h++, i++) {
-    gab_value d = job->waiting_queue.data[h & (job->waiting_queue.cap - 1)];
-    gab_assert(gab_valkind(d) == kGAB_FIBER,
-               "(%i) Fibers in queue shall only have kind "
-               "kGAB_FIBER, not %d (%p).\n",
-               gab.wkid, gab_valkind(d), gab_valtoo(d));
-    gab_fprintf(stderr, "($) $ is waiting at $\n", gab_number(gab.wkid), d,
-                gab_number(i));
-  }
-#endif
-
   bool workqempty = q_gab_value_is_empty(&job->working_queue);
 
 #if cGAB_LOG_EG
@@ -3501,7 +3471,8 @@ GAB_API union gab_value_pair gab_asend(struct gab_triple gab,
       gab_chnput(gab, gab.eg->jobs[args.pin].work_channel, fb);
 
   } else if (!__gab_jbspawn(gab, fb)) {
-    gab_chnput(gab, gab.eg->work_channel, fb);
+    gab_value res = gab_chnput(gab, gab.eg->work_channel, fb);
+    gab_assert(res == gab_cvalid, "Shall not fail to put");
   }
 
   return (union gab_value_pair){{gab_cvalid, fb}};
