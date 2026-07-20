@@ -378,11 +378,12 @@
 /*
  * cgab depends on the standard c11 <threads.h>.
  *
- * Some platforms are behind on implementing this (as it is optional in the standard)
- * and therefor, cgab vendors a cross-platform implementation of <threads.h>.
+ * Some platforms are behind on implementing this (as it is optional in the
+ * standard) and therefor, cgab vendors a cross-platform implementation of
+ * <threads.h>.
  *
- * With this option. cgab will attempt compiling with the native <threads.h> first,
- * and fallback to the vendored "cthreads.h".
+ * With this option. cgab will attempt compiling with the native <threads.h>
+ * first, and fallback to the vendored "cthreads.h".
  *
  * Without this option, cgab will always use the vendored "cthreads.h"
  *
@@ -704,6 +705,9 @@ static inline void __gab_assert_fail(const char *expr, const char *file,
   ((expr) ? (void)(0)                                                          \
           : __gab_assert_fail(#expr, __FILE__, __FUNCTION__, __LINE__,         \
                               format __VA_OPT__(, ) __VA_ARGS__))
+#define gab_unreachable(format, ...)                                           \
+  __gab_assert_fail("unreachable", __FILE__, __FUNCTION__, __LINE__,           \
+                    format __VA_OPT__(, ) __VA_ARGS__)
 
 // #endif
 
@@ -786,7 +790,8 @@ static inline void __gab_assert_fail(const char *expr, const char *file,
  *
  * Typically these functions look at the arguments to the message with
  * gab_arg(), check some types, and perform some work. Return values are
- * pushed to the stack with @see gab_push, and then a successful status is returned.
+ * pushed to the stack with @see gab_push, and then a successful status is
+ * returned.
  *
  * Native modules and functions may yield or panic as any gab code can.
  */
@@ -896,9 +901,9 @@ extern "C" {
  * We need to store the string's length, a null-terminator (for
  * c-compatibility), and the string's data.
  *
- * Instead of storing the length of the string, we store the amount of *unused* bytes.
- * Since there are a total of 5 bytes availble for storing string
- * data, the remaining length is computed as 5 - strlen(str).
+ * Instead of storing the length of the string, we store the amount of *unused*
+ * bytes. Since there are a total of 5 bytes availble for storing string data,
+ * the remaining length is computed as 5 - strlen(str).
  *
  * We do this for a special case - when the string has length 5, the remaining
  * length is 0. In this case, the byte which stores the remaining length
@@ -994,7 +999,7 @@ enum gab_kind {
 #define __GAB_TAGBITS ((uint64_t)__GAB_TAGMASK << __GAB_TAGOFFSET)
 
 #define __GAB_VAL_TAG(val)                                                     \
-  ((enum gab_kind)((gab_valisn(val)                                          \
+  ((enum gab_kind)((gab_valisn(val)                                            \
                         ? kGAB_NUMBER                                          \
                         : ((val) >> __GAB_TAGOFFSET) & __GAB_TAGMASK)))
 
@@ -1045,8 +1050,7 @@ GAB_API_INLINE gab_value __gab_itoval(gab_int value) {
  *  - true:
  *  - false:
  */
-#define gab_valisb(val)                                                      \
-  (gab_valeq(val, gab_true) || gab_valeq(val, gab_false))
+#define gab_valisb(val) (gab_valeq(val, gab_true) || gab_valeq(val, gab_false))
 
 /*
  * Check if a gab_value represents a heap-allocated object.
@@ -1059,7 +1063,6 @@ GAB_API_INLINE gab_value __gab_itoval(gab_int value) {
  */
 #define __gab_obj(val)                                                         \
   (gab_value)(__GAB_SIGN_BIT | __GAB_QNAN | (uint64_t)(uintptr_t)(val))
-
 
 /*
  * The gab values true and false are implemented with messages.
@@ -1197,7 +1200,8 @@ GAB_API_INLINE gab_uint __gab_valtou(gab_value v) {
 #endif
 
 /*
- * Cast a gab value to a primitive op. This is *not* for something like gab_cinvalid.
+ * Cast a gab value to a primitive op. This is *not* for something like
+ * gab_cinvalid.
  */
 #define gab_valtop(val) ((uint8_t)((val) & 0xff))
 
@@ -1211,7 +1215,8 @@ GAB_API_INLINE gab_uint __gab_valtou(gab_value v) {
  *
  * This mostly exists *in case* cgab changes the value representation.
  *
- * I don't really see that happening - it is probably safe to just use '==' directly.
+ * I don't really see that happening - it is probably safe to just use '=='
+ * directly.
  *
  * cgab does this in a lot of places.
  */
@@ -1226,12 +1231,13 @@ GAB_API_INLINE gab_uint __gab_valtou(gab_value v) {
 #define fGAB_OBJ_BUFFERED ((uint8_t)1 << 0)
 #define fGAB_OBJ_NEW ((uint8_t)1 << 1)
 
-// TODO @cgab @opt: Lots of bits are wasted in the flags. Use 13-14 bits for rc, and 3-2 for flags.
+// TODO @cgab @opt: Lots of bits are wasted in the flags. Use 13-14 bits for rc,
+// and 3-2 for flags.
 
 /*
  * When cGAB_LOG_GC is enabled, instead of actually freeing objects,
- * cgab simply marks them as freed with this flag. Then, if they are used or freed again,
- * cgab will catch the error.
+ * cgab simply marks them as freed with this flag. Then, if they are used or
+ * freed again, cgab will catch the error.
  */
 #define fGAB_OBJ_FREED ((uint8_t)1 << 2)
 
@@ -1289,7 +1295,8 @@ struct gab_obj {
 };
 
 /*
- * More generic data structure definitions, on gab_values now that they are defined.
+ * More generic data structure definitions, on gab_values now that they are
+ * defined.
  */
 #define T gab_value
 #define DEF_T gab_cinvalid
@@ -1318,7 +1325,7 @@ struct gab_obj {
 #endif
 
 /*
- * Threadsafe generic vector for gab_values. 
+ * Threadsafe generic vector for gab_values.
  */
 #define T gab_value
 #define NAME gab_value_thrd
@@ -1356,8 +1363,8 @@ struct gab_triple {
    */
   uint32_t flags;
   /*
-   * @brief An index into the engine's jobs array, corresponding to which os-thread this
-   * triple is on.
+   * @brief An index into the engine's jobs array, corresponding to which
+   * os-thread this triple is on.
    */
   int32_t wkid;
 };
@@ -1701,8 +1708,8 @@ struct gab_impl_rest {
   /**
    * @brief The type of the relevant type of the receiver.
    *
-   * A gab_value may have multiple types - a gab_record has its shape, as well as
-   * the gab.record type, as well as the generic gab_cundefined type.
+   * A gab_value may have multiple types - a gab_record has its shape, as well
+   * as the gab.record type, as well as the generic gab_cundefined type.
    *
    * These are checked in a specific order, and the first match is used.
    */
@@ -2502,8 +2509,8 @@ GAB_API bool gab_asigcoll(struct gab_triple gab);
 GAB_API bool gab_sigcoll(struct gab_triple gab);
 
 /**
- * @brief Lock the engine's garbage collector to prevent collection until gab_gcunlock
- * is called.
+ * @brief Lock the engine's garbage collector to prevent collection until
+ * gab_gcunlock is called.
  * @see gab_gcunlock
  *
  * @param gc The gc to lock

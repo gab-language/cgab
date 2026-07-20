@@ -26,6 +26,10 @@
 #define LINKAGE static inline
 #define METHOD(name) CONCAT(PREFIX, CONCAT(_, name))
 
+#ifdef SIZE
+static_assert(((SIZE) & (SIZE - 1)) == 0, "SIZE is not a power of 2");
+#endif
+
 typedef struct TYPENAME TYPENAME;
 struct TYPENAME {
   uint32_t head, tail, cap;

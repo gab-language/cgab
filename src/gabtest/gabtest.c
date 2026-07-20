@@ -16,7 +16,7 @@ int main(int argc, char *argv[MUNIT_ARRAY_PARAM(argc + 1)]) {
   union gab_value_pair result = gab_create(
       (struct gab_create_argt){
           .jobs = 4,
-          .wait = cGAB_DEFAULT_WAIT_NS,
+          .wait = 0,
       },
       &gab);
 

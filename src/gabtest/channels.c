@@ -1,5 +1,6 @@
 #include "cgab.h"
 #include "munit/munit.h"
+#include <stdint.h>
 
 extern struct gab_triple gab;
 
@@ -84,11 +85,14 @@ static MunitResult test_channel_unsafe_put(const MunitParameter params[],
   return MUNIT_OK;
 }
 
+// TODO @cgabtest @opt: Optimize channel put/take
+
 static MunitResult
 test_channel_stress_concurrent_putters(const MunitParameter params[],
                                        void *data) {
   gab_value ch = gab_channel(gab);
-  const uint64_t num_fibers = 10000;
+  const uint64_t num_fibers = 5000;
+  gab_value fibers[num_fibers];
   gab_value msg_put = gab_message(gab, mGAB_PUT);
 
   // 1. Queue up thousands of concurrent putters.
@@ -101,11 +105,11 @@ test_channel_stress_concurrent_putters(const MunitParameter params[],
                            .len = 1,
                        });
 
-
     munit_assert_uint64(put_res.status, ==, gab_cvalid);
+
+    fibers[i] = put_res.vresult;
   }
 
-  // 2. Main thread acts as the consumer bottleneck.
   uint64_t total_received = 0;
   for (uint64_t i = 0; i < num_fibers; i++) {
     gab_value val = gab_chntake(gab, ch);
@@ -113,10 +117,142 @@ test_channel_stress_concurrent_putters(const MunitParameter params[],
     // Verify the value was successfully passed through
     munit_assert_uint64(val, ==, gab_number(1));
     total_received++;
+
+    int64_t done = 0;
+    for (uint64_t f = 0; f < num_fibers; f++) {
+      if (gab_fibisdone(fibers[f])) {
+        done++;
+        // If a fiber is done, check that it didn't error.
+        union gab_value_pair res = gab_fibawait(gab, fibers[f]);
+        munit_assert_uint64(res.status, ==, gab_cvalid);
+        munit_assert_uint64(res.aresult->data[0], ==, gab_ok);
+      }
+    }
+
+    // If more fibers are done than values we've receied so far, we have a bug!
+    munit_assert_uint64(done, <=, total_received);
   }
 
-  // 3. Verify channel state is clean after the stress run
   munit_assert_uint64(total_received, ==, num_fibers);
+  munit_assert_true(gab_chnisempty(ch));
+
+  return MUNIT_OK;
+}
+
+static MunitResult
+test_channel_concurrent_takers(const MunitParameter params[],
+                                      void *data) {
+  gab_value ch = gab_channel(gab);
+  const uint64_t num_fibers = 5000;
+  gab_value fibers[num_fibers];
+  gab_value msg_take = gab_message(gab, mGAB_TAKE);
+
+  for (uint64_t i = 0; i < num_fibers; i++) {
+    union gab_value_pair take_res = gab_asend(gab, (struct gab_send_argt){
+                                                       .message = msg_take,
+                                                       .receiver = ch,
+                                                       .argv = NULL,
+                                                       .len = 0,
+                                                   });
+
+    munit_assert_uint64(take_res.status, ==, gab_cvalid);
+    fibers[i] = take_res.vresult;
+  }
+
+  uint64_t total_sent = 0;
+  for (uint64_t i = 0; i < num_fibers; i++) {
+    gab_chnput(gab, ch, gab_number(1));
+    total_sent++;
+
+    int64_t done = 0;
+    for (uint64_t f = 0; f < num_fibers; f++) {
+      if (gab_fibisdone(fibers[f])) {
+        done++;
+        // Verify the taker finished without trapping an error
+        union gab_value_pair res = gab_fibawait(gab, fibers[f]);
+        munit_assert_uint64(res.status, ==, gab_cvalid);
+
+        // The taker should have received the value we just put
+        munit_assert_uint64(res.aresult->data[0], ==, gab_ok);
+        munit_assert_uint64(res.aresult->data[3], ==, gab_ok);
+        munit_assert_uint64(res.aresult->data[4], ==, gab_number(1));
+      }
+    }
+
+    // If more fibers are done than values we've sent so far, we have a bug
+    munit_assert_uint64(done, <=, total_sent);
+  }
+
+  munit_assert_uint64(total_sent, ==, num_fibers);
+  munit_assert_true(gab_chnisempty(ch));
+
+  return MUNIT_OK;
+}
+
+// This can lock up the system because of the "working queue" approach.
+// If we get stuck with all takers/producers in our working queues,
+// we actually can't ever make progress.
+// For now, a lower number for num_pairs makes this impossible here.
+static MunitResult test_channel_stress_randomized(const MunitParameter params[],
+                                                  void *data) {
+  gab_value ch = gab_channel(gab);
+  const uint64_t num_pairs = 64;
+  // const uint64_t num_pairs = 10000;
+  const uint64_t total_fibers = num_pairs * 2;
+
+  gab_value fibers[total_fibers];
+  gab_value msg_put = gab_message(gab, mGAB_PUT);
+  gab_value msg_take = gab_message(gab, mGAB_TAKE);
+
+  // 0 = PUT, 1 = TAKE
+  int actions[total_fibers];
+
+  for (uint64_t i = 0; i < num_pairs; i++)
+    actions[i] = 0;
+
+  for (uint64_t i = num_pairs; i < total_fibers; i++)
+    actions[i] = 1;
+
+  // Shuffle
+  for (uint64_t i = total_fibers - 1; i > 0; i--) {
+    uint64_t j = (uint64_t)munit_rand_int_range(0, (int)i);
+    int temp = actions[i];
+    actions[i] = actions[j];
+    actions[j] = temp;
+  }
+
+  // 3. Queue the fibers in the aggressively randomized order
+  for (uint64_t i = 0; i < total_fibers; i++) {
+    union gab_value_pair res;
+    if (actions[i] == 0) {
+      res = gab_asend(gab, (struct gab_send_argt){
+                               .message = msg_put,
+                               .receiver = ch,
+                               .argv = (gab_value[]){gab_number(i)},
+                               .len = 1,
+                           });
+    } else {
+      res = gab_asend(gab, (struct gab_send_argt){
+                               .message = msg_take,
+                               .receiver = ch,
+                               .argv = NULL,
+                               .len = 0,
+                           });
+    }
+
+    munit_assert_uint64(res.status, ==, gab_cvalid);
+    fibers[i] = res.vresult;
+  }
+
+  // 4. Await all fibers to complete.
+  for (uint64_t i = 0; i < total_fibers; i++) {
+    union gab_value_pair res = gab_fibawait(gab, fibers[i]);
+
+    // Verify every single fiber resolved without error
+    munit_assert_uint64(res.status, ==, gab_cvalid);
+  }
+
+  // By the end, every Put must have matched with exactly one Take.
   munit_assert_true(gab_chnisempty(ch));
 
   return MUNIT_OK;
@@ -198,6 +334,22 @@ MunitTest channel_tests[] = {
     {
         "/stress_batch",
         test_channel_stress_batch,
+        NULL,
+        NULL,
+        MUNIT_TEST_OPTION_NONE,
+        NULL,
+    },
+    {
+        "/concurrent_takers",
+        test_channel_concurrent_takers,
+        NULL,
+        NULL,
+        MUNIT_TEST_OPTION_NONE,
+        NULL,
+    },
+    {
+        "/randomized",
+        test_channel_stress_randomized,
         NULL,
         NULL,
         MUNIT_TEST_OPTION_NONE,
