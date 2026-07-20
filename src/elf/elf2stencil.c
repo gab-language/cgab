@@ -1,7 +1,10 @@
 #include "core.h"
 #include "platform.h"
-#include <elf.h>
-#include <libelf.h>
+
+#define PACKAGE "obj2stencil"
+#define PACKAGE_VERSION "0.1.0"
+#include <bfd.h>
+
 #include <stddef.h>
 #include <stdio.h>
 
@@ -53,75 +56,37 @@ const char *symtoknownhole(const char *symbol) {
   return "kGAB_JIT_RELOC_TRMP";
 }
 
-void emit_scn(Elf *elf, size_t section, Elf_Scn *strtab, Elf_Scn *symtab) {
-  Elf64_Ehdr *ehdr = elf64_getehdr(elf);
+void emit_scn(bfd *bfd, struct bfd_symbol *sym) {
+  const char *scn_name = sym->section->name;
 
-  size_t stridx = elf_ndxscn(strtab);
-  Elf_Data *symdata = elf_getdata(symtab, nullptr);
+  assert(sym->section->flags & SEC_IN_MEMORY);
 
-  if (symdata->d_type != ELF_T_SYM) {
-    fprintf(stderr, "Symbol table had non-symbol type %i\n", symdata->d_type);
-    return;
-  }
-
-  Elf_Scn *scn = elf_getscn(elf, section);
-  Elf_Scn *scn_rela = elf_getscn(elf, section + 1);
-
-  Elf64_Shdr *scn_hdr = elf64_getshdr(scn);
-  Elf64_Shdr *scn_rela_hdr = elf64_getshdr(scn_rela);
-
-  Elf_Data *scn_data = elf_getdata(scn, nullptr);
-  Elf_Data *scn_rela_data = elf_getdata(scn_rela, nullptr);
-
-  if (scn_data->d_type != ELF_T_BYTE) {
-    fprintf(stderr, "%s had non-byte type %i\n",
-            elf_strptr(elf, stridx, scn_hdr->sh_name), scn_data->d_type);
-    return;
-  }
-
-  const char *scn_name = elf_strptr(elf, stridx, scn_hdr->sh_name);
   size_t scn_name_len = strlen(scn_name);
 
-  // Header for generated stencil
+  // Comment Description
   printf("\n/* EMIT %.*s */\n\n", (int)scn_name_len - 6, scn_name + 6);
 
   // Stencil's code.
   printf("uint8_t %.*s_BYTES[] = {\n\t", (int)scn_name_len - 6, scn_name + 6);
-  size_t bytes_len = scn_data->d_size;
-
+  size_t bytes_len = sym->section->size;
   for (size_t i = 0; i < bytes_len; i++) {
-    unsigned char byte = ((unsigned char *)scn_data->d_buf)[i];
+    unsigned char byte = ((unsigned char *)sym->section->contents)[i];
     printf("0x%02x, ", byte);
   }
   printf("\n};\n");
 
-  // Stencil's rela relocations.
-  if (scn_rela_data->d_type != ELF_T_RELA) {
-    fprintf(stderr, "%s had non-rela type %i. Emitting empty relocations.\n",
-            elf_strptr(elf, stridx, scn_rela_hdr->sh_name), scn_data->d_type);
-    printf("struct gab_jit_reloc %.*s_RELAS[] = {};\n", (int)scn_name_len - 6,
-           scn_name + 6);
-    return;
-  }
-
-  size_t nrela = scn_rela_data->d_size / sizeof(Elf64_Rela);
   printf("struct gab_jit_reloc %.*s_RELAS[] = {\n", (int)scn_name_len - 6,
          scn_name + 6);
-  for (size_t i = 0; i < nrela; i++) {
-    // Look up this relocation in our rela buf.
-    Elf64_Rela rela = ((Elf64_Rela *)scn_rela_data->d_buf)[i];
+  for (size_t i = 0; i < sym->section->reloc_count; i++) {
+    struct reloc_cache_entry rela = sym->section->relocation[i];
 
-    if (rela.r_offset >= bytes_len)
+    if (rela.addend >= bytes_len)
       continue;
 
-    // Look up the symbol we are relocating in the symbol table.
-    Elf64_Sym sym = ((Elf64_Sym *)symdata->d_buf)[ELF64_R_SYM(rela.r_info)];
+    struct bfd_symbol* sym = *rela.sym_ptr_ptr;
 
-    const char *symname = elf_strptr(elf, stridx, sym.st_name);
-
+    rela.howto
     if (sym.st_shndx == SHN_UNDEF) {
-      // TODO: Check the symbol for known holes. We can only patch those we
-      // know!
       const char *known_hole = symtoknownhole(symname);
       assert(known_hole);
 
@@ -134,7 +99,7 @@ void emit_scn(Elf *elf, size_t section, Elf_Scn *strtab, Elf_Scn *symtab) {
        * That is an issue 4 sure.
        */
 
-      Elf_Scn *scn = elf_getscn(elf, sym.st_shndx);
+      struct bfd_section *scn = elf_getscn(elf, sym.st_shndx);
 
       Elf_Data *data = elf_getdata(scn, nullptr);
       const unsigned char *src = (unsigned char *)data->d_buf + sym.st_value;
@@ -174,46 +139,46 @@ void emit_scn(Elf *elf, size_t section, Elf_Scn *strtab, Elf_Scn *symtab) {
 
 int main(int argc, const char **argv) {
   if (gab_osfisatty(stdin)) {
-    fprintf(stderr, "stdin is not a file.\n");
+    fprintf(stderr, "[ERR]: stdin is not a file.\n");
     return -1;
   }
 
-  elf_version(EV_CURRENT);
-
-  Elf *elf = elf_begin(gab_osfileno(stdin), ELF_C_READ, nullptr);
-
-  if (!elf) {
-    fprintf(stderr, "[ELF]: %s\n", elf_errmsg(errno));
+  if (!bfd_init()) {
+    fprintf(stderr, "[BFD]: %s\n", bfd_errmsg(errno));
     return -1;
   }
 
-  if (elf_kind(elf) != ELF_K_ELF) {
-    fprintf(stderr, "[ELF]: Not elf file.\n");
+  bfd *bfd = bfd_fdopenr("stdin", "", gab_osfileno(stdin));
+
+  if (!bfd) {
+    fprintf(stderr, "[BFD]: %s\n", bfd_errmsg(errno));
     return -1;
   }
 
-  size_t n = 0;
-  elf_getshdrnum(elf, &n);
+  fprintf(stdout, "[BFD]: Flavor: %s\n", bfd_flavour_name(bfd_flavour(bfd)));
 
-  size_t scn_str = 0;
-  elf_getshdrstrndx(elf, &scn_str);
+  int64_t storage_needed = bfd_get_symtab_upper_bound(bfd);
 
-  Elf_Scn *strtab = elf_getscn(elf, scn_str);
-  assert(elf64_getshdr(strtab)->sh_type == SHT_STRTAB);
-
-  Elf_Scn *symtab = elf_getscn(elf, n - 1);
-  assert(elf64_getshdr(symtab)->sh_type == SHT_SYMTAB);
-
-  for (size_t section = 0; section < n; section++) {
-    Elf_Scn *scn = elf_getscn(elf, section);
-
-    Elf64_Shdr *scn_hdr = elf64_getshdr(scn);
-
-    const char *scn_name = elf_strptr(elf, scn_str, scn_hdr->sh_name);
-
-    if (scn_isop(scn_name))
-      emit_scn(elf, section, strtab, symtab);
+  if (storage_needed < 0) {
+    fprintf(stderr, "[BFD]: %s\n", bfd_errmsg(errno));
+    return -1;
   }
 
-  elf_end(elf);
+  if (!storage_needed)
+    return 0;
+
+  bfd_symbol** symtab = malloc(storage_needed);
+
+  int64_t numsyms = bfd_canonicalize_symtab(bfd, symtab);
+
+  if (numsyms < 0) {
+    fprintf(stderr, "[BFD]: %s\n", bfd_errmsg(errno));
+    return -1;
+  }
+
+  for (uint64_t i = 0; i < numsyms; i++) {
+    emit_sym(symtab[i]);
+  }
+
+  bfd_cleanup(bfd);
 }
