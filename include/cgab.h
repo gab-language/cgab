@@ -679,35 +679,78 @@ static inline void v_char_spush(v_char *self, s_char slice) {
 #define GAB_SWAP "\x1b[7m"
 #define GAB_CLEAR "\x1b[2J"
 
-// TODO @cgab: Better 'asserts' which are self-describing.
 // #ifdef NDEBUG
 // #define gab_assert(expr, format, ...) (void)(expr)
 // #else
+
 [[noreturn]]
-static inline void __gab_assert_fail(const char *expr, const char *file,
-                                     const char *function, uint64_t line,
-                                     const char *reason, ...) {
+static inline void __gab_assert_fail(const char *prelude, const char *expr,
+                                     const char *file, const char *function,
+                                     uint64_t line, const char *reason, ...) {
   va_list va;
   va_start(va, reason);
 
-  fprintf(stderr, "[%s] assertion '%s' failed at %s:%lu.\n ", function, expr,
-          file, line);
+  flockfile(stderr);
+
+  fprintf(stderr, "%s\n[%s] assertion '%s' failed at %s:%lu.\n", prelude,
+          function, expr, file, line);
 
   vfprintf(stderr, reason, va);
 
   fputc('\n', stderr);
 
+  funlockfile(stderr);
+
   exit(EXIT_FAILURE);
   va_end(va);
 };
 
+#define GAB_ASSERT_UNREACHABLE_PRELUDE                                         \
+  "cgab reached a codepath declared to be unreachable. "                       \
+  "This is a bug in cgab itself. "                                             \
+  "Please consider creating an issue at https://github.com/gab-language/cgab."
+
+#define GAB_ASSERT_PRECONDITION_PRELUDE                                        \
+  "cgab found an unmet precondition. "                                         \
+  "This is often due to misuse of the libcgab c api. "                         \
+  "If this panic is encountered in third-party code, consider creating an "    \
+  "issue there. "                                                              \
+  "Otherwise, please consider creating an issue at "                           \
+  "https://github.com/gab-language/cgab."
+
+#define GAB_ASSERT_DEFAULT_PRELUDE                                             \
+  "cgab encountered an unexpected state. "                                     \
+  "This may be due to a bug in cgab, or in third-party code using the "        \
+  "libcgab c api. "                                                            \
+  "Please consider creating an issue at https://github.com/gab-language/cgab."
+
+#define GAB_ASSERT_VERIFICATION_PRELUDE                                        \
+  "cgab failed a debug verification. "                                           \
+  "This may be due to a bug in cgab, or in third-party code using the "        \
+  "libcgab c api. "                                                            \
+  "Please consider creating an issue at https://github.com/gab-language/cgab."
+
 #define gab_assert(expr, format, ...)                                          \
   ((expr) ? (void)(0)                                                          \
-          : __gab_assert_fail(#expr, __FILE__, __FUNCTION__, __LINE__,         \
+          : __gab_assert_fail(GAB_ASSERT_DEFAULT_PRELUDE, #expr, __FILE__,     \
+                              __FUNCTION__, __LINE__,                          \
                               format __VA_OPT__(, ) __VA_ARGS__))
+
+#define gab_verify(expr, format, ...)                                          \
+  ((expr) ? (void)(0)                                                          \
+          : __gab_assert_fail(GAB_ASSERT_DEFAULT_PRELUDE, #expr, __FILE__,     \
+                              __FUNCTION__, __LINE__,                          \
+                              format __VA_OPT__(, ) __VA_ARGS__))
+
+#define gab_precondition(expr, format, ...)                                    \
+  ((expr) ? (void)(0)                                                          \
+          : __gab_assert_fail(GAB_ASSERT_PRECONDITION_PRELUDE, #expr,          \
+                              __FILE__, __FUNCTION__, __LINE__,                \
+                              format __VA_OPT__(, ) __VA_ARGS__))
+
 #define gab_unreachable(format, ...)                                           \
-  __gab_assert_fail("unreachable", __FILE__, __FUNCTION__, __LINE__,           \
-                    format __VA_OPT__(, ) __VA_ARGS__)
+  __gab_assert_fail(GAB_ASSERT_UNREACHABLE_PRELUDE, "unreachable", __FILE__,   \
+                    __FUNCTION__, __LINE__, format __VA_OPT__(, ) __VA_ARGS__)
 
 // #endif
 
@@ -2714,8 +2757,9 @@ GAB_API_INLINE gab_value gab_strtomsg(gab_value str) {
   if (str == gab_cinvalid)
     return gab_cinvalid;
 
-  gab_assert(gab_valkind(str) == kGAB_STRING,
-             "User shall supply a string value");
+  gab_precondition(gab_valkind(str) == kGAB_STRING,
+                   "User shall supply a string value");
+
   return str | (uint64_t)kGAB_MESSAGE << __GAB_TAGOFFSET;
 }
 
@@ -3057,8 +3101,9 @@ GAB_API gab_value gab_recshp(gab_value record);
  * @return The number of key-value pairs in the record
  */
 GAB_API_INLINE uint64_t gab_reclen(gab_value record) {
-  gab_assert(gab_valkind(record) == kGAB_RECORD,
-             "Cannot get len of non-record of type %i", gab_valkind(record));
+  gab_precondition(gab_valkind(record) == kGAB_RECORD, "Invalid kind %i",
+                   gab_valkind(record));
+
   return gab_shplen(gab_recshp(record));
 }
 
@@ -3972,6 +4017,7 @@ GAB_API_INLINE void gab_sigpropagate(struct gab_triple gab) {
 
   int wkid = gab.wkid + 1;
   bool res = gab_signext(gab, wkid);
+
   gab_assert(res, "Propagation should not fail");
 };
 
