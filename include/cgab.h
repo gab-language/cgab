@@ -3235,6 +3235,42 @@ GAB_API gab_value gab_nreccat(struct gab_triple gab, uint64_t len,
     gab_nlstcat(gab, sizeof(__recs) / sizeof(gab_value), __recs);              \
   })
 
+#define gab_listof(gab, ...)                                                   \
+  ({                                                                           \
+    gab_value items[] = {__VA_ARGS__};                                         \
+    gab_list(gab, 1, sizeof(items) / sizeof(gab_value), items);                \
+  })
+
+/**
+ * @brief Bundle a list of values into a tuple.
+ *
+ * @param gab The engine
+ * @param len The length of values array.
+ * @param values The values of the record to bundle.
+ * @return The new record.
+ */
+GAB_API gab_value gab_list(struct gab_triple gab, uint64_t stride, uint64_t len,
+                           gab_value *values);
+
+GAB_API_INLINE gab_value gab_slist(struct gab_triple gab, uint64_t stride,
+                                   uint64_t len, const char **values) {
+  if (!len)
+    return gab_erecord(gab);
+
+  gab_value vals[len];
+
+  gab_gclock(gab);
+
+  for (uint64_t i = 0; i < len; i++)
+    vals[i] = gab_string(gab, values[i * stride]);
+
+  gab_value rec = gab_list(gab, 1, len, vals);
+
+  gab_gcunlock(gab);
+
+  return rec;
+}
+
 /**
  * @brief Concatenate n records, left to rate
  *
@@ -3318,27 +3354,62 @@ GAB_API struct gab_vm *gab_fibvm(gab_value fiber);
 /**
  * @brief Block the caller until this fiber is completed.
  *
+ * @param gab   The engine
  * @param fiber The fiber
+ * @return The result of executing the fiber.
  */
 GAB_API union gab_value_pair gab_fibawait(struct gab_triple gab,
                                           gab_value fiber);
 
+/**
+ * @brief Block the caller for some amount of 'tries', or until the fiber is
+ * completed.
+ *
+ * @param gab   The engine
+ * @param fiber The fiber
+ * @param tries The number of tries
+ * @return The result of executing the fiber.
+ */
 GAB_API union gab_value_pair gab_tfibawait(struct gab_triple gab,
                                            gab_value fiber, uint64_t tries);
 
+/*
+ * @brief Block the caller until the fiber is completed.
+ *
+ * @param gab   The engine
+ * @param fiber The fiber
+ * @return The fiber's environment upon completion.
+ */
 GAB_API gab_value gab_fibawaite(struct gab_triple gab, gab_value fiber);
 
+/*
+ * @brief Return a value comprising the stacktrace of the fiber.
+ *
+ * @param gab   The engine
+ * @param fiber The fiber
+ * @return The stacktrace
+ */
 GAB_API gab_value gab_fibstacktrace(struct gab_triple gab, gab_value fiber);
 
 /*
- * @brief Using the fiber's bump allocator, allocate n bytes and return a
- * pointer to it
+ * @brief Allocate 'n' bytes using the fiber's bump allocator.
+ *
+ * Fibers have arena-like bump allocators for use in native code.
+ * They are automatically freed when the native returns. They are incredibly
+ * useful for native calls which yield, as the bump allocator is preserved
+ * through yields, and only freed when the native function finally completes.
+ *
+ * @param fiber The fiber to allocate from
+ * @param n     The amount of bytes to allocate
+ * @return A pointer to the allocated memory.
  */
 GAB_API void *gab_fibmalloc(gab_value fiber, uint64_t n);
 
 /*
  * @brief Push a byte onto the fiber's bump allocator.
  *
+ * @param fiber The fiber
+ * @param b     The byte to push
  * @return the byte-offset of the pushed byte.
  */
 GAB_API uint64_t gab_fibpush(gab_value fiber, uint8_t b);
@@ -3346,35 +3417,69 @@ GAB_API uint64_t gab_fibpush(gab_value fiber, uint8_t b);
 /*
  * @brief Push a word (8 bytes) onto the fiber's bump allocator.
  *
+ * @param fiber The fiber
+ * @param w     The word to push
  * @return the byte-offset of the pushed word.
  */
 GAB_API uint64_t gab_wfibpush(gab_value fiber, uint64_t w);
 
 /*
  * @brief Get a pointer into the bump allocator, at byte offset n.
+ *
+ * This is useful when using the bump-allocator as a dynamic array,
+ * and bytes were pushed with @see gab_fibpush or @see gab_wfibpush
+ *
+ * @param fiber The fiber
+ * @param n     The byte-offset
+ * @return A pointer to the memory at byte-offset n.
  */
 GAB_API void *gab_fibat(gab_value fiber, uint64_t n);
 
 /*
  * @brief Get the size of the arena.
+ *
+ * Check the amount of committed memory in the fiber's arena.
+ * This is useful when using the arena as a dynamic-array.
+ *
+ * @param fiber The fiber
+ * @return The number of bytes commited
  */
 GAB_API uint64_t gab_fibsize(gab_value fiber);
 
 /*
- *@brief clear the arena memory.
+ * @brief Clear the fiber's arena memory.
+ *
+ * This is done automatically when a native function returns.
+ *
+ * @param fiber The fiber
  */
 GAB_API void gab_fibclear(gab_value fiber);
 
+/*
+ * @brief Returns true if the fiber is currently running.
+ *
+ * @param fiber The fiber
+ * @return bool
+ */
 GAB_API_INLINE bool gab_fibisrunning(gab_value fiber) {
   return gab_valkind(fiber) == kGAB_FIBERRUNNING;
 }
 
+/*
+ * @brief Returns true if the fiber is done running.
+ *
+ * @param fiber The fiber
+ * @return bool
+ */
 GAB_API_INLINE bool gab_fibisdone(gab_value fiber) {
   return gab_valkind(fiber) == kGAB_FIBERDONE;
 }
 
 /*
  * @brief Return the fiber running in this thread.
+ *
+ * @param gab The engine
+ * @return The fiber running on the job at the wkid given by 'gab'.
  */
 GAB_API gab_value gab_thisfiber(struct gab_triple gab);
 
@@ -3623,42 +3728,6 @@ GAB_API gab_value gab_native(struct gab_triple gab, gab_value name,
  */
 GAB_API gab_value gab_snative(struct gab_triple gab, const char *name,
                               gab_native_f f);
-
-#define gab_listof(gab, ...)                                                   \
-  ({                                                                           \
-    gab_value items[] = {__VA_ARGS__};                                         \
-    gab_list(gab, 1, sizeof(items) / sizeof(gab_value), items);                \
-  })
-
-/**
- * @brief Bundle a list of values into a tuple.
- *
- * @param gab The engine
- * @param len The length of values array.
- * @param values The values of the record to bundle.
- * @return The new record.
- */
-GAB_API gab_value gab_list(struct gab_triple gab, uint64_t stride, uint64_t len,
-                           gab_value *values);
-
-GAB_API_INLINE gab_value gab_slist(struct gab_triple gab, uint64_t stride,
-                                   uint64_t len, const char **values) {
-  if (!len)
-    return gab_erecord(gab);
-
-  gab_value vals[len];
-
-  gab_gclock(gab);
-
-  for (uint64_t i = 0; i < len; i++)
-    vals[i] = gab_string(gab, values[i * stride]);
-
-  gab_value rec = gab_list(gab, 1, len, vals);
-
-  gab_gcunlock(gab);
-
-  return rec;
-}
 
 /**
  * @brief Get the practical runtime type of a value.
