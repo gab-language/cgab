@@ -679,10 +679,6 @@ static inline void v_char_spush(v_char *self, s_char slice) {
 #define GAB_SWAP "\x1b[7m"
 #define GAB_CLEAR "\x1b[2J"
 
-// #ifdef NDEBUG
-// #define gab_assert(expr, format, ...) (void)(expr)
-// #else
-
 [[noreturn]]
 static inline void __gab_assert_fail(const char *prelude, const char *expr,
                                      const char *file, const char *function,
@@ -736,11 +732,15 @@ static inline void __gab_assert_fail(const char *prelude, const char *expr,
                               __FUNCTION__, __LINE__,                          \
                               format __VA_OPT__(, ) __VA_ARGS__))
 
+#ifdef NDEBUG
+#define gab_verify(expr, format, ...) (void)(expr)
+#else
 #define gab_verify(expr, format, ...)                                          \
   ((expr) ? (void)(0)                                                          \
           : __gab_assert_fail(GAB_ASSERT_DEFAULT_PRELUDE, #expr, __FILE__,     \
                               __FUNCTION__, __LINE__,                          \
                               format __VA_OPT__(, ) __VA_ARGS__))
+#endif
 
 #define gab_precondition(expr, format, ...)                                    \
   ((expr) ? (void)(0)                                                          \
@@ -752,7 +752,6 @@ static inline void __gab_assert_fail(const char *prelude, const char *expr,
   __gab_assert_fail(GAB_ASSERT_UNREACHABLE_PRELUDE, "unreachable", __FILE__,   \
                     __FUNCTION__, __LINE__, format __VA_OPT__(, ) __VA_ARGS__)
 
-// #endif
 
 /*
  * The symbol name native modules are checked for when imported.

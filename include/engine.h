@@ -408,10 +408,14 @@ struct gab_ofiber {
  */
 struct gab_ochannel {
   struct gab_obj header;
+
+  /* spinlock */
+  _Atomic(int) spinlock;
   /* Number of values held at member *data* */
   _Atomic uint64_t len;
   /* Values held */
   _Atomic(gab_value *) data;
+
 };
 
 /**

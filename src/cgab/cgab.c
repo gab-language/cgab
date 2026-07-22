@@ -1724,6 +1724,8 @@ GAB_API union gab_value_pair gab_create(struct gab_create_argt args,
   };
 }
 
+GAB_INTERNAL bool __gab_gcisdone(struct gab_triple gab);
+
 GAB_API void gab_destroy(struct gab_triple gab) {
   gab_precondition(gab.wkid == 1, "Shall only be called from the main thread");
 
@@ -1802,7 +1804,7 @@ GAB_API void gab_destroy(struct gab_triple gab) {
   gab_assert(sig.signal == sGAB_IGN,
              "After collection, signal shall be sGAB_IGN");
 
-  // gab_gcassertdone(gab);
+  gab_verify(__gab_gcisdone(gab), "GC Buffers shall be empty");
 
   gab_assert(gab_njobs(gab) == 1,
              "There shall only be one worker alive - the gc thread");
@@ -6633,8 +6635,10 @@ GAB_API gab_value gab_fibawaite(struct gab_triple gab, gab_value f) {
 GAB_API gab_value gab_channel(struct gab_triple gab) {
   struct gab_ochannel *self = GAB_CREATE_OBJ(gab_ochannel, kGAB_CHANNEL);
 
+  atomic_init(&self->spinlock, 0);
   atomic_init(&self->data, nullptr);
   atomic_init(&self->len, 0);
+
   return __gab_obj(self);
 }
 
@@ -6697,6 +6701,10 @@ GAB_API bool gab_chnmatches(gab_value c, gab_value *ptr) {
  * The inverse is true for takers. Once a taker succeeds in taking the len, no
  * other takers will try. And no putters can act until the taker restores the
  * *data* atomic.
+ *
+ * TODO @cgab @qol: Refactor channel implementation.
+ * Implement a spinlock surrounding the channel mutating operations.
+ * It isn't totally functional under contention as it is.
  */
 
 GAB_API bool gab_chnisempty(gab_value c) {
@@ -6723,9 +6731,21 @@ GAB_API bool gab_chnisfull(gab_value c) {
  */
 GAB_INTERNAL bool __gab_chnabandon(struct gab_ochannel *channel,
                                    gab_value *data, uint64_t len) {
+  gab_value *src = atomic_load(&channel->data);
+  uint64_t avail = atomic_load(&channel->len);
+
+  // If we don't have both avail and src yet, the channel is not ready.
+  if (!(avail && src))
+    return false;
+
   // Masquerades as a take, so has to cex the same way.
-  return atomic_compare_exchange_strong(&channel->len, &len, 0) &&
-         atomic_compare_exchange_strong(&channel->data, &data, nullptr);
+  if (atomic_compare_exchange_strong(&channel->data, &src, nullptr)) {
+    uint64_t saw = atomic_exchange(&channel->len, 0);
+    gab_assert(saw == avail, "Should have replaced available");
+    return true;
+  }
+
+  return false;
 }
 
 /*
@@ -6741,9 +6761,23 @@ GAB_INTERNAL bool __gab_chnput(struct gab_ochannel *channel, uint64_t len,
   if (avail || src)
     return false;
 
-  // If both of these succeed we wrote well.
-  return atomic_compare_exchange_strong(&channel->data, &src, vs) &&
-         atomic_compare_exchange_strong(&channel->len, &avail, len);
+  // Acquire spinlock
+  if (atomic_load(&channel->spinlock) || atomic_exchange(&channel->spinlock, 1))
+    return false;
+
+  // Reload our values now that we have the lock.
+  src = atomic_load(&channel->data);
+  avail = atomic_load(&channel->len);
+
+  // If we still don't have an empty channel, bail
+  if (avail || src)
+    return atomic_store(&channel->spinlock, 0), false;
+
+  // Store values
+  atomic_store(&channel->data, vs);
+  atomic_store(&channel->len, len);
+
+  return atomic_store(&channel->spinlock, 0), true;
 }
 
 /*
@@ -6753,7 +6787,6 @@ GAB_INTERNAL bool __gab_chnput(struct gab_ochannel *channel, uint64_t len,
  */
 GAB_INTERNAL gab_value __gab_chntake(struct gab_ochannel *channel, uint64_t n,
                                      gab_value *dest) {
-  // Order matters here.
   gab_value *src = atomic_load(&channel->data);
   uint64_t avail = atomic_load(&channel->len);
 
@@ -6761,14 +6794,22 @@ GAB_INTERNAL gab_value __gab_chntake(struct gab_ochannel *channel, uint64_t n,
   if (!(avail && src))
     return gab_cundefined;
 
+  // Acquire spinlock
+  if (atomic_load(&channel->spinlock) || atomic_exchange(&channel->spinlock, 1))
+    return gab_cundefined;
+
+  // Reset values
+  src = atomic_exchange(&channel->data, nullptr);
+  avail = atomic_exchange(&channel->len, 0);
+
+  // We got the lock, but someone else took the values first.
+  if (!(avail && src))
+    return atomic_store(&channel->spinlock, 0), gab_cundefined;
+
   uint64_t len = n < avail ? n : avail;
   memcpy(dest, src, sizeof(gab_value) * len);
 
-  if (atomic_compare_exchange_strong(&channel->len, &avail, 0) &&
-      atomic_compare_exchange_strong(&channel->data, &src, nullptr))
-    return gab_number(avail);
-  else
-    return gab_cundefined;
+  return atomic_store(&channel->spinlock, 0), gab_number(avail);
 }
 
 // Waits until the channel is empty
@@ -8372,15 +8413,7 @@ GAB_INTERNAL void __gab_prsnewlines(struct gab_triple gab,
 }
 
 GAB_INTERNAL uint64_t node_getinfo_begin(struct gab_src *src, gab_value node) {
-  gab_precondition(d_uint64_t_exists(&src->node_begin_toks, node),
-                   "Node shall exist in dictionary");
   return d_uint64_t_read(&src->node_begin_toks, node);
-}
-
-GAB_INTERNAL uint64_t node_getinfo_end(struct gab_src *src, gab_value node) {
-  gab_precondition(d_uint64_t_exists(&src->node_end_toks, node),
-                   "Node shall exist in dictionary");
-  return d_uint64_t_read(&src->node_end_toks, node);
 }
 
 GAB_INTERNAL gab_value __gab_nodeinfoput(struct gab_src *src, gab_value node,
@@ -8984,7 +9017,8 @@ GAB_API union gab_value_pair gab_parse(struct gab_triple gab,
 
   gab_gcunlock(gab);
 
-  gab_assert(ast != gab_cinvalid || parser.err != gab_cundefined, "Shall either have an ast or an error");
+  gab_assert(ast != gab_cinvalid || parser.err != gab_cundefined,
+             "Shall either have an ast or an error");
 
   if (ast == gab_cinvalid)
     return (union gab_value_pair){.status = gab_cinvalid,
@@ -9471,7 +9505,9 @@ GAB_INTERNAL void __gab_kbcpush(struct bc *bc, uint16_t k, gab_value node) {
 }
 
 GAB_INTERNAL void __gab_bcloadi(struct bc *bc, gab_value i, gab_value node) {
-  gab_precondition(i == gab_cinvalid || i == gab_true || i == gab_false || i == gab_nil, "Invalid immediate");
+  gab_precondition(i == gab_cinvalid || i == gab_true || i == gab_false ||
+                       i == gab_nil,
+                   "Invalid immediate");
 
   switch (i) {
   case gab_nil:
@@ -9552,7 +9588,8 @@ GAB_INTERNAL void __gab_bcsend(struct gab_triple gab, struct bc *bc,
   if (gab_valkind(m) == kGAB_STRING)
     m = gab_strtomsg(m);
 
-  gab_precondition(gab_valkind(m) == kGAB_MESSAGE, "Invalid kind for message send");
+  gab_precondition(gab_valkind(m) == kGAB_MESSAGE,
+                   "Invalid kind for message send");
 
   uint16_t ks = __gab_bcaddk(gab, bc, m);
   __gab_bcaddk(gab, bc, gab_cinvalid);
@@ -9654,7 +9691,8 @@ GAB_INTERNAL void __gab_bcret(struct gab_triple gab, struct bc *bc,
     switch (bc->prev_op) {
     case OP_SEND: {
       uint8_t first_short_byte = v_uint8_t_val_at(&bc->bc, bc->bc.len - 2);
-      gab_assert(!(first_short_byte & fHAVE_TAIL), "fHAVE_TAIL shall not already be set on byte");
+      gab_assert(!(first_short_byte & fHAVE_TAIL),
+                 "fHAVE_TAIL shall not already be set on byte");
 
       v_uint8_t_set(&bc->bc, bc->bc.len - 2, first_short_byte | fHAVE_TAIL);
       __gab_obcpush(bc, OP_RETURN, node);
@@ -9666,7 +9704,8 @@ GAB_INTERNAL void __gab_bcret(struct gab_triple gab, struct bc *bc,
         break;
 
       uint8_t first_short_byte = v_uint8_t_val_at(&bc->bc, bc->bc.len - 4);
-      gab_assert(!(first_short_byte & fHAVE_TAIL), "fHAVE_TAIL shall not already be set on byte");
+      gab_assert(!(first_short_byte & fHAVE_TAIL),
+                 "fHAVE_TAIL shall not already be set on byte");
 
       v_uint8_t_set(&bc->bc, bc->bc.len - 4, first_short_byte | fHAVE_TAIL);
       bc->prev_op = bc->pprev_op;
@@ -9783,7 +9822,8 @@ __gab_envputupv(struct gab_triple gab, gab_value env, gab_value id, int depth) {
   if (count >= GAB_UPVALUE_MAX)
     return (struct lookup_res){env, kLOOKUP_UPV_TOOMANY};
 
-  gab_verify(!gab_rechas(ctx, id), "The environment shall not already have the id");
+  gab_verify(!gab_rechas(ctx, id),
+             "The environment shall not already have the id");
 
   ctx = gab_recput(gab, ctx, id, gab_number(count));
   env = __gab_envput(gab, env, depth, ctx);
@@ -9792,7 +9832,8 @@ __gab_envputupv(struct gab_triple gab, gab_value env, gab_value id, int depth) {
 }
 
 GAB_INTERNAL int64_t __gab_envupvat(gab_value ctx, gab_value id) {
-  gab_precondition(gab_valkind(gab_recat(ctx, id)) == kGAB_NUMBER, "Upvalue shall exist");
+  gab_precondition(gab_valkind(gab_recat(ctx, id)) == kGAB_NUMBER,
+                   "Upvalue shall exist");
   return gab_valtoi(gab_recat(ctx, id));
 }
 
@@ -10345,8 +10386,10 @@ GAB_INTERNAL void __gab_envupvdata(gab_value env, uint8_t len, char *data) {
  */
 GAB_API union gab_value_pair gab_compile(struct gab_triple gab,
                                          struct gab_compile_argt args) {
-  gab_precondition(gab_valkind(args.ast) == kGAB_RECORD, "AST shall be a record");
-  gab_precondition(gab_valkind(args.env) == kGAB_RECORD, "ENV shall be a record");
+  gab_precondition(gab_valkind(args.ast) == kGAB_RECORD,
+                   "AST shall be a record");
+  gab_precondition(gab_valkind(args.env) == kGAB_RECORD,
+                   "ENV shall be a record");
   gab.flags |= args.flags;
 
   struct gab_src *src = d_gab_src_read(&gab.eg->sources, args.mod);
@@ -10359,7 +10402,8 @@ GAB_API union gab_value_pair gab_compile(struct gab_triple gab,
   args.env = __gab_bcenvunpack(gab, &bc, args.bindings, args.env, gab_cinvalid);
 
   if (args.env == gab_cinvalid)
-    return gab_assert(bc.err != gab_cinvalid, "Shall have valid err in error path"),
+    return gab_assert(bc.err != gab_cinvalid,
+                      "Shall have valid err in error path"),
            (union gab_value_pair){{gab_cinvalid, bc.err}};
 
   uint64_t nenvs = gab_reclen(args.env);
@@ -10368,10 +10412,12 @@ GAB_API union gab_value_pair gab_compile(struct gab_triple gab,
   uint64_t nargs = gab_reclen(gab_uvrecat(args.env, nenvs - 1));
 
   if (!__gab_bctrimnode(gab, &bc, nargs, gab_cinvalid, args.bindings))
-    return gab_assert(bc.err != gab_cinvalid, "Shall have valid err in error path"),
+    return gab_assert(bc.err != gab_cinvalid,
+                      "Shall have valid err in error path"),
            (union gab_value_pair){{gab_cinvalid, bc.err}};
 
-  gab_assert(bc.bc.len == bc.bc_toks.len, "Each bytecode instruction should have a corresponding token");
+  gab_assert(bc.bc.len == bc.bc_toks.len,
+             "Each bytecode instruction should have a corresponding token");
 
   /*
    * The first tuple in a block is its *arguments*. We don't want to return
@@ -10382,27 +10428,33 @@ GAB_API union gab_value_pair gab_compile(struct gab_triple gab,
 
   args.env = __gab_bctup(gab, &bc, args.ast, args.env);
 
-  gab_assert(bc.bc.len == bc.bc_toks.len, "Each bytecode instruction should have a corresponding token");
+  gab_assert(bc.bc.len == bc.bc_toks.len,
+             "Each bytecode instruction should have a corresponding token");
 
   if (args.env == gab_cinvalid)
-    return gab_assert(bc.err != gab_cinvalid, "Shall have err in error path"), __gab_bcdestroy(&bc),
-           (union gab_value_pair){{gab_cinvalid, bc.err}};
+    return gab_assert(bc.err != gab_cinvalid, "Shall have err in error path"),
+           __gab_bcdestroy(&bc), (union gab_value_pair){{gab_cinvalid, bc.err}};
 
-  gab_assert(gab_reclen(args.env) == nenvs, "Number of environments shall match");
+  gab_assert(gab_reclen(args.env) == nenvs,
+             "Number of environments shall match");
 
   gab_value local_env = gab_uvrecat(args.env, nenvs - 1);
 
-  gab_assert(bc.bc.len == bc.bc_toks.len, "Each bytecode instruction should have a corresponding token");
+  gab_assert(bc.bc.len == bc.bc_toks.len,
+             "Each bytecode instruction should have a corresponding token");
 
   __gab_bcret(gab, &bc, args.ast, args.ast);
 
   uint64_t nlocals = __gab_envlocals(local_env);
-  gab_assert(nlocals <= GAB_LOCAL_MAX, "Shall not exceed maximum number of locals");
+  gab_assert(nlocals <= GAB_LOCAL_MAX,
+             "Shall not exceed maximum number of locals");
 
   uint64_t nupvalues = __gab_envupvalues(local_env);
-  gab_assert(nupvalues <= GAB_UPVALUE_MAX, "Shall not exceed maximum number of upvalues");
+  gab_assert(nupvalues <= GAB_UPVALUE_MAX,
+             "Shall not exceed maximum number of upvalues");
 
-  gab_assert(bc.bc.len == bc.bc_toks.len, "Each bytecode instruction should have a corresponding token");
+  gab_assert(bc.bc.len == bc.bc_toks.len,
+             "Each bytecode instruction should have a corresponding token");
 
   __gab_bcpatchinit(&bc, nlocals);
 
@@ -10437,7 +10489,7 @@ GAB_API union gab_value_pair gab_compile(struct gab_triple gab,
   if (gab.flags & fGAB_BUILD_DUMP)
     gab_fmodinspect(stdout, proto);
 
-  assert(bc.err == gab_cinvalid);
+  gab_assert(bc.err == gab_cinvalid, "Shall not have error in valid path");
 
   return (union gab_value_pair){
       .status = gab_cvalid,
@@ -10457,7 +10509,8 @@ GAB_API union gab_value_pair gab_build(struct gab_triple gab,
 
   union gab_value_pair ast = gab_parse(gab, args);
 
-  assert(ast.vresult != gab_cundefined);
+  gab_assert(ast.vresult != gab_cundefined, "Shall have vresult in all cases");
+
   if (ast.status != gab_cvalid)
     return gab_gcunlock(gab), ast;
 
@@ -10493,7 +10546,8 @@ GAB_API union gab_value_pair gab_build(struct gab_triple gab,
                                                   .mod = mod,
                                                   .bindings = bindings,
                                               });
-  assert(res.vresult != gab_cundefined);
+
+  gab_assert(res.vresult != gab_cundefined, "Shall have vresult in all cases");
 
   if (res.status == gab_cinvalid)
     return gab_gcunlock(gab), res;
@@ -10501,7 +10555,7 @@ GAB_API union gab_value_pair gab_build(struct gab_triple gab,
   __gab_srccomplete(gab, src);
 
   gab_value main = gab_block(gab, res.vresult);
-  assert(main != gab_cundefined);
+  gab_assert(main != gab_cundefined, "Shall have vresult in all cases");
 
   gab_iref(gab, main);
   gab_iref(gab, res.vresult);
@@ -10537,38 +10591,44 @@ GAB_INTERNAL void __gab_gcepochinc(struct gab_triple gab) {
 
 GAB_INTERNAL struct gab_obj **__gab_gcbufdata(struct gab_triple gab, uint8_t b,
                                               uint8_t wkid, uint8_t epoch) {
-  assert(epoch < GAB_GCNEPOCHS);
-  assert(b < kGAB_NBUF);
-  assert(wkid < gab.eg->len);
+  gab_assert(epoch < GAB_GCNEPOCHS, "epoch shall not exceed maximum");
+  gab_assert(b < kGAB_NBUF, "buffer shall not exceed maximum");
+  gab_assert(wkid < gab.eg->len, "wkid shall not exceed maximum");
+
   return gab.eg->jobs[wkid].buffers[b][epoch].data;
 }
 
 GAB_INTERNAL uint64_t __gab_gcbuflen(struct gab_triple gab, uint8_t b,
                                      uint8_t wkid, uint8_t epoch) {
-  assert(epoch < GAB_GCNEPOCHS);
-  assert(b < kGAB_NBUF);
-  assert(wkid < gab.eg->len);
+  gab_assert(epoch < GAB_GCNEPOCHS, "epoch shall not exceed maximum");
+  gab_assert(b < kGAB_NBUF, "buffer shall not exceed maximum");
+  gab_assert(wkid < gab.eg->len, "wkid shall not exceed maximum");
+
   return gab.eg->jobs[wkid].buffers[b][epoch].len;
 }
 
-GAB_INTERNAL void gab_gcassertdone(struct gab_triple gab) {
+GAB_INTERNAL bool __gab_gcisdone(struct gab_triple gab) {
   for (int i = 0; i < gab.eg->len; i++) {
     for (int j = 0; j < kGAB_NBUF; j++) {
       for (int k = 0; k < GAB_GCNEPOCHS; k++) {
-        assert(__gab_gcbuflen(gab, j, i, k) == 0);
+        if (__gab_gcbuflen(gab, j, i, k) != 0)
+          return false;
       }
     }
   }
+
+  return true;
 }
 
 GAB_INTERNAL void __gab_gcbufpush(struct gab_triple gab, uint8_t b,
                                   uint8_t wkid, uint8_t epoch,
                                   struct gab_obj *o) {
-  assert(epoch < GAB_GCNEPOCHS);
-  assert(b < kGAB_NBUF);
-  assert(wkid < gab.eg->len);
+  gab_assert(epoch < GAB_GCNEPOCHS, "epoch shall not exceed maximum");
+  gab_assert(b < kGAB_NBUF, "buffer shall not exceed maximum");
+  gab_assert(wkid < gab.eg->len, "wkid shall not exceed maximum");
+
   uint64_t len = __gab_gcbuflen(gab, b, wkid, epoch);
-  assert(len < GAB_GC_MOD_BUFF_MAX);
+  gab_assert(len < GAB_GC_MOD_BUFF_MAX, "shall not exceed modbuff max");
 
   struct gab_obj **buf = __gab_gcbufdata(gab, b, wkid, epoch);
   buf[len] = o;
@@ -10577,9 +10637,10 @@ GAB_INTERNAL void __gab_gcbufpush(struct gab_triple gab, uint8_t b,
 
 GAB_INTERNAL void __gab_gcbufclear(struct gab_triple gab, uint8_t b,
                                    uint8_t wkid, uint8_t epoch) {
-  assert(epoch < GAB_GCNEPOCHS);
-  assert(b < kGAB_NBUF);
-  assert(wkid < gab.eg->len);
+  gab_assert(epoch < GAB_GCNEPOCHS, "epoch shall not exceed maximum");
+  gab_assert(b < kGAB_NBUF, "buffer shall not exceed maximum");
+  gab_assert(wkid < gab.eg->len, "wkid shall not exceed maximum");
+
   gab.eg->jobs[wkid].buffers[b][epoch].len = 0;
 }
 
@@ -10706,7 +10767,7 @@ GAB_INTERNAL void __gab_gcqdestroy(struct gab_triple gab, struct gab_obj *obj) {
 
   v_gab_obj_push(&gab.eg->gc.dead[__gab_gcepoch(gab)], obj);
 
-  assert(obj->references == 0);
+  gab_assert(obj->references == 0, "Shall only qdestroy objects with 0 refs");
 
 #if cGAB_LOG_GC
   fprintf(stderr, "(%i) QDEAD\t%i\t%p\t%d\n", gab.wkid, __gab_gcepoch(gab), obj,
@@ -10720,7 +10781,7 @@ GAB_INTERNAL void __gab_gcbufeachdo(uint8_t b, uint8_t wkid, uint8_t epoch,
                                     struct gab_triple gab) {
   struct gab_obj **buf = __gab_gcbufdata(gab, b, wkid, epoch);
   uint64_t len = __gab_gcbuflen(gab, b, wkid, epoch);
-  assert(len <= GAB_GC_MOD_BUFF_MAX);
+  gab_assert(len <= GAB_GC_MOD_BUFF_MAX, "Shall not exceed modbuff len");
 
 #if cGAB_LOG_GC
   fprintf(stderr, "(%i) FORDO\t%i\t(%lu / %i)\n", wkid, epoch, len,
@@ -10748,7 +10809,8 @@ GAB_INTERNAL void __gab_gcbufeachdo(uint8_t b, uint8_t wkid, uint8_t epoch,
     exit(1);
   }
 #endif
-  assert(len == __gab_gcbuflen(gab, b, wkid, epoch));
+  gab_assert(len == __gab_gcbuflen(gab, b, wkid, epoch),
+             "Buffer length should remain constant while working");
 }
 
 GAB_INTERNAL void __gab_gcobjeachdo(struct gab_obj *obj,
@@ -10775,7 +10837,7 @@ GAB_INTERNAL void __gab_gcobjeachdo(struct gab_obj *obj,
   case kGAB_PROTOTYPE: {
     struct gab_oprototype *prt = (struct gab_oprototype *)obj;
 
-    assert(gab_valiso(prt->env));
+    gab_assert(gab_valiso(prt->env), "Assumed to be an object");
     fnc(gab, gab_valtoo(prt->env));
 
     break;
@@ -11058,7 +11120,7 @@ GAB_INTERNAL void __gab_gcdeadreap(struct gab_triple gab) {
 
 GAB_API void gab_gclock(struct gab_triple gab) {
   struct gab_job *wk = gab.eg->jobs + gab.wkid;
-  assert(wk->locked < UINT32_MAX);
+  gab_assert(wk->locked < UINT32_MAX, "Shall not exceed maximum");
   wk->locked += 1;
 }
 
@@ -11069,7 +11131,7 @@ GAB_API void gab_gclock(struct gab_triple gab) {
  */
 GAB_API void gab_gcunlock(struct gab_triple gab) {
   struct gab_job *wk = gab.eg->jobs + gab.wkid;
-  assert(wk->locked > 0);
+  gab_assert(wk->locked > 0, "Shall not underflow");
   wk->locked -= 1;
 
   if (!wk->locked) {
@@ -11142,8 +11204,9 @@ GAB_INTERNAL void __gab_gcdoepoch(struct gab_triple gab, int32_t e) {
     fprintf(stderr, "PFIBER\t%i\t%i\t%lu\n", e, gab.wkid, idx);
 #endif
 
-    assert(gab_valkind(fiber) == kGAB_FIBER ||
-           gab_valkind(fiber) == kGAB_FIBERRUNNING);
+    gab_assert(gab_valkind(fiber) == kGAB_FIBER ||
+                   gab_valkind(fiber) == kGAB_FIBERRUNNING,
+               "Invalid kind");
 
     struct gab_ofiber *fb = GAB_VAL_TO_FIBER(fiber);
 
@@ -11204,12 +11267,12 @@ GAB_API void gab_gcepochnext(struct gab_triple gab) {
 }
 
 GAB_API void gab_gcdocollect(struct gab_triple gab) {
-  assert(gab.wkid == 0);
+  gab_assert(gab.wkid == 0, "Shall only be run on gc thread");
 
   int32_t epoch = __gab_gcepoch(gab);
   int32_t last = __gab_gcepochlast(gab);
 
-  assert(epoch != last);
+  gab_assert(epoch != last, "current and previous epoch must differ");
 
   __gab_gcdoepoch(gab, epoch);
 
@@ -11446,14 +11509,13 @@ static handler handlers[] = {
       break;                                                                   \
     }
 
-// assert(SP() >= FB());
 #define DISPATCH(op)                                                           \
   ({                                                                           \
     uint8_t o = (op);                                                          \
                                                                                \
     LOG(GAB(), o);                                                             \
                                                                                \
-    assert(SP() < VM()->sb + cGAB_STACK_MAX);                                  \
+    gab_assert(SP() < VM()->sb + cGAB_STACK_MAX, "Shall have stackspace");     \
                                                                                \
     [[clang::musttail]] return handlers[o](DISPATCH_ARGS());                   \
   })
@@ -11507,20 +11569,21 @@ static handler handlers[] = {
 #define HAS_STACKSPACE(sp, sb, space)                                          \
   (GET_STACKSPACE(sp, sb) + space < cGAB_STACK_MAX)
 
-// assert(SP() >= FB());
 #define SET_HV(n) ({ *SP() = n; })
 
 #define PUSH_FRAME(b, have)                                                    \
   ({                                                                           \
-    assert(have < UINT32_MAX);                                                 \
+    gab_assert(have < UINT32_MAX, "Have must fit within 32 bits");             \
                                                                                \
     int64_t delta = (SP() - have) - FB();                                      \
                                                                                \
-    assert((SP() - have) > FB());                                              \
-    assert(delta > 0);                                                         \
-    assert(delta < UINT32_MAX);                                                \
-    assert(SP()[-(int64_t)(have + 1 + FRAME_IP)] == FRAME_IP);                 \
-    assert(SP()[-(int64_t)(have + 1 + FRAME_BK)] == FRAME_BK);                 \
+    gab_assert((SP() - have) > FB(), "Previous frame shall be below new");     \
+    gab_assert(delta > 0, "Previous frame must be different from below");      \
+    gab_assert(delta < UINT32_MAX, "Delta must fit within 32 bits");           \
+    gab_assert(SP()[-(int64_t)(have + 1 + FRAME_IP)] == FRAME_IP,              \
+               "Frame setup correctly");                                       \
+    gab_assert(SP()[-(int64_t)(have + 1 + FRAME_BK)] == FRAME_BK,              \
+               "Frame setup correctly");                                       \
                                                                                \
     SP()[-(int64_t)(have + 1)] |= ((uint64_t)delta << 32);                     \
     SP()[-(int64_t)(have + 1 + FRAME_IP)] = (uintptr_t)IP();                   \
@@ -11547,7 +11610,8 @@ static handler handlers[] = {
     IP() = RETURN_IP();                                                        \
     FB() = RETURN_FB();                                                        \
     KB() = proto_ks(GAB(), BLOCK_PROTO());                                     \
-    assert(GAB_VAL_TO_FIBER(gab_thisfiber(GAB()))->vm.sb[2] == 0);             \
+    gab_assert(GAB_VAL_TO_FIBER(gab_thisfiber(GAB()))->vm.sb[2] == 0,          \
+               "Frame setup correctly");                                       \
   })
 
 #if cGAB_LOG_VM
@@ -11661,7 +11725,7 @@ GAB_INTERNAL uint64_t __gab_tokenfromip(struct gab_triple gab,
                                         struct gab_oblock *b, uint8_t *ip) {
   struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(b->p);
 
-  assert(ip >= proto_srcbegin(gab, p));
+  gab_assert(ip >= proto_srcbegin(gab, p), "ip shall be within src range");
   uint64_t offset = ip - proto_srcbegin(gab, p);
 
   if (offset)
@@ -11700,9 +11764,10 @@ GAB_INTERNAL union gab_value_pair __gab_vmyield(struct gab_triple gab,
                                                 uintptr_t value) {
   gab_value f = gab_thisfiber(gab);
   struct gab_ofiber *fiber = GAB_VAL_TO_FIBER(f);
-  assert(value != 0);
+  gab_precondition(value != 0, "Shall not yield 0");
+  gab_precondition(fiber->header.kind = kGAB_FIBERRUNNING,
+                   "Shall only yield running fiber");
 
-  assert(fiber->header.kind = kGAB_FIBERRUNNING);
   fiber->header.kind = kGAB_FIBER;
   fiber->reentrant = value;
 
@@ -11894,7 +11959,8 @@ GAB_INTERNAL union gab_value_pair __gab_vvmerror(struct gab_triple gab,
 
   union gab_value_pair res = {.status = gab_cvalid, .aresult = results};
 
-  assert(GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERRUNNING);
+  gab_assert(GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERRUNNING,
+             "Shall only error running fiber");
 
   GAB_VAL_TO_FIBER(fiber)->res_values = res;
   if (__gab_vmframeblk(vm->fp)) {
@@ -11905,7 +11971,8 @@ GAB_INTERNAL union gab_value_pair __gab_vvmerror(struct gab_triple gab,
     gab_value env = gab_recordfrom(gab, shape, 1, gab_shplen(shape), vm->fp);
 
     gab_egkeep(gab.eg, gab_iref(gab, env));
-    assert(GAB_VAL_TO_FIBER(fiber)->res_env == gab_cinvalid);
+    gab_assert(GAB_VAL_TO_FIBER(fiber)->res_env == gab_cinvalid,
+               "res_env shall not be populated");
     GAB_VAL_TO_FIBER(fiber)->res_env = env;
   }
   GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERDONE;
@@ -12179,7 +12246,7 @@ cGAB_VM_OPCODE_ATTRIBUTES union gab_value_pair vm_eerror(OP_HANDLER_ARGS) {
     return __gab_vmerror(GAB(), status, FMT_TYPEMISMATCH, SP()[2], SP()[3],
                          SP()[4], SP()[5], SP()[6]);
   default:
-    gab_assert(false, "Unreachable");
+    gab_unreachable("Impossible error status");
     return (union gab_value_pair){};
   }
 }
@@ -12263,11 +12330,9 @@ GAB_INTERNAL union gab_value_pair __gab_vmexec(struct gab_triple gab,
 
   gab.flags |= fiber->flags;
 
-  assert(fiber->header.kind != kGAB_FIBERDONE);
-
-  assert(fiber->vm.sb[2] == 0);
-  assert(fiber->vm.kb);
-  assert(fiber->vm.ip);
+  gab_assert(fiber->vm.sb[2] == 0, "Shall not have return frame");
+  gab_assert(fiber->vm.kb, "Shall have constant table");
+  gab_assert(fiber->vm.ip, "Shall have ip");
 
   uint8_t *ip = fiber->vm.ip;
 
@@ -12277,7 +12342,8 @@ GAB_INTERNAL union gab_value_pair __gab_vmexec(struct gab_triple gab,
   // But we *should* return here so that the environment returned
   // to the fiber is as expected
 
-  assert(fiber->header.kind != kGAB_FIBERDONE);
+  gab_assert(fiber->header.kind != kGAB_FIBERDONE,
+             "Exec'd fiber shall not be done");
   fiber->header.kind = kGAB_FIBERRUNNING;
 
   return handlers[op](&gab, &fiber->vm, ip, fiber->vm.kb, fiber->vm.fp,
@@ -12389,8 +12455,10 @@ extern void putcs(char *arg);
     IP() = proto_ip(GAB(), p);                                                 \
     KB() = proto_ks(GAB(), p);                                                 \
     FB() = SP() - have;                                                        \
-    assert(BLOCK()->header.kind == kGAB_BLOCK);                                \
-    assert(BLOCK_PROTO()->header.kind == kGAB_PROTOTYPE);                      \
+    gab_assert(BLOCK()->header.kind == kGAB_BLOCK,                             \
+               "Block shall be gab\\block");                                   \
+    gab_assert(BLOCK_PROTO()->header.kind == kGAB_PROTOTYPE,                   \
+               "Proto shall be gab\\proto");                                   \
   })
 
 #define MICRO_OP_LOCALCALL_BLOCK(blk, have)                                    \
@@ -12403,8 +12471,10 @@ extern void putcs(char *arg);
                                                                                \
     IP() = (void *)ks[GAB_SEND_KOFFSET];                                       \
     FB() = SP() - have;                                                        \
-    assert(BLOCK()->header.kind == kGAB_BLOCK);                                \
-    assert(BLOCK_PROTO()->header.kind == kGAB_PROTOTYPE);                      \
+    gab_assert(BLOCK()->header.kind == kGAB_BLOCK,                             \
+               "Block shall be gab\\block");                                   \
+    gab_assert(BLOCK_PROTO()->header.kind == kGAB_PROTOTYPE,                   \
+               "Proto shall be gab\\proto");                                   \
                                                                                \
     SET_HV(have);                                                              \
   })
@@ -12497,7 +12567,7 @@ extern void putcs(char *arg);
                                                                                \
     gab_value *to = SP() - (have + FRAME_SIZE);                                \
     gab_assert(to >= FB() - 3,                                                 \
-               "EXPECTED DEST TO BE GREATER THAN FRAME BASE. DIST: %li\n",     \
+               "Expected dest to be greater than frame base. dist: %li\n",     \
                to - FB());                                                     \
                                                                                \
     gab_value *before = SP();                                                  \
@@ -12514,7 +12584,7 @@ extern void putcs(char *arg);
     CHECK_SIGNAL();                                                            \
                                                                                \
     if (__gab_unlikely(res.status == gab_ctimeout))                            \
-      assert(res.bresult != 0), VM_YIELD(res.bresult);                         \
+      VM_YIELD(res.bresult);                                                   \
                                                                                \
     RESET_BUMP();                                                              \
                                                                                \
@@ -12806,7 +12876,7 @@ extern void putcs(char *arg);
     union gab_value_pair mod;                                                  \
                                                                                \
     if (reentrant) {                                                           \
-      assert(gab_valisfib(reentrant));                                         \
+      gab_assert(gab_valisfib(reentrant), "Reentrant shall be fiber");         \
                                                                                \
       mod = gab_tfibawait(GAB(), reentrant, 0);                                \
                                                                                \
@@ -12836,7 +12906,7 @@ extern void putcs(char *arg);
     }                                                                          \
                                                                                \
     if (mod.status == gab_ctimeout) {                                          \
-      assert(gab_valisfib(mod.vresult));                                       \
+      gab_assert(gab_valisfib(mod.vresult), "Reentrant shall be fiber");       \
       VM_YIELD(mod.vresult);                                                   \
     }                                                                          \
                                                                                \
@@ -13138,7 +13208,7 @@ extern void putcs(char *arg);
                                                                                \
     SET_HV(have);                                                              \
                                                                                \
-    assert(have >= want);                                                      \
+    gab_assert(have >= want, "Shall have padded values to at least want");     \
     int64_t len = have - want;                                                 \
                                                                                \
     gab_value *ap = SP() - above;                                              \
@@ -13178,7 +13248,7 @@ extern void putcs(char *arg);
                                                                                \
     SET_HV(have);                                                              \
                                                                                \
-    assert(have >= want);                                                      \
+    gab_assert(have >= want, "Shall have padded values to at least want");     \
     int64_t len = have - want;                                                 \
                                                                                \
     gab_value *ap = SP() - above;                                              \
@@ -13233,8 +13303,8 @@ extern void putcs(char *arg);
 #define PUSHTUPLE(n)                                                           \
   ({                                                                           \
     SP() += 2;                                                                 \
-    assert(SP()[-1] = FRAME_IP);                                               \
-    assert(SP()[-2] = FRAME_BK);                                               \
+    SP()[-1] = FRAME_IP;                                                       \
+    SP()[-2] = FRAME_BK;                                                       \
     PUSH(n);                                                                   \
   })
 
@@ -13255,7 +13325,7 @@ extern void putcs(char *arg);
       [[clang::musttail]] return vm_ok(DISPATCH_ARGS());                       \
     }                                                                          \
                                                                                \
-    assert(RETURN_IP() != nullptr);                                            \
+    gab_assert(RETURN_IP() != nullptr, "Shall not return to nullptr ip");      \
                                                                                \
     LOAD_FRAME();                                                              \
                                                                                \
@@ -13263,9 +13333,12 @@ extern void putcs(char *arg);
     SP() = to + have;                                                          \
     SET_HV(have + below_have);                                                 \
                                                                                \
-    assert(FB() >= VM()->sb + FRAME_SIZE);                                     \
-    assert(BLOCK()->header.kind == kGAB_BLOCK);                                \
-    assert(BLOCK_PROTO()->header.kind == kGAB_PROTOTYPE);                      \
+    gab_assert(FB() >= VM()->sb + FRAME_SIZE,                                  \
+               "FB shall be within vm stack range");                           \
+    gab_assert(BLOCK()->header.kind == kGAB_BLOCK,                             \
+               "Block shall be gab\\block");                                   \
+    gab_assert(BLOCK_PROTO()->header.kind == kGAB_PROTOTYPE,                   \
+               "Proto shall be gab\\proto");                                   \
   })
 
 #define MICRO_OP_UVRECAT(r, i) (gab_uvrecat(r, i))
@@ -13332,7 +13405,8 @@ extern void putcs(char *arg);
     if (val_ab == gab_ctimeout)                                                \
       VM_YIELD(gab_nil);                                                       \
                                                                                \
-    assert(gab_valkind(val_ab) == kGAB_STRING);                                \
+    gab_assert(gab_valkind(val_ab) == kGAB_STRING,                             \
+               "concat shall return string");                                  \
                                                                                \
     val_ab;                                                                    \
   })
@@ -13569,7 +13643,7 @@ CASE_CODE(POPSTORE_LOCAL) {
 
   STORE_LOCAL(READ_BYTE, POP());
 
-  assert(have >= 1);
+  gab_assert(have >= 1, "May not underflow have");
   SET_HV(have - 1);
   NEXT();
 }
@@ -13579,7 +13653,7 @@ CASE_CODE(NPOPSTORE_LOCAL) {
 
   uint8_t n = READ_BYTE;
 
-  assert(have >= n);
+  gab_assert(have >= n, "May not underflow have");
   have -= n;
 
   while (n--)
@@ -13594,7 +13668,7 @@ CASE_CODE(NPOPSTORE_STORE_LOCAL) {
 
   uint8_t n = READ_BYTE;
 
-  assert(have >= n);
+  gab_assert(have >= n, "May not underflow have");
   have -= n;
 
   while (n-- > 1)
@@ -13735,9 +13809,6 @@ CASE_CODE(SEND_PRIMITIVE_CALL_NATIVE) {
   gab_value *ks = READ_SENDCONSTANTS;
   uint64_t have = HV();
   uint64_t below_have = BELOW_HV();
-
-  // Sanity check
-  assert(have > 0 && have < 32);
 
   gab_value r = PEEK_N(have);
 

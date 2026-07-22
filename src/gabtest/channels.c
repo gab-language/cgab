@@ -161,9 +161,7 @@ test_channel_concurrent_takers(const MunitParameter params[],
 
   uint64_t total_sent = 0;
   for (uint64_t i = 0; i < num_fibers; i++) {
-    gab_chnput(gab, ch, gab_number(1));
-    total_sent++;
-
+    // If more fibers are done than values we've sent so far, we have a bug
     int64_t done = 0;
     for (uint64_t f = 0; f < num_fibers; f++) {
       if (gab_fibisdone(fibers[f])) {
@@ -178,9 +176,10 @@ test_channel_concurrent_takers(const MunitParameter params[],
         munit_assert_uint64(res.aresult->data[4], ==, gab_number(1));
       }
     }
-
-    // If more fibers are done than values we've sent so far, we have a bug
     munit_assert_uint64(done, <=, total_sent);
+
+    gab_chnput(gab, ch, gab_number(1));
+    total_sent++;
   }
 
   munit_assert_uint64(total_sent, ==, num_fibers);

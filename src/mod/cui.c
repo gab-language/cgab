@@ -147,7 +147,7 @@ struct ui {
   };
 };
 
-#define MAX_MS_PER_FRAME 15
+#define MAX_MS_PER_FRAME 7
 #define CHNTAKE_WAITTIME 0
 
 struct timestep {

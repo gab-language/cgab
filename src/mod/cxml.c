@@ -1,5 +1,4 @@
-/**
- *  MIT License
+/*
  *
  *  Copyright (c) 2023-2026 Teddy Randby
  *
@@ -22,8 +21,8 @@
  * IN THE SOFTWARE.
  */
 
-#define JSMN_STATIC
-#include "jsmn/jsmn.h"
+#define HOXML_IMPLEMENTATION
+#include "hoxml/hoxml.h"
 
 #include "cgab.h"
 
@@ -105,95 +104,62 @@ bool unescape_into(char *buf, const char *str, size_t len) {
   return true;
 }
 
-gab_value *push_value(struct gab_triple gab, const char *json, gab_value *sp,
-                      jsmntok_t *tokens, uint64_t *t) {
-  jsmntok_t tok = tokens[*t];
-  switch (tok.type) {
-  case JSMN_PRIMITIVE: {
-    switch (json[tok.start]) {
-    case 'n':
-      *sp++ = gab_nil;
-      *t = *t + 1;
-      break;
-    case 't':
-      *sp++ = gab_true;
-      *t = *t + 1;
-      break;
-    case 'f':
-      *sp++ = gab_false;
-      *t = *t + 1;
-      break;
-    case '-':
-    case '0':
-    case '1':
-    case '2':
-    case '3':
-    case '4':
-    case '5':
-    case '6':
-    case '7':
-    case '8':
-    case '9':
-      *sp++ = gab_number(atof(json + tok.start));
-      *t = *t + 1;
-      break;
-    default:
-      // Format and push some nice error here
-      return nullptr;
-    }
-    break;
-  }
-  case JSMN_STRING: {
-    char buf[tok.end - tok.start + 1];
+gab_value *push_value(struct gab_triple gab, hoxml_context_t *hoxml,
+                      const char *content, size_t content_length,
+                      hoxml_code_t t, gab_value *sp) {
+  printf("CODE: %d\n", t);
+  switch (t) {
+  case HOXML_ATTRIBUTE: {
+    size_t len = strlen(hoxml->attribute);
+    char buf[len];
 
-    if (!unescape_into(buf, json + tok.start, tok.end - tok.start))
+    if (!unescape_into(buf, hoxml->attribute, len))
       assert(false && "unreachable");
 
     *sp++ = gab_string(gab, buf);
-    *t = *t + 1;
+
+     len = strlen(hoxml->value);
+     char valbuf[len];
+
+    if (!unescape_into(valbuf, hoxml->value, len))
+      assert(false && "unreachable");
+
+    *sp++ = gab_string(gab, valbuf);
     break;
   }
-  case JSMN_OBJECT: {
+  case HOXML_ELEMENT_BEGIN: {
     gab_value *save = sp;
 
-    *t = *t + 1;
+    *sp++ = gab_string(gab, hoxml->tag);
 
-    for (int child = 0; child < tok.size * 2; child++) {
-      sp = push_value(gab, json, sp, tokens, t);
+    hoxml_code_t code;
+    while ((code = hoxml_parse(hoxml, content, content_length)) !=
+           HOXML_ELEMENT_END) {
+      sp = push_value(gab, hoxml, content, content_length, code, sp);
 
       if (sp == nullptr)
         return nullptr;
     }
 
-    sp = save;
-    *sp++ = gab_record(gab, 2, tok.size, save, save + 1);
-    break;
-  }
-  case JSMN_ARRAY: {
-    gab_value *save = sp;
+    size_t attrs = sp - (save + 1);
+    sp = save + 1;
+    *sp++ = gab_record(gab, 2, attrs / 2, save + 1, save + 2);
 
-    *t = *t + 1;
-
-    for (int child = 0; child < tok.size; child++) {
-      sp = push_value(gab, json, sp, tokens, t);
-
-      if (sp == nullptr)
-        return nullptr;
-    }
+    *sp++ = gab_string(gab, hoxml->content);
 
     sp = save;
-    *sp++ = gab_list(gab, 1, tok.size, save);
+    *sp++ = gab_list(gab, 1, 3, save);
     break;
   }
-  case JSMN_UNDEFINED:
-    exit(1);
-    break;
+  default:
+    gab_unreachable("Reached kind %d\n", t);
+    return nullptr;
   }
 
   return sp;
 }
 
-GAB_DYNLIB_NATIVE_FN(json, decode) {
+GAB_DYNLIB_NATIVE_FN(xml, decode) {
   gab_value str = gab_arg(0);
 
   if (gab_valkind(str) != kGAB_STRING)
@@ -202,44 +168,27 @@ GAB_DYNLIB_NATIVE_FN(json, decode) {
   const char *cstr = gab_strdata(&str);
   uint64_t len = gab_strlen(str);
 
-  jsmn_parser jsmn;
+  hoxml_context_t hoxml;
   // Maybe allocating on the stack isn't the safest? Apply a max here?
-  jsmntok_t tokens[len];
+  char buf[len * 10];
+  hoxml_init(&hoxml, buf, len * 10);
 
-  jsmn_init(&jsmn);
-
-  int ntokens = jsmn_parse(&jsmn, cstr, len, tokens, len);
-
-  if (ntokens <= 0) {
-    switch (ntokens) {
-    case 0:
-    case JSMN_ERROR_PART:
-      gab_vmpush(gab_thisvm(gab), gab_err,
-                 gab_string(gab, "Incomplete JSON value"));
-      break;
-    case JSMN_ERROR_NOMEM:
-      gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, "Internal Error"));
-      break;
-    case JSMN_ERROR_INVAL:
-      gab_vmpush(gab_thisvm(gab), gab_err,
-                 gab_string(gab, "Invalid character"));
-      break;
-    }
-    return gab_union_cvalid(gab_nil);
-  }
-
-  uint64_t token = 0;
   gab_value stack[len];
+  gab_value *sp = stack;
 
-  gab_value *sp = push_value(gab, cstr, stack, tokens, &token);
+  hoxml_code_t code;
+  while ((code = hoxml_parse(&hoxml, cstr, len)) != HOXML_END_OF_DOCUMENT) {
+    sp = push_value(gab, &hoxml, cstr, len, code, sp);
 
-  if (sp == nullptr) {
-    // Encountered an invalid token.
-    gab_vmpush(gab_thisvm(gab), gab_err, gab_string(gab, "Invalid JSON value"));
-    return gab_union_cvalid(gab_nil);
+    if (sp == nullptr) {
+      // Encountered an invalid token.
+      gab_vmpush(gab_thisvm(gab), gab_err,
+                 gab_string(gab, "Invalid XML value"));
+      return gab_union_cvalid(gab_nil);
+    }
   }
 
-  gab_value res = *(--sp);
+  gab_value res = gab_list(gab, 1, sp - stack, stack);
 
   gab_vmpush(gab_thisvm(gab), gab_ok, res);
   return gab_union_cvalid(gab_nil);
@@ -247,9 +196,9 @@ GAB_DYNLIB_NATIVE_FN(json, decode) {
 
 GAB_DYNLIB_MAIN_FN {
   gab_def(gab, {
-                   gab_message(gab, "as\\json"),
+                   gab_message(gab, "as\\xml"),
                    gab_type(gab, kGAB_STRING),
-                   gab_snative(gab, "as\\json", gab_mod_json_decode),
+                   gab_snative(gab, "as\\xml", gab_mod_xml_decode),
                });
 
   gab_value res[] = {gab_ok};
