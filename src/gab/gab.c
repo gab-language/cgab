@@ -271,8 +271,8 @@ union gab_value_pair gab_use_dynlib(struct gab_triple gab, const char *path,
 
   if (lib == nullptr) {
 #ifdef GAB_PLATFORM_UNIX
-    return gab_panicf(gab, "Failed to load module.\n\n$",
-                      gab_string(gab, path), gab_string(gab, dlerror()));
+    return gab_panicf(gab, "Failed to load module.\n\n$", gab_string(gab, path),
+                      gab_string(gab, dlerror()));
 #elifdef GAB_PLATFORM_WASI
     return gab_panicf(gab, "Failed to load module '$'", gab_string(gab, path));
 #elifdef GAB_PLATFORM_WIN
@@ -1037,7 +1037,7 @@ int step(struct step *step) {
 
     FILE *archive = fopen(step->as.archive_open.path, "wb");
 
-    if (!archive)
+    if (archive == nullptr)
       return 1;
 
     if (step->as.archive_open.initial_data_path) {
