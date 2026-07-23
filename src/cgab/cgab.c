@@ -22,15 +22,40 @@
  *  IN THE SOFTWARE.
  */
 
+/*
+ * This file contains the complete implementation of cgab.
+ *
+ * A table of contents is provided here for your convenience:
+ *  
+ *  0 GAB LEXER
+ *  1 GAB ENGINE
+ *  2 GAB OBJECTS
+ *  3 GAB PARSER
+ *  4 GAB BYTECODE COMPILER
+ *  5 GAB GARBAGE COLLECTION
+ *  6 GAB BYTECODE INTERPRETER
+ *
+ * Each section contains a header comment with a:
+ *
+ *   ----------------------------------------
+ *
+ * Use this header to jump between sections of the code,
+ * or jump to the above section names.
+ */
+
 #include "cgab.h"
 #include "engine.h"
 
 #include <ctype.h>
 #include <stdatomic.h>
 
+/*
+ * bit-helpers wrapping intrinsics that cgab uses.
+ */
 #define popcountl(n) __builtin_popcountl(n)
 #define ctzl(n) __builtin_ctzl(n)
 
+/* Hashing */
 // https://github.com/amakukha/minimal_hashes
 GAB_INTERNAL uint64_t __gab_hshFNV1a_64(uint64_t seed, uint64_t len,
                                         const uint8_t *data) {
@@ -65,7 +90,7 @@ static inline s_char s_char_cstr(const char *str) {
   return (s_char){.data = str, .len = strlen(str)};
 }
 
-static inline size_t s_char_hash(s_char self) {
+static inline uint64_t s_char_hash(s_char self) {
   return __gab_hshbytes(self.len, (uint8_t *)self.data);
 }
 
@@ -77,7 +102,7 @@ static inline void v_char_spush(v_char *self, s_char slice) {
 }
 
 /* Helpers used by all the sprintf methods */
-GAB_INTERNAL int64_t __gab_vsnprintf_through(char **dst, size_t *n,
+GAB_INTERNAL int64_t __gab_vsnprintf_through(char **dst, uint64_t *n,
                                              const char *fmt, va_list va) {
   int res = vsnprintf(*dst, *n, fmt, va);
 
@@ -93,7 +118,7 @@ GAB_INTERNAL int64_t __gab_vsnprintf_through(char **dst, size_t *n,
   return res;
 }
 
-GAB_INTERNAL int64_t __gab_snprintf_through(char **dst, size_t *n,
+GAB_INTERNAL int64_t __gab_snprintf_through(char **dst, uint64_t *n,
                                             const char *fmt, ...) {
   va_list va;
   va_start(va, fmt);
@@ -104,7 +129,7 @@ GAB_INTERNAL int64_t __gab_snprintf_through(char **dst, size_t *n,
   return res;
 }
 
-GAB_INTERNAL int64_t __gab_gvsnprintf_through(char **dst, size_t *n,
+GAB_INTERNAL int64_t __gab_gvsnprintf_through(char **dst, uint64_t *n,
                                               const char *fmt, va_list va) {
   int res = gab_vsprintf(*dst, *n, fmt, va);
 
@@ -120,7 +145,7 @@ GAB_INTERNAL int64_t __gab_gvsnprintf_through(char **dst, size_t *n,
   return res;
 }
 
-GAB_INTERNAL int64_t __gab_gsnprintf_through(char **dst, size_t *n,
+GAB_INTERNAL int64_t __gab_gsnprintf_through(char **dst, uint64_t *n,
                                              const char *fmt, ...) {
   va_list va;
   va_start(va, fmt);
@@ -135,12 +160,10 @@ GAB_INTERNAL union gab_value_pair __gab_vmexec(struct gab_triple gab,
                                                gab_value fiber);
 
 /* ----------------------------------------
- *
- *    GAB LEXER
+ * SECTION 0                      GAB LEXER
  *
  *  This section contains the code for producing a stream of tokens from a
  *   string.
- * ----------------------------------------
  */
 
 GAB_INTERNAL bool __gab_lexcanstartop(uint8_t c) {
@@ -705,8 +728,7 @@ GAB_API uint64_t gab_tsrcline(struct gab_src *src, uint64_t tok_offset) {
 }
 
 /* ----------------------------------------
- *
- *    GAB ENGINE
+ * SECTION 1                     GAB ENGINE
  *
  *  This section contains the code for managing a gab *engine*.
  *
@@ -716,7 +738,6 @@ GAB_API uint64_t gab_tsrcline(struct gab_src *src, uint64_t tok_offset) {
  *    - module/package resolution
  *    - signalling
  *    - generaly-useful wrapper apis
- * ----------------------------------------
  */
 
 struct errdetails {
@@ -3843,12 +3864,10 @@ GAB_API inline bool gab_signal(struct gab_triple gab, enum gab_signal s,
 };
 
 /* ----------------------------------------
- *
- *    GAB OBJECTS
+ * SECTION 2                    GAB OBJECTS
  *
  *  This section contains the code for manipulating gab values - specifically
  * heap-allocated objects.
- * ----------------------------------------
  */
 
 #define GAB_CREATE_OBJ(obj_type, kind)                                         \
@@ -6715,43 +6734,6 @@ GAB_API bool gab_chnisclosed(gab_value c) {
   return channel->header.kind == kGAB_CHANNELCLOSED;
 };
 
-/*
- * The channel implementation is subtle here. There are two atomic components:
- *  - data (An atomic gab_value* which points to the beginning of the slice of
- * values in the channel)
- *  - len (An atomic uint64 which contains the number of values in the channel's
- * slice)
- *
- * Because there are *two* pieces of atomic state that need to be synced, the
- * implementation is a little more nuanced.
- *
- * "Putters" need to wait until the *data* ptr is null. This is how
- * gab_chnisfull() works. Therefore, "putters" wait in a loop like this:
- *
- * while(gab_chnisfull(channel))
- *  yield()
- *
- *  "Takers" need to wait until the *len*  is not zero. This is how
- * gab_chnisempty() works. Therefore, "takers" wait in a loop liek this:
- *
- *  while(gab_chnisempty(channel))
- *    yield()
- *
- * This way, Putters don't stomp over other putters, and they also don't stomp
- * over other takers. THis is because other putters are prevented from acting as
- * they don't have the data ptr, and takers cant act until they have the len.
- * This guarantees that no one sees the channel (Other than the putter who
- * succeeded) until the data is completely ready.
- *
- * The inverse is true for takers. Once a taker succeeds in taking the len, no
- * other takers will try. And no putters can act until the taker restores the
- * *data* atomic.
- *
- * TODO @cgab @qol: Refactor channel implementation.
- * Implement a spinlock surrounding the channel mutating operations.
- * It isn't totally functional under contention as it is.
- */
-
 GAB_API bool gab_chnmatches(gab_value c, gab_value tk) {
   gab_precondition(gab_valkind(c) >= kGAB_CHANNEL &&
                        gab_valkind(c) <= kGAB_CHANNELCLOSED,
@@ -8099,11 +8081,9 @@ GAB_API int64_t gab_psvalinspect(char **dest, uint64_t *n, gab_value value,
 #undef CREATE_GAB_OBJ
 
 /* ----------------------------------------
- *
- *    GAB PARSER
+ * SECTION 3                     GAB PARSER
  *
  *  This section contains the code for producing an AST from a stream of tokens.
- * ----------------------------------------
  */
 
 #define FMT_MALFORMED_EXPRESSION                                               \
@@ -9118,11 +9098,9 @@ GAB_API union gab_value_pair gab_parse(struct gab_triple gab,
 }
 
 /* ----------------------------------------
- *
- *    GAB BYTECODE COMIPLER
+ * SECTION 4              BYTECODE COMPILER
  *
  *  This section contains the code for emitting bytecode from an AST.
- * ----------------------------------------
  */
 
 GAB_INTERNAL void __gab_bcdestroy(struct bc *bc) {
@@ -10657,11 +10635,9 @@ GAB_API union gab_value_pair gab_build(struct gab_triple gab,
 }
 
 /* ----------------------------------------
- *
- *    GAB GARBAGE COLLECTION
+ * SECTION 5         GAB GARBAGE COLLECTION
  *
  *  This section contains the code for managing lifetimes of gab objects.
- * ----------------------------------------
  */
 
 GAB_INTERNAL int32_t __gab_gcepoch(struct gab_triple gab) {
@@ -11407,11 +11383,9 @@ GAB_API void gab_gcdocollect(struct gab_triple gab) {
 }
 
 /* ----------------------------------------
- *
- *    GAB VIRTUAL MACHINE
+ * SECTION 6           BYTECODE INTERPRETER
  *
  *  This section contains the code for executing gab bytecode.
- * ----------------------------------------
  */
 
 /**
