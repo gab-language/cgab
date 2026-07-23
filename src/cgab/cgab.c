@@ -6883,7 +6883,7 @@ GAB_INTERNAL gab_value __gab_chntake(struct gab_ochannel *channel, uint64_t n,
   uint64_t len = n < avail ? n : avail;
   memcpy(dest, src, sizeof(gab_value) * len);
 
-  __gab_chnepochinc(channel)
+  __gab_chnepochinc(channel);
 
   return __gab_chnunlock(channel), gab_number(avail);
 }

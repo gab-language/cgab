@@ -16,7 +16,7 @@ on:
     branches: [ "main" ]
 
 env:
-  version: 0.1.3
+  version: 0.1.4
   GH_TOKEN: ${{ github.token }}
 
 jobs:
@@ -103,6 +103,12 @@ jobs:
     - name: Upload x86_64-linux-gnu Binary Artifact
       uses: pyTooling/upload-artifact@v4
       with:
+        name: 'gabtest-x86_64-linux-gnu-release'
+        path: 'build-x86_64-linux-gnu/gabtest'
+
+    - name: Upload x86_64-linux-gnu Binary Artifact
+      uses: pyTooling/upload-artifact@v4
+      with:
         name: 'gab-x86_64-linux-gnu-release'
         path: 'build-x86_64-linux-gnu/gab'
 
@@ -117,6 +123,12 @@ jobs:
       with:
         name: 'test-cgab-${{ env.version }}-x86_64-linux-gnu'
         path: 'test-cgab-${{ env.version }}-x86_64-linux-gnu'
+
+    - name: Upload aarch64-linux-gnu Binary Artifact
+      uses: pyTooling/upload-artifact@v4
+      with:
+        name: 'gabtest-aarch64-linux-gnu-release'
+        path: 'build-aarch64-linux-gnu/gabtest'
 
     - name: Upload aarch64-linux-gnu Binary Artifact
       uses: pyTooling/upload-artifact@v4
@@ -139,6 +151,12 @@ jobs:
     - name: Upload x86_64-macos-none Binary Artifact
       uses: pyTooling/upload-artifact@v4
       with:
+        name: 'gabtest-x86_64-macos-none-release'
+        path: 'build-x86_64-macos-none/gabtest'
+
+    - name: Upload x86_64-macos-none Binary Artifact
+      uses: pyTooling/upload-artifact@v4
+      with:
         name: 'gab-x86_64-macos-none-release'
         path: 'build-x86_64-macos-none/gab'
 
@@ -153,6 +171,12 @@ jobs:
       with:
         name: 'test-cgab-${{ env.version }}-x86_64-macos-none' 
         path: 'test-cgab-${{ env.version }}-x86_64-macos-none'
+
+    - name: Upload aarch64-macos-none Binary Artifact
+      uses: pyTooling/upload-artifact@v4
+      with:
+        name: 'gabtest-aarch64-macos-none-release'
+        path: 'build-aarch64-macos-none/gabtest'
 
     - name: Upload aarch64-macos-none Binary Artifact
       uses: pyTooling/upload-artifact@v4
@@ -175,6 +199,12 @@ jobs:
     - name: Upload x86_64-windows-gnu Binary Artifact
       uses: pyTooling/upload-artifact@v4
       with:
+        name: 'gabtest-x86_64-windows-gnu-release'
+        path: 'build-x86_64-windows-gnu/gabtest'
+
+    - name: Upload x86_64-windows-gnu Binary Artifact
+      uses: pyTooling/upload-artifact@v4
+      with:
         name: 'gab-x86_64-windows-gnu-release'
         path: 'build-x86_64-windows-gnu/gab'
 
@@ -189,6 +219,12 @@ jobs:
       with:
         name: 'test-cgab-${{ env.version }}-x86_64-windows-gnu'
         path: 'test-cgab-${{ env.version }}-x86_64-windows-gnu'
+
+    - name: Upload aarch64-windows-gnu Binary Artifact
+      uses: pyTooling/upload-artifact@v4
+      with:
+        name: 'gabtest-aarch64-windows-gnu-release'
+        path: 'build-aarch64-windows-gnu/gabtest'
 
     - name: Upload aarch64-windows-gnu Binary Artifact
       uses: pyTooling/upload-artifact@v4
@@ -221,12 +257,15 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-linux-gnu
             cmd: ./build-x86_64-linux-gnu/gab/gab
+            test: ./build-x86_64-linux-gnu/gabtest/gabtest
           - os: macos-latest
             target: aarch64-macos-none
             cmd: ./build-aarch64-macos-none/gab/gab
+            test: ./build-aarch64-macos-none/gabtest/gabtest
           - os: windows-latest
             target: x86_64-windows-gnu
             cmd: ./build-x86_64-windows-gnu/gab/gab
+            test: ./build-x86_64-windows-gnu/gabtest/gabtest
 
     runs-on: ${{ matrix.os }}
     needs: build_artifacts
@@ -234,6 +273,11 @@ jobs:
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v4
+
+      - name: Download Test
+        uses: pyTooling/download-artifact@v4
+        with:
+          name: 'gabtest-${{ matrix.target }}-${{ matrix.build_type }}'
 
       - name: Download Binary
         uses: pyTooling/download-artifact@v4
@@ -270,8 +314,8 @@ jobs:
           mkdir -p ~/AppData/Local/gab/${{ env.version }}-${{ matrix.target }}/github.com/gab-language/cgab@${{ env.version }}/mod
           unzip -o cgab-${{ env.version }}-${{ matrix.target }} -d ~/AppData/Local/gab/${{ env.version }}-${{ matrix.target }}
 
-      - name: DEBUG
-        run: ls
+      - name: Unit Tests
+        run: ${{ matrix.test }} --no-fork --iterations 100
 
       - name: Welcome
         run: ${{ matrix.cmd }}
