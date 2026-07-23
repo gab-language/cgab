@@ -243,7 +243,7 @@ bool check_and_printerr(union gab_value_pair *res) {
 
 int copy_file(FILE *in, FILE *out) {
   char buffer[8192]; // 8 KB buffer
-  size_t n;
+  uint64_t n;
 
   while ((n = fread(buffer, 1, sizeof(buffer), in)) > 0) {
     if (fwrite(buffer, 1, n, out) != n) {
@@ -265,7 +265,7 @@ typedef union gab_value_pair (*dynlib_fn)(struct gab_triple);
 #endif
 
 union gab_value_pair gab_use_dynlib(struct gab_triple gab, const char *path,
-                                    size_t len, const char **sargs,
+                                    uint64_t len, const char **sargs,
                                     gab_value *vargs) {
   gab_osdynlib lib = gab_oslibopen(path);
 
@@ -333,7 +333,7 @@ union gab_value_pair gab_use_dynlib(struct gab_triple gab, const char *path,
 }
 
 union gab_value_pair gab_use_zip_dynlib(struct gab_triple gab, const char *path,
-                                        size_t len, const char **sargs,
+                                        uint64_t len, const char **sargs,
                                         gab_value *vargs) {
   int idx = mz_zip_reader_locate_file(&zip, path, "", 0);
   if (idx < 0)
@@ -397,7 +397,7 @@ exists:
 }
 
 union gab_value_pair gab_use_zip_data(struct gab_triple gab, const char *path,
-                                      size_t len, const char **sargs,
+                                      uint64_t len, const char **sargs,
                                       gab_value *vargs) {
   int idx = mz_zip_reader_locate_file(&zip, path, "", 0);
   if (idx < 0)
@@ -410,7 +410,7 @@ union gab_value_pair gab_use_zip_data(struct gab_triple gab, const char *path,
     return gab_panicf(gab, "Failed to load module: $", gab_string(gab, estr));
   };
 
-  size_t sz;
+  uint64_t sz;
   void *src = mz_zip_reader_extract_file_to_heap(&zip, stat.m_filename, &sz, 0);
 
   if (!src) {
@@ -433,7 +433,7 @@ union gab_value_pair gab_use_zip_data(struct gab_triple gab, const char *path,
 }
 
 union gab_value_pair gab_use_zip_source(struct gab_triple gab, const char *path,
-                                        size_t len, const char **sargs,
+                                        uint64_t len, const char **sargs,
                                         gab_value *vargs) {
   int idx = mz_zip_reader_locate_file(&zip, path, "", 0);
   if (idx < 0)
@@ -446,7 +446,7 @@ union gab_value_pair gab_use_zip_source(struct gab_triple gab, const char *path,
     return gab_panicf(gab, "Failed to load module: $", gab_string(gab, estr));
   };
 
-  size_t sz;
+  uint64_t sz;
   void *src = mz_zip_reader_extract_file_to_heap(&zip, stat.m_filename, &sz, 0);
 
   if (!src) {
@@ -470,7 +470,7 @@ union gab_value_pair gab_use_zip_source(struct gab_triple gab, const char *path,
 }
 
 union gab_value_pair gab_use_data(struct gab_triple gab, const char *path,
-                                  size_t len, const char **sargs,
+                                  uint64_t len, const char **sargs,
                                   gab_value *vargs) {
   a_char *src = gab_osread(path);
 
@@ -488,7 +488,7 @@ union gab_value_pair gab_use_data(struct gab_triple gab, const char *path,
 }
 
 union gab_value_pair gab_use_source(struct gab_triple gab, const char *path,
-                                    size_t len, const char **sargs,
+                                    uint64_t len, const char **sargs,
                                     gab_value *vargs) {
   a_char *src = gab_osread(path);
 
@@ -542,7 +542,7 @@ static struct gab_package default_modules[] = {
     {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Io"},
     {}, // List terminator.
 };
-static const size_t ndefault_modules = LEN_CARRAY(default_modules) - 1;
+static const uint64_t ndefault_modules = LEN_CARRAY(default_modules) - 1;
 
 #define GAB_NATIVE_MODULE_SUFFIX                                               \
   ".cgab-" GAB_VERSION_TAG "-" GAB_TARGET_TRIPLE GAB_DYNLIB_FILEENDING
@@ -561,7 +561,7 @@ static const struct gab_resource native_file_resources[] = {
     {}, // List terminator.
 };
 
-static const size_t nnative_file_resources =
+static const uint64_t nnative_file_resources =
     LEN_CARRAY(native_file_resources) - 1;
 
 static const struct gab_resource native_zip_resources[] = {
@@ -610,7 +610,7 @@ const char *welcome_message =
                                                      " " CYAN(
                                                          GAB_BUILDTYPE) "\n";
 
-int run_repl(int flags, uint32_t wait, size_t nmodules,
+int run_repl(int flags, uint32_t wait, uint64_t nmodules,
              struct gab_package *packages) {
   gab_ossignal(SIGINT, propagate_term);
 
@@ -652,8 +652,8 @@ int run_repl(int flags, uint32_t wait, size_t nmodules,
   return gab_destroy(gab), 0;
 }
 
-int run_string(const char *string, int flags, uint32_t wait, size_t jobs,
-               size_t nmodules, struct gab_package *packages) {
+int run_string(const char *string, int flags, uint32_t wait, uint64_t jobs,
+               uint64_t nmodules, struct gab_package *packages) {
   gab_ossignal(SIGINT, propagate_term);
 
   union gab_value_pair res = gab_create(
@@ -700,7 +700,7 @@ int run_string(const char *string, int flags, uint32_t wait, size_t jobs,
 int run_bundle(const char *mod) {
   gab_ossignal(SIGINT, propagate_term);
 
-  size_t len = strlen(mod);
+  uint64_t len = strlen(mod);
 
   if (len > 4 && !strncmp(mod + len - 4, ".exe", 4))
     len -= 4;
@@ -766,8 +766,8 @@ int run_bundle(const char *mod) {
   return gab_destroy(gab), 0;
 }
 
-int run_file(const char *package, int flags, uint32_t wait, size_t jobs,
-             size_t nmodules, struct gab_package *packages) {
+int run_file(const char *package, int flags, uint32_t wait, uint64_t jobs,
+             uint64_t nmodules, struct gab_package *packages) {
   gab_ossignal(SIGINT, propagate_term);
 
   union gab_value_pair res = gab_create(
@@ -825,10 +825,10 @@ bool add_package(mz_zip_archive *zip_o, const char **roots,
    */
   mz_zip_archive zip_r = {0};
   if (mz_zip_reader_init_file(&zip_r, mod->path->data, 0)) {
-    size_t files = mz_zip_reader_get_num_files(&zip_r);
+    uint64_t files = mz_zip_reader_get_num_files(&zip_r);
 
     if (files) {
-      for (size_t i = 0; i < files; i++)
+      for (uint64_t i = 0; i < files; i++)
         if (!mz_zip_writer_add_from_zip_reader(zip_o, &zip_r, i))
           return false; // TODO @cgab @cli: Log this err
 
@@ -924,7 +924,7 @@ const char *install_location(const char *target, const char *tag,
   int taglen = strlen(tag);
   int pkglen = package ? strlen(package) : 0;
 
-  size_t targetlen = strlen(target);
+  uint64_t targetlen = strlen(target);
   char locbuf[taglen + targetlen + pkglen + 4];
   strncpy(locbuf, tag, taglen);
   locbuf[taglen] = '-';
@@ -1822,7 +1822,7 @@ char *url_from_package(const char *package, const char *tag,
   if (!dot)
     return nullptr;
 
-  size_t hostlen = dot - package;
+  uint64_t hostlen = dot - package;
   if (!hostlen)
     return nullptr;
 
@@ -1852,7 +1852,7 @@ char *url_from_package(const char *package, const char *tag,
 
       pre_pattern++;
 
-      size_t len = pre_pattern - cursor;
+      uint64_t len = pre_pattern - cursor;
 
       if (!len)
         return nullptr;
@@ -1862,7 +1862,7 @@ char *url_from_package(const char *package, const char *tag,
       v_char_spush(&url, s_char_create(cursor, len - 1));
 
       const char *post_pattern = strchr(cursor, '>');
-      size_t pattern_len = post_pattern - pre_pattern;
+      uint64_t pattern_len = post_pattern - pre_pattern;
 
       if (!pattern_len)
         return nullptr;
@@ -1891,7 +1891,7 @@ int get_package(v_step *steps, struct command_arguments *args,
                 const char *gab_target, const char *gab_tag) {
 
   // Split the requested package into its package and tag.
-  const size_t pkglen = strlen(package);
+  const uint64_t pkglen = strlen(package);
 
   char pkgbuf[pkglen + 1];
 
@@ -2047,7 +2047,7 @@ int get(struct command_arguments *args) {
   args->argv++;
 
   // Split the requested package into its package and tag.
-  const size_t pkglen = strlen(pkg);
+  const uint64_t pkglen = strlen(pkg);
   char pkgbuf[pkglen + 4];
   strncpy(pkgbuf, pkg, pkglen);
   pkgbuf[pkglen] = '\0';
@@ -2062,7 +2062,7 @@ int get(struct command_arguments *args) {
   }
 
   /* Copy the tag into a new buffer */
-  const size_t taglen = strlen(tag);
+  const uint64_t taglen = strlen(tag);
   char tagbuf[taglen + 10];
 
   strncpy(tagbuf, tag, taglen);
@@ -2140,7 +2140,7 @@ int init_modules(v_pkg *modules, struct command_arguments *args) {
   // Push a terminator module to the list
   v_pkg_push(modules, (struct gab_package){});
 
-  size_t nmodules = modules->len;
+  uint64_t nmodules = modules->len;
   assert(nmodules > 0);
 
   return nmodules;
@@ -2727,7 +2727,7 @@ bool check_valid_zip() {
     return false;
   }
 
-  size_t files = mz_zip_reader_get_num_files(&zip);
+  uint64_t files = mz_zip_reader_get_num_files(&zip);
 
   return files;
 }

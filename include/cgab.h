@@ -665,16 +665,12 @@ static inline void __gab_assert_fail(const char *prelude, const char *expr,
   va_list va;
   va_start(va, reason);
 
-  flockfile(stderr);
-
-  fprintf(stderr, "%s\n[%s:%lu %s] assertion '%s' failed: ", prelude,
+  fprintf(stderr, "%s\n[%s:%"PRId64" %s] assertion '%s' failed: ", prelude,
           file, line, function, expr);
 
   vfprintf(stderr, reason, va);
 
   fputc('\n', stderr);
-
-  funlockfile(stderr);
 
   exit(EXIT_FAILURE);
   va_end(va);

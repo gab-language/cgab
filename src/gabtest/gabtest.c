@@ -1,6 +1,9 @@
 #include <stdlib.h>
 
 #include "cgab.h"
+
+// Disable timing so that we can cross-compile this binary
+#define MUNIT_DISABLE_TIMING
 #include "munit/munit.h"
 
 extern const MunitSuite record_suite;

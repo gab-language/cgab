@@ -686,17 +686,17 @@ struct gab_eg {
   } jobs[];
 };
 
-void gab_gccreate(struct gab_triple gab);
+GAB_API void gab_gccreate(struct gab_triple gab);
 
-void gab_gcdestroy(struct gab_triple gab);
+GAB_API void gab_gcdestroy(struct gab_triple gab);
 
 /*
  * Check if collection is necessary, and unblock the collection
  * thread if necessary
  */
-bool gab_gctrigger(struct gab_triple gab);
+GAB_API bool gab_gctrigger(struct gab_triple gab);
 
-void gab_gcdocollect(struct gab_triple gab);
+GAB_API void gab_gcdocollect(struct gab_triple gab);
 
 enum variable_flag {
   fLOCAL_LOCAL = 1 << 0,
@@ -753,7 +753,7 @@ GAB_API int64_t gab_fmodinspect(FILE *stream, gab_value prototype);
 /**
  * @brief Inspect a gab_value out to stream, recursing depth times.
  */
-int64_t gab_fvalinspect(FILE *stream, gab_value self, int depth);
+GAB_API int64_t gab_fvalinspect(FILE *stream, gab_value self, int depth);
 
 static inline uint8_t *proto_srcbegin(struct gab_triple gab,
                                       struct gab_oprototype *p) {

@@ -419,22 +419,22 @@ static MunitResult test_list_push(const MunitParameter params[],
   gab_value v1 = gab_number(10);
   gab_value v2 = gab_number(20);
 
-  gab_value lst1 = gab_lstpush(gab, lst, v1);
-  gab_value lst2 = gab_lstpush(gab, lst1, v2);
+  gab_value list1 = gab_lstpush(gab, lst, v1);
+  gab_value list2 = gab_lstpush(gab, list1, v2);
 
   // Verify original list is unchanged
   munit_assert_uint64(gab_reclen(lst), ==, 0);
   munit_assert_uint64(gab_lstat(lst, 0), ==, gab_cundefined);
 
   // Verify intermediate list
-  munit_assert_uint64(gab_reclen(lst1), ==, 1);
-  munit_assert_uint64(gab_lstat(lst1, 0), ==, v1);
-  munit_assert_uint64(gab_lstat(lst1, 1), ==, gab_cundefined);
+  munit_assert_uint64(gab_reclen(list1), ==, 1);
+  munit_assert_uint64(gab_lstat(list1, 0), ==, v1);
+  munit_assert_uint64(gab_lstat(list1, 1), ==, gab_cundefined);
 
   // Verify final list
-  munit_assert_uint64(gab_reclen(lst2), ==, 2);
-  munit_assert_uint64(gab_lstat(lst2, 0), ==, v1);
-  munit_assert_uint64(gab_lstat(lst2, 1), ==, v2);
+  munit_assert_uint64(gab_reclen(list2), ==, 2);
+  munit_assert_uint64(gab_lstat(list2, 0), ==, v1);
+  munit_assert_uint64(gab_lstat(list2, 1), ==, v2);
 
   return MUNIT_OK;
 }

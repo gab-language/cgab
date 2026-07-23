@@ -29,11 +29,17 @@
 
 #ifdef GAB_PLATFORM_LINUX
 #define QIO_LINUX
-#elifdef GAB_PLATFORM_WASI
+#endif
+
+#ifdef GAB_PLATFORM_WASI
 #define QIO_LINUX
-#elifdef GAB_PLATFORM_MACOS
+#endif
+
+#ifdef GAB_PLATFORM_MACOS
 #define QIO_MACOS
-#elifdef GAB_PLATFORM_WIN
+#endif
+
+#ifdef GAB_PLATFORM_WIN
 #define QIO_WINDOWS
 #endif
 
