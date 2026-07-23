@@ -1287,11 +1287,8 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
     size_t len = gab_fibsize(gab_thisfiber(gab)) / sizeof(gab_value);
 
     if (gab_chnmatches(gui->evch, reentrant)) {
-      res = gab_cvalid;
+      res = reentrant;
       goto yield;
-    } else if (reentrant != gab_cvalid) {
-      res = gab_ctimeout;
-      goto put_event;
     } else {
       res = gab_cundefined;
       // Otherwise we succeeded, and can deref the values and go to next
@@ -1345,7 +1342,7 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
       // successfully
       // If we're already putting, and we match this event, then yield.
       if (reentrant && gab_chnmatches(gui->evch, reentrant)) {
-        res = gab_ctimeout;
+        res = reentrant;
         goto yield;
       }
 
@@ -1384,7 +1381,6 @@ yield:
   if (gab_chnisclosed(gui->evch))
     goto fin;
 
-  gab_assert(res != 0, "Cannot timeout with res == 0");
   return gab_union_ctimeout(res);
 
 fin:
@@ -1697,11 +1693,8 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_event) {
     size_t len = gab_fibsize(gab_thisfiber(gab)) / sizeof(gab_value);
 
     if (gab_chnmatches(gui->evch, reentrant)) {
-      res = gab_cvalid;
+      res = reentrant;
       goto yield;
-    } else if (reentrant != gab_cvalid) {
-      res = gab_ctimeout;
-      goto put_event;
     } else {
       res = gab_cundefined;
       // Otherwise we succeeded, and can deref the values and go to next
@@ -1748,7 +1741,7 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_event) {
       gab_value *ev = gab_fibat(gab_thisfiber(gab), 0);
 
       if (reentrant && gab_chnmatches(gui->evch, reentrant)) {
-        res = gab_ctimeout;
+        res = reentrant;
         goto yield;
       }
 
