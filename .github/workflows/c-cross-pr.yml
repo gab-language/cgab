@@ -58,6 +58,9 @@ jobs:
     - name: Build
       run: DLLTOOL=x86_64-w64-mingw32-dlltool clide build
 
+    - name: DEBUG
+      run: ls -al
+
     - name: Move native modules
       run: |
         mkdir -p github.com/gab-language/cgab@${{ env.version }}/mod
