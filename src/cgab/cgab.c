@@ -6757,7 +6757,6 @@ GAB_API bool gab_chnmatches(gab_value c, gab_value tk) {
                        gab_valkind(c) <= kGAB_CHANNELCLOSED,
                    "Invalid kind");
 
-
   struct gab_ochannel *channel = GAB_VAL_TO_CHANNEL(c);
   uint32_t e = atomic_load_explicit(&channel->epoch, memory_order_acquire);
   uint32_t tk_e = gab_valtou(tk);
@@ -6797,8 +6796,9 @@ GAB_INTERNAL void __gab_chnunlock(struct gab_ochannel *channel) {
   return atomic_store_explicit(&channel->spinlock, 0, memory_order_release);
 }
 
-GAB_INTERNAL uint32_t __gab_chnepochinc(struct gab_ochannel*channel){
-  return 2 + atomic_fetch_add_explicit(&channel->epoch, 2, memory_order_release);
+GAB_INTERNAL uint32_t __gab_chnepochinc(struct gab_ochannel *channel) {
+  return 2 +
+         atomic_fetch_add_explicit(&channel->epoch, 2, memory_order_release);
 }
 
 /*
@@ -6830,7 +6830,7 @@ GAB_INTERNAL bool __gab_bchnabandon(struct gab_triple gab,
  * Try to put a slice into a channel.
  */
 GAB_INTERNAL gab_value __gab_chnput(struct gab_ochannel *channel, uint64_t len,
-                                   gab_value *vs) {
+                                    gab_value *vs) {
   // Acquire spinlock
   if (!__gab_chntrylock(channel))
     return 0;
@@ -6883,7 +6883,7 @@ GAB_INTERNAL gab_value __gab_chntake(struct gab_ochannel *channel, uint64_t n,
   uint64_t len = n < avail ? n : avail;
   memcpy(dest, src, sizeof(gab_value) * len);
 
-  __gab_chnepochinc(channel);
+  __gab_chnepochinc(channel)
 
   return __gab_chnunlock(channel), gab_number(avail);
 }
@@ -6918,9 +6918,9 @@ GAB_INTERNAL gab_value __gab_chnwaitempty(struct gab_triple gab,
   return gab_cvalid;
 }
 
-GAB_INTERNAL gab_value __gab_chnwaitmatches(struct gab_triple gab,
-                                            gab_value tk, gab_value c,
-                                            uint64_t tries, uint64_t *sofar) {
+GAB_INTERNAL gab_value __gab_chnwaitmatches(struct gab_triple gab, gab_value tk,
+                                            gab_value c, uint64_t tries,
+                                            uint64_t *sofar) {
   while (gab_chnmatches(c, tk)) {
     if (gab_chnisclosed(c))
       return gab_cundefined;
@@ -12771,9 +12771,9 @@ extern void putcs(char *arg);
                                                                                \
     CHECK_SIGNAL();                                                            \
                                                                                \
-    if (REENTRANT() && REENTRANT() != gab_ctimeout) {                                         \
-      if (!gab_chnisclosed(c) && gab_chnmatches(c, REENTRANT()))                        \
-        VM_YIELD(REENTRANT());                                                           \
+    if (REENTRANT() && REENTRANT() != gab_ctimeout) {                          \
+      if (!gab_chnisclosed(c) && gab_chnmatches(c, REENTRANT()))               \
+        VM_YIELD(REENTRANT());                                                 \
                                                                                \
       RESET_REENTRANT();                                                       \
                                                                                \
