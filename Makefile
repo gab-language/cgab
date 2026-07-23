@@ -131,7 +131,7 @@ $(BUILD_PREFIX)/stencil.h: $(ELF2STENCIL) $(BUILD_PREFIX)/stencil/stencil.o
 
 # This rule builds the gab executable, linking with libcgab.a
 $(ELF2STENCIL): $(ELF_SRC)
-	$(NATIVECC) $(CFLAGS) -lelf -o $@ $^
+	$(NATIVECC) $(CFLAGS) -lbfd -o $@ $^
 
 # This rule builds libcgab by archiving the cgab object files together.
 $(BUILD_PREFIX)/libcgab.a: $(CGAB_OBJ)
