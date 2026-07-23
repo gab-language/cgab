@@ -410,7 +410,7 @@ struct gab_ochannel {
   struct gab_obj header;
 
   /* spinlock */
-  _Atomic(int) spinlock;
+  _Atomic uint8_t spinlock;
   /* Number of values held at member *data* */
   _Atomic uint64_t len;
   /* Values held */
@@ -769,11 +769,11 @@ static inline uint8_t *proto_ip(struct gab_triple gab,
 }
 
 cGAB_VM_OPCODE_ATTRIBUTES union gab_value_pair
-vm_eerror(struct gab_triple *__gab, struct gab_vm *__vm, uint8_t *__ip,
+__gab_vmeerror(struct gab_triple *__gab, struct gab_vm *__vm, uint8_t *__ip,
           gab_value *__kb, gab_value *__fb, gab_value *__sp);
 
 cGAB_VM_OPCODE_ATTRIBUTES union gab_value_pair
-vm_ok(struct gab_triple *__gab, struct gab_vm *__vm, uint8_t *__ip,
+__gab_vmok(struct gab_triple *__gab, struct gab_vm *__vm, uint8_t *__ip,
       gab_value *__kb, gab_value *__fb, gab_value *__sp);
 
 #endif

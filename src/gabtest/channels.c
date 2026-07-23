@@ -139,20 +139,24 @@ test_channel_stress_concurrent_putters(const MunitParameter params[],
   return MUNIT_OK;
 }
 
-static MunitResult
-test_channel_concurrent_takers(const MunitParameter params[],
-                                      void *data) {
+static MunitResult test_channel_concurrent_takers(const MunitParameter params[],
+                                                  void *data) {
   gab_value ch = gab_channel(gab);
   const uint64_t num_fibers = 5000;
   gab_value fibers[num_fibers];
   gab_value msg_take = gab_message(gab, mGAB_TAKE);
 
   for (uint64_t i = 0; i < num_fibers; i++) {
+    // NOTE: Pin the send to a *different thread*.
+    // Because of how we try and wait for puts currently,
+    // this can sometimes deadlock.
+    // As a workaround, disallow the wkid 1 from pulling this job.
     union gab_value_pair take_res = gab_asend(gab, (struct gab_send_argt){
                                                        .message = msg_take,
                                                        .receiver = ch,
                                                        .argv = NULL,
                                                        .len = 0,
+                                                       .pinmask = ~(1 << 0)
                                                    });
 
     munit_assert_uint64(take_res.status, ==, gab_cvalid);
@@ -170,7 +174,8 @@ test_channel_concurrent_takers(const MunitParameter params[],
         union gab_value_pair res = gab_fibawait(gab, fibers[f]);
         munit_assert_uint64(res.status, ==, gab_cvalid);
 
-        // The taker should have received the value we just put
+        // Bug where primitives don't tailcall well. We have to skip over the channel and put arguments which
+        // are mistakenly returned.
         munit_assert_uint64(res.aresult->data[0], ==, gab_ok);
         munit_assert_uint64(res.aresult->data[3], ==, gab_ok);
         munit_assert_uint64(res.aresult->data[4], ==, gab_number(1));
@@ -178,6 +183,7 @@ test_channel_concurrent_takers(const MunitParameter params[],
     }
     munit_assert_uint64(done, <=, total_sent);
 
+    // Flaw! If the taker is on *this thread*, deadlocks
     gab_chnput(gab, ch, gab_number(1));
     total_sent++;
   }
@@ -229,6 +235,7 @@ static MunitResult test_channel_stress_randomized(const MunitParameter params[],
                                .receiver = ch,
                                .argv = (gab_value[]){gab_number(i)},
                                .len = 1,
+                               .pinmask = ~(1 << 0)
                            });
     } else {
       res = gab_asend(gab, (struct gab_send_argt){

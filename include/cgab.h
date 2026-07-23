@@ -688,8 +688,8 @@ static inline void __gab_assert_fail(const char *prelude, const char *expr,
 
   flockfile(stderr);
 
-  fprintf(stderr, "%s\n[%s] assertion '%s' failed at %s:%lu.\n", prelude,
-          function, expr, file, line);
+  fprintf(stderr, "%s\n[%s:%lu %s] assertion '%s' failed: ", prelude,
+          file, line, function, expr);
 
   vfprintf(stderr, reason, va);
 
@@ -701,30 +701,75 @@ static inline void __gab_assert_fail(const char *prelude, const char *expr,
   va_end(va);
 };
 
-#define GAB_ASSERT_UNREACHABLE_PRELUDE                                         \
-  "cgab reached a codepath declared to be unreachable. "                       \
-  "This is a bug in cgab itself. "                                             \
-  "Please consider creating an issue at https://github.com/gab-language/cgab."
+// clang-format off
+#define GAB_ASSERT_UNREACHABLE_PRELUDE                                          \
+  "*-----------------------------------------------------------------------*\n" \
+  "|                                                                       |\n" \
+  "| Uh Oh!                                                                |\n" \
+  "|                                                                       |\n" \
+  "| cgab reached a codepath declared to be unreachable.                   |\n" \
+  "|                                                                       |\n" \
+  "| This is a bug in cgab itself. Please consider creating an issue at:   |\n" \
+  "|                                                                       |\n" \
+  "|    https://github.com/gab-language/cgab                               |\n" \
+  "|                                                                       |\n" \
+  "| Include the following details in your submission.                     |\n" \
+  "|                                                                       |\n" \
+  "*-----------------------------------------------------------------------*\n" 
 
-#define GAB_ASSERT_PRECONDITION_PRELUDE                                        \
-  "cgab found an unmet precondition. "                                         \
-  "This is often due to misuse of the libcgab c api. "                         \
-  "If this panic is encountered in third-party code, consider creating an "    \
-  "issue there. "                                                              \
-  "Otherwise, please consider creating an issue at "                           \
-  "https://github.com/gab-language/cgab."
+#define GAB_ASSERT_PRECONDITION_PRELUDE                                         \
+  "*-----------------------------------------------------------------------*\n" \
+  "|                                                                       |\n" \
+  "| Uh Oh!                                                                |\n" \
+  "|                                                                       |\n" \
+  "| cgab found an unmet precondition.                                     |\n" \
+  "|                                                                       |\n" \
+  "| This is often due to misuse of the libcgab c api.                     |\n" \
+  "|                                                                       |\n" \
+  "| If this occurrs in third part code, consider creating an issue there. |\n" \
+  "|                                                                       |\n" \
+  "| Otherwise, consider creating an issue at:                             |\n" \
+  "|                                                                       |\n" \
+  "|    https://github.com/gab-language/cgab                               |\n" \
+  "|                                                                       |\n" \
+  "| Include the following details in your submission.                     |\n" \
+  "|                                                                       |\n" \
+  "*-----------------------------------------------------------------------*\n" 
 
-#define GAB_ASSERT_DEFAULT_PRELUDE                                             \
-  "cgab encountered an unexpected state. "                                     \
-  "This may be due to a bug in cgab, or in third-party code using the "        \
-  "libcgab c api. "                                                            \
-  "Please consider creating an issue at https://github.com/gab-language/cgab."
+#define GAB_ASSERT_DEFAULT_PRELUDE                                              \
+  "*-----------------------------------------------------------------------*\n" \
+  "|                                                                       |\n" \
+  "| Uh Oh!                                                                |\n" \
+  "|                                                                       |\n" \
+  "| cgab encountered an unexpected state.                                 |\n" \
+  "|                                                                       |\n" \
+  "| This may be due to misuse of the libcgab c api, or a bug in cgab.     |\n" \
+  "|                                                                       |\n" \
+  "| If this occurrs in third part code, consider creating an issue there. |\n" \
+  "|                                                                       |\n" \
+  "| Otherwise, consider creating an issue at:                             |\n" \
+  "|                                                                       |\n" \
+  "|    https://github.com/gab-language/cgab                               |\n" \
+  "|                                                                       |\n" \
+  "| Include the following details in your submission.                     |\n" \
+  "|                                                                       |\n" \
+  "*-----------------------------------------------------------------------*\n" 
 
-#define GAB_ASSERT_VERIFICATION_PRELUDE                                        \
-  "cgab failed a debug verification. "                                           \
-  "This may be due to a bug in cgab, or in third-party code using the "        \
-  "libcgab c api. "                                                            \
-  "Please consider creating an issue at https://github.com/gab-language/cgab."
+#define GAB_ASSERT_VERIFICATION_PRELUDE                                         \
+  "*-----------------------------------------------------------------------*\n" \
+  "|                                                                       |\n" \
+  "| Uh Oh!                                                                |\n" \
+  "|                                                                       |\n" \
+  "| cgab failed a debug validation.                                       |\n" \
+  "|                                                                       |\n" \
+  "| This is a bug in cgab itself. Please consider creating an issue at:   |\n" \
+  "|                                                                       |\n" \
+  "|    https://github.com/gab-language/cgab                               |\n" \
+  "|                                                                       |\n" \
+  "| Include the following details in your submission.                     |\n" \
+  "|                                                                       |\n" \
+  "*-----------------------------------------------------------------------*\n" 
+// clang-format on
 
 #define gab_assert(expr, format, ...)                                          \
   ((expr) ? (void)(0)                                                          \
@@ -2155,9 +2200,9 @@ struct gab_send_argt {
   gab_value *argv;
 
   /**
-   * An optional worker id, to which gab will pin this fiber.
+   * A bitmask which identifies the jobs which are allowed to take this job.
    */
-  int pin;
+  int32_t pinmask;
   /**
    * Optional flags for the vm.
    */

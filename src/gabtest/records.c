@@ -78,9 +78,14 @@ static MunitResult test_record_hamt_boundary(const MunitParameter params[],
   const int kTotalElements = 50;
 
   gab_value rec = gab_erecord(gab);
+  gab_iref(gab, rec);
 
   for (int i = 0; i < kTotalElements; i++) {
-    rec = gab_recput(gab, rec, gab_number(i), gab_number(i * 10));
+    gab_value newrec = gab_recput(gab, rec, gab_number(i), gab_number(i * 10));
+    gab_dref(gab, rec);
+    gab_iref(gab, newrec);
+    rec = newrec;
+
     munit_assert_uint64(gab_valkind(rec), ==, kGAB_RECORD);
     munit_assert_uint64(gab_reclen(rec), ==, (size_t)(i + 1));
   }
@@ -93,7 +98,11 @@ static MunitResult test_record_hamt_boundary(const MunitParameter params[],
   const int kElementsToRemove = 20;
   for (int i = 0; i < kElementsToRemove; i++) {
     gab_value vout = gab_cundefined;
-    rec = gab_rectake(gab, rec, gab_number(i), &vout);
+
+    gab_value newrec = gab_rectake(gab, rec, gab_number(i), &vout);
+    gab_dref(gab, rec);
+    gab_iref(gab, newrec);
+    rec = newrec;
 
     munit_assert_uint64(gab_valtou(vout), ==, i * 10);
   }

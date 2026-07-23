@@ -1,7 +1,7 @@
 /**
  *  MIT License
  *
- *  Copyright (c) 2023 Teddy Randby
+ *  Copyright (c) 2023-2026 Teddy Randby
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy
  *  of this software and associated documentation files (the "Software"), to
@@ -147,7 +147,7 @@ struct ui {
   };
 };
 
-#define MAX_MS_PER_FRAME 7
+#define MAX_MS_PER_FRAME 15 
 #define CHNTAKE_WAITTIME 0
 
 struct timestep {

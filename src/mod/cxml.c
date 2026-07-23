@@ -107,7 +107,6 @@ bool unescape_into(char *buf, const char *str, size_t len) {
 gab_value *push_value(struct gab_triple gab, hoxml_context_t *hoxml,
                       const char *content, size_t content_length,
                       hoxml_code_t t, gab_value *sp) {
-  printf("CODE: %d\n", t);
   switch (t) {
   case HOXML_ATTRIBUTE: {
     size_t len = strlen(hoxml->attribute);

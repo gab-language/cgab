@@ -19,7 +19,7 @@ case "$buildtype" in
   debugoptimized) cflags="-g -O2 -DcGAB_THREADS_NATIVE -DNDEBUG" ;;
   deterministic)  cflags="-g -O0 -Ivendor/unthread/include" ;;
   deterministicoptimized)  cflags="-g -O2 -Ivendor/unthread/include" ;;
-  release)        cflags="-Os -DcGAB_THREADS_NATIVE -DNDEBUG"    ;;
+  release)        cflags="-O3 -DcGAB_THREADS_NATIVE -DNDEBUG"    ;;
 esac
 
 # For the deterministic build, we have to include the unthread.o library.
