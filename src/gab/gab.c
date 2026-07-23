@@ -410,7 +410,7 @@ union gab_value_pair gab_use_zip_data(struct gab_triple gab, const char *path,
     return gab_panicf(gab, "Failed to load module: $", gab_string(gab, estr));
   };
 
-  uint64_t sz;
+  size_t sz;
   void *src = mz_zip_reader_extract_file_to_heap(&zip, stat.m_filename, &sz, 0);
 
   if (!src) {
@@ -446,7 +446,7 @@ union gab_value_pair gab_use_zip_source(struct gab_triple gab, const char *path,
     return gab_panicf(gab, "Failed to load module: $", gab_string(gab, estr));
   };
 
-  uint64_t sz;
+  size_t sz;
   void *src = mz_zip_reader_extract_file_to_heap(&zip, stat.m_filename, &sz, 0);
 
   if (!src) {
