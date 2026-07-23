@@ -24,16 +24,57 @@
 
 #include "cgab.h"
 #include "engine.h"
-#include "hash.h"
 
-#include <__stddef_unreachable.h>
 #include <ctype.h>
 #include <stdatomic.h>
-#include <stddef.h>
-#include <stdint.h>
 
 #define popcountl(n) __builtin_popcountl(n)
 #define ctzl(n) __builtin_ctzl(n)
+
+// https://github.com/amakukha/minimal_hashes
+GAB_INTERNAL uint64_t __gab_hshFNV1a_64(uint64_t seed, uint64_t len,
+                                        const uint8_t *data) {
+  uint64_t h = seed;
+
+  for (uint64_t i = 0; i < len; i++) {
+    h ^= data[i];
+    h *= (uint64_t)0x00000100000001B3UL;
+  }
+
+  return h;
+}
+
+GAB_INTERNAL uint64_t __gab_hshbytes(uint64_t len, uint8_t *bytes) {
+  return __gab_hshFNV1a_64(0xcbf29ce484222325UL, len * sizeof(uint8_t),
+                           (void *)bytes);
+}
+
+GAB_INTERNAL uint64_t __gab_hshwords(uint64_t len, uint64_t *bytes) {
+  return __gab_hshFNV1a_64(0xcbf29ce484222325UL, len * sizeof(uint64_t),
+                           (void *)bytes);
+}
+
+/* continue-hashing words */
+GAB_INTERNAL uint64_t __gab_chshwords(uint64_t sofar, uint64_t len,
+                                      uint64_t *bytes) {
+  return __gab_hshFNV1a_64(sofar, len * sizeof(uint64_t), (void *)bytes);
+}
+
+/* Append a c-string to a slice of chars */
+static inline s_char s_char_cstr(const char *str) {
+  return (s_char){.data = str, .len = strlen(str)};
+}
+
+static inline size_t s_char_hash(s_char self) {
+  return __gab_hshbytes(self.len, (uint8_t *)self.data);
+}
+
+/* Push a slice of chars onto a vector of chars */
+static inline void v_char_spush(v_char *self, s_char slice) {
+  for (uint64_t i = 0; i < slice.len; i++) {
+    v_char_push(self, slice.data[i]);
+  }
+}
 
 /* Helpers used by all the sprintf methods */
 GAB_INTERNAL int64_t __gab_vsnprintf_through(char **dst, size_t *n,
@@ -4240,8 +4281,8 @@ GAB_API gab_value gab_tnstring(struct gab_triple gab, uint64_t len,
 
 #if cGAB_STRING_HASHLEN > 0
   uint64_t hash =
-      hash_bytes(len < cGAB_STRING_HASHLEN ? len : cGAB_STRING_HASHLEN,
-                 (unsigned char *)data);
+      __gab_hshbytes(len < cGAB_STRING_HASHLEN ? len : cGAB_STRING_HASHLEN,
+                     (unsigned char *)data);
 #else
   uint64_t hash = hash_bytes(len, (unsigned char *)data);
 #endif
@@ -4448,8 +4489,8 @@ GAB_API gab_value gab_tstrcat(struct gab_triple gab, gab_value _a,
 // Pre compute the hash
 #if cGAB_STRING_HASHLEN > 0
   uint64_t hash =
-      hash_bytes(len < cGAB_STRING_HASHLEN ? len : cGAB_STRING_HASHLEN,
-                 (unsigned char *)buff->data);
+      __gab_hshbytes(len < cGAB_STRING_HASHLEN ? len : cGAB_STRING_HASHLEN,
+                     (unsigned char *)buff->data);
 #else
   uint64_t hash = hash_bytes(len, (unsigned char *)buff->data);
 #endif
@@ -6065,7 +6106,7 @@ GAB_API gab_value gab_tshape(struct gab_triple gab, uint64_t stride,
   uint64_t newlen = __gab_shpprepkeys(stride, len, data, newdata);
 
   // TODO @cgab @bug: Handle duplicate keys correctly.
-  uint64_t hash = hash_words(newlen, newdata);
+  uint64_t hash = __gab_hshwords(newlen, newdata);
 
   switch (mtx_trylock(&gab.eg->gc_mtx)) {
   case thrd_success:
@@ -6243,7 +6284,7 @@ GAB_API gab_value gab_tshpwithout(struct gab_triple gab, gab_value shape,
   if (!found)
     return shape;
 
-  uint64_t hash = hash_words(newlen, newdata);
+  uint64_t hash = __gab_hshwords(newlen, newdata);
 
   switch (mtx_trylock(&gab.eg->gc_mtx)) {
   case thrd_success:
@@ -6341,7 +6382,7 @@ GAB_API gab_value gab_tshpwith(struct gab_triple gab, gab_value shp,
   if (idx != -1)
     return shp;
 
-  uint64_t hash = continue_hash_words(s->hash, 1, &key);
+  uint64_t hash = __gab_chshwords(s->hash, 1, &key);
 
   switch (mtx_trylock(&gab.eg->gc_mtx)) {
   case thrd_success:
@@ -6430,18 +6471,19 @@ GAB_INTERNAL gab_value __gab_fibsetup(struct gab_triple gab,
                                       struct gab_ofiber *self) {
   struct gab_vm *vm = &self->vm;
 
-  memcpy(self->virtual_frame_bc,
-         // TODO @cgab @bug: Primitives don't handle being tailcalled well.
-         &(uint8_t[]){
-             OP_SEND,
-             // These two bytes make up a short argument, with the highest bit set.
-             fHAVE_TAIL,
-             0,
-             // This bit is used to determine if the send should tailcall.
-             // The rest of the bits are for the k offset.
-             OP_RETURN,
-         },
-         sizeof(self->virtual_frame_bc));
+  memcpy(
+      self->virtual_frame_bc,
+      // TODO @cgab @bug: Primitives don't handle being tailcalled well.
+      &(uint8_t[]){
+          OP_SEND,
+          // These two bytes make up a short argument, with the highest bit set.
+          fHAVE_TAIL,
+          0,
+          // This bit is used to determine if the send should tailcall.
+          // The rest of the bits are for the k offset.
+          OP_RETURN,
+      },
+      sizeof(self->virtual_frame_bc));
 
   memcpy(self->virtual_frame_ks,
          &(gab_value[]){
@@ -6646,6 +6688,7 @@ GAB_API gab_value gab_channel(struct gab_triple gab) {
   struct gab_ochannel *self = GAB_CREATE_OBJ(gab_ochannel, kGAB_CHANNEL);
 
   atomic_init(&self->data, nullptr);
+  atomic_init(&self->epoch, 1);
   atomic_init(&self->spinlock, 0);
   atomic_init(&self->len, 0);
 
@@ -6709,13 +6752,19 @@ GAB_API bool gab_chnisclosed(gab_value c) {
  * It isn't totally functional under contention as it is.
  */
 
-GAB_API bool gab_chnmatches(gab_value c, gab_value *ptr) {
+GAB_API bool gab_chnmatches(gab_value c, gab_value tk) {
   gab_precondition(gab_valkind(c) >= kGAB_CHANNEL &&
                        gab_valkind(c) <= kGAB_CHANNELCLOSED,
                    "Invalid kind");
+
+
   struct gab_ochannel *channel = GAB_VAL_TO_CHANNEL(c);
-  return atomic_load(&channel->spinlock) ||
-         (atomic_load(&channel->data) == ptr);
+  uint32_t e = atomic_load_explicit(&channel->epoch, memory_order_acquire);
+  uint32_t tk_e = gab_valtou(tk);
+
+  gab_precondition(tk_e != 0, "Invalid token value");
+
+  return e == tk_e;
 }
 
 GAB_API bool gab_chnisempty(gab_value c) {
@@ -6748,29 +6797,31 @@ GAB_INTERNAL void __gab_chnunlock(struct gab_ochannel *channel) {
   return atomic_store_explicit(&channel->spinlock, 0, memory_order_release);
 }
 
+GAB_INTERNAL uint32_t __gab_chnepochinc(struct gab_ochannel*channel){
+  return 2 + atomic_fetch_add_explicit(&channel->epoch, 2, memory_order_release);
+}
+
 /*
  * Abandon a channel. You must *know* the len you're abandoning atomically
  * for this to be correct.
  */
 GAB_INTERNAL bool __gab_bchnabandon(struct gab_triple gab,
                                     struct gab_ochannel *channel,
-                                    gab_value *data, uint64_t len) {
+                                    gab_value tk) {
   while (!__gab_chntrylock(channel))
     gab_busywait(gab);
 
   gab_verify(atomic_load(&channel->spinlock) == 1, "Shall be locked");
 
   // Reset values
-  gab_value *src = atomic_load_explicit(&channel->data, memory_order_acquire);
-  uint64_t avail = atomic_load_explicit(&channel->len, memory_order_acquire);
+  uint32_t e = atomic_load_explicit(&channel->epoch, memory_order_acquire);
 
-  gab_assert(!avail == !src, "Shall have both src and avail, or neither");
-
-  if (src != data)
+  if (gab_valtou(tk) != e)
     return __gab_chnunlock(channel), false;
 
   atomic_store_explicit(&channel->len, 0, memory_order_release);
   atomic_store_explicit(&channel->data, nullptr, memory_order_release);
+  __gab_chnepochinc(channel);
 
   return __gab_chnunlock(channel), true;
 }
@@ -6778,11 +6829,11 @@ GAB_INTERNAL bool __gab_bchnabandon(struct gab_triple gab,
 /*
  * Try to put a slice into a channel.
  */
-GAB_INTERNAL bool __gab_chnput(struct gab_ochannel *channel, uint64_t len,
-                               gab_value *vs) {
+GAB_INTERNAL gab_value __gab_chnput(struct gab_ochannel *channel, uint64_t len,
+                                   gab_value *vs) {
   // Acquire spinlock
   if (!__gab_chntrylock(channel))
-    return false;
+    return 0;
 
   // Load our values now that we have the lock.
   gab_value *src = atomic_load_explicit(&channel->data, memory_order_acquire);
@@ -6792,13 +6843,16 @@ GAB_INTERNAL bool __gab_chnput(struct gab_ochannel *channel, uint64_t len,
 
   // If we still don't have an empty channel, bail
   if (avail || src)
-    return __gab_chnunlock(channel), false;
+    return __gab_chnunlock(channel), 0;
 
   // Store values
   atomic_store_explicit(&channel->data, vs, memory_order_release);
   atomic_store_explicit(&channel->len, len, memory_order_release);
+  uint32_t e = __gab_chnepochinc(channel);
 
-  return __gab_chnunlock(channel), true;
+  gab_assert(e != 0, "0 is invalid epoch number");
+
+  return __gab_chnunlock(channel), gab_number(e);
 }
 
 /*
@@ -6829,7 +6883,7 @@ GAB_INTERNAL gab_value __gab_chntake(struct gab_ochannel *channel, uint64_t n,
   uint64_t len = n < avail ? n : avail;
   memcpy(dest, src, sizeof(gab_value) * len);
 
-  gab_assert(len, "Shall take at least 1 value");
+  __gab_chnepochinc(channel);
 
   return __gab_chnunlock(channel), gab_number(avail);
 }
@@ -6865,9 +6919,9 @@ GAB_INTERNAL gab_value __gab_chnwaitempty(struct gab_triple gab,
 }
 
 GAB_INTERNAL gab_value __gab_chnwaitmatches(struct gab_triple gab,
-                                            gab_value *data, gab_value c,
+                                            gab_value tk, gab_value c,
                                             uint64_t tries, uint64_t *sofar) {
-  while (gab_chnmatches(c, data)) {
+  while (gab_chnmatches(c, tk)) {
     if (gab_chnisclosed(c))
       return gab_cundefined;
 
@@ -6935,8 +6989,9 @@ GAB_INTERNAL gab_value __gab_ubchnput(struct gab_triple gab,
     if (res != gab_cvalid)
       return res;
 
-    if (__gab_chnput(channel, len, vs))
-      return res;
+    gab_value tk = __gab_chnput(channel, len, vs);
+    if (tk)
+      return tk;
   }
 
   return gab_cinvalid;
@@ -6964,7 +7019,8 @@ GAB_INTERNAL gab_value __gab_bchnput(struct gab_triple gab,
   // timeout?
 
   // Wait for a taker.
-  res = __gab_chnwaitmatches(gab, vs, c, tries, &sofar);
+  gab_value tk = res;
+  res = __gab_chnwaitmatches(gab, tk, c, tries, &sofar);
 
   switch (res) {
   // We were interrupted, timed out, or the channel closed.
@@ -6975,7 +7031,7 @@ GAB_INTERNAL gab_value __gab_bchnput(struct gab_triple gab,
     // failed and return a timeout.
     // If we fail to abandon, fallthrough as a taker must have arrived.
   case gab_ctimeout:
-    if (__gab_bchnabandon(gab, channel, vs, len))
+    if (__gab_bchnabandon(gab, channel, tk))
       return res;
   // A taker arrived.
   default:
@@ -11567,7 +11623,7 @@ static handler handlers[] = {
   ({                                                                           \
     STORE();                                                                   \
     SP()[1] = status;                                                          \
-    [[clang::musttail]] return __gab_vmeerror(DISPATCH_ARGS());                     \
+    [[clang::musttail]] return __gab_vmeerror(DISPATCH_ARGS());                \
   })
 
 #define VM_PANIC3(status, a, b, c)                                             \
@@ -11577,7 +11633,7 @@ static handler handlers[] = {
     SP()[2] = a;                                                               \
     SP()[3] = b;                                                               \
     SP()[4] = c;                                                               \
-    [[clang::musttail]] return __gab_vmeerror(DISPATCH_ARGS());                     \
+    [[clang::musttail]] return __gab_vmeerror(DISPATCH_ARGS());                \
   })
 
 #define VM_PANIC5(status, a, b, c, d, e)                                       \
@@ -11589,7 +11645,7 @@ static handler handlers[] = {
     SP()[4] = c;                                                               \
     SP()[5] = d;                                                               \
     SP()[6] = e;                                                               \
-    [[clang::musttail]] return __gab_vmeerror(DISPATCH_ARGS());                     \
+    [[clang::musttail]] return __gab_vmeerror(DISPATCH_ARGS());                \
   })
 
 #define VM_GIVEN(err)                                                          \
@@ -12715,18 +12771,9 @@ extern void putcs(char *arg);
                                                                                \
     CHECK_SIGNAL();                                                            \
                                                                                \
-    if (REENTRANT() == c) {                                                    \
-      /* If we're reentering, check that our channel                           \
-       is still holding our data ptr.                                          \
-       I *believe* this is sound based on the following principles:            \
-        - Fibers only ever run on *one* thread, they never migrate.            \
-        - Fibers don't share vm's - the address range of one stack             \
-          can never overlap with another's. (If stacks become resizeable, this \
-          changes)                                                             \
-        - Fiber's stacks never resize                                          \
-      */                                                                       \
-      if (!gab_chnisclosed(c) && gab_chnmatches(c, SP() - (have - 1)))         \
-        VM_YIELD(c);                                                           \
+    if (REENTRANT() && REENTRANT() != gab_ctimeout) {                                         \
+      if (!gab_chnisclosed(c) && gab_chnmatches(c, REENTRANT()))                        \
+        VM_YIELD(REENTRANT());                                                           \
                                                                                \
       RESET_REENTRANT();                                                       \
                                                                                \
@@ -12752,7 +12799,7 @@ extern void putcs(char *arg);
       VM_YIELD(gab_ctimeout);                                                  \
     default:                                                                   \
       /* The put succeeded, we must yield until it completes.*/                \
-      VM_YIELD(c);                                                             \
+      VM_YIELD(r);                                                             \
     }                                                                          \
   })
 
@@ -13356,7 +13403,7 @@ extern void putcs(char *arg);
       SP() = to + have;                                                        \
       SET_HV(have + below_have);                                               \
                                                                                \
-      [[clang::musttail]] return __gab_vmok(DISPATCH_ARGS());                       \
+      [[clang::musttail]] return __gab_vmok(DISPATCH_ARGS());                  \
     }                                                                          \
                                                                                \
     gab_assert(RETURN_IP() != nullptr, "Shall not return to nullptr ip");      \
@@ -13541,9 +13588,9 @@ extern void putcs(char *arg);
 
 #define IMPL_RETURN_N(n)                                                       \
   CASE_CODE(RETURN_##n) {                                                      \
-    RETURN_GUARD_EXACTLY_N((uint64_t)n);                                                 \
+    RETURN_GUARD_EXACTLY_N((uint64_t)n);                                       \
                                                                                \
-    MICRO_OP_RETURN((uint64_t)n);                                                        \
+    MICRO_OP_RETURN((uint64_t)n);                                              \
                                                                                \
     NEXT();                                                                    \
   }

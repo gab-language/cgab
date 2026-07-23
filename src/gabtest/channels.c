@@ -144,15 +144,7 @@ static MunitResult test_channel_concurrent_takers(const MunitParameter params[],
   gab_value ch = gab_channel(gab);
   const uint64_t num_fibers = 5000;
   gab_value fibers[num_fibers];
-  gab_value numbers[num_fibers];
   gab_value msg_take = gab_message(gab, mGAB_TAKE);
-
-  // TODO @cgab @bug: Putting from the same memory address can cause a bug
-  // where putters *think* their data was read but it wasn't yet.
-  // Channels need a notion of "epoch" to check this.
-  for (uint64_t i = 0; i < num_fibers; i++) {
-    numbers[i] = gab_number(1);
-  }
 
   for (uint64_t i = 0; i < num_fibers; i++) {
     // NOTE: Pin the send to a *different thread*.
@@ -192,7 +184,7 @@ static MunitResult test_channel_concurrent_takers(const MunitParameter params[],
     munit_assert_uint64(done, <=, total_sent);
 
     // Flaw! If the taker is on *this thread*, deadlocks
-    gab_nchnput(gab, ch, 1, numbers + i);
+    gab_chnput(gab, ch, gab_number(1));
     total_sent++;
   }
 

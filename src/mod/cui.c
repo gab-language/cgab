@@ -1117,6 +1117,8 @@ GAB_DYNLIB_NATIVE_FN(ui, hui_event) {
     ev[1] = gab_message(gab, "tick");
   }
 
+  gab_value tk = gab_cinvalid;
+
   for (;;) {
     if (gab_chnisclosed(gui->appch))
       goto fin;
@@ -1125,12 +1127,12 @@ GAB_DYNLIB_NATIVE_FN(ui, hui_event) {
       goto fin;
 
     // Try to put on the channel.
-    gab_value app = gab_untchnput(gab, gui->evch, LEN_CARRAY(ev), ev, 1);
+    tk = gab_untchnput(gab, gui->evch, LEN_CARRAY(ev), ev, 1);
 
-    if (app == gab_cundefined)
+    if (tk == gab_cundefined)
       goto fin;
 
-    if (app == gab_cinvalid) {
+    if (tk == gab_cinvalid) {
       res = gab_panicf(gab, "Crashed UI thrd due to some error");
       goto err;
     }
@@ -1149,7 +1151,7 @@ yield:
   case sGAB_TERM:
     goto fin;
   default:
-    return gab_union_ctimeout(gab_cinvalid);
+    return gab_union_ctimeout(tk);
   }
 
 err:
@@ -1284,7 +1286,7 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
     gab_value *ev = gab_fibat(gab_thisfiber(gab), 0);
     size_t len = gab_fibsize(gab_thisfiber(gab)) / sizeof(gab_value);
 
-    if (gab_chnmatches(gui->evch, ev)) {
+    if (gab_chnmatches(gui->evch, reentrant)) {
       res = gab_cvalid;
       goto yield;
     } else if (reentrant != gab_cvalid) {
@@ -1342,7 +1344,7 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
       // We can yield with some value if we did put something on the channel
       // successfully
       // If we're already putting, and we match this event, then yield.
-      if (reentrant && gab_chnmatches(gui->evch, ev)) {
+      if (reentrant && gab_chnmatches(gui->evch, reentrant)) {
         res = gab_ctimeout;
         goto yield;
       }
@@ -1694,7 +1696,7 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_event) {
     gab_value *ev = gab_fibat(gab_thisfiber(gab), 0);
     size_t len = gab_fibsize(gab_thisfiber(gab)) / sizeof(gab_value);
 
-    if (gab_chnmatches(gui->evch, ev)) {
+    if (gab_chnmatches(gui->evch, reentrant)) {
       res = gab_cvalid;
       goto yield;
     } else if (reentrant != gab_cvalid) {
@@ -1745,7 +1747,7 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_event) {
       // Get the ptr
       gab_value *ev = gab_fibat(gab_thisfiber(gab), 0);
 
-      if (reentrant && gab_chnmatches(gui->evch, ev)) {
+      if (reentrant && gab_chnmatches(gui->evch, reentrant)) {
         res = gab_ctimeout;
         goto yield;
       }
@@ -1844,7 +1846,7 @@ GAB_DYNLIB_NATIVE_FN(ui, run) {
                .receiver = gab_snative(gab, render_rec_name, render_rec_target),
                .len = 1,
                .argv = (gab_value[]){vgui},
-               .pin = 1,
+               .pinmask = 1,
            });
 
   if (res.status != gab_cvalid) {
@@ -1857,7 +1859,7 @@ GAB_DYNLIB_NATIVE_FN(ui, run) {
                .receiver = gab_snative(gab, event_rec_name, event_rec_target),
                .len = 1,
                .argv = (gab_value[]){vgui},
-               .pin = 1,
+               .pinmask = 1,
            });
 
   if (res.status != gab_cvalid) {

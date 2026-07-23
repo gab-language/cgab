@@ -76,7 +76,7 @@ CXXFLAGS =  -std=c++17 \
 # in case they are used by a dynamically loaded c-module.
 # This is why -rdynamic is used.
 GAB_LINK_DEPS =
-BINARY_FLAGS 	= -rdynamic -Wl,--no-gc-sections $(GAB_LINK_DEPS) $(GAB_BINARYFLAGS)
+BINARY_FLAGS 	= -rdynamic -Wl,--no-gc-sections -latomic $(GAB_LINK_DEPS) $(GAB_BINARYFLAGS)
 
 # A shared module needs undefined dynamic lookup
 # As it is not linked with cgab. The symbols from cgab
@@ -123,7 +123,7 @@ CMOD_SHARED = $(CMOD_SRC:src/mod/%.c=$(BUILD_PREFIX)/mod/%.cgab-$(GAB_VERSION_TA
 CXXMOD_SRC 	 = $(wildcard src/mod/*.cc)
 CXXMOD_SHARED = $(CXXMOD_SRC:src/mod/%.cc=$(BUILD_PREFIX)/mod/%.cgab-$(GAB_VERSION_TAG)-$(GAB_TARGETS)$(GAB_DYNLIB_FILEENDING))
 
-all: build-dir unthread gab cmodules cxxmodules
+all: build-dir gab cmodules cxxmodules
 
 -include $(CGAB_OBJ:.o=.d) $(GAB_OBJ:.o=.d) $(CMOD_SHARED:$(GAB_DYNLIB_FILEENDING)=.d)
 
@@ -222,9 +222,6 @@ $(VENDOR_PREFIX)/miniz/amalgamation/miniz.c:
 	cd $(VENDOR_PREFIX)/miniz && \
 		./amalgamate.sh
 
-$(VENDOR_PREFIX)/unthread/bin/unthread.o:
-	make CC="$(TARGETCC)" CFLAGS="$(CFLAGS)" -s -C $(VENDOR_PREFIX)/unthread bin/unthread.o
-
 # These two rules clean before generating the library. This is because the target *may* have been different from our last call,
 # so any intermediate object files may no longer be valid.
 
@@ -272,8 +269,6 @@ cmodules: build-dir $(VENDOR_PREFIX)/ta.h $(CMOD_SHARED)
 
 amalgamation: $(BUILD_PREFIX)/gab.c
 
-unthread: $(VENDOR_PREFIX)/unthread/bin/unthread.o
-
 test: gab cmodules cxxmodules
 	cp $(BUILD_PREFIX)/mod/* mod/
 	$(BUILD_PREFIX)/gab run test
@@ -288,7 +283,6 @@ clean-mod:
 	make clean -s -C vendor/BearSSL
 	make clean -s -C vendor/libgrapheme
 	make clean -s -C vendor/llhttp
-	make clean -s -C vendor/unthread
 
 compile_commands:
 	make clean

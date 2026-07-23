@@ -2,6 +2,7 @@
 #define GAB_ENGINE_H
 
 #include "cgab.h"
+#include <stdatomic.h>
 #include <stdint.h>
 
 #ifndef GAB_COLORS_IMPL
@@ -410,12 +411,13 @@ struct gab_ochannel {
   struct gab_obj header;
 
   /* spinlock */
-  _Atomic uint8_t spinlock;
+  _Atomic uint32_t spinlock;
+  /* epoch */
+  _Atomic uint32_t epoch;
   /* Number of values held at member *data* */
   _Atomic uint64_t len;
   /* Values held */
   _Atomic(gab_value *) data;
-
 };
 
 /**

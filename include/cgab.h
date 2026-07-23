@@ -637,27 +637,6 @@ enum gab_status {
 #define LOAD cGAB_DICT_MAX_LOAD
 #include "dict.h"
 
-/*
- * Useful extensions to the above data structures.
- */
-
-/* Append a c-string to a slice of chars */
-static inline s_char s_char_cstr(const char *str) {
-  return (s_char){.data = str, .len = strlen(str)};
-}
-
-/* Create a slice of chars from an allocated array of chars */
-static inline s_char s_char_arr(const a_char *str) {
-  return (s_char){.data = str->data, .len = str->len};
-}
-
-/* Push a slice of chars onto a vector of chars */
-static inline void v_char_spush(v_char *self, s_char slice) {
-  for (uint64_t i = 0; i < slice.len; i++) {
-    v_char_push(self, slice.data[i]);
-  }
-}
-
 /* Utility macro for computing the length of a statically sized c-array */
 #define LEN_CARRAY(a) (sizeof(a) / sizeof(a[0]))
 
@@ -3676,7 +3655,10 @@ GAB_API bool gab_chnisfull(gab_value channel);
  */
 GAB_API bool gab_chnisempty(gab_value channel);
 
-GAB_API bool gab_chnmatches(gab_value channel, gab_value *ptr);
+/**
+ *
+ */
+GAB_API bool gab_chnmatches(gab_value channel, gab_value tk);
 
 /* Cast a value to a (gab_ochannel*) */
 #define GAB_VAL_TO_CHANNEL(value) ((struct gab_ochannel *)gab_valtoo(value))

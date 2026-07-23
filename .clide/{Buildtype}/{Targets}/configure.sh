@@ -17,8 +17,6 @@ export binflags
 case "$buildtype" in
   debug)          cflags="-g -O0 -fsanitize=address,undefined -DcGAB_THREADS_NATIVE" ;;
   debugoptimized) cflags="-g -O2 -DcGAB_THREADS_NATIVE -DNDEBUG" ;;
-  deterministic)  cflags="-g -O0 -Ivendor/unthread/include" ;;
-  deterministicoptimized)  cflags="-g -O2 -Ivendor/unthread/include" ;;
   release)        cflags="-O3 -DcGAB_THREADS_NATIVE -DNDEBUG"    ;;
 esac
 
@@ -26,8 +24,6 @@ esac
 case "$buildtype" in
   debug)          binflags="" ;;
   debugoptimized) binflags="" ;;
-  deterministic)  binflags="-no-pthread vendor/unthread/bin/unthread.o" ;;
-  deterministicoptimized)  binflags="-Lvendor/unthread/bin/unthread.o" ;;
   release)        binflags=""    ;;
 esac
 
