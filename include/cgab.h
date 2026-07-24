@@ -789,19 +789,88 @@ static inline void __gab_assert_fail(const char *prelude, const char *expr,
  */
 #define GAB_INTERNAL static inline
 
-/* Append a c-string to a slice of chars */
-static inline s_char s_char_cstr(const char *str) {
-  return (s_char){.data = str, .len = strlen(str)};
-}
+#ifdef GAB_PLATFORM_WIN
+/*
+ * Gab native module loading on windows is slightly convoluted.
+ *
+ * gab ships the symbols native modules need *in the core binary*.
+ *
+ * This is the user application which manages the gab runtime.
+ *
+ * In the case of this repo, thats the gab cli itself.
+ *
+ * Native modules loaded at runtime use the symbols from the binary - on unix systems,
+ * this works perfectly fine.
+ *
+ * Normally on windows, one would create a separate libcgab dll, and then link
+ * the gab cli and native modules against this same dll. This is architecturally
+ * different from the unix/linux way, and I dislike that.
+ *
+ * So here is cgab's workaround:
+ *  - When building the gab cli, export symbols as if it were a dll.
+ *  - When building native modules for windows, link against the gab cli binary
+ *  - Crucially, mark the cgab-dll-dependency for delay-loading
+ *  - This installs stubs in the native module which cause cgab's symbols to be lazily loaded through the following hook.
+ *  - The following hook looks within the *executing module* for symbols.
+ *
+ * This achieves the same behavior as unix, with just a little magic.
+ *
+ */
+#ifndef GAB_CORE
+thread_local static DWORD g_oldProtect = 0;
+ExternC FARPROC gab_delayload(unsigned dliNotify, PDelayLoadInfo pdli) {
+  switch (dliNotify) {
+  case dliNotePreLoadLibrary:
+    // 1. Alias "gab" to the current running process (the .exe)
+    if (_stricmp(pdli->szDll, "gab") == 0) {
+      return (FARPROC)GetModuleHandle(NULL);
+    }
+    break;
 
-/* Push a slice of chars onto a vector of chars */
-static inline void v_char_spush(v_char *self, s_char slice) {
-  for (uint64_t i = 0; i < slice.len; i++) {
-    v_char_push(self, slice.data[i]);
+  case dliNotePreGetProcAddress:
+    // 2. This is called right before the helper tries to resolve the symbol
+    // and write to the IAT. We make the IAT entry writable here.
+    if (pdli->ppfn) {
+      if (!VirtualProtect(pdli->ppfn, sizeof(void *), PAGE_READWRITE,
+                          &g_oldProtect)) {
+        printf("GAB_DELAY: Failed to unprotect IAT at %p (Error: %lu)\n",
+               pdli->ppfn, GetLastError());
+      }
+    }
+    break;
+
+  case dliNoteEndProcessing:
+    // 3. This is called after the helper has successfully written the address
+    // to *pdli->ppfn. We restore the original Read-Only protection now.
+    if (g_oldProtect != 0 && pdli->ppfn) {
+      DWORD dummy;
+      if (!VirtualProtect(pdli->ppfn, sizeof(void *), g_oldProtect, &dummy)) {
+        printf("GAB_DELAY: Failed to restore protection at %p\n", pdli->ppfn);
+      }
+      g_oldProtect = 0; // Reset state
+    }
+    break;
+
+  case dliFailLoadLib:
+    printf("GAB_DELAY: Critical Failure - Could not load library %s\n",
+           pdli->szDll);
+    break;
+
+  case dliFailGetProc:
+    printf("GAB_DELAY: Critical Failure - Could not find function %s\n",
+           pdli->dlp.szProcName);
+    break;
+
+  default:
+    return NULL;
   }
-}
 
-#include "platform.h"
+  return NULL;
+}
+PfnDliHook __pfnDliNotifyHook2 = gab_delayload;
+PfnDliHook __pfnDliFailureHook2 = gab_delayload;
+#endif
+#endif
 
 /*
  * When defining symbols that the cgab library should export, we

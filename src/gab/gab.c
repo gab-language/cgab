@@ -14,6 +14,20 @@
 #define NAME pkg
 #include "vector.h"
 
+/* Append a c-string to a slice of chars */
+static inline s_char s_char_cstr(const char *str) {
+  return (s_char){.data = str, .len = strlen(str)};
+}
+
+/* Push a slice of chars onto a vector of chars */
+static inline void v_char_spush(v_char *self, s_char slice) {
+  for (uint64_t i = 0; i < slice.len; i++) {
+    v_char_push(self, slice.data[i]);
+  }
+}
+
+#include "platform.h"
+
 #define TOSTRING(x) #x
 #define STR(x) TOSTRING(x)
 
