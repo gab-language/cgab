@@ -85,6 +85,8 @@ void emit_sym(bfd *bfd, struct bfd_symbol *sym) {
 
     struct bfd_symbol* sym = *rela.sym_ptr_ptr;
 
+    printf("NAME: %s\n", sym->name);
+
   //   if (sym.st_shndx == SHN_UNDEF) {
   //     const char *known_hole = symtoknownhole(symname);
   //     assert(known_hole);
@@ -136,6 +138,10 @@ void emit_sym(bfd *bfd, struct bfd_symbol *sym) {
   printf("};\n");
 }
 
+void handle_section(bfd *abfd, asection* sect, void*) {
+  fprintf(stderr, "SECTION %s\n", sect->name);
+}
+
 int main(int argc, const char **argv) {
   if (gab_osfisatty(stdin)) {
     fprintf(stderr, "[ERR]: stdin is not a file.\n");
@@ -144,16 +150,26 @@ int main(int argc, const char **argv) {
 
   bfd_init();
 
-  bfd *bfd = bfd_fdopenr("stdin", "", gab_osfileno(stdin));
+  bfd *bfd = bfd_fdopenr("stdin", nullptr, gab_osfileno(stdin));
+  // bfd *bfd = bfd_openr("build-x86_64-linux-gnu/stencil/stencil.o", "elf64-x86-64");
 
   if (!bfd) {
-    fprintf(stderr, "[BFD]: %s\n", bfd_errmsg(errno));
+    fprintf(stderr, "[BFD]: %s\n", bfd_errmsg(bfd_get_error()));
     return -1;
   }
 
-  fprintf(stdout, "[BFD]: Flavor: %s\n", bfd_flavour_name(bfd_get_flavour(bfd)));
+  fprintf(stderr, "[BFD]: Flavor: %s\n", bfd_flavour_name(bfd_get_flavour(bfd)));
+  fprintf(stderr, "[BFD]: File: %s (%lu)\n", bfd_get_filename(bfd), bfd_get_size(bfd));
+
+  fprintf(stderr, "[BFD]: Reading %u sections\n", bfd_count_sections(bfd));
+  fprintf(stderr, "[BFD]: %s\n", bfd_errmsg(bfd_get_error()));
+
+  // bfd_map_over_sections(bfd, handle_section, nullptr);
+
 
   int64_t storage_needed = bfd_get_symtab_upper_bound(bfd);
+
+  fprintf(stderr, "[BFD]: UPPER BOUND: %li\n", storage_needed);
 
   if (storage_needed < 0) {
     fprintf(stderr, "[BFD]: %s\n", bfd_errmsg(errno));
@@ -163,12 +179,12 @@ int main(int argc, const char **argv) {
   if (!storage_needed)
     return 0;
 
-  struct bfd_symbol** symtab = malloc(storage_needed);
+  struct bfd_symbol** symtab = malloc(storage_needed * sizeof(struct bfd_symbol*));
 
   int64_t numsyms = bfd_canonicalize_symtab(bfd, symtab);
 
   if (numsyms < 0) {
-    fprintf(stderr, "[BFD]: %s\n", bfd_errmsg(errno));
+    fprintf(stderr, "[BFD]: %s\n", bfd_errmsg(bfd_get_error()));
     return -1;
   }
 

@@ -44,7 +44,6 @@ STENCIL_CFLAGS =  -std=c23 \
 									-DGAB_BUILDTYPE=\"release\"\
 									$(INCLUDE) \
 									-fomit-frame-pointer \
-									-ffunction-sections \
 									-O3 \
 									-DNDEBUG \
 									-DcGAB_THREADS_NATIVE
