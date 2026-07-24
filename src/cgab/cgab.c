@@ -26,7 +26,7 @@
  * This file contains the complete implementation of cgab.
  *
  * A table of contents is provided here for your convenience:
- *  
+ *
  *  0 GAB LEXER
  *  1 GAB ENGINE
  *  2 GAB OBJECTS
@@ -6742,8 +6742,7 @@ GAB_API bool gab_chnisempty(gab_value c) {
                    "Invalid kind");
 
   struct gab_ochannel *channel = GAB_VAL_TO_CHANNEL(c);
-  return !atomic_load(&channel->spinlock) &&
-         (atomic_load(&channel->data) == nullptr);
+  return (atomic_load(&channel->data) == nullptr);
 };
 
 GAB_API bool gab_chnisfull(gab_value c) {
@@ -6752,8 +6751,7 @@ GAB_API bool gab_chnisfull(gab_value c) {
                    "Invalid kind");
 
   struct gab_ochannel *channel = GAB_VAL_TO_CHANNEL(c);
-  return !atomic_load(&channel->spinlock) &&
-         (atomic_load(&channel->data) != nullptr);
+  return (atomic_load(&channel->data) != nullptr);
 };
 
 GAB_INTERNAL bool __gab_chntrylock(struct gab_ochannel *channel) {
@@ -6951,17 +6949,18 @@ GAB_INTERNAL gab_value __gab_ubchnput(struct gab_triple gab,
                                       struct gab_ochannel *channel, gab_value c,
                                       uint64_t len, gab_value *vs,
                                       uint64_t tries, uint64_t *sofar) {
-  gab_value res = gab_cundefined;
-
   while (!gab_chnisclosed(c)) {
-    res = __gab_chnwaitempty(gab, channel, c, tries, sofar);
+    gab_value res = __gab_chnwaitempty(gab, channel, c, tries, sofar);
 
     if (res != gab_cvalid)
       return res;
 
     gab_value tk = __gab_chnput(channel, len, vs);
+
     if (tk)
       return tk;
+
+    gab_busywait(gab);
   }
 
   return gab_cinvalid;
@@ -7024,20 +7023,23 @@ GAB_INTERNAL gab_value __gab_bchntake(struct gab_triple gab,
                                       struct gab_ochannel *channel, gab_value c,
                                       uint64_t len, gab_value *vs,
                                       uint64_t tries) {
-  gab_value res = gab_cundefined;
-
   uint64_t sofar = 0;
 
-  while (!gab_chnisclosed(c) && res == gab_cundefined) {
-    res = __gab_chnwaitfull(gab, channel, c, tries, &sofar);
+  while (!gab_chnisclosed(c)) {
+    gab_value res = __gab_chnwaitfull(gab, channel, c, tries, &sofar);
 
     if (res != gab_cvalid)
       return res;
 
     res = __gab_chntake(channel, len, vs);
+
+    if (res != gab_cundefined)
+      return res;
+
+    gab_busywait(gab);
   }
 
-  return res;
+  return gab_cinvalid;
 }
 
 /*

@@ -75,7 +75,7 @@ CXXFLAGS =  -std=c++17 \
 # in case they are used by a dynamically loaded c-module.
 # This is why -rdynamic is used.
 GAB_LINK_DEPS =
-BINARY_FLAGS 	= -rdynamic -Wl,--no-gc-sections -latomic $(GAB_LINK_DEPS) $(GAB_BINARYFLAGS)
+BINARY_FLAGS 	= -rdynamic -Wl,--no-gc-sections $(GAB_LINK_DEPS) $(GAB_BINARYFLAGS)
 
 # A shared module needs undefined dynamic lookup
 # As it is not linked with cgab. The symbols from cgab
