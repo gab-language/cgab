@@ -3,18 +3,6 @@
 
 #include "cgab.h"
 
-static inline void v_char_spush(v_char *self, s_char slice) {
-  for (uint64_t i = 0; i < slice.len; i++) {
-    v_char_push(self, slice.data[i]);
-  }
-}
-
-static inline s_char s_char_cstr(const char *str) {
-  return (s_char){.data = str, .len = strlen(str)};
-}
-
-#include "platform.h"
-
 #include <stddef.h>
 
 #include "crossline/crossline.c"

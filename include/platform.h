@@ -1,8 +1,8 @@
 #ifndef GAB_PLATFORM_H
 #define GAB_PLATFORM_H
 
-#include "cgab.h"
 #include <stdio.h>
+#include <errno.h>
 
 /**
  * PLATFORM INTERFACE
@@ -309,6 +309,7 @@ GAB_API_INLINE int gab_nosproc(char *cmd, size_t nargs, const char *args[]) {
 }
 
 #elifdef GAB_PLATFORM_WIN
+#include <windows.h>
 #include <delayimp.h>
 #include <direct.h>
 #include <io.h>
@@ -317,7 +318,6 @@ GAB_API_INLINE int gab_nosproc(char *cmd, size_t nargs, const char *args[]) {
 #include <stdio.h>
 #include <tchar.h>
 #include <wchar.h>
-#include <windows.h>
 
 #ifndef GAB_CORE
 thread_local static DWORD g_oldProtect = 0;

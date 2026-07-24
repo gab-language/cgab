@@ -146,7 +146,7 @@
  * This may be useful, as there is significant cost to spawning os threads.
  */
 #ifndef cGAB_JOB_IDLE_TRIES
-#define cGAB_JOB_IDLE_TRIES 1000
+#define cGAB_JOB_IDLE_TRIES 10
 #endif
 
 /*
@@ -260,7 +260,7 @@
  * consume too much CPU.
  */
 #ifndef cGAB_DEFAULT_WAIT_NS
-#define cGAB_DEFAULT_WAIT_NS 10000
+#define cGAB_DEFAULT_WAIT_NS 10
 #endif
 
 /*
@@ -788,6 +788,20 @@ static inline void __gab_assert_fail(const char *prelude, const char *expr,
  * header file)
  */
 #define GAB_INTERNAL static inline
+
+/* Append a c-string to a slice of chars */
+static inline s_char s_char_cstr(const char *str) {
+  return (s_char){.data = str, .len = strlen(str)};
+}
+
+/* Push a slice of chars onto a vector of chars */
+static inline void v_char_spush(v_char *self, s_char slice) {
+  for (uint64_t i = 0; i < slice.len; i++) {
+    v_char_push(self, slice.data[i]);
+  }
+}
+
+#include "platform.h"
 
 /*
  * When defining symbols that the cgab library should export, we

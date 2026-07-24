@@ -85,20 +85,8 @@ GAB_INTERNAL uint64_t __gab_chshwords(uint64_t sofar, uint64_t len,
   return __gab_hshFNV1a_64(sofar, len * sizeof(uint64_t), (void *)bytes);
 }
 
-/* Append a c-string to a slice of chars */
-static inline s_char s_char_cstr(const char *str) {
-  return (s_char){.data = str, .len = strlen(str)};
-}
-
 static inline uint64_t s_char_hash(s_char self) {
   return __gab_hshbytes(self.len, (uint8_t *)self.data);
-}
-
-/* Push a slice of chars onto a vector of chars */
-static inline void v_char_spush(v_char *self, s_char slice) {
-  for (uint64_t i = 0; i < slice.len; i++) {
-    v_char_push(self, slice.data[i]);
-  }
 }
 
 /* Helpers used by all the sprintf methods */
