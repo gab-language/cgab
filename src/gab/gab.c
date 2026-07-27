@@ -8,10 +8,23 @@
 #include "crossline/crossline.c"
 #include "crossline/crossline.h"
 
+#include <stdint.h>
 #include <stdio.h>
 
 #define T struct gab_package
 #define NAME pkg
+#include "vector.h"
+
+#define T char
+#include "slice.h"
+
+#define T char
+#include "array.h"
+
+#define T char
+#include "vector.h"
+
+#define T s_char
 #include "vector.h"
 
 /* Append a c-string to a slice of chars */
@@ -232,12 +245,14 @@ bool check_and_printerr(union gab_value_pair *res) {
     return false;
   }
 
-  if (res->aresult->data[0] != gab_ok) {
-    const char *errstr = gab_errtocs(gab, res->aresult->data[1]);
+  if (res->aresult[0] != gab_ok) {
+    const char *errstr = gab_errtocs(gab, res->aresult[1]);
     assert(errstr != nullptr);
     fputs(errstr, stderr);
     fflush(stderr);
-    return a_gab_value_destroy(res->aresult), false;
+    // TODO @gab: fixleak
+    // return a_gab_value_destroy(res->aresult), false;
+    return false;
   }
 
   return true;
@@ -273,7 +288,7 @@ union gab_value_pair gab_use_dynlib(struct gab_triple gab, const char *path,
 
   if (lib == nullptr) {
 #ifdef GAB_PLATFORM_UNIX
-    return gab_panicf(gab, "Failed to load module.\n\n$", gab_string(gab, path),
+    return gab_panicf(gab, "Failed to load module.\n\n@", gab_string(gab, path),
                       gab_string(gab, dlerror()));
 #elifdef GAB_PLATFORM_WASI
     return gab_panicf(gab, "Failed to load module '$'", gab_string(gab, path));
@@ -323,10 +338,10 @@ union gab_value_pair gab_use_dynlib(struct gab_triple gab, const char *path,
   if (res.status != gab_cvalid)
     return gab_panicf(gab, "Failed to load c module.");
 
-  if (res.aresult->data[0] != gab_ok)
+  if (res.aresult[0] != gab_ok)
     return gab_panicf(gab,
-                      "Failed to load module: module returned $, expected $",
-                      res.aresult->data[0], gab_ok);
+                      "Failed to load module. Module returned:\n\n$\n\nExpected:\n\n$\n\n",
+                      res.aresult[0], gab_ok);
 
   if (gab_segmodput(gab.eg, path, res.aresult) == nullptr)
     return gab_panicf(gab, "Failed to cache c module.");
@@ -421,13 +436,14 @@ union gab_value_pair gab_use_zip_data(struct gab_triple gab, const char *path,
     return gab_panicf(gab, "Failed to load module: $", gab_string(gab, estr));
   }
 
-  gab_value data[] = {gab_ok, gab_nbinary(gab, sz, (uint8_t *)src)};
-  gab_iref(gab, data[1]);
-  gab_egkeep(gab.eg, data[1]);
+  gab_value* data = gab_valarray(gab_ok, gab_nbinary(gab, sz, (uint8_t *)src));
+  gab_niref(gab, 1, gab_varrlen(data), data);
+  gab_negkeep(gab.eg, gab_varrlen(data), data);
 
+  // TODO @cgab @qol: fns for constructing these for convenience/users
   union gab_value_pair result = {
       .status = gab_cvalid,
-      .aresult = a_gab_value_create(data, 2),
+      .aresult = data,
   };
 
   free(src);
@@ -476,13 +492,13 @@ union gab_value_pair gab_use_data(struct gab_triple gab, const char *path,
                                   gab_value *vargs) {
   a_char *src = gab_osread(path);
 
-  gab_value data[] = {gab_ok, gab_nbinary(gab, src->len, (uint8_t *)src->data)};
-  gab_iref(gab, data[1]);
-  gab_egkeep(gab.eg, data[1]);
+  gab_value* data = gab_valarray(gab_ok, gab_nbinary(gab, src->len, (uint8_t *)src->data), gab_cinvalid);
+  gab_niref(gab, 1, gab_varrlen(data), data);
+  gab_negkeep(gab.eg, gab_varrlen(data), data);
 
   union gab_value_pair result = {
       .status = gab_cvalid,
-      .aresult = a_gab_value_create(data, 2),
+      .aresult = data,
   };
 
   a_char_destroy(src);
@@ -529,19 +545,19 @@ bool zip_exister(const char *path) {
 }
 
 static struct gab_package default_modules[] = {
-    {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Shapes"},
-    {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Messages"},
-    {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Strings"},
-    {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Binaries"},
-    {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Numbers"},
-    {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Blocks"},
-    {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Records"},
-    {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Fibers"},
-    {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Channels"},
-    {"github.com/gab-language/cgab@" GAB_VERSION_TAG},
-    {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Ranges"},
-    {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Transducers"},
-    {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Io"},
+    // {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Shapes"},
+    // {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Messages"},
+    // {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Strings"},
+    // {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Binaries"},
+    // {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Numbers"},
+    // {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Blocks"},
+    // {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Records"},
+    // {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Fibers"},
+    // {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Channels"},
+    // {"github.com/gab-language/cgab@" GAB_VERSION_TAG},
+    // {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Ranges"},
+    // {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Transducers"},
+    // {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Io"},
     {}, // List terminator.
 };
 static const uint64_t ndefault_modules = LEN_CARRAY(default_modules) - 1;
@@ -630,8 +646,13 @@ int run_repl(int flags, uint32_t wait, uint64_t nmodules,
   if (!check_and_printerr(&res))
     return gab_destroy(gab), 1;
 
-  const char *sargs[res.aresult->len];
-  for (int i = 0; i < res.aresult->len; i++)
+  uint64_t len = 0;
+  for (gab_value* d = res.aresult; *d != gab_cinvalid; d++)
+    len++;
+
+  const char *sargs[len];
+
+  for (int i = 0; i < len; i++)
     sargs[i] = packages[i].alias    ? packages[i].alias
                : packages[i].module ? packages[i].module
                                     : packages[i].package;
@@ -646,10 +667,11 @@ int run_repl(int flags, uint32_t wait, uint64_t nmodules,
                     .readline = readline,
                     .len = nmodules,
                     .sargv = sargs,
-                    .argv = res.aresult->data + 1, // Skip initial ok:
+                    .argv = res.aresult + 1, // Skip initial ok:
                 });
 
-  a_gab_value_destroy(res.aresult);
+  // TODO @gab @bug: fix leak
+  // a_gab_value_destroy(res.aresult);
 
   return gab_destroy(gab), 0;
 }
@@ -672,8 +694,13 @@ int run_string(const char *string, int flags, uint32_t wait, uint64_t jobs,
   if (!check_and_printerr(&res))
     return gab_destroy(gab), 0;
 
-  const char *sargs[res.aresult->len];
-  for (int i = 0; i < res.aresult->len; i++)
+  uint64_t len = 0;
+  for (gab_value* d = res.aresult; *d != gab_cinvalid; d++)
+    len++;
+
+
+  const char *sargs[len];
+  for (int i = 0; i < len; i++)
     sargs[i] = packages[i].alias    ? packages[i].alias
                : packages[i].module ? packages[i].module
                                     : packages[i].package;
@@ -688,15 +715,17 @@ int run_string(const char *string, int flags, uint32_t wait, uint64_t jobs,
                         .flags = flags,
                         .len = nmodules,
                         .sargv = sargs,
-                        .argv = res.aresult->data + 1,
+                        .argv = res.aresult + 1,
                     });
 
-  a_gab_value_destroy(res.aresult);
+  // TODO @gab @bug: Fix leak
+  // a_gab_value_destroy(res.aresult);
 
   if (!check_and_printerr(&run_res))
     return gab_destroy(gab), 1;
 
-  return a_gab_value_destroy(run_res.aresult), gab_destroy(gab), 0;
+  // a_gab_value_destroy(run_res.aresult)
+  return gab_destroy(gab), 0;
 }
 
 int run_bundle(const char *mod) {
@@ -744,8 +773,12 @@ int run_bundle(const char *mod) {
   if (!check_and_printerr(&res))
     return gab_destroy(gab), 1;
 
-  const char *sargs[res.aresult->len];
-  for (int i = 0; i < res.aresult->len; i++)
+  uint64_t vlen = 0;
+  for (gab_value* d = res.aresult; *d != gab_cinvalid; d++)
+    vlen++;
+
+  const char *sargs[vlen];
+  for (int i = 0; i < vlen; i++)
     sargs[i] = packages[i].alias    ? packages[i].alias
                : packages[i].module ? packages[i].module
                                     : packages[i].package;
@@ -755,7 +788,7 @@ int run_bundle(const char *mod) {
                        .vpackage_name = gab_nstring(gab, modlen, mod),
                        .len = ndefault_modules,
                        .sargv = sargs,
-                       .argv = res.aresult->data + 1,
+                       .argv = res.aresult + 1,
                    });
 
   if (!check_and_printerr(&run_res))
@@ -763,7 +796,8 @@ int run_bundle(const char *mod) {
 
   gab_sigterm(gab);
 
-  a_gab_value_destroy(res.aresult);
+  // TODO @gab @bug: Fix leak
+  // a_gab_value_destroy(res.aresult);
 
   return gab_destroy(gab), 0;
 }
@@ -786,8 +820,12 @@ int run_file(const char *package, int flags, uint32_t wait, uint64_t jobs,
   if (!check_and_printerr(&res))
     return gab_destroy(gab), 1;
 
-  const char *sargs[res.aresult->len];
-  for (int i = 0; i < res.aresult->len; i++)
+  uint64_t vlen = 0;
+  for (gab_value* d = res.aresult; *d != gab_cinvalid; d++)
+    vlen++;
+
+  const char *sargs[vlen];
+  for (int i = 0; i < vlen; i++)
     sargs[i] = packages[i].alias    ? packages[i].alias
                : packages[i].module ? packages[i].module
                                     : packages[i].package;
@@ -797,15 +835,18 @@ int run_file(const char *package, int flags, uint32_t wait, uint64_t jobs,
                                                   .spackage_name = package,
                                                   .len = nmodules,
                                                   .sargv = sargs,
-                                                  .argv = res.aresult->data + 1,
+                                                  .argv = res.aresult + 1,
                                               });
 
-  a_gab_value_destroy(res.aresult);
+  // TODO @cgab: Fix leak
+  // a_gab_value_destroy(res.aresult);
 
   if (!check_and_printerr(&run_res))
     return gab_destroy(gab), 1;
 
-  return a_gab_value_destroy(run_res.aresult), gab_destroy(gab), 0;
+  // TODO @cgab: Fix leak
+  // a_gab_value_destroy(run_res.aresult);
+  return gab_destroy(gab), 0;
 }
 
 bool add_package(mz_zip_archive *zip_o, const char **roots,
@@ -826,7 +867,7 @@ bool add_package(mz_zip_archive *zip_o, const char **roots,
    * If it is, flatten it into this bundle.
    */
   mz_zip_archive zip_r = {0};
-  if (mz_zip_reader_init_file(&zip_r, mod->path->data, 0)) {
+  if (mz_zip_reader_init_file(&zip_r, mod->path, 0)) {
     uint64_t files = mz_zip_reader_get_num_files(&zip_r);
 
     if (files) {
@@ -840,7 +881,7 @@ bool add_package(mz_zip_archive *zip_o, const char **roots,
 
   // TODO @cli @qol: Allow the user to configure the SPEED/COMPRESSION tradeoff
   // here.
-  return mz_zip_writer_add_file(zip_o, mod->package_path, mod->path->data,
+  return mz_zip_writer_add_file(zip_o, mod->package_path, mod->path,
                                 nullptr, 0, MZ_BEST_SPEED);
 }
 
@@ -1201,7 +1242,7 @@ void slogstep(struct step *step, int i) {
     return clisuccess(" %2i Added module %.*s (%s).\n", i,
                       step->as.archive_add_package.package.len,
                       step->as.archive_add_package.package.data,
-                      step->as.archive_add_package.mod_out.path->data);
+                      step->as.archive_add_package.mod_out.path);
   case kSTEP_ARCHIVE_FINALIZE:
     return clisuccess(" %2i Finalized bundle.\n", i);
   }

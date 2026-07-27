@@ -5,6 +5,58 @@
 #include <stdatomic.h>
 #include <stdint.h>
 
+/*
+ * Generic data structure definitions.
+ *
+ * Each of these includes defines the datastructure for the corresponding 'T'
+ * datatype.
+ */
+#define T char
+#include "slice.h"
+
+#define T char
+#include "array.h"
+
+#define T char
+#include "vector.h"
+
+#define T char *
+#define NAME cstr
+#include "slice.h"
+
+#define T uint8_t
+#include "vector.h"
+
+#define T uint32_t
+#include "vector.h"
+
+#define T uint64_t
+#include "vector.h"
+
+#define T s_char
+#include "vector.h"
+
+#define T int8_t
+#include "vector.h"
+
+#define T s_char
+#include "array.h"
+
+#define T a_char *
+#define NAME a_char
+#include "vector.h"
+
+#define T uint64_t
+#include "array.h"
+
+#define K uint64_t
+#define V uint64_t
+#define DEF_V 0
+#define HASH(a) a
+#define EQUAL(a, b) (a == b)
+#define LOAD cGAB_DICT_MAX_LOAD
+#include "dict.h"
+
 #ifndef GAB_COLORS_IMPL
 static const char *ANSI_COLORS[] = {
     GAB_GREEN, GAB_MAGENTA, GAB_RED, GAB_YELLOW, GAB_BLUE, GAB_CYAN,
@@ -500,7 +552,7 @@ struct gab_oprototype {
 
 #define NAME gab_modules
 #define K uint64_t
-#define V a_gab_value *
+#define V gab_value *
 #define DEF_V nullptr
 #define HASH(a) (a)
 #define EQUAL(a, b) (a == b)

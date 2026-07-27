@@ -179,6 +179,9 @@ struct iobuf {
 
 #define eGAB_EOF -1000
 
+#define T char
+#include "slice.h"
+
 static inline int64_t iobuf_recv(struct iobuf *io, gab_value fib, qfd_t fd,
                                  uint64_t len, s_char *out,
                                  uintptr_t *reentrant) {
@@ -2106,10 +2109,8 @@ GAB_DYNLIB_MAIN_FN {
               gab_snative(gab, "stream\\send", gab_mod_io_send),
           }, );
 
-  gab_value res[] = {gab_ok, mod};
-
   return (union gab_value_pair){
       .status = gab_cvalid,
-      .aresult = a_gab_value_create(res, sizeof(res) / sizeof(gab_value)),
+      .aresult = gab_valarray(gab_ok, mod),
   };
 }

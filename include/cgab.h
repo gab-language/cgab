@@ -585,58 +585,6 @@ enum gab_status {
 #define mGAB_AST_NODE_SEND_MSG "gab\\msg"
 #define mGAB_AST_NODE_SEND_RHS "gab\\rhs"
 
-/*
- * Generic data structure definitions.
- *
- * Each of these includes defines the datastructure for the corresponding 'T'
- * datatype.
- */
-#define T char
-#include "slice.h"
-
-#define T char
-#include "array.h"
-
-#define T char
-#include "vector.h"
-
-#define T char *
-#define NAME cstr
-#include "slice.h"
-
-#define T uint8_t
-#include "vector.h"
-
-#define T uint32_t
-#include "vector.h"
-
-#define T uint64_t
-#include "vector.h"
-
-#define T s_char
-#include "vector.h"
-
-#define T int8_t
-#include "vector.h"
-
-#define T s_char
-#include "array.h"
-
-#define T a_char *
-#define NAME a_char
-#include "vector.h"
-
-#define T uint64_t
-#include "array.h"
-
-#define K uint64_t
-#define V uint64_t
-#define DEF_V 0
-#define HASH(a) a
-#define EQUAL(a, b) (a == b)
-#define LOAD cGAB_DICT_MAX_LOAD
-#include "dict.h"
-
 /* Utility macro for computing the length of a statically sized c-array */
 #define LEN_CARRAY(a) (sizeof(a) / sizeof(a[0]))
 
@@ -665,7 +613,7 @@ static inline void __gab_assert_fail(const char *prelude, const char *expr,
   va_list va;
   va_start(va, reason);
 
-  fprintf(stderr, "%s\n[%s:%"PRId64" %s] assertion '%s' failed: ", prelude,
+  fprintf(stderr, "%s\n[%s:%" PRId64 " %s] assertion '%s' failed: ", prelude,
           file, line, function, expr);
 
   vfprintf(stderr, reason, va);
@@ -743,7 +691,7 @@ static inline void __gab_assert_fail(const char *prelude, const char *expr,
   "|                                                                       |\n" \
   "| Include the following details in your submission.                     |\n" \
   "|                                                                       |\n" \
-  "*-----------------------------------------------------------------------*\n" 
+  "*-----------------------------------------------------------------------*\n"
 // clang-format on
 
 #define gab_assert(expr, format, ...)                                          \
@@ -772,7 +720,6 @@ static inline void __gab_assert_fail(const char *prelude, const char *expr,
   __gab_assert_fail(GAB_ASSERT_UNREACHABLE_PRELUDE, "unreachable", __FILE__,   \
                     __FUNCTION__, __LINE__, format __VA_OPT__(, ) __VA_ARGS__)
 
-
 /*
  * The symbol name native modules are checked for when imported.
  */
@@ -799,8 +746,8 @@ static inline void __gab_assert_fail(const char *prelude, const char *expr,
  *
  * In the case of this repo, thats the gab cli itself.
  *
- * Native modules loaded at runtime use the symbols from the binary - on unix systems,
- * this works perfectly fine.
+ * Native modules loaded at runtime use the symbols from the binary - on unix
+ * systems, this works perfectly fine.
  *
  * Normally on windows, one would create a separate libcgab dll, and then link
  * the gab cli and native modules against this same dll. This is architecturally
@@ -810,7 +757,8 @@ static inline void __gab_assert_fail(const char *prelude, const char *expr,
  *  - When building the gab cli, export symbols as if it were a dll.
  *  - When building native modules for windows, link against the gab cli binary
  *  - Crucially, mark the cgab-dll-dependency for delay-loading
- *  - This installs stubs in the native module which cause cgab's symbols to be lazily loaded through the following hook.
+ *  - This installs stubs in the native module which cause cgab's symbols to be
+ * lazily loaded through the following hook.
  *  - The following hook looks within the *executing module* for symbols.
  *
  * This achieves the same behavior as unix, with just a little magic.
@@ -1648,7 +1596,7 @@ GAB_API union gab_value_pair gab_create(struct gab_create_argt args,
                                         struct gab_triple *gab_out);
 
 struct gab_module_res {
-  a_char *path;
+  char *path;
   const char *root_path, *package_path, *module_path;
   const struct gab_resource *resource;
 };
@@ -1831,12 +1779,34 @@ union gab_value_pair {
       /* A single result value. */
       gab_value vresult;
       /* An array of result values. */
-      a_gab_value *aresult;
+      gab_value *aresult;
       /* An opaque bit blob. */
       uintptr_t bresult;
     };
   };
 };
+
+#define gab_valarray(...)                                                      \
+  ({                                                                           \
+    gab_value data[] = {__VA_ARGS__};                                          \
+    gab_nvalarray(sizeof(data) / sizeof(gab_value), data);                     \
+  })
+
+/*
+ * @brief Allocate an array of gab values, for use
+ * in a gab_value_pair.
+ */
+GAB_API gab_value *gab_nvalarray(uint64_t len, gab_value data[len]);
+
+/*
+ * @brief Get the length of an allocated gab_value array.
+ */
+GAB_API_INLINE uint64_t gab_varrlen(gab_value *data) {
+  uint64_t vlen = 0;
+  for (gab_value *d = data; *d != gab_cinvalid; d++)
+    vlen++;
+  return vlen;
+}
 
 /**
  * @class gab_egimpl_rest
@@ -2040,7 +2010,7 @@ GAB_API union gab_value_pair gab_use(struct gab_triple gab,
  * @param name The name of the import.
  * @returns The module's results if it exists, nullptr otherwise.
  */
-GAB_API a_gab_value *gab_segmodat(struct gab_eg *eg, const char *name);
+GAB_API gab_value *gab_segmodat(struct gab_eg *eg, const char *name);
 
 /**
  * @brief Put a module into the engine's import table.
@@ -2053,8 +2023,8 @@ GAB_API a_gab_value *gab_segmodat(struct gab_eg *eg, const char *name);
  * @param values The values returned by the module.
  * @returns The module if it was added, nullptr otherwise.
  */
-GAB_API a_gab_value *gab_segmodput(struct gab_eg *eg, const char *name,
-                                   a_gab_value *module);
+GAB_API gab_value *gab_segmodput(struct gab_eg *eg, const char *name,
+                                 gab_value *module);
 
 /**
  * @class gab_parse_argt

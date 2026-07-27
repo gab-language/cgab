@@ -26,6 +26,9 @@
 #include "libgrapheme/grapheme.h"
 #include <ctype.h>
 
+#define T char
+#include "slice.h"
+
 static inline bool instr(char c, const char *set) {
   while (*set != '\0')
     if (c == *set++)
@@ -755,10 +758,8 @@ GAB_DYNLIB_MAIN_FN {
               gab_snative(gab, "pop", gab_mod_string_pop),
           });
 
-  gab_value res[] = {gab_ok, gab_strtomsg(t)};
-
   return (union gab_value_pair){
       .status = gab_cvalid,
-      .aresult = a_gab_value_create(res, sizeof(res) / sizeof(gab_value)),
+      .aresult = gab_valarray(gab_ok, gab_strtomsg(t)),
   };
 }

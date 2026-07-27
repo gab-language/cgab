@@ -35,7 +35,7 @@ GAB_DYNLIB_NATIVE_FN(fib, await) {
 
   if (res.status == gab_cvalid) {
     gab_value env = gab_fibawaite(gab, fib);
-    gab_nvmpush(gab_thisvm(gab), res.aresult->len, res.aresult->data);
+    gab_nvmpush(gab_thisvm(gab), gab_varrlen(res.aresult), res.aresult);
     gab_vmpush(gab_thisvm(gab), env);
     return gab_union_cvalid(gab_nil);
   }
@@ -73,10 +73,8 @@ GAB_DYNLIB_MAIN_FN {
               gab_snative(gab, "is\\done", gab_mod_fib_is_done),
           });
 
-  gab_value res[] = {gab_ok, gab_strtomsg(t)};
-
   return (union gab_value_pair){
       .status = gab_cvalid,
-      .aresult = a_gab_value_create(res, sizeof(res) / sizeof(gab_value)),
+      .aresult = gab_valarray(gab_ok, gab_strtomsg(t)),
   };
 }

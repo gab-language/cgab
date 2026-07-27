@@ -159,6 +159,13 @@ GAB_INTERNAL int64_t __gab_gsnprintf_through(char **dst, uint64_t *n,
 GAB_INTERNAL union gab_value_pair __gab_vmexec(struct gab_triple gab,
                                                gab_value fiber);
 
+GAB_API gab_value *gab_nvalarray(uint64_t len, gab_value data[len]) {
+  gab_value *res = malloc(sizeof(gab_value) * len);
+  gab_assert(data, "Out of memory");
+  memcpy(res, data, sizeof(gab_value) * len);
+  return res;
+}
+
 /* ----------------------------------------
  * SECTION 0                      GAB LEXER
  *
@@ -1384,8 +1391,8 @@ GAB_INTERNAL bool __gab_jbstep(struct gab_triple gab, struct gab_job *job) {
     gab_assert(gab_fibisdone(popped), "A valid fiber shall be done");
 
     // We panicked. Crash the system.
-    if (res.aresult->data[0] != gab_ok) {
-      gab_value err = res.aresult->data[1];
+    if (res.aresult[0] != gab_ok) {
+      gab_value err = res.aresult[1];
       if (err != gab_cinvalid) {
         gab_iref(gab, err);
         gab_egkeep(gab.eg, err);
@@ -1776,10 +1783,10 @@ GAB_API union gab_value_pair gab_create(struct gab_create_argt args,
     if (res.status != gab_cvalid)
       return res;
 
-    if (res.aresult->data[0] != gab_ok)
+    if (res.aresult[0] != gab_ok)
       return res;
 
-    vargs[nargs] = res.aresult->data[1];
+    vargs[nargs] = res.aresult[1];
     sargs[nargs] = pkg->alias    ? pkg->alias
                    : pkg->module ? pkg->module
                                  : pkg->package;
@@ -1788,7 +1795,8 @@ GAB_API union gab_value_pair gab_create(struct gab_create_argt args,
 
   return (union gab_value_pair){
       .status = gab_cvalid,
-      .aresult = a_gab_value_create(vargs, nargs),
+      // TODO @cgab @bug: Fix leak
+      .aresult = a_gab_value_create(vargs, nargs)->data,
   };
 }
 
@@ -2143,10 +2151,10 @@ GAB_API void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
     if (__gab_replchkres(gab, res))
       goto fin;
 
-    for (int32_t i = 1; i < res.aresult->len; i++) {
-      gab_value arg = res.aresult->data[i];
+    for (int32_t i = 1; res.aresult[i] != gab_cinvalid; i++) {
+      gab_value arg = res.aresult[i];
 
-      if (i == res.aresult->len - 1) {
+      if (res.aresult[i + 1] == gab_cinvalid) {
         gab_fvalinspect(stdout, gab_pvalintos(gab, arg, ""), -1);
       } else {
         gab_fvalinspect(stdout, gab_pvalintos(gab, arg, ""), -1);
@@ -2431,20 +2439,20 @@ GAB_INTERNAL struct gab_oshape *__gab_legshpfind(struct gab_eg *self,
   }
 }
 
-GAB_API a_gab_value *gab_segmodat(struct gab_eg *eg, const char *name) {
+GAB_API gab_value *gab_segmodat(struct gab_eg *eg, const char *name) {
   uint64_t hash = s_char_hash(s_char_cstr(name));
 
   mtx_lock(&eg->modules_mtx);
 
-  a_gab_value *module = d_gab_modules_read(&eg->modules, hash);
+  gab_value *module = d_gab_modules_read(&eg->modules, hash);
 
   mtx_unlock(&eg->modules_mtx);
 
   return module;
 }
 
-GAB_API a_gab_value *gab_segmodput(struct gab_eg *eg, const char *name,
-                                   a_gab_value *module) {
+GAB_API gab_value *gab_segmodput(struct gab_eg *eg, const char *name,
+                                 gab_value *module) {
   uint64_t hash = s_char_hash(s_char_cstr(name));
 
   mtx_lock(&eg->modules_mtx);
@@ -3320,7 +3328,8 @@ GAB_API struct gab_module_res gab_mresolve(const char **roots,
 
     if (module_path) {
       return (struct gab_module_res){
-          .path = module_path,
+          // TODO @cgab @bug: Fix leak
+          .path = module_path->data,
           .resource = res,
           .root_path = root,
           // Skip the root. This should resolve to the full package + module
@@ -3385,7 +3394,7 @@ GAB_API union gab_value_pair gab_use(struct gab_triple gab,
 
   if (mod.resource) {
     if (!(gab.flags & fGAB_USE_RELOAD)) {
-      a_gab_value *cached = gab_segmodat(gab.eg, mod.path->data);
+      gab_value *cached = gab_segmodat(gab.eg, mod.path);
 
       if (cached != nullptr) {
         /* Skip the first argument, which is the module's data */
@@ -3400,18 +3409,20 @@ GAB_API union gab_value_pair gab_use(struct gab_triple gab,
     gab_precondition(mod.resource->loader != nullptr,
                      "Expected valid resource loader fn pointer");
 
-    union gab_value_pair result = mod.resource->loader(
-        gab, mod.path->data, args.len, args.sargv, args.argv);
+    union gab_value_pair result =
+        mod.resource->loader(gab, mod.path, args.len, args.sargv, args.argv);
 
     if (result.status != gab_cvalid)
       return result;
 
-    if (result.aresult->data[0] != gab_ok)
+    if (result.aresult[0] != gab_ok)
       return result;
 
-    gab_segmodput(gab.eg, mod.path->data, result.aresult);
+    gab_segmodput(gab.eg, mod.path, result.aresult);
 
-    return a_char_destroy(mod.path), result;
+    // TODO @cgab @bug: Fix leak
+    // return a_char_destroy(mod.path), result;
+    return result;
   }
 
   if (module)
@@ -12016,14 +12027,14 @@ GAB_INTERNAL union gab_value_pair __gab_vvmerror(struct gab_triple gab,
   gab_iref(gab, err);
   gab_egkeep(gab.eg, err);
 
-  gab_value vals[] = {gab_err, err};
+  gab_value vals[] = {gab_err, err, gab_cinvalid};
   a_gab_value *results =
       a_gab_value_create(vals, sizeof(vals) / sizeof(gab_value));
 
   gab_niref(gab, 1, results->len, results->data);
   gab_negkeep(gab.eg, results->len, results->data);
 
-  union gab_value_pair res = {.status = gab_cvalid, .aresult = results};
+  union gab_value_pair res = {.status = gab_cvalid, .aresult = results->data};
 
   gab_assert(GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERRUNNING,
              "Shall only error running fiber");
@@ -12104,13 +12115,13 @@ GAB_API union gab_value_pair gab_vpanicf(struct gab_triple gab, const char *fmt,
       gab_egkeep(gab.eg, err);
     }
 
-    gab_value res[] = {gab_err, err};
+    gab_value res[] = {gab_err, err, gab_cinvalid};
     a_gab_value *results =
         a_gab_value_create(res, sizeof(res) / sizeof(gab_value));
 
     return (union gab_value_pair){
         .status = gab_cvalid,
-        .aresult = results,
+        .aresult = results->data,
     };
   };
 
@@ -12327,16 +12338,17 @@ cGAB_VM_OPCODE_ATTRIBUTES union gab_value_pair __gab_vmok(OP_HANDLER_ARGS) {
   // the local values have been overwritten with return values. This makes
   // extracting new locals impossible.
 
-  a_gab_value *results = a_gab_value_empty(have + 1);
+  a_gab_value *results = a_gab_value_empty(have + 2);
   results->data[0] = gab_ok;
   memcpy(results->data + 1, from, have * sizeof(gab_value));
+  results->data[have + 1] = gab_cinvalid;
 
   gab_niref(GAB(), 1, results->len, results->data);
   gab_negkeep(EG(), results->len, results->data);
 
   union gab_value_pair res = (union gab_value_pair){
       .status = gab_cvalid,
-      .aresult = results,
+      .aresult = results->data,
   };
 
   VM()->sp = VM()->sb;
@@ -12970,15 +12982,16 @@ extern void putcs(char *arg);
     if (mod.status != gab_cvalid)                                              \
       VM_GIVEN(mod);                                                           \
                                                                                \
-    if (mod.aresult->data[0] != gab_ok)                                        \
+    if (mod.aresult[0] != gab_ok)                                              \
       VM_GIVEN(mod);                                                           \
                                                                                \
     DROP_N(have + FRAME_SIZE);                                                 \
                                                                                \
-    for (uint64_t i = 1; i < mod.aresult->len; i++)                            \
-      PUSH(mod.aresult->data[i]);                                              \
+    uint64_t len = 0;                                                          \
+    for (uint64_t i = 1; mod.aresult[i] != gab_cinvalid; i++)                  \
+      PUSH(mod.aresult[i]), len++;                                             \
                                                                                \
-    SET_HV(below_have + mod.aresult->len - 1);                                 \
+    SET_HV(below_have + len);                                                  \
   })
 
 #define MISS_CACHED_SEND(reason)                                               \

@@ -283,10 +283,8 @@ GAB_DYNLIB_MAIN_FN {
               gab_snative(gab, "eval", gab_mod_row_exec),
           }, );
 
-  gab_value res[] = {gab_ok, mod};
-
   return (union gab_value_pair){
       .status = gab_cvalid,
-      .aresult = a_gab_value_create(res, sizeof(res) / sizeof(gab_value)),
+      .aresult = gab_valarray(gab_ok, mod),
   };
 }
