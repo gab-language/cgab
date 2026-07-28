@@ -628,7 +628,7 @@ Clay_TransitionElementConfig parseTransition(struct gab_triple gab,
   return (Clay_TransitionElementConfig){
       .handler = Clay_EaseOut,
       .duration =
-          gab_valkind(vduration) == kGAB_NUMBER ? gab_valtou(vduration) : 0.2f,
+          gab_valkind(vduration) == kGAB_NUMBER ? gab_valtou(vduration) : 1.f,
       .properties = properties,
   };
 }

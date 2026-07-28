@@ -1786,9 +1786,12 @@ union gab_value_pair {
   };
 };
 
+/*
+ * Takes care of adding the gab_cinvalid terminator for you!
+ */
 #define gab_valarray(...)                                                      \
   ({                                                                           \
-    gab_value data[] = {__VA_ARGS__};                                          \
+    gab_value data[] = {__VA_ARGS__ __VA_OPT__(,) gab_cinvalid};                                          \
     gab_nvalarray(sizeof(data) / sizeof(gab_value), data);                     \
   })
 

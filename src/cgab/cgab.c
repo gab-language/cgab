@@ -12987,9 +12987,12 @@ extern void putcs(char *arg);
                                                                                \
     DROP_N(have + FRAME_SIZE);                                                 \
                                                                                \
-    uint64_t len = 0;                                                          \
+    uint64_t len = gab_varrlen(mod.aresult) - 1;                               \
+                                                                               \
+    PANIC_GUARD_STACKSPACE(len - 1);                                           \
+                                                                               \
     for (uint64_t i = 1; mod.aresult[i] != gab_cinvalid; i++)                  \
-      PUSH(mod.aresult[i]), len++;                                             \
+      PUSH(mod.aresult[i]);                                                    \
                                                                                \
     SET_HV(below_have + len);                                                  \
   })

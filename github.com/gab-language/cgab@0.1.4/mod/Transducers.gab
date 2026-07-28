@@ -109,6 +109,7 @@ tap:.deftransducer(
           (nil:, r.reduce\step(acc, xs*))
         end)
 
+
 skip:.deftransducer(
   f :: (r, acc, xs) :: f.(xs*).!.td\conditionally(r, acc, xs))
 
@@ -134,6 +135,14 @@ drop:.deftransducer(
         (nth >= n).td\conditionally(r, acc, xs, nth + 1)
       end
   0)
+
+count:.deftransducer(
+ () 
+    :: (r, acc, xs, n)
+        :: do
+          n := n++
+          (n, r.reduce\step(acc, xs*, n))
+        end, 0)
 
 td\do_dropwhile: .defcase {
   true: (r, acc, xs, b, f) :: (true:, r.reduce\step(acc, xs*))

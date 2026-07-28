@@ -545,19 +545,19 @@ bool zip_exister(const char *path) {
 }
 
 static struct gab_package default_modules[] = {
-    // {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Shapes"},
-    // {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Messages"},
-    // {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Strings"},
-    // {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Binaries"},
-    // {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Numbers"},
-    // {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Blocks"},
-    // {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Records"},
-    // {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Fibers"},
-    // {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Channels"},
-    // {"github.com/gab-language/cgab@" GAB_VERSION_TAG},
-    // {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Ranges"},
-    // {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Transducers"},
-    // {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Io"},
+    {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Shapes"},
+    {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Messages"},
+    {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Strings"},
+    {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Binaries"},
+    {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Numbers"},
+    {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Blocks"},
+    {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Records"},
+    {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Fibers"},
+    {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Channels"},
+    {"github.com/gab-language/cgab@" GAB_VERSION_TAG},
+    {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Ranges"},
+    {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Transducers"},
+    {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Io"},
     {}, // List terminator.
 };
 static const uint64_t ndefault_modules = LEN_CARRAY(default_modules) - 1;
@@ -820,9 +820,7 @@ int run_file(const char *package, int flags, uint32_t wait, uint64_t jobs,
   if (!check_and_printerr(&res))
     return gab_destroy(gab), 1;
 
-  uint64_t vlen = 0;
-  for (gab_value* d = res.aresult; *d != gab_cinvalid; d++)
-    vlen++;
+  uint64_t vlen = gab_varrlen(res.aresult);
 
   const char *sargs[vlen];
   for (int i = 0; i < vlen; i++)

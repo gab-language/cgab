@@ -110,7 +110,8 @@
  */
 
 /*
- * TODO @cio @bug: Is it unsafe to directly send pointers into gab strings to the io syscalls?
+ * TODO @cio @bug: Is it unsafe to directly send pointers into gab strings to
+ * the io syscalls?
  *
  * I ask because all the IO is happening asynchronously,
  * it may be that the engine is freed and exiting while IO operations are still
@@ -177,8 +178,6 @@ struct iobuf {
   unsigned char buffer[BUFFER_SIZE];
 };
 
-#define eGAB_EOF -1000
-
 #define T char
 #include "slice.h"
 
@@ -198,9 +197,32 @@ static inline int64_t iobuf_recv(struct iobuf *io, gab_value fib, qfd_t fd,
       return result;
 
     if (result == 0) {
-      out->data = nullptr;
-      out->len = 0;
-      return 1;
+      // Consume what we have
+      gab_uint to_consume = buffer_len(io);
+
+      if (!to_consume) {
+        // If we don't have any, error
+        out->len = 0;
+        out->data = nullptr;
+        return 1;
+      }
+
+      gab_assert(
+          to_consume < len,
+          "Failed to request more, so available should be less than len");
+
+      /*
+       * Consume all the data we got
+       */
+      const uint8_t *data = buffer_data(io);
+      io->bfront += to_consume;
+
+      /*
+       * Setup the output
+       */
+      out->len = to_consume;
+      out->data = (const char *)data;
+      return to_consume;
     }
 
     io->bback += result;
@@ -1245,7 +1267,8 @@ union gab_value_pair resume_sslserversocksend(struct gab_triple gab,
     // we didn't finish writing this amount.
     int64_t written = reentrant >> 32;
 
-    gab_assert(written < len, "Incomplete write should write fewer than we meant to");
+    gab_assert(written < len,
+               "Incomplete write should write fewer than we meant to");
 
     io_op_res result = sslio_write_all(sock, data + written, len - written);
 
@@ -1541,7 +1564,9 @@ union gab_value_pair resume_filesend(struct gab_triple gab, struct gab_io *io,
                              len - result);
 
   // We wrote len bytes!)
-  gab_assert(result == len, "We should have written exactly %li bytes, result is %li.", len, result);
+  gab_assert(result == len,
+             "We should have written exactly %li bytes, result is %li.", len,
+             result);
   gab_vmpush(gab_thisvm(gab), gab_ok);
   return gab_union_cvalid(gab_nil);
 }
@@ -1730,6 +1755,8 @@ readmore:
    *  data && len => valid
    *  no data, but we have len => error in len
    *  no data, no len => EOF
+   *
+   *  TODO @cio @bug: We never handle EOF!
    */
 
   if (!data.data && data.len)
@@ -1737,8 +1764,13 @@ readmore:
                       gab_string(gab, "Error reading"), gab_number(data.len)),
            gab_union_cvalid(gab_nil);
 
-  if (data.len && data.len < len) {
+  if (fibsize)
+    for (uint64_t i = 0; i < data.len; i++)
+      gab_fibpush(gab_thisfiber(gab), data.data[i]);
+
+  if (data.len && fibsize + data.len < len) {
     gab_assert(data.data, "Must see valid pointer");
+
     for (uint64_t i = 0; i < data.len; i++)
       gab_fibpush(gab_thisfiber(gab), data.data[i]);
 
@@ -1746,15 +1778,13 @@ readmore:
   }
 
   if (fibsize)
-    for (uint64_t i = 0; i < data.len; i++)
-      gab_fibpush(gab_thisfiber(gab), data.data[i]);
-
-  if (fibsize)
     return gab_vmpush(gab_thisvm(gab), gab_ok,
                       gab_nbinary(gab, gab_fibsize(gab_thisfiber(gab)),
                                   gab_fibat(gab_thisfiber(gab), 0))),
            res;
 
+  else if (!data.data && !data.len)
+    return gab_vmpush(gab_thisvm(gab), gab_none), res;
   else
     return gab_vmpush(gab_thisvm(gab), gab_ok,
                       gab_nbinary(gab, data.len, (uint8_t *)data.data)),
