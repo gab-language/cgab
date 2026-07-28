@@ -23,7 +23,7 @@ int main(int argc, char *argv[MUNIT_ARRAY_PARAM(argc + 1)]) {
       },
       &gab);
 
-  if (result.status != gab_cvalid && result.aresult->data[0] != gab_ok)
+  if (result.status != gab_cvalid && result.aresult[0] != gab_ok)
     return EXIT_FAILURE;
 
   MunitSuite suites[] = {

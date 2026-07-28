@@ -219,7 +219,7 @@ static MunitResult test_exec_source(const MunitParameter params[], void *data) {
     if (testcase.result[0] == gab_cvalid)
       for (uint64_t j = 1; j < LEN_CARRAY(testcase.result); j++)
         if (testcase.result[j])
-          munit_assert_uint64(result.aresult->data[j - 1], ==,
+          munit_assert_uint64(result.aresult[j - 1], ==,
                               testcase.result[j]);
   }
 
@@ -245,8 +245,8 @@ static MunitResult test_run_block(const MunitParameter params[], void *data) {
 
   union gab_value_pair run_res = gab_run(gab, run_args);
   munit_assert_uint64(run_res.status, ==, gab_cvalid);
-  munit_assert_uint64(run_res.aresult->data[0], ==, gab_ok);
-  munit_assert_uint64(run_res.aresult->data[1], ==, gab_number(20));
+  munit_assert_uint64(run_res.aresult[0], ==, gab_ok);
+  munit_assert_uint64(run_res.aresult[1], ==, gab_number(20));
 
   return MUNIT_OK;
 }
@@ -269,8 +269,8 @@ static MunitResult test_send_message(const MunitParameter params[],
   union gab_value_pair send_res = gab_send(gab, send_args);
 
   munit_assert_uint64(send_res.status, ==, gab_cvalid);
-  munit_assert_uint64(send_res.aresult->data[0], ==, gab_ok);
-  munit_assert_uint64(send_res.aresult->data[1], ==, gab_number(150));
+  munit_assert_uint64(send_res.aresult[0], ==, gab_ok);
+  munit_assert_uint64(send_res.aresult[1], ==, gab_number(150));
 
   gab_value bad_message = gab_message(gab, "unknown_message");
   struct gab_send_argt bad_send_args = {
@@ -280,7 +280,7 @@ static MunitResult test_send_message(const MunitParameter params[],
 
   union gab_value_pair bad_send_res = gab_send(gab, bad_send_args);
   munit_assert_uint64(bad_send_res.status, ==, gab_cvalid);
-  munit_assert_uint64(bad_send_res.aresult->data[0], ==, gab_err);
+  munit_assert_uint64(bad_send_res.aresult[0], ==, gab_err);
 
   return MUNIT_OK;
 }
