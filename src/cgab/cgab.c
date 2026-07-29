@@ -1757,8 +1757,9 @@ GAB_API union gab_value_pair gab_create(struct gab_create_argt args,
     len++, cursor++;
 
   uint64_t nargs = 0;
-  gab_value vargs[len + 1];
+
   const char *sargs[len + 1];
+  gab_value vargs[len + 2];
 
   sargs[nargs] = "";
   vargs[nargs] = gab_ok;
@@ -1793,10 +1794,12 @@ GAB_API union gab_value_pair gab_create(struct gab_create_argt args,
     nargs++;
   }
 
+  vargs[nargs] = gab_cinvalid;
+  nargs++;
+
   return (union gab_value_pair){
       .status = gab_cvalid,
-      // TODO @cgab @bug: Fix leak
-      .aresult = a_gab_value_create(vargs, nargs)->data,
+      .aresult = gab_nvalarray(nargs, vargs),
   };
 }
 

@@ -1,9 +1,1 @@
-<!: .def (
-  Io.Files.t
-  x :: do
-    self.stream\send('$\n'.sprintf x .to\binary).unwrap
-
-    self
-  end)
-
-[1 2 3 4].pipe(Io.stdout)
+Process.args.println

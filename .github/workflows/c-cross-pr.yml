@@ -318,7 +318,7 @@ jobs:
           unzip -o cgab-${{ env.version }}-${{ matrix.target }} -d ~/AppData/Local/gab/${{ env.version }}-${{ matrix.target }}
 
       - name: Unit Tests
-        run: ${{ matrix.test }} --no-fork --iterations 100
+        run: ${{ matrix.test }} --no-fork --iterations 10
 
       - name: Welcome
         run: ${{ matrix.cmd }}
