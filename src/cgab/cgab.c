@@ -3551,13 +3551,16 @@ GAB_API union gab_value_pair gab_asend(struct gab_triple gab,
   // I should really maybe have a queue for this.
   // These potentially block callers annoyingly long
   if (args.pinmask) {
-    int32_t wkid = ctzl(args.pinmask) + 1;
+    struct gab_sig s = atomic_load(&gab.eg->sig);
+    int32_t mask = (s.mask) & args.pinmask;
+    int32_t wkid = ctzl(mask) + 1;
     if (wkid > gab.eg->len)
       return (union gab_value_pair){{gab_cinvalid}};
 
     // TODO @cgab @bug: Properly test & try all allowed workers in the pinmask.
     if (!__gab_jbisalive(gab, wkid))
-      return (union gab_value_pair){{gab_cinvalid}};
+      return __gab_jbspawn(gab, fb) ? (union gab_value_pair){{gab_cvalid, fb}}
+                                    : (union gab_value_pair){{gab_cinvalid}};
 
     if (gab.wkid == wkid)
       q_gab_value_dyn_push(&gab.eg->jobs[wkid].waiting_queue, fb);
@@ -6791,8 +6794,8 @@ GAB_INTERNAL void __gab_chnunlock(struct gab_ochannel *channel) {
 }
 
 GAB_INTERNAL uint32_t __gab_chnepochinc(struct gab_ochannel *channel) {
-  return 2 +
-         atomic_fetch_add_explicit(&channel->epoch, 2, memory_order_release);
+  return atomic_fetch_add_explicit(&channel->epoch, 2, memory_order_release) +
+         2;
 }
 
 /*
@@ -6802,16 +6805,18 @@ GAB_INTERNAL uint32_t __gab_chnepochinc(struct gab_ochannel *channel) {
 GAB_INTERNAL bool __gab_bchnabandon(struct gab_triple gab,
                                     struct gab_ochannel *channel,
                                     gab_value tk) {
-  while (!__gab_chntrylock(channel))
+  while (!__gab_chntrylock(channel)) {
     gab_busywait(gab);
+  }
 
   gab_verify(atomic_load(&channel->spinlock) == 1, "Shall be locked");
 
   // Reset values
   uint32_t e = atomic_load_explicit(&channel->epoch, memory_order_acquire);
 
-  if (gab_valtou(tk) != e)
+  if (gab_valtou(tk) != e) {
     return __gab_chnunlock(channel), false;
+  }
 
   atomic_store_explicit(&channel->len, 0, memory_order_release);
   atomic_store_explicit(&channel->data, nullptr, memory_order_release);
@@ -11894,7 +11899,7 @@ GAB_API gab_value gab_fibstacktrace(struct gab_triple gab, gab_value fiber) {
   gab_value *f = vm->fp;
   uint8_t *ip = vm->ip;
 
-  va_list empty;
+  va_list empty = {};
   return __gab_sprintstk(gab, vm, f, ip, GAB_TERM, nullptr, empty);
 }
 
