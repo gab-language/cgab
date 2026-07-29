@@ -267,8 +267,8 @@ jobs:
             test: ./build-aarch64-macos-none/gabtest/gabtest
           - os: windows-latest
             target: x86_64-windows-gnu
-            cmd: .\build-x86_64-windows-gnu\gab\gab
-            test: .\build-x86_64-windows-gnu\gabtest\gabtest
+            cmd: build-x86_64-windows-gnu/gab/gab
+            test: build-x86_64-windows-gnu/gabtest/gabtest
 
     runs-on: ${{ matrix.os }}
     needs: build_artifacts
