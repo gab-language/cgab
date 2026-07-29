@@ -109,6 +109,8 @@ mz_zip_archive zip = {0};
  *
  */
 
+// TODO @gab @bug: Add .exe to all executables
+
 /*
  * OS Signal handler for when SIGINT is caught
  */
@@ -2421,6 +2423,7 @@ int build_exe(struct command_arguments *args, const char *module) {
   v_char_spush(&bundle, s_char_cstr(GAB_VERSION_TAG));
   v_char_push(&bundle, '-');
   v_char_spush(&bundle, s_char_cstr(args->platform));
+  v_char_spush(&bundle, s_char_cstr(".exe"));
   v_char_push(&bundle, '\0');
 
   v_char exepath = {};
@@ -2439,6 +2442,7 @@ int build_exe(struct command_arguments *args, const char *module) {
       s_char_cstr("github.com/gab-language/cgab@" GAB_VERSION_TAG "/"));
   v_char_spush(&exepath, s_char_cstr("gab-cgab-" GAB_VERSION_TAG "-"));
   v_char_spush(&exepath, s_char_cstr(args->platform));
+  v_char_spush(&exepath, s_char_cstr(".exe"));
   v_char_push(&exepath, '\0');
 
   v_s_char_push(&args->packages, s_char_cstr(module));

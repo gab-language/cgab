@@ -86,7 +86,7 @@ BINARY_FLAGS 	= -rdynamic -Wl,--no-gc-sections $(GAB_LINK_DEPS) $(GAB_BINARYFLAG
 #
 # A custom delay-load hook handles resolving gab's symbols in native modules.
 ifneq (,$(GAB_ISWINDOWS))
-CMOD_LINK_DEPS   = -lgab/gab
+CMOD_LINK_DEPS   = -lgab/gab.exe
 else
 CMOD_LINK_DEPS   =
 endif
@@ -156,15 +156,15 @@ $(BUILD_PREFIX)/cgab/cgab.def: $(CGAB_OBJ)
 # This rule builds the gab executable, linking with libcgab.a
 # On windows, it also creates a .def file, and then creates a delay-loaded gab.lib.
 ifneq (,$(GAB_ISWINDOWS))
-$(BUILD_PREFIX)/gab/gab: $(GAB_OBJ) $(BUILD_PREFIX)/libcgab.a $(BUILD_PREFIX)/cgab/cgab.def
+$(BUILD_PREFIX)/gab/gab.exe: $(GAB_OBJ) $(BUILD_PREFIX)/libcgab.a $(BUILD_PREFIX)/cgab/cgab.def
 	$(TARGETCC) $(CFLAGS) $(BINARY_FLAGS) -DGAB_CORE -o $@ $^
 	$(DLLTOOL) --input-def $(BUILD_PREFIX)/cgab/cgab.def --output-delaylib $(BUILD_PREFIX)/gab/gab.lib --dllname gab/gab
 else
-$(BUILD_PREFIX)/gab/gab: $(GAB_OBJ) $(BUILD_PREFIX)/libcgab.a
+$(BUILD_PREFIX)/gab/gab.exe: $(GAB_OBJ) $(BUILD_PREFIX)/libcgab.a
 	$(TARGETCC) $(CFLAGS) $(BINARY_FLAGS) -DGAB_CORE -o $@ $^
 endif
 
-$(BUILD_PREFIX)/gabtest/gabtest: $(GABTEST_OBJ) $(BUILD_PREFIX)/libcgab.a
+$(BUILD_PREFIX)/gabtest/gabtest.exe: $(GABTEST_OBJ) $(BUILD_PREFIX)/libcgab.a
 	$(TARGETCC) $(CFLAGS) $(BINARY_FLAGS) -o $@ $^
 
 # This rule builds each c module shared library.
@@ -258,7 +258,7 @@ $(BUILD_PREFIX)/libbearssl.a:
 
 # These are some convenience rules for making the cli simpler.
 
-gab: build-dir $(BUILD_PREFIX)/gab/gab $(BUILD_PREFIX)/gabtest/gabtest
+gab: build-dir $(BUILD_PREFIX)/gab/gab.exe $(BUILD_PREFIX)/gabtest/gabtest.exe
 
 lib: build-dir $(BUILD_PREFIX)/libcgab.a
 

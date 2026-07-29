@@ -76,32 +76,32 @@ jobs:
           mkdir -p ~/gab/${{ env.version }}-x86_64-windows-gnu/github.com/gab-language/cgab@${{ env.version }}
           mkdir -p ~/gab/${{ env.version }}-aarch64-windows-gnu/github.com/gab-language/cgab@${{ env.version }}
 
-          cp build-x86_64-linux-gnu/gab/gab ~/gab/${{ env.version }}-x86_64-linux-gnu/github.com/gab-language/cgab@${{ env.version }}/gab-cgab-${{ env.version }}-x86_64-linux-gnu
-          cp build-aarch64-linux-gnu/gab/gab ~/gab/${{ env.version }}-aarch64-linux-gnu/github.com/gab-language/cgab@${{ env.version }}/gab-cgab-${{ env.version }}-aarch64-linux-gnu
-          cp build-x86_64-macos-none/gab/gab ~/gab/${{ env.version }}-x86_64-macos-none/github.com/gab-language/cgab@${{ env.version }}/gab-cgab-${{ env.version }}-x86_64-macos-none
-          cp build-aarch64-macos-none/gab/gab ~/gab/${{ env.version }}-aarch64-macos-none/github.com/gab-language/cgab@${{ env.version }}/gab-cgab-${{ env.version }}-aarch64-macos-none
-          cp build-x86_64-windows-gnu/gab/gab ~/gab/${{ env.version }}-x86_64-windows-gnu/github.com/gab-language/cgab@${{ env.version }}/gab-cgab-${{ env.version }}-x86_64-windows-gnu
-          cp build-aarch64-windows-gnu/gab/gab ~/gab/${{ env.version }}-aarch64-windows-gnu/github.com/gab-language/cgab@${{ env.version }}/gab-cgab-${{ env.version }}-aarch64-windows-gnu
+          cp build-x86_64-linux-gnu/gab/gab.exe ~/gab/${{ env.version }}-x86_64-linux-gnu/github.com/gab-language/cgab@${{ env.version }}/gab-cgab-${{ env.version }}-x86_64-linux-gnu
+          cp build-aarch64-linux-gnu/gab/gab.exe ~/gab/${{ env.version }}-aarch64-linux-gnu/github.com/gab-language/cgab@${{ env.version }}/gab-cgab-${{ env.version }}-aarch64-linux-gnu
+          cp build-x86_64-macos-none/gab/gab.exe ~/gab/${{ env.version }}-x86_64-macos-none/github.com/gab-language/cgab@${{ env.version }}/gab-cgab-${{ env.version }}-x86_64-macos-none
+          cp build-aarch64-macos-none/gab/gab.exe ~/gab/${{ env.version }}-aarch64-macos-none/github.com/gab-language/cgab@${{ env.version }}/gab-cgab-${{ env.version }}-aarch64-macos-none
+          cp build-x86_64-windows-gnu/gab/gab.exe ~/gab/${{ env.version }}-x86_64-windows-gnu/github.com/gab-language/cgab@${{ env.version }}/gab-cgab-${{ env.version }}-x86_64-windows-gnu
+          cp build-aarch64-windows-gnu/gab/gab.exe ~/gab/${{ env.version }}-aarch64-windows-gnu/github.com/gab-language/cgab@${{ env.version }}/gab-cgab-${{ env.version }}-aarch64-windows-gnu
 
     - name: Create bundles
       run: |
-         ./build-x86_64-linux-gnu/gab/gab build -n -t x86_64-linux-gnu   < bundle
-         ./build-x86_64-linux-gnu/gab/gab build -n -t aarch64-linux-gnu  < bundle
-         ./build-x86_64-linux-gnu/gab/gab build -n -t x86_64-macos-none  < bundle
-         ./build-x86_64-linux-gnu/gab/gab build -n -t aarch64-macos-none < bundle
-         ./build-x86_64-linux-gnu/gab/gab build -n -t x86_64-windows-gnu  < bundle
-         ./build-x86_64-linux-gnu/gab/gab build -n -t aarch64-windows-gnu < bundle
+         ./build-x86_64-linux-gnu/gab/gab.exe build -n -t x86_64-linux-gnu   < bundle
+         ./build-x86_64-linux-gnu/gab/gab.exe build -n -t aarch64-linux-gnu  < bundle
+         ./build-x86_64-linux-gnu/gab/gab.exe build -n -t x86_64-macos-none  < bundle
+         ./build-x86_64-linux-gnu/gab/gab.exe build -n -t aarch64-macos-none < bundle
+         ./build-x86_64-linux-gnu/gab/gab.exe build -n -t x86_64-windows-gnu  < bundle
+         ./build-x86_64-linux-gnu/gab/gab.exe build -n -t aarch64-windows-gnu < bundle
 
     # For this step, gab needs to know where the binaries are to cross-compile
     # the executables.
     - name: Create Cross-Compiled Test binary
       run: |
-         ./build-x86_64-linux-gnu/gab/gab build -n -t x86_64-linux-gnu test < bundle
-         ./build-x86_64-linux-gnu/gab/gab build -n -t aarch64-linux-gnu test < bundle
-         ./build-x86_64-linux-gnu/gab/gab build -n -t x86_64-macos-none test < bundle
-         ./build-x86_64-linux-gnu/gab/gab build -n -t aarch64-macos-none test < bundle
-         ./build-x86_64-linux-gnu/gab/gab build -n -t x86_64-windows-gnu test < bundle
-         ./build-x86_64-linux-gnu/gab/gab build -n -t aarch64-windows-gnu test < bundle
+         ./build-x86_64-linux-gnu/gab/gab.exe build -n -t x86_64-linux-gnu test < bundle
+         ./build-x86_64-linux-gnu/gab/gab.exe build -n -t aarch64-linux-gnu test < bundle
+         ./build-x86_64-linux-gnu/gab/gab.exe build -n -t x86_64-macos-none test < bundle
+         ./build-x86_64-linux-gnu/gab/gab.exe build -n -t aarch64-macos-none test < bundle
+         ./build-x86_64-linux-gnu/gab/gab.exe build -n -t x86_64-windows-gnu test < bundle
+         ./build-x86_64-linux-gnu/gab/gab.exe build -n -t aarch64-windows-gnu test < bundle
 
     - name: Upload x86_64-linux-gnu Binary Artifact
       uses: pyTooling/upload-artifact@v4
@@ -259,16 +259,16 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-linux-gnu
-            cmd: ./build-x86_64-linux-gnu/gab/gab
-            test: ./build-x86_64-linux-gnu/gabtest/gabtest
+            cmd: ./build-x86_64-linux-gnu/gab/gab.exe
+            test: ./build-x86_64-linux-gnu/gabtest/gabtest.exe
           - os: macos-latest
             target: aarch64-macos-none
-            cmd: ./build-aarch64-macos-none/gab/gab
-            test: ./build-aarch64-macos-none/gabtest/gabtest
+            cmd: ./build-aarch64-macos-none/gab/gab.exe
+            test: ./build-aarch64-macos-none/gabtest/gabtest.exe
           - os: windows-latest
             target: x86_64-windows-gnu
-            cmd: build-x86_64-windows-gnu/gab/gab
-            test: build-x86_64-windows-gnu/gabtest/gabtest
+            cmd: build-x86_64-windows-gnu/gab/gab.exe
+            test: build-x86_64-windows-gnu/gabtest/gabtest.exe
 
     runs-on: ${{ matrix.os }}
     needs: build_artifacts
@@ -314,7 +314,6 @@ jobs:
       - name: Unzip & Install Modules (WINDOWS)
         if: ${{ contains(matrix.target, 'windows') }}
         run: |
-          echo "$PATHEXT"
           mkdir -p ~/AppData/Local/gab/${{ env.version }}-${{ matrix.target }}/github.com/gab-language/cgab@${{ env.version }}/mod
           unzip -o cgab-${{ env.version }}-${{ matrix.target }} -d ~/AppData/Local/gab/${{ env.version }}-${{ matrix.target }}
 
