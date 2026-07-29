@@ -1989,6 +1989,10 @@ int get_package(v_step *steps, struct command_arguments *args,
   v_char_push(&bundle, '-');
   v_char_spush(&bundle, s_char_cstr(gab_target));
 
+  if (resource) {
+    v_char_spush(&bundle, s_char_cstr(".exe"));
+  }
+
   v_char_push(&bundle, '\0');
 
   const char *url = url_from_package(pkg, tag, bundle.data);
