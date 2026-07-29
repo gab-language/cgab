@@ -318,21 +318,27 @@ jobs:
           unzip -o cgab-${{ env.version }}-${{ matrix.target }} -d ~/AppData/Local/gab/${{ env.version }}-${{ matrix.target }}
 
       - name: Unit Tests
+        shell: bash
         run: ${{ matrix.test }} --no-fork --iterations 10
 
       - name: Welcome
+        shell: bash
         run: ${{ matrix.cmd }}
 
       - name: Run Smallest Hello World
+        shell: bash
         run: ${{ matrix.cmd }} exec "'hello world!'"
 
       - name: Run Hello World
+        shell: bash
         run: ${{ matrix.cmd }} exec "'hello world!' .println"
 
       - name: Run tests
+        shell: bash
         run: ${{ matrix.cmd }} run test
 
       - name: Run cross-compiled tests bundle
+        shell: bash
         run: ./test-cgab-${{ env.version }}-${{ matrix.target }}
 
       - name: Gab Build Bundle
@@ -341,4 +347,5 @@ jobs:
           ${{ matrix.cmd }} build test < bundle
 
       - name: Run tests bundle
+        shell: bash
         run: ./test-cgab-${{ env.version }}-${{ matrix.target }}

@@ -604,6 +604,18 @@ static const struct gab_resource native_zip_resources[] = {
 
 static const char *roots[4] = {};
 
+gab_value build_process_module(struct gab_triple gab, uint64_t nargs, const char **args){
+  gab_value ProcessModule = gab_message(gab, "gab\\process");
+
+  gab_def(gab, {
+                   gab_message(gab, "args"),
+                   ProcessModule,
+                   gab_slist(gab, 1, nargs, args),
+               });
+
+  return ProcessModule;
+}
+
 static char prompt_buffer[4096];
 char *readline(const char *prompt) {
   return crossline_readline(prompt, prompt_buffer, sizeof(prompt_buffer));
@@ -616,18 +628,6 @@ const char *welcome_message =
     "/ (_ / __ |/ _  | |  on: " CYAN(GAB_TARGET_TRIPLE) "\n"
    "\\___/_/ |_/____/  |  in: " CYAN(GAB_BUILDTYPE) "\n";
 // clang-format on
-
-gab_value build_process_module(struct gab_triple gab, uint64_t nargs, const char **args){
-  gab_value ProcessModule = gab_message(gab, "gab\\process");
-
-  gab_def(gab, {
-                   gab_message(gab, "args"),
-                   ProcessModule,
-                   gab_slist(gab, 1, nargs, args),
-               });
-
-  return ProcessModule;
-}
 
 int run_repl(int flags, uint32_t wait, uint64_t nmodules,
              struct gab_package *packages, uint64_t nargs, const char **args) {
