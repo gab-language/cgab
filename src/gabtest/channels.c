@@ -74,7 +74,9 @@ static MunitResult test_channel_unsafe_put(const MunitParameter params[],
   uint64_t len = 1;
 
   // Perform unsafe put (will not block indefinitely)
-  gab_untchnput(gab, ch, len, values_in, tries);
+  // Make sure the put happens.
+  while (!gab_untchnput(gab, ch, len, values_in, tries))
+      ;
 
   // Perform unsafe take to clear it
   gab_value values_out[1] = {0};
