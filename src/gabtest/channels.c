@@ -186,7 +186,6 @@ static MunitResult test_channel_concurrent_takers(const MunitParameter params[],
     }
     munit_assert_uint64(done, <=, total_sent);
 
-    // Flaw! If the taker is on *this thread*, deadlocks
     gab_value res = gab_chnput(gab, ch, gab_number(1));
     munit_assert_uint64(res, ==, gab_cvalid);
 
@@ -285,10 +284,14 @@ static MunitResult test_channel_stress_batch(const MunitParameter params[],
   gab_value put_res =
       gab_untchnput(gab, ch, BATCH_STRESS_SIZE, values_in, tries);
 
+  munit_assert_uint64(put_res, ==, gab_cvalid);
+
   // Perform massive unsafe take to clear it
   gab_value values_out[BATCH_STRESS_SIZE] = {0};
   gab_value take_res =
       gab_ntchntake(gab, ch, BATCH_STRESS_SIZE, values_out, tries);
+
+  munit_assert_uint64(take_res, ==, gab_cvalid);
 
   // Verify memory integrity for the entire block
   for (uint64_t i = 0; i < BATCH_STRESS_SIZE; i++) {
