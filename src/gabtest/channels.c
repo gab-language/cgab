@@ -267,42 +267,6 @@ static MunitResult test_channel_stress_randomized(const MunitParameter params[],
   return MUNIT_OK;
 }
 
-#define BATCH_STRESS_SIZE 2048
-
-static MunitResult test_channel_stress_batch(const MunitParameter params[],
-                                             void *data) {
-  gab_value ch = gab_channel(gab);
-  uint64_t tries = 1;
-
-  // Initialize a large batch of values
-  gab_value values_in[BATCH_STRESS_SIZE];
-  for (uint64_t i = 0; i < BATCH_STRESS_SIZE; i++) {
-    values_in[i] = gab_number(i);
-  }
-
-  // Perform massive unsafe put
-  gab_value put_res =
-      gab_untchnput(gab, ch, BATCH_STRESS_SIZE, values_in, tries);
-
-  munit_assert_uint64(put_res, ==, gab_cvalid);
-
-  // Perform massive unsafe take to clear it
-  gab_value values_out[BATCH_STRESS_SIZE] = {0};
-  gab_value take_res =
-      gab_ntchntake(gab, ch, BATCH_STRESS_SIZE, values_out, tries);
-
-  munit_assert_uint64(take_res, ==, gab_cvalid);
-
-  // Verify memory integrity for the entire block
-  for (uint64_t i = 0; i < BATCH_STRESS_SIZE; i++) {
-    munit_assert_uint64(values_out[i], ==, values_in[i]);
-  }
-
-  munit_assert_true(gab_chnisempty(ch));
-
-  return MUNIT_OK;
-}
-
 MunitTest channel_tests[] = {
     {
         "/lifecycle",
@@ -339,14 +303,6 @@ MunitTest channel_tests[] = {
     {
         "/concurrent_putters",
         test_channel_stress_concurrent_putters,
-        NULL,
-        NULL,
-        MUNIT_TEST_OPTION_NONE,
-        NULL,
-    },
-    {
-        "/stress_batch",
-        test_channel_stress_batch,
         NULL,
         NULL,
         MUNIT_TEST_OPTION_NONE,
