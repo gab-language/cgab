@@ -1048,11 +1048,12 @@ GAB_API enum gab_signal gab_yield(struct gab_triple gab) {
   return sGAB_IGN;
 }
 
+// TODO @cthreads @bug: Avoid thrd_sleep, as our vendored impl is bad.
 GAB_API void gab_busywait(struct gab_triple gab) {
-  if (gab.eg->wait > 0)
-    thrd_sleep(&(const struct timespec){.tv_nsec = gab.eg->wait}, nullptr);
-  else
-    thrd_yield();
+  // if (gab.eg->wait > 0)
+  //   thrd_sleep(&(const struct timespec){.tv_nsec = gab.eg->wait}, nullptr);
+  // else
+  thrd_yield();
 }
 
 GAB_API int32_t gab_njobs(struct gab_triple gab) {

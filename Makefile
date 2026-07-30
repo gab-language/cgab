@@ -273,7 +273,7 @@ test: gab cmodules cxxmodules
 	$(BUILD_PREFIX)/gab run test
 
 clean:
-	rm -rf $(BUILD_PREFIX)*
+	rm -rf build-*/
 	rm -f *.configuration
 	rm -f cacert.pem
 	rm -f etag.txt
