@@ -1049,11 +1049,10 @@ GAB_API enum gab_signal gab_yield(struct gab_triple gab) {
 }
 
 GAB_API void gab_busywait(struct gab_triple gab) {
-  if (gab.eg->wait > 0) {
+  if (gab.eg->wait > 0)
     thrd_sleep(&(const struct timespec){.tv_nsec = gab.eg->wait}, nullptr);
-  }
-
-  thrd_yield();
+  else
+    thrd_yield();
 }
 
 GAB_API int32_t gab_njobs(struct gab_triple gab) {
@@ -3555,12 +3554,12 @@ GAB_API union gab_value_pair gab_asend(struct gab_triple gab,
     int32_t mask = (s.mask) & args.pinmask;
     int32_t wkid = ctzl(mask) + 1;
     if (wkid > gab.eg->len)
-      return (union gab_value_pair){{gab_cinvalid}};
+      return (union gab_value_pair){{gab_cinvalid, gab_cinvalid}};
 
     // TODO @cgab @bug: Properly test & try all allowed workers in the pinmask.
     if (!__gab_jbisalive(gab, wkid))
       return __gab_jbspawn(gab, fb) ? (union gab_value_pair){{gab_cvalid, fb}}
-                                    : (union gab_value_pair){{gab_cinvalid}};
+                                    : (union gab_value_pair){{gab_cinvalid, gab_cinvalid}};
 
     if (gab.wkid == wkid)
       q_gab_value_dyn_push(&gab.eg->jobs[wkid].waiting_queue, fb);

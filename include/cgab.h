@@ -3459,6 +3459,10 @@ struct gab_fiber_argt {
 /**
  * @brief Create a fiber.
  *
+ * TODO @cgab @bug: Should fibers store their return value at all? Can we avoid this?
+ * It exposes surface area to the user which may complicate the runtime and implementation.
+ * Neither go nor the BEAM allow users to do this sort of thing - it makes me hesitant.
+ *
  * @param gab The engine
  * @param receiver The receiver to send message to
  * @param message The message to send
