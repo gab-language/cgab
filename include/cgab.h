@@ -146,7 +146,7 @@
  * This may be useful, as there is significant cost to spawning os threads.
  */
 #ifndef cGAB_JOB_IDLE_TRIES
-#define cGAB_JOB_IDLE_TRIES 10
+#define cGAB_JOB_IDLE_TRIES 1
 #endif
 
 /*
@@ -260,7 +260,7 @@
  * consume too much CPU.
  */
 #ifndef cGAB_DEFAULT_WAIT_NS
-#define cGAB_DEFAULT_WAIT_NS 10
+#define cGAB_DEFAULT_WAIT_NS 1
 #endif
 
 /*
