@@ -6290,7 +6290,10 @@ __gab_shppopulate_keys(gab_value node, gab_value skip, gab_value replace,
         else
           out[n] = key;
 
-        promotable = promotable || (out[n] == gab_number(n));
+        // If we aren't replacing with this key, consider it.
+        // (If we did replace with it, we already considered it at that point)
+        if (key != replace)
+          promotable = promotable && (out[n] == gab_number(n));
 
         continue;
       }
@@ -6300,7 +6303,7 @@ __gab_shppopulate_keys(gab_value node, gab_value skip, gab_value replace,
       struct popkey_res res =
           __gab_shppopulate_keys(c, skip, replace, found, promotable, out);
       found = found != -1 ? found : res.found;
-      promotable = promotable || res.promotable;
+      promotable = promotable && res.promotable;
     }
   }
 
@@ -6323,7 +6326,7 @@ GAB_API gab_value gab_tshpwithout(struct gab_triple gab, gab_value shape,
 
   gab_value newdata[len];
   struct popkey_res res =
-      __gab_shppopulate_keys(shape, key, last_key, -1, false, newdata);
+      __gab_shppopulate_keys(shape, key, last_key, -1, true, newdata);
 
   bool found = res.found != -1;
 
