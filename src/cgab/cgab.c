@@ -6609,7 +6609,10 @@ GAB_API union gab_value_pair gab_tfibawait(struct gab_triple gab, gab_value f,
       return (union gab_value_pair){.status = gab_ctimeout, .vresult = f};
   }
 
-  return fiber->res_values;
+  return (union gab_value_pair){{
+      atomic_load(&fiber->res_status),
+      atomic_load(&fiber->as.vresult),
+  }};
 }
 
 GAB_API union gab_value_pair gab_fibawait(struct gab_triple gab, gab_value f) {
@@ -11912,7 +11915,10 @@ GAB_INTERNAL union gab_value_pair __gab_vvmterm(struct gab_triple gab,
    * native fn.
    */
   if (gab_valkind(fiber) == kGAB_FIBERDONE)
-    return GAB_VAL_TO_FIBER(fiber)->res_values;
+    return (union gab_value_pair){{
+        atomic_load(&GAB_VAL_TO_FIBER(fiber)->res_status),
+        atomic_load(&GAB_VAL_TO_FIBER(fiber)->as.vresult),
+    }};
 
   gab_assert(gab_valkind(fiber) == kGAB_FIBERRUNNING,
              "(%i) Terminating fiber %p must be running, not: %d. Terminating.",
@@ -11922,7 +11928,7 @@ GAB_INTERNAL union gab_value_pair __gab_vvmterm(struct gab_triple gab,
              "(%i) Terminating fiber %p res_env shall be uninitialized.",
              gab.wkid, GAB_VAL_TO_FIBER(fiber));
 
-  gab_assert(GAB_VAL_TO_FIBER(fiber)->res_values.status == 0,
+  gab_assert(atomic_load(&GAB_VAL_TO_FIBER(fiber)->res_status) == 0,
              "(%i) Terminating fiber %p res shall be uninitialized.", gab.wkid,
              GAB_VAL_TO_FIBER(fiber));
 
@@ -11951,7 +11957,9 @@ GAB_INTERNAL union gab_value_pair __gab_vvmterm(struct gab_triple gab,
 
   gab_egkeep(gab.eg, gab_iref(gab, env));
 
-  GAB_VAL_TO_FIBER(fiber)->res_values = res;
+  atomic_store(&GAB_VAL_TO_FIBER(fiber)->res_status, gab_cinvalid);
+  atomic_store(&GAB_VAL_TO_FIBER(fiber)->as.vresult, gab_cinvalid);
+
   GAB_VAL_TO_FIBER(fiber)->res_env = env;
   GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERDONE;
 #if cGAB_LOG_EG
@@ -11971,7 +11979,10 @@ __gab_vmgivenerror(struct gab_triple gab, union gab_value_pair given) {
    * native fn.
    */
   if (gab_valkind(fiber) == kGAB_FIBERDONE)
-    return GAB_VAL_TO_FIBER(fiber)->res_values;
+    return (union gab_value_pair){{
+        atomic_load(&GAB_VAL_TO_FIBER(fiber)->res_status),
+        atomic_load(&GAB_VAL_TO_FIBER(fiber)->as.vresult),
+    }};
 
   gab_assert(gab_valkind(fiber) == kGAB_FIBERRUNNING,
              "Terminating fiber %p must be running, not: %d. Given err.",
@@ -11980,12 +11991,14 @@ __gab_vmgivenerror(struct gab_triple gab, union gab_value_pair given) {
   gab_assert(GAB_VAL_TO_FIBER(fiber)->res_env == gab_cinvalid,
              "Terminating fiber res_env shall be uninitialized.");
 
-  gab_assert(GAB_VAL_TO_FIBER(fiber)->res_values.status == 0,
-             "Terminating fiber res shall be uninitialized.");
+  gab_assert(atomic_load(&GAB_VAL_TO_FIBER(fiber)->res_status) == 0,
+             "(%i) Terminating fiber %p res shall be uninitialized.", gab.wkid,
+             GAB_VAL_TO_FIBER(fiber));
 
   struct gab_vm *vm = gab_thisvm(gab);
 
-  GAB_VAL_TO_FIBER(fiber)->res_values = given;
+  atomic_store(&GAB_VAL_TO_FIBER(fiber)->res_status, given.status);
+  atomic_store(&GAB_VAL_TO_FIBER(fiber)->as.vresult, given.vresult);
 
   if (__gab_vmframeblk(vm->fp)) {
     gab_value p = __gab_vmframeblk(vm->fp)->p;
@@ -12019,8 +12032,9 @@ GAB_INTERNAL union gab_value_pair __gab_vvmerror(struct gab_triple gab,
   gab_assert(GAB_VAL_TO_FIBER(fiber)->res_env == gab_cinvalid,
              "Terminating fiber res_env shall be uninitialized.");
 
-  gab_assert(GAB_VAL_TO_FIBER(fiber)->res_values.status == 0,
-             "Terminating fiber res shall be uninitialized.");
+  gab_assert(atomic_load(&GAB_VAL_TO_FIBER(fiber)->res_status) == 0,
+             "(%i) Terminating fiber %p res shall be uninitialized.", gab.wkid,
+             GAB_VAL_TO_FIBER(fiber));
 
   struct gab_vm *vm = gab_thisvm(gab);
 
@@ -12047,7 +12061,9 @@ GAB_INTERNAL union gab_value_pair __gab_vvmerror(struct gab_triple gab,
   gab_assert(GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERRUNNING,
              "Shall only error running fiber");
 
-  GAB_VAL_TO_FIBER(fiber)->res_values = res;
+  atomic_store(&GAB_VAL_TO_FIBER(fiber)->res_status, res.status);
+  atomic_store(&GAB_VAL_TO_FIBER(fiber)->as.aresult, res.aresult);
+
   if (__gab_vmframeblk(vm->fp)) {
     gab_value p = __gab_vmframeblk(vm->fp)->p;
 
@@ -12378,11 +12394,12 @@ cGAB_VM_OPCODE_ATTRIBUTES union gab_value_pair __gab_vmok(OP_HANDLER_ARGS) {
              "(%i) Terminating fiber %p res_env shall be uninitialized.",
              GAB().wkid, fiber);
 
-  gab_assert(fiber->res_values.status == 0,
+  gab_assert(atomic_load(&fiber->res_status) == 0,
              "(%i) Terminating fiber %p res shall be uninitialized.",
              GAB().wkid, fiber);
 
-  fiber->res_values = res;
+  atomic_store(&fiber->res_status, res.status);
+  atomic_store(&fiber->as.vresult, res.vresult);
 
   // TODO @bug: Find some way to pull the env out of a fiber.
   // if (frame_block(VM()->fp)) {

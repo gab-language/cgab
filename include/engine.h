@@ -432,9 +432,16 @@ struct gab_ofiber {
   struct gab_vm vm;
 
   /**
-   * Result of execution
+   * Result of execution. 
+   *
+   * Embed a union gab_value_pair here, so that it can be atomic.
    */
-  union gab_value_pair res_values;
+  _Atomic gab_value res_status;
+
+  union {
+    _Atomic (gab_value *) aresult;
+    _Atomic gab_value vresult;
+  } as;
 
   /**
    * The environment after execution finished
