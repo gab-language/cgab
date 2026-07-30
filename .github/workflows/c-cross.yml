@@ -263,7 +263,7 @@ jobs:
         run: mv build-${{ matrix.target }}/gab/gab.exe 'gab-cgab-${{ env.version }}-${{ matrix.target }}.exe'
 
       - name: Attach Binary to Release
-        run: gh release upload -R '${{ github.repository }}' '${{ env.version }}' 'gab-cgab-${{ env.version }}-${{ matrix.target }}' || exit 0
+        run: gh release upload -R '${{ github.repository }}' '${{ env.version }}' 'gab-cgab-${{ env.version }}-${{ matrix.target }}.exe' || exit 0
 
       - name: Attach Bundle to Release
         if: ${{ contains(matrix.build_type, 'release') }}
