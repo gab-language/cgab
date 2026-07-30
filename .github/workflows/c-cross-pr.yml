@@ -3,13 +3,6 @@ name: Build and test pull requests
 #
 # This action tests pull requests.
 #
-# Currently, all windows builds are disabled.
-#
-# This is because there are some c-abi issues with zig cc, and these affect
-# only the windows platform. Until these bugs are fixed in zig cc, Gab will not
-# support windows.
-#
-# (Unless I feel ike refactoring all the code that is using these abi features - passing structs as arguments).
 
 on:
   pull_request:
