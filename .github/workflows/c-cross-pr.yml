@@ -260,11 +260,11 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-linux-gnu
             cmd: ./build-x86_64-linux-gnu/gab/gab.exe
-            test: ./build-x86_64-linux-gnu/gabtest/gabtest.exe
+            test: ./build-x86_64-linux-gnu/gabtest/gabtest.exe --no-fork
           - os: macos-latest
             target: aarch64-macos-none
             cmd: ./build-aarch64-macos-none/gab/gab.exe
-            test: ./build-aarch64-macos-none/gabtest/gabtest.exe
+            test: ./build-aarch64-macos-none/gabtest/gabtest.exe --no-fork
           - os: windows-latest
             target: x86_64-windows-gnu
             cmd: ./build-x86_64-windows-gnu/gab/gab.exe
@@ -318,7 +318,7 @@ jobs:
           unzip -o cgab-${{ env.version }}-${{ matrix.target }} -d ~/AppData/Local/gab/${{ env.version }}-${{ matrix.target }}
 
       - name: Unit Tests
-        run: ${{ matrix.test }} --no-fork --iterations 10
+        run: ${{ matrix.test }} --iterations 10
 
       - name: Welcome
         run: ${{ matrix.cmd }}
