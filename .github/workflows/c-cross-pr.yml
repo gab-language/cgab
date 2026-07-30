@@ -333,7 +333,7 @@ jobs:
         run: ${{ matrix.cmd }} run test
 
       - name: Run cross-compiled tests bundle
-        run: ./test-cgab-${{ env.version }}-${{ matrix.target }}
+        run: ./test-cgab-${{ env.version }}-${{ matrix.target }}.exe
 
       - name: Gab Build Bundle
         shell: bash
