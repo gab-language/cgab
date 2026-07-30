@@ -125,7 +125,7 @@ jobs:
       uses: pyTooling/upload-artifact@v4
       with:
         name: 'test-cgab-${{ env.version }}-x86_64-linux-gnu'
-        path: 'test-cgab-${{ env.version }}-x86_64-linux-gnu'
+        path: 'test-cgab-${{ env.version }}-x86_64-linux-gnu.exe'
 
     - name: Upload aarch64-linux-gnu Binary Artifact
       uses: pyTooling/upload-artifact@v4
@@ -149,7 +149,7 @@ jobs:
       uses: pyTooling/upload-artifact@v4
       with:
         name: 'test-cgab-${{ env.version }}-aarch64-linux-gnu'
-        path: 'test-cgab-${{ env.version }}-aarch64-linux-gnu'
+        path: 'test-cgab-${{ env.version }}-aarch64-linux-gnu.exe'
 
     - name: Upload x86_64-macos-none Binary Artifact
       uses: pyTooling/upload-artifact@v4
@@ -173,7 +173,7 @@ jobs:
       uses: pyTooling/upload-artifact@v4
       with:
         name: 'test-cgab-${{ env.version }}-x86_64-macos-none' 
-        path: 'test-cgab-${{ env.version }}-x86_64-macos-none'
+        path: 'test-cgab-${{ env.version }}-x86_64-macos-none.exe'
 
     - name: Upload aarch64-macos-none Binary Artifact
       uses: pyTooling/upload-artifact@v4
@@ -197,7 +197,7 @@ jobs:
       uses: pyTooling/upload-artifact@v4
       with:
         name: 'test-cgab-${{ env.version }}-aarch64-macos-none' 
-        path: 'test-cgab-${{ env.version }}-aarch64-macos-none'
+        path: 'test-cgab-${{ env.version }}-aarch64-macos-none.exe'
 
     - name: Upload x86_64-windows-gnu Binary Artifact
       uses: pyTooling/upload-artifact@v4
@@ -221,7 +221,7 @@ jobs:
       uses: pyTooling/upload-artifact@v4
       with:
         name: 'test-cgab-${{ env.version }}-x86_64-windows-gnu'
-        path: 'test-cgab-${{ env.version }}-x86_64-windows-gnu'
+        path: 'test-cgab-${{ env.version }}-x86_64-windows-gnu.exe'
 
     - name: Upload aarch64-windows-gnu Binary Artifact
       uses: pyTooling/upload-artifact@v4
@@ -245,7 +245,7 @@ jobs:
       uses: pyTooling/upload-artifact@v4
       with:
         name: 'test-cgab-${{ env.version }}-aarch64-windows-gnu'
-        path: 'test-cgab-${{ env.version }}-aarch64-windows-gnu'
+        path: 'test-cgab-${{ env.version }}-aarch64-windows-gnu.exe'
 
   run_tests:
     strategy:
