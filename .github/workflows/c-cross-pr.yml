@@ -341,4 +341,4 @@ jobs:
           ${{ matrix.cmd }} build test < bundle
 
       - name: Run tests bundle
-        run: ./test-cgab-${{ env.version }}-${{ matrix.target }}
+        run: ./test-cgab-${{ env.version }}-${{ matrix.target }}.exe
