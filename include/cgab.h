@@ -613,12 +613,12 @@ static inline void __gab_assert_fail(const char *prelude, const char *expr,
   va_list va;
   va_start(va, reason);
 
-  fprintf(stderr, "%s\n[%s:%" PRId64 " %s] assertion '%s' failed: ", prelude,
+  fprintf(stdout, "\n\n%s\n[%s:%" PRId64 " %s] assertion '%s' failed: ", prelude,
           file, line, function, expr);
 
-  vfprintf(stderr, reason, va);
+  vfprintf(stdout, reason, va);
 
-  fputc('\n', stderr);
+  fprintf(stdout, "\n\n");
 
   exit(EXIT_FAILURE);
   va_end(va);
@@ -3024,7 +3024,7 @@ GAB_API gab_value gab_shape(struct gab_triple gab, uint64_t stride,
 /*
  * @brief Check if the given shape is a list.
  */
-GAB_API_INLINE uint64_t gab_shpisl(gab_value shp) {
+GAB_API_INLINE bool gab_shpisl(gab_value shp) {
   assert(gab_valkind(shp) == kGAB_SHAPE || gab_valkind(shp) == kGAB_SHAPELIST);
   return gab_valkind(shp) == kGAB_SHAPELIST;
 }
@@ -3811,7 +3811,7 @@ GAB_API gab_value gab_prtenv(gab_value prt);
 GAB_API_INLINE gab_value gab_prtrec(gab_value prt) {
   gab_value env = gab_prtenv(prt);
   uint64_t len = gab_reclen(env);
-  assert(len > 0);
+  gab_assert(len > 0, "No environment");
   return gab_uvrecat(env, len - 1);
 }
 
@@ -3899,7 +3899,7 @@ GAB_API gab_value gab_thisfiber(struct gab_triple gab);
 
 GAB_API_INLINE struct gab_vm *gab_thisvm(struct gab_triple gab) {
   gab_value fiber = gab_thisfiber(gab);
-  assert(fiber != gab_cinvalid);
+  gab_assert(fiber != gab_cinvalid, "No fiber on this thread");
   return gab_fibvm(fiber);
 }
 
@@ -4013,7 +4013,7 @@ GAB_API_INLINE gab_value gab_valintostr(struct gab_triple gab,
   default:
     for (uint64_t len = 4096;; len *= 2) {
       char *buffer = (char *)malloc(len);
-      assert(buffer);
+      gab_assert(buffer, "Fail to allocate buffer");
 
       char *cursor = buffer;
       uint64_t remaining = len;
@@ -4038,7 +4038,7 @@ GAB_API_INLINE gab_value gab_valintobin(struct gab_triple gab,
   default:
     for (uint64_t len = 4096;; len *= 2) {
       char *buffer = (char *)malloc(len);
-      assert(buffer);
+      gab_assert(buffer, "Fail to allocate buffer");
 
       char *cursor = buffer;
       uint64_t remaining = len;
@@ -4062,7 +4062,7 @@ GAB_API_INLINE gab_value gab_pvalintos(struct gab_triple gab, gab_value value,
                                        const char *prefix) {
   for (uint64_t len = 4096;; len *= 2) {
     char *buffer = (char *)malloc(len);
-    assert(buffer);
+    gab_assert(buffer, "Fail to allocate buffer");
 
     char *cursor = buffer;
     uint64_t remaining = len;

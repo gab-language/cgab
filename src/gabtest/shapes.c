@@ -43,15 +43,25 @@ static MunitResult test_shape_transitions(const MunitParameter params[],
   gab_value shp_id = gab_shpwith(gab, root, k_id);
   munit_assert_uint64(shp_id, ==, gab_shapeof(gab, k_id));
   munit_assert_uint64(gab_shplen(shp_id), ==, 1);
+  munit_assert_false(gab_shpisl(shp_id));
 
-  // Transition 2: Add 'name'
   gab_value shp_id_name = gab_shpwith(gab, shp_id, k_name);
   munit_assert_uint64(shp_id_name, ==, gab_shapeof(gab, k_id, k_name));
   munit_assert_uint64(gab_shplen(shp_id_name), ==, 2);
+  munit_assert_false(gab_shpisl(shp_id_name));
 
-  // Transition 3: Remove 'name' (Retreating up the transition tree)
-  gab_value shp_reverted = gab_shpwithout(gab, shp_id_name, k_name);
-  munit_assert_uint64(shp_reverted, ==, shp_id);
+  gab_value shp_id_reverted = gab_shpwithout(gab, shp_id_name, k_name);
+  munit_assert_uint64(shp_id_reverted, ==, shp_id);
+  munit_assert_false(gab_shpisl(shp_id_reverted));
+
+  gab_value shp_id_zero = gab_shpwith(gab, shp_id_reverted, gab_number(0));
+  munit_assert_uint64(gab_shplen(shp_id_zero), ==, 2);
+  munit_assert_false(gab_shpisl(shp_id_zero));
+
+  // Should transition to a list on removal
+  gab_value shp_zero = gab_shpwithout(gab, shp_id_zero, k_id);
+  munit_assert_uint64(gab_shplen(shp_zero), ==, 1);
+  munit_assert_true(gab_shpisl(shp_zero));
 
   return MUNIT_OK;
 }

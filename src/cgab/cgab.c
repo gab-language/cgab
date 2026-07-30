@@ -5013,6 +5013,7 @@ GAB_INTERNAL uint32_t __gab_shpmidx(uint64_t hash, uint64_t shift) {
 }
 
 GAB_API uint64_t gab_shpfind(gab_value shape, gab_value key) {
+  gab_precondition(gab_valkind(shape) == kGAB_SHAPE || gab_valkind(shape) == kGAB_SHAPELIST, "Invalid kind %u", gab_valkind(shape));
   gab_value node = shape;
 
   for (uint64_t shift = 0;; shift = __gab_shpishift(shift)) {
@@ -6007,6 +6008,11 @@ GAB_API gab_value gab_nlstcat(struct gab_triple gab, uint64_t len,
   if (len == 0)
     return gab_erecord(gab);
 
+  for (uint64_t i = 0; i < len; i++) {
+    gab_precondition(gab_valkind(records[i]), "Each element must be a record");
+    gab_precondition(gab_valkind(gab_recshp(records[i])), "Each element must be a list-record");
+  }
+
   uint64_t total_len = 0;
 
   for (uint64_t i = 0; i < len; i++)
@@ -6032,8 +6038,14 @@ GAB_API gab_value gab_nlstcat(struct gab_triple gab, uint64_t len,
   self->shift = shift;
   self->len = rootlen;
 
+  if (gab_valkind(self->shape) != kGAB_SHAPELIST)
+    gab_fprintf(stdout, "UHOH:\n$\n", self->shape);
+
   gab_assert(total_len == gab_shplen(self->shape),
              "Total length shall match constructed shape length");
+
+  gab_assert(gab_valkind(self->shape) == kGAB_SHAPELIST,
+             "List-cat should result in a list, not %u", gab_valkind(self->shape));
 
   gab_value res = __gab_obj(self);
 
@@ -6278,7 +6290,7 @@ __gab_shppopulate_keys(gab_value node, gab_value skip, gab_value replace,
         else
           out[n] = key;
 
-        promotable = promotable && (out[n] == gab_number(n));
+        promotable = promotable || (out[n] == gab_number(n));
 
         continue;
       }
@@ -6288,7 +6300,7 @@ __gab_shppopulate_keys(gab_value node, gab_value skip, gab_value replace,
       struct popkey_res res =
           __gab_shppopulate_keys(c, skip, replace, found, promotable, out);
       found = found != -1 ? found : res.found;
-      promotable = promotable && res.promotable;
+      promotable = promotable || res.promotable;
     }
   }
 
@@ -6311,7 +6323,7 @@ GAB_API gab_value gab_tshpwithout(struct gab_triple gab, gab_value shape,
 
   gab_value newdata[len];
   struct popkey_res res =
-      __gab_shppopulate_keys(shape, key, last_key, -1, true, newdata);
+      __gab_shppopulate_keys(shape, key, last_key, -1, false, newdata);
 
   bool found = res.found != -1;
 
@@ -8719,6 +8731,8 @@ GAB_INTERNAL gab_value __gab_prsexp(struct gab_triple gab,
 
   gab_value node = rule.prefix(gab, parser, gab_cinvalid);
 
+  gab_assert(node != gab_cundefined, "Invalid node\n");
+
   uint64_t end = parser->offset;
   uint64_t latest_valid_offset = parser->offset;
 
@@ -8746,8 +8760,11 @@ GAB_INTERNAL gab_value __gab_prsexp(struct gab_triple gab,
 
     rule = __gab_prsrule(__gab_prsprevtok(parser));
 
+
     if (rule.infix != nullptr)
       node = rule.infix(gab, parser, node);
+
+    gab_assert(node != gab_cundefined, "Invalid node\n");
 
     latest_valid_offset = parser->offset;
 
