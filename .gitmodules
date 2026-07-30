@@ -67,3 +67,9 @@
 [submodule "vendor/unthread"]
 	path = vendor/unthread
 	url = https://github.com/mpdn/unthread.git
+[submodule "vendor/munit"]
+	path = vendor/munit
+	url = https://github.com/nemequ/munit.git
+[submodule "vendor/hoxml"]
+	path = vendor/hoxml
+	url = https://github.com/luphi/hoxml.git

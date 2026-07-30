@@ -1,7 +1,7 @@
 /**
  *  MIT License
  *
- *  Copyright (c) 2023 Teddy Randby
+ *  Copyright (c) 2023-2026 Teddy Randby
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy
  *  of this software and associated documentation files (the "Software"), to deal
@@ -22,7 +22,7 @@
  *  SOFTWARE.
  */
 
-#include "gab.h"
+#include "cgab.h"
 
 GAB_DYNLIB_NATIVE_FN(channel, close) {
   gab_chnclose(gab_arg(0));
@@ -86,10 +86,8 @@ GAB_DYNLIB_MAIN_FN {
               gab_snative(gab, "is\\empty", gab_mod_channel_is_empty),
           });
 
-  gab_value res[] = {gab_ok, gab_strtomsg(t)};
-
   return (union gab_value_pair){
       .status = gab_cvalid,
-      .aresult = a_gab_value_create(res, sizeof(res) / sizeof(gab_value)),
+      .aresult = gab_valarray(gab_ok, gab_strtomsg(t)),
   };
 }

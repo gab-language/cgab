@@ -1,8 +1,8 @@
 #ifndef GAB_PLATFORM_H
 #define GAB_PLATFORM_H
 
-#include "gab.h"
 #include <stdio.h>
+#include <errno.h>
 
 /**
  * PLATFORM INTERFACE
@@ -309,6 +309,7 @@ GAB_API_INLINE int gab_nosproc(char *cmd, size_t nargs, const char *args[]) {
 }
 
 #elifdef GAB_PLATFORM_WIN
+#include <windows.h>
 #include <delayimp.h>
 #include <direct.h>
 #include <io.h>
@@ -317,62 +318,6 @@ GAB_API_INLINE int gab_nosproc(char *cmd, size_t nargs, const char *args[]) {
 #include <stdio.h>
 #include <tchar.h>
 #include <wchar.h>
-#include <windows.h>
-
-#ifndef GAB_CORE
-thread_local static DWORD g_oldProtect = 0;
-ExternC FARPROC gab_delayload(unsigned dliNotify, PDelayLoadInfo pdli) {
-  switch (dliNotify) {
-  case dliNotePreLoadLibrary:
-    // 1. Alias "gab" to the current running process (the .exe)
-    if (_stricmp(pdli->szDll, "gab") == 0) {
-      return (FARPROC)GetModuleHandle(NULL);
-    }
-    break;
-
-  case dliNotePreGetProcAddress:
-    // 2. This is called right before the helper tries to resolve the symbol
-    // and write to the IAT. We make the IAT entry writable here.
-    if (pdli->ppfn) {
-      if (!VirtualProtect(pdli->ppfn, sizeof(void *), PAGE_READWRITE,
-                          &g_oldProtect)) {
-        printf("GAB_DELAY: Failed to unprotect IAT at %p (Error: %lu)\n",
-               pdli->ppfn, GetLastError());
-      }
-    }
-    break;
-
-  case dliNoteEndProcessing:
-    // 3. This is called after the helper has successfully written the address
-    // to *pdli->ppfn. We restore the original Read-Only protection now.
-    if (g_oldProtect != 0 && pdli->ppfn) {
-      DWORD dummy;
-      if (!VirtualProtect(pdli->ppfn, sizeof(void *), g_oldProtect, &dummy)) {
-        printf("GAB_DELAY: Failed to restore protection at %p\n", pdli->ppfn);
-      }
-      g_oldProtect = 0; // Reset state
-    }
-    break;
-
-  case dliFailLoadLib:
-    printf("GAB_DELAY: Critical Failure - Could not load library %s\n",
-           pdli->szDll);
-    break;
-
-  case dliFailGetProc:
-    printf("GAB_DELAY: Critical Failure - Could not find function %s\n",
-           pdli->dlp.szProcName);
-    break;
-
-  default:
-    return NULL;
-  }
-
-  return NULL;
-}
-PfnDliHook __pfnDliNotifyHook2 = gab_delayload;
-PfnDliHook __pfnDliFailureHook2 = gab_delayload;
-#endif
 
 #define gab_ossignal(sig, handler) signal(sig, handler)
 

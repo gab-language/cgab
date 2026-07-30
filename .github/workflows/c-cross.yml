@@ -9,7 +9,7 @@ on:
     branches: [ "main" ]
 
 env:
-  version: 0.1.3
+  version: 0.1.4
   GH_TOKEN: ${{ github.token }}
 
 jobs:
@@ -29,7 +29,7 @@ jobs:
             dlltool: x86_64-w64-mingw32-dlltool -m i386:x86-64
           - arch: aarch64
             dlltool: x86_64-w64-mingw32-dlltool -m arm64
-          - cmd: ./build-x86_64-linux-gnu/gab/gab
+          - cmd: ./build-x86_64-linux-gnu/gab/gab.exe
 
     steps:
     - uses: actions/checkout@v4
@@ -81,7 +81,7 @@ jobs:
       uses: pyTooling/upload-artifact@v4
       with:
         name: 'gab-${{ matrix.build_type }}-${{ matrix.arch }}-linux-gnu'
-        path: 'build-${{ matrix.arch }}-linux-gnu/gab/gab'
+        path: 'build-${{ matrix.arch }}-linux-gnu/gab/gab.exe'
 
     - name: Upload Headers
       uses: pyTooling/upload-artifact@v4
@@ -107,7 +107,7 @@ jobs:
       uses: pyTooling/upload-artifact@v4
       with:
         name: 'gab-${{ matrix.build_type }}-${{ matrix.arch }}-macos-none'
-        path: 'build-${{ matrix.arch }}-macos-none/gab/gab'
+        path: 'build-${{ matrix.arch }}-macos-none/gab/gab.exe'
 
     - name: Upload Headers
       uses: pyTooling/upload-artifact@v4
@@ -133,7 +133,7 @@ jobs:
       uses: pyTooling/upload-artifact@v4
       with:
         name: 'gab-${{ matrix.build_type }}-${{ matrix.arch }}-windows-gnu'
-        path: 'build-${{ matrix.arch }}-windows-gnu/gab/gab'
+        path: 'build-${{ matrix.arch }}-windows-gnu/gab/gab.exe'
 
     - name: Upload Headers
       uses: pyTooling/upload-artifact@v4
@@ -167,13 +167,13 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-linux-gnu
-            cmd: ./build-x86_64-linux-gnu/gab/gab
+            cmd: ./build-x86_64-linux-gnu/gab/gab.exe
           - os: macos-latest
             target: aarch64-macos-none
-            cmd: ./build-aarch64-macos-none/gab/gab
+            cmd: ./build-aarch64-macos-none/gab/gab.exe
           - os: windows-latest
             target: x86_64-windows-gnu
-            cmd: build-x86_64-windows-gnu\gab\gab
+            cmd: ./build-x86_64-windows-gnu/gab/gab.exe
 
     runs-on: ${{ matrix.os }}
     needs: build_artifacts
@@ -260,7 +260,7 @@ jobs:
           name: 'cgab-${{ env.version }}-${{ matrix.target }}'
       
       - name: Rename Binary
-        run: mv build-${{ matrix.target }}/gab/gab 'gab-cgab-${{ env.version }}-${{ matrix.target }}'
+        run: mv build-${{ matrix.target }}/gab/gab.exe 'gab-cgab-${{ env.version }}-${{ matrix.target }}.exe'
 
       - name: Attach Binary to Release
         run: gh release upload -R '${{ github.repository }}' '${{ env.version }}' 'gab-cgab-${{ env.version }}-${{ matrix.target }}' || exit 0

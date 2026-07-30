@@ -1,7 +1,7 @@
 /**
  *  MIT License
  *
- *  Copyright (c) 2023 Teddy Randby
+ *  Copyright (c) 2023-2026 Teddy Randby
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy
  *  of this software and associated documentation files (the "Software"), to
@@ -24,9 +24,24 @@
 
 #include "BearSSL/inc/bearssl.h"
 
-#include "gab.h"
-#include "platform.h"
+#include "cgab.h"
 #include <stdio.h>
+
+#ifdef GAB_PLATFORM_LINUX
+#define QIO_LINUX
+#endif
+
+#ifdef GAB_PLATFORM_WASI
+#define QIO_LINUX
+#endif
+
+#ifdef GAB_PLATFORM_MACOS
+#define QIO_MACOS
+#endif
+
+#ifdef GAB_PLATFORM_WIN
+#define QIO_WINDOWS
+#endif
 
 #define QIO_LOOP_INTERVAL_NS 50000
 #define QIO_INTERNAL_QUEUE_INITIAL_LEN 2056
@@ -95,7 +110,8 @@
  */
 
 /*
- * TODO @cio @bug: Is it unsafe to directly send pointers into gab strings to the io syscalls?
+ * TODO @cio @bug: Is it unsafe to directly send pointers into gab strings to
+ * the io syscalls?
  *
  * I ask because all the IO is happening asynchronously,
  * it may be that the engine is freed and exiting while IO operations are still
@@ -162,12 +178,13 @@ struct iobuf {
   unsigned char buffer[BUFFER_SIZE];
 };
 
-#define eGAB_EOF -1000
+#define T char
+#include "slice.h"
 
 static inline int64_t iobuf_recv(struct iobuf *io, gab_value fib, qfd_t fd,
                                  uint64_t len, s_char *out,
                                  uintptr_t *reentrant) {
-  assert(len <= BUFFER_SIZE);
+  gab_assert(len <= BUFFER_SIZE, "Cannot recv more than buffer size");
 
   if (*reentrant) {
     if (!qd_status(*reentrant - 1))
@@ -180,9 +197,32 @@ static inline int64_t iobuf_recv(struct iobuf *io, gab_value fib, qfd_t fd,
       return result;
 
     if (result == 0) {
-      out->data = nullptr;
-      out->len = 0;
-      return 1;
+      // Consume what we have
+      gab_uint to_consume = buffer_len(io);
+
+      if (!to_consume) {
+        // If we don't have any, error
+        out->len = 0;
+        out->data = nullptr;
+        return 1;
+      }
+
+      gab_assert(
+          to_consume < len,
+          "Failed to request more, so available should be less than len");
+
+      /*
+       * Consume all the data we got
+       */
+      const uint8_t *data = buffer_data(io);
+      io->bfront += to_consume;
+
+      /*
+       * Setup the output
+       */
+      out->len = to_consume;
+      out->data = (const char *)data;
+      return to_consume;
     }
 
     io->bback += result;
@@ -645,13 +685,13 @@ union gab_value_pair resume_sslsockaccept(struct gab_triple gab,
 
   struct gab_ssl_sock *client = gab_boxdata(vclient);
 
-  assert(sock->server.nobj_bytes > 0);
-  assert(sock->server.ncerts > 0);
-  assert(sock->server.rsa.dplen > 0);
-  assert(sock->server.rsa.dqlen > 0);
-  assert(sock->server.rsa.iqlen > 0);
-  assert(sock->server.rsa.plen > 0);
-  assert(sock->server.rsa.qlen > 0);
+  gab_assert(sock->server.nobj_bytes > 0, "Failsafe");
+  gab_assert(sock->server.ncerts > 0, "Failsafe");
+  gab_assert(sock->server.rsa.dplen > 0, "Failsafe");
+  gab_assert(sock->server.rsa.dqlen > 0, "Failsafe");
+  gab_assert(sock->server.rsa.iqlen > 0, "Failsafe");
+  gab_assert(sock->server.rsa.plen > 0, "Failsafe");
+  gab_assert(sock->server.rsa.qlen > 0, "Failsafe");
 
   br_ssl_server_init_full_rsa(&client->serverclient.sc, sock->server.certs,
                               sock->server.ncerts, &sock->server.rsa);
@@ -664,7 +704,7 @@ union gab_value_pair resume_sslsockaccept(struct gab_triple gab,
    * Reset the server context, for a new handshake.
    */
   int res = br_ssl_server_reset(&client->serverclient.sc);
-  assert(res);
+  gab_assert(res, "Reset should not fail");
 
   /*
    * Initialize this with nullptrs for all the callbacks, as we write a custom
@@ -817,7 +857,7 @@ int serverdecode_pem(struct gab_triple gab, struct gab_ssl_sock *sock,
       break;
 
     case BR_PEM_END_OBJ: {
-      assert(inobject);
+      gab_assert(inobject, "Invalid event order");
 
       if (!strcmp(name, "X509 CERTIFICATE") || !strcmp(name, "CERTIFICATE")) {
         uint32_t c = sock->server.ncerts;
@@ -939,7 +979,7 @@ int clientdecode_pem(struct gab_triple gab, struct gab_ssl_sock *sock,
       break;
 
     case BR_PEM_END_OBJ: {
-      assert(inobject);
+      gab_assert(inobject, "Invalid event order");
 
       if (!strcmp(name, "X509 CERTIFICATE") || !strcmp(name, "CERTIFICATE")) {
         if (sock->client.nobj_bytes < 0) {
@@ -1027,7 +1067,7 @@ union gab_value_pair complete_sslsockbind(struct gab_triple gab,
            gab_union_cvalid(gab_nil);
   }
 
-  assert(gab_strlen(pkey) > 5);
+  gab_assert(gab_strlen(pkey) > 5, "key too big");
 
   if (serverdecode_pem(gab, sock, cert) < 0)
     return gab_union_cvalid(gab_nil);
@@ -1133,7 +1173,7 @@ union gab_value_pair resume_sslsocksend(struct gab_triple gab,
     // we didn't finish writing this amount.
     int64_t written = reentrant >> 32;
 
-    assert(written < len);
+    gab_assert(written < len, "Wrote too many");
 
     io_op_res result = sslio_write_all(sock, data + written, len - written);
 
@@ -1175,7 +1215,7 @@ union gab_value_pair resume_sslsocksend(struct gab_triple gab,
   }
 
   if (res > 0) {
-    assert(res == reentrant);
+    gab_assert(res == reentrant, "Sanity check");
     return gab_union_ctimeout(res);
   }
 
@@ -1227,7 +1267,8 @@ union gab_value_pair resume_sslserversocksend(struct gab_triple gab,
     // we didn't finish writing this amount.
     int64_t written = reentrant >> 32;
 
-    assert(written < len);
+    gab_assert(written < len,
+               "Incomplete write should write fewer than we meant to");
 
     io_op_res result = sslio_write_all(sock, data + written, len - written);
 
@@ -1270,7 +1311,7 @@ union gab_value_pair resume_sslserversocksend(struct gab_triple gab,
   }
 
   if (res > 0) {
-    assert(res == reentrant);
+    gab_assert(res == reentrant, "Sanity check");
     return gab_union_ctimeout(res);
   }
 
@@ -1523,7 +1564,9 @@ union gab_value_pair resume_filesend(struct gab_triple gab, struct gab_io *io,
                              len - result);
 
   // We wrote len bytes!)
-  gab_assert(result == len, "We should have written exactly %li bytes, result is %li.", len, result);
+  gab_assert(result == len,
+             "We should have written exactly %li bytes, result is %li.", len,
+             result);
   gab_vmpush(gab_thisvm(gab), gab_ok);
   return gab_union_cvalid(gab_nil);
 }
@@ -1550,7 +1593,7 @@ union gab_value_pair resume_socksend(struct gab_triple gab,
     return gab_union_cvalid(gab_nil);
   }
 
-  assert(result > 0);
+  gab_assert(result > 0, "Complete send should not be 0");
 
   gab_vmpush(gab_thisvm(gab), gab_ok);
   return gab_union_cvalid(gab_nil);
@@ -1680,7 +1723,7 @@ GAB_DYNLIB_NATIVE_FN(io, recv) {
     return gab_ptypemismatch(gab, vsock, gab_string(gab, tGAB_IOSOCK));
 
   gab_uint len = 0;
-  if (gab_valisnum(vlen))
+  if (gab_valisn(vlen))
     len = gab_valtou(vlen);
 
   if (gab_valkind(vlen) != kGAB_NUMBER && vlen != gab_nil)
@@ -1712,6 +1755,8 @@ readmore:
    *  data && len => valid
    *  no data, but we have len => error in len
    *  no data, no len => EOF
+   *
+   *  TODO @cio @bug: We never handle EOF!
    */
 
   if (!data.data && data.len)
@@ -1719,8 +1764,13 @@ readmore:
                       gab_string(gab, "Error reading"), gab_number(data.len)),
            gab_union_cvalid(gab_nil);
 
-  if (data.len && data.len < len) {
-    assert(data.data);
+  if (fibsize)
+    for (uint64_t i = 0; i < data.len; i++)
+      gab_fibpush(gab_thisfiber(gab), data.data[i]);
+
+  if (data.len && fibsize + data.len < len) {
+    gab_assert(data.data, "Must see valid pointer");
+
     for (uint64_t i = 0; i < data.len; i++)
       gab_fibpush(gab_thisfiber(gab), data.data[i]);
 
@@ -1728,15 +1778,13 @@ readmore:
   }
 
   if (fibsize)
-    for (uint64_t i = 0; i < data.len; i++)
-      gab_fibpush(gab_thisfiber(gab), data.data[i]);
-
-  if (fibsize)
     return gab_vmpush(gab_thisvm(gab), gab_ok,
                       gab_nbinary(gab, gab_fibsize(gab_thisfiber(gab)),
                                   gab_fibat(gab_thisfiber(gab), 0))),
            res;
 
+  else if (!data.data && !data.len)
+    return gab_vmpush(gab_thisvm(gab), gab_none), res;
   else
     return gab_vmpush(gab_thisvm(gab), gab_ok,
                       gab_nbinary(gab, data.len, (uint8_t *)data.data)),
@@ -1821,10 +1869,10 @@ GAB_DYNLIB_NATIVE_FN(io, connect) {
                                    gab_strdata(&ip), gab_valtoi(port));
   }
   case IO_SOCK_CLIENT:
-    assert(reentrant);
+    gab_assert(reentrant, "Check codepath");
     return resume_sockconnect(gab, (struct gab_sock *)sock, reentrant);
   case IO_SOCK_SSLCLIENT:
-    assert(reentrant);
+    gab_assert(reentrant, "Check codepath");
     return resume_sslsockconnect(gab, (struct gab_ssl_sock *)sock,
                                  gab_strdata(&ip), gab_arg(3), reentrant);
   default:
@@ -2091,10 +2139,8 @@ GAB_DYNLIB_MAIN_FN {
               gab_snative(gab, "stream\\send", gab_mod_io_send),
           }, );
 
-  gab_value res[] = {gab_ok, mod};
-
   return (union gab_value_pair){
       .status = gab_cvalid,
-      .aresult = a_gab_value_create(res, sizeof(res) / sizeof(gab_value)),
+      .aresult = gab_valarray(gab_ok, mod),
   };
 }

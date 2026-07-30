@@ -1,8 +1,61 @@
 #ifndef GAB_ENGINE_H
 #define GAB_ENGINE_H
 
-#include "gab.h"
+#include "cgab.h"
+#include <stdatomic.h>
 #include <stdint.h>
+
+/*
+ * Generic data structure definitions.
+ *
+ * Each of these includes defines the datastructure for the corresponding 'T'
+ * datatype.
+ */
+#define T char
+#include "slice.h"
+
+#define T char
+#include "array.h"
+
+#define T char
+#include "vector.h"
+
+#define T char *
+#define NAME cstr
+#include "slice.h"
+
+#define T uint8_t
+#include "vector.h"
+
+#define T uint32_t
+#include "vector.h"
+
+#define T uint64_t
+#include "vector.h"
+
+#define T s_char
+#include "vector.h"
+
+#define T int8_t
+#include "vector.h"
+
+#define T s_char
+#include "array.h"
+
+#define T a_char *
+#define NAME a_char
+#include "vector.h"
+
+#define T uint64_t
+#include "array.h"
+
+#define K uint64_t
+#define V uint64_t
+#define DEF_V 0
+#define HASH(a) a
+#define EQUAL(a, b) (a == b)
+#define LOAD cGAB_DICT_MAX_LOAD
+#include "dict.h"
 
 #ifndef GAB_COLORS_IMPL
 static const char *ANSI_COLORS[] = {
@@ -22,7 +75,7 @@ enum gab_bcop_kind {
 /**
  * Structure used to actually execute bytecode
  *
- * This structure is pretty large (8kb).
+ * This structure is pretty large.
  *
  * Since a lot of fibers are small and short lived, this is overkill.
  *
@@ -35,9 +88,9 @@ enum gab_bcop_kind {
 struct gab_vm {
   uint8_t *ip;
 
-  gab_value *sb, *sp, *fp, *kb;
+  gab_value *sp, *fp, *kb;
 
-  gab_value initial[cGAB_STACK_MAX];
+  gab_value sb[cGAB_STACK_MAX];
 };
 
 /**
@@ -104,9 +157,9 @@ struct gab_onative {
  *     /
  *   [
  *
- *   big_int len;
- *
- *   gab_value edge;
+ *   size_t len;
+ *   gab_value edges[];
+ *   gab_value nodes[];
  *
  *   The data array contains the keys, edges, and child values.
  *
@@ -115,24 +168,148 @@ struct gab_onative {
  *   There is no O(log(n)) happening, its just O(n) back up bc each shape
  *   needs its own node.
  *
- *   Maybe I can introduce *shortcut edges* somehow?
- *
  *   Most code doesn't traverse down the whole tree, it puts from one shape to
- * another. That does still require traversing up the tree and copying nodes in
- * O(n)
+ *   another. That does still require traversing up the tree and copying nodes
+ * in O(n)
  *
- *   gab_value data[]
+ *   It is an option to use an intern table like we do for strings.
+ *   This introduces the same gc issue that strings had - threads can no longer
+ * create shapes during a gc.
  *
+ *   This means *all* of the record & shape apis will need timeout variants.
+ *
+ *   Constraints:
+ *    - I want shapes to be collected. Otherwise, their memory will grow
+ *     indefinitely and this is not tenable.
+ *    - I want the key-data to be structurally shared. Users are expected to
+ *     use records for everything (including large data sets). Taking on large
+ *     record and adding another key should not double the memory.
+ *    - The operations are create, insert, remove. We can maybe do away with
+ * shpdata if necessary.
+ *
+ *   Implement the keys with a persistent HAMT.
+ *
+ *   Problem - hashing on removal.
+ *   When interning, we need to compute a hash of the shape
+ *   we are looking for in-order to check if its been interned.
+ *
+ *   on
+ *    - create: We see all keys. Hash the words together and voila
+ *    - insert: We see current hash state and a word to continue the hash with.
+ *    - remove: :( We see current hash state, but not a way to *remove* the
+ * impact a key had on the hash. We must traverse the tree and produce a new
+ * hash.
+ *
+ *   Removal is kind of a pathological case in general
+ *   even with a HAMT, we have to update the chosen and last element in the tree
+ * also.
+ *
+ *   This might not totally make sense. Shapes have keys appended at the end,
+ * they need to be iterated, and can be removed from anywhere. This definitely
+ * makes we want to do a linear array. We can do an optimization however, where
+ * some shapes have a *prefix shape*, followed by a list of other keys.
+ *
+ *   Then we can lazily assemble them together when shpdata is called, and
+ * promote it to a whole shape. gab_shpwithout can use a prefix shape before the
+ * index of removal, and then a suffix after
+ *
+ *   The linear array is absolutely pathological to dedupe. Is there
+ * a way to use some extra memory to speed this up?
+ *
+ *  I could allocate them in a dictionary-esque array and use linear probing.
+ *  I could keep keys in a sorted array and use binary search
+ *  I could maintain a rb-tree in the array
+ *
+ *  The problem with a sort is that the *hash* isn't on sorted keys when we
+ * compute it.
+ *   - This means arriving at the same shape in different orders will result in
+ * different hashes, and thus different shapes. But the shapes will *appear* the
+ * same because the keys are sorted. There ought to be a way to sort the keys,
+ * then hash, then create. This sort step will take care of de-duplication too.
+ *
+ *     However, it will complicate with/take, which will now require a re-sort
+ * of the new keys
+ *
+ *   Shapes (and their tree) need to be able to be collected. The tree can be
+ * persistent and shared.
+ *
+ *   gab_ushpat needs to be supported - fetching the nth value of a shape.
+ *   - This is hard to do in a HAMT type ds.
+ *   - Maybe each node could maintain how many leaves descend from it?
+ *   - Then I can check branches and their leafcounts against n and descend.
+ *   - This could work because I have to replace all nodes on the way *down* to
+ * a put anyway - I simply up each of their leafcounts by one.
+ *
+ *   Persistent HAMT for storing keys.
+ *    - To construct any given shape, I have to construct the n-1 shapes before
+ * it?. (Not tenable)
+ *
+ *   CREATE:
+ *    - construct hash, even with stride.
+ *    - check for intern
+ *    - construct a HAMT (No way other than doing N inserts. We can maybe write
+ * a mutable version like massoc, but we will waste an allocation when we
+ * collide and expand the tree
+ *    - return
+ *
+ *   PUT:
+ *    - step hash with new keys to produce new hash.
+ *    - Check for intern
+ *    - hamt_insert the new keys
+ *    - return
+ *
+ *    TAKE:
+ *    - rehash with only remaining keys
+ *    - Check for intern
+ *    - hamt_remove the old keys
+ *    - return
+ *
+ *    DATA:
+ *    - Lazily linearize the keys into a pointer subfield.
+ *    - This supports all the linear operations we need
+ *    - (ushpat, finding last key, finding first key, next key)
+ *
+ *    NOTE:
+ *    - After hashing keys, we have to compare N keys. I don't think we can
+ * avoid this
+ *    - Its either that, or traversing a tree of N nodes.
+ *
+ *   The good news is that we can cache the shapes in the bytecode. We can
+ * basically cache the transitions from one shape -> with(out) key -> new shape,
+ * and eliminate all that computation.
  */
 struct gab_oshape {
   struct gab_obj header;
 
-  uint64_t len;
+  uint8_t datalen;
 
-  v_gab_value transitions;
+  uint64_t hash, len;
 
-  gab_value keys[];
+  uint32_t nmask, lmask;
+
+  gab_value data[];
 };
+
+struct gab_oshapenode {
+  struct gab_obj header;
+
+  uint8_t datalen;
+
+  uint64_t _padding[2];
+
+  uint32_t nmask, lmask;
+
+  gab_value data[];
+};
+
+static_assert(offsetof(struct gab_oshape, nmask) ==
+              offsetof(struct gab_oshapenode, nmask));
+static_assert(offsetof(struct gab_oshape, lmask) ==
+              offsetof(struct gab_oshapenode, lmask));
+static_assert(offsetof(struct gab_oshape, data) ==
+              offsetof(struct gab_oshapenode, data));
+static_assert(offsetof(struct gab_oshape, datalen) ==
+              offsetof(struct gab_oshapenode, datalen));
 
 /**
  * @brief A block - aka a prototype and it's captures.
@@ -255,9 +432,16 @@ struct gab_ofiber {
   struct gab_vm vm;
 
   /**
-   * Result of execution
+   * Result of execution. 
+   *
+   * Embed a union gab_value_pair here, so that it can be atomic.
    */
-  union gab_value_pair res_values;
+  _Atomic gab_value res_status;
+
+  union {
+    _Atomic (gab_value *) aresult;
+    _Atomic gab_value vresult;
+  } as;
 
   /**
    * The environment after execution finished
@@ -284,10 +468,15 @@ struct gab_ofiber {
  */
 struct gab_ochannel {
   struct gab_obj header;
+
+  /* spinlock */
+  _Atomic uint32_t spinlock;
+  /* epoch */
+  _Atomic uint32_t epoch;
   /* Number of values held at member *data* */
   _Atomic uint64_t len;
   /* Values held */
-  _Atomic(gab_value *)data;
+  _Atomic(gab_value *) data;
 };
 
 /**
@@ -361,9 +550,16 @@ struct gab_oprototype {
 #define LOAD cGAB_DICT_MAX_LOAD
 #include "dict.h"
 
+#define NAME shapes
+#define K struct gab_oshape *
+#define HASH(a) (a->hash)
+#define EQUAL(a, b) (a == b)
+#define LOAD cGAB_DICT_MAX_LOAD
+#include "dict.h"
+
 #define NAME gab_modules
 #define K uint64_t
-#define V a_gab_value *
+#define V gab_value *
 #define DEF_V nullptr
 #define HASH(a) (a)
 #define EQUAL(a, b) (a == b)
@@ -386,6 +582,7 @@ struct gab_oprototype {
 #define V uint64_t
 #define HASH(a) ((intptr_t)a)
 #define EQUAL(a, b) (a == b)
+// See do_increment
 #define DEF_V (UINT8_MAX)
 #include "dict.h"
 
@@ -400,9 +597,8 @@ enum {
 
 struct gab_gc {
   d_gab_obj overflow_rc;
-  v_gab_obj dead;
+  v_gab_obj dead[GAB_GCNEPOCHS];
   gab_value msg[GAB_GCNEPOCHS];
-  gab_value mac[GAB_GCNEPOCHS];
 };
 
 typedef enum gab_token {
@@ -446,27 +642,6 @@ struct gab_src {
   } thread_bytecode[];
 };
 
-struct gab_src *gab_src(struct gab_triple gab, gab_value name, const char *src,
-                        uint64_t len);
-
-uint64_t gab_srcappend(struct gab_src *self, uint64_t len,
-                       uint8_t bc[static len], uint64_t toks[static len]);
-
-static inline void gab_srccomplete(struct gab_triple gab,
-                                   struct gab_src *self) {
-  for (int i = 0; i < self->len; i++) {
-    uint8_t *bc = malloc(self->bytecode.len);
-    memcpy(bc, self->bytecode.data, self->bytecode.len);
-
-    gab_value *ks = malloc(self->constants.len * sizeof(gab_value));
-    memcpy(ks, self->constants.data, self->constants.len * sizeof(gab_value));
-
-    self->thread_bytecode[i] = (struct src_bytecode){bc, ks};
-  }
-}
-
-void gab_srcdestroy(struct gab_src *self);
-
 /**
  * @class The 'engine'. Stores the long-lived data
  * needed for the gab environment.
@@ -479,6 +654,9 @@ struct gab_eg {
   v_gab_value_thrd err;
 
   gab_value types[kGAB_NKINDS];
+
+  int64_t sizes[kGAB_NKINDS];
+  int64_t counts[kGAB_NKINDS];
 
   // The arguments to the engine.
   gab_value args;
@@ -513,15 +691,11 @@ struct gab_eg {
   // Used to check inline caches.
   _Atomic uint64_t messages_epoch;
 
-  _Atomic gab_value macros;
-  _Atomic uint64_t macros_epoch;
-
   // The global work queue, where jobs push fibers to other jobs.
   gab_value work_channel;
 
-  // The root shape and a mutex locking it.
-  mtx_t shapes_mtx;
-  gab_value shapes;
+  // Intern table of shapes.
+  d_shapes shapes;
 
   // Intern table of strings.
   d_strings strings;
@@ -560,35 +734,28 @@ struct gab_eg {
     // (global or local), it is tracked in this queue. Once a fiber has
     // begun running in a job, *it may not migrate*. If it yields, it returns
     // to this queue.
-    q_gab_value queue;
+    q_gab_value working_queue;
+    q_gab_value_dyn waiting_queue;
 
     // GC inc/dec ref count tracking buffer.
     struct gab_gcbuf {
       uint64_t len;
-      struct gab_obj *data[cGAB_GC_MOD_BUFF_MAX];
+      struct gab_obj *data[GAB_GC_MOD_BUFF_MAX];
     } buffers[kGAB_NBUF][GAB_GCNEPOCHS];
   } jobs[];
 };
 
-union gab_value_pair gab_vmexec(struct gab_triple gab, gab_value fiber);
+GAB_API void gab_gccreate(struct gab_triple gab);
 
-bool gab_wkspawn(struct gab_triple gab, gab_value fiber);
-
-void gab_gccreate(struct gab_triple gab);
-
-void gab_gcdestroy(struct gab_triple gab);
+GAB_API void gab_gcdestroy(struct gab_triple gab);
 
 /*
  * Check if collection is necessary, and unblock the collection
  * thread if necessary
  */
-bool gab_gctrigger(struct gab_triple gab);
+GAB_API bool gab_gctrigger(struct gab_triple gab);
 
-void gab_gcdocollect(struct gab_triple gab);
-
-void gab_gcloglen(struct gab_triple gab);
-
-void gab_gcassertdone(struct gab_triple gab);
+GAB_API void gab_gcdocollect(struct gab_triple gab);
 
 enum variable_flag {
   fLOCAL_LOCAL = 1 << 0,
@@ -614,9 +781,6 @@ static inline void *gab_egalloc(struct gab_triple gab, struct gab_obj *obj,
   return calloc(1, size);
 }
 
-struct gab_ostring *gab_egstrfind(struct gab_eg *gab, uint64_t hash,
-                                  uint64_t len, const char *data);
-
 struct gab_err_argt {
   enum gab_status status;
   const char *note_fmt;
@@ -634,7 +798,7 @@ struct gab_err_argt {
  * @brief Construct a panic.
  */
 GAB_API gab_value gab_vspanicf(struct gab_triple gab, va_list vastruct,
-                       struct gab_err_argt args);
+                               struct gab_err_argt args);
 
 /**
  * @brief Print the bytecode to the stream - useful for debugging.
@@ -643,76 +807,12 @@ GAB_API gab_value gab_vspanicf(struct gab_triple gab, va_list vastruct,
  * @param proto The prototype to inspect
  * @return non-zero if an error occured.
  */
-GAB_API int gab_fmodinspect(FILE *stream, gab_value prototype);
+GAB_API int64_t gab_fmodinspect(FILE *stream, gab_value prototype);
 
 /**
  * @brief Inspect a gab_value out to stream, recursing depth times.
  */
-int gab_fvalinspect(FILE *stream, gab_value self, int depth);
-
-/* Helpers used by all the sprintf methods */
-static inline int vsnprintf_through(char **dst, size_t *n, const char *fmt,
-                                    va_list va) {
-  int res = vsnprintf(*dst, *n, fmt, va);
-
-  if (res > *n) {
-    *dst += *n;
-    *n = 0;
-    return -1;
-  }
-
-  *dst += res;
-  *n -= res;
-
-  return res;
-}
-
-static inline int snprintf_through(char **dst, size_t *n, const char *fmt,
-                                   ...) {
-  va_list va;
-  va_start(va, fmt);
-
-  int res = vsnprintf_through(dst, n, fmt, va);
-  va_end(va);
-
-  return res;
-}
-
-/* Helpers used by all the sprintf methods */
-static inline int gvsnprintf_through(char **dst, size_t *n, const char *fmt,
-                                     va_list va) {
-  int res = gab_vsprintf(*dst, *n, fmt, va);
-
-  if (res < 0) {
-    *dst += *n;
-    *n = 0;
-    return -1;
-  }
-
-  *dst += res;
-  *n -= res;
-
-  return res;
-}
-
-static inline int gsnprintf_through(char **dst, size_t *n, const char *fmt,
-                                    ...) {
-  va_list va;
-  va_start(va, fmt);
-
-  int res = gvsnprintf_through(dst, n, fmt, va);
-  va_end(va);
-
-  return res;
-}
-
-bool gab_wkspawn(struct gab_triple gab, gab_value fiber);
-
-void gab_jbalive(struct gab_triple gab, int32_t wkid);
-
-void gab_jbunalive(struct gab_triple gab, int32_t wkid);
-
-gab_value __gab_shape(struct gab_triple gab, uint64_t len);
+GAB_API int64_t gab_fvalinspect(FILE *stream, gab_value self, int depth);
 
 static inline uint8_t *proto_srcbegin(struct gab_triple gab,
                                       struct gab_oprototype *p) {
@@ -729,20 +829,12 @@ static inline uint8_t *proto_ip(struct gab_triple gab,
   return proto_srcbegin(gab, p) + p->offset;
 }
 
-cGAB_VM_OPCODE_ATTRIBUTES
-union gab_value_pair vm_eerror(struct gab_triple *__gab, struct gab_vm *__vm,
-                               uint8_t *__ip, gab_value *__kb, gab_value *__fb,
-                               gab_value *__sp);
+cGAB_VM_OPCODE_ATTRIBUTES union gab_value_pair
+__gab_vmeerror(struct gab_triple *__gab, struct gab_vm *__vm, uint8_t *__ip,
+          gab_value *__kb, gab_value *__fb, gab_value *__sp);
 
-cGAB_VM_OPCODE_ATTRIBUTES
-union gab_value_pair vm_ok(struct gab_triple *__gab, struct gab_vm *__vm,
-                           uint8_t *__ip, gab_value *__kb, gab_value *__fb,
-                           gab_value *__sp);
+cGAB_VM_OPCODE_ATTRIBUTES union gab_value_pair
+__gab_vmok(struct gab_triple *__gab, struct gab_vm *__vm, uint8_t *__ip,
+      gab_value *__kb, gab_value *__fb, gab_value *__sp);
 
-union gab_value_pair vm_terminate(struct gab_triple gab, const char *fmt, ...);
-
-union gab_value_pair vm_error(struct gab_triple gab, enum gab_status s,
-                              const char *fmt, ...);
-
-union gab_value_pair vm_yield(struct gab_triple gab, uintptr_t value);
 #endif

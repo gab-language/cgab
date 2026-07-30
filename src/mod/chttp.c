@@ -21,7 +21,7 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-#include "gab.h"
+#include "cgab.h"
 #include "llhttp.h"
 
 #define M_HTTP_VERSION "http\\version"
@@ -276,7 +276,8 @@ gab_value build_http(llhttp_t *parser) {
   }
   }
 
-  assert(false && "UNREACHABLE");
+  gab_assert(false ,"UNREACHABLE");
+  return gab_cundefined;
 }
 
 #define defstatus_handlers(code, name, desc)                                   \
@@ -343,10 +344,8 @@ GAB_DYNLIB_MAIN_FN {
                    gab_snative(gab, "as\\http", gab_mod_http_decode),
                });
 
-  gab_value res[] = {gab_ok, mod};
-
   return (union gab_value_pair){
       .status = gab_cvalid,
-      .aresult = a_gab_value_create(res, sizeof(res) / sizeof(gab_value)),
+      .aresult = gab_valarray(gab_ok, mod),
   };
 }

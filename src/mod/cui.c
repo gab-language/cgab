@@ -1,7 +1,7 @@
 /**
  *  MIT License
  *
- *  Copyright (c) 2023 Teddy Randby
+ *  Copyright (c) 2023-2026 Teddy Randby
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy
  *  of this software and associated documentation files (the "Software"), to
@@ -49,6 +49,8 @@
 #undef GLAD_GL_IMPLEMENTATION
 #undef GLAD_GLX_IMPLEMENTATION
 
+#define RGFW_USE_XDL
+#define RGFW_NO_IOKIT
 #define RGFW_IMPLEMENTATION
 #define RGFW_OPENGL
 #define RGFW_PRINT_ERRORS
@@ -103,7 +105,8 @@ unsigned char fontData[] = {
 #define SOKOL_CLAY_IMPL
 #include "Clay/renderers/sokol/sokol_clay.h"
 
-#include "gab.h"
+
+#include "cgab.h"
 
 #define UI_BOX_TYPE "gab\\ui"
 
@@ -144,7 +147,8 @@ struct ui {
   };
 };
 
-#define MAX_MS_PER_FRAME 15
+#define MAX_MS_PER_FRAME 15 
+#define CHNTAKE_WAITTIME 0
 
 struct timestep {
   clock_t dt;
@@ -419,7 +423,7 @@ bool clay_termbox_update(struct gab_triple gab, struct ui *gui,
   }
 
 err:
-  assert(false && "UNREACHABLE");
+  gab_assert(false, "UNREACHABLE");
   return false;
 }
 
@@ -624,7 +628,7 @@ Clay_TransitionElementConfig parseTransition(struct gab_triple gab,
   return (Clay_TransitionElementConfig){
       .handler = Clay_EaseOut,
       .duration =
-          gab_valkind(vduration) == kGAB_NUMBER ? gab_valtou(vduration) : 0.2f,
+          gab_valkind(vduration) == kGAB_NUMBER ? gab_valtou(vduration) : 1.f,
       .properties = properties,
   };
 }
@@ -796,7 +800,7 @@ union gab_value_pair render_rect(struct gab_triple gab, struct ui *gui,
 
 const struct ui_image *image_cache_read(struct gab_triple gab, struct ui *gui,
                                         gab_value data) {
-  assert(gab.wkid == 1);
+  gab_assert(gab.wkid == 1, "Can only run on main thread");
 
   size_t idx = d_ui_image_index_of(&gui->image_cache, data);
   if (d_ui_image_iexists(&gui->image_cache, idx))
@@ -830,14 +834,14 @@ const struct ui_image *image_cache_read(struct gab_triple gab, struct ui *gui,
     });
 
     sg_resource_state state = sg_query_image_state(insert.as.gui.img);
-    assert(state == SG_RESOURCESTATE_VALID);
+    gab_assert(state == SG_RESOURCESTATE_VALID, "Image state should be valid");
 
     insert.as.gui.view = sg_make_view(&(struct sg_view_desc){
         .texture.image = insert.as.gui.img,
     });
 
     state = sg_query_view_state(insert.as.gui.view);
-    assert(state == SG_RESOURCESTATE_VALID);
+    gab_assert(state == SG_RESOURCESTATE_VALID, "View state should be valid");
 
     insert.as.gui.sclay = (sclay_image){
         .view = insert.as.gui.view,
@@ -856,7 +860,7 @@ const struct ui_image *image_cache_read(struct gab_triple gab, struct ui *gui,
   }
 
   bool inserted = d_ui_image_insert(&gui->image_cache, data, insert);
-  assert(inserted);
+  gab_assert(inserted, "Image should have inserted");
 
   return &gui->image_cache.buckets[idx].val;
 };
@@ -915,7 +919,7 @@ union gab_value_pair render_text(struct gab_triple gab, struct ui *gui,
   // This leaks every time
   uint64_t len = gab_strlen(content);
   char *str = malloc(len + 1);
-  assert(str != nullptr);
+  gab_assert(str != nullptr, "Assume malloc can't fail");
   strcpy(str, gab_strdata(&content));
 
   // not guaranteed to work here.
@@ -1113,6 +1117,8 @@ GAB_DYNLIB_NATIVE_FN(ui, hui_event) {
     ev[1] = gab_message(gab, "tick");
   }
 
+  gab_value tk = gab_cinvalid;
+
   for (;;) {
     if (gab_chnisclosed(gui->appch))
       goto fin;
@@ -1121,12 +1127,12 @@ GAB_DYNLIB_NATIVE_FN(ui, hui_event) {
       goto fin;
 
     // Try to put on the channel.
-    gab_value app = gab_untchnput(gab, gui->evch, LEN_CARRAY(ev), ev, 1);
+    tk = gab_untchnput(gab, gui->evch, LEN_CARRAY(ev), ev, 1);
 
-    if (app == gab_cundefined)
+    if (tk == gab_cundefined)
       goto fin;
 
-    if (app == gab_cinvalid) {
+    if (tk == gab_cinvalid) {
       res = gab_panicf(gab, "Crashed UI thrd due to some error");
       goto err;
     }
@@ -1145,7 +1151,7 @@ yield:
   case sGAB_TERM:
     goto fin;
   default:
-    return gab_union_ctimeout(gab_cinvalid);
+    return gab_union_ctimeout(tk);
   }
 
 err:
@@ -1204,7 +1210,7 @@ GAB_DYNLIB_NATIVE_FN(ui, hui_render) {
     if (gab_chnisclosed(gui->evch))
       goto fin;
 
-    gab_value app = gab_tchntake(gab, gui->appch, 1);
+    gab_value app = gab_tchntake(gab, gui->appch, CHNTAKE_WAITTIME);
 
     if (app == gab_cundefined)
       goto fin;
@@ -1226,7 +1232,8 @@ GAB_DYNLIB_NATIVE_FN(ui, hui_render) {
     /* Try to render, so that we can see errors */
     res = render_componentlist(gab, gui, app, CLAY_TOP_TO_BOTTOM,
                                (Clay_ChildAlignment){});
-    Clay_RenderCommandArray cmd = Clay_EndLayout(step.dt_d);
+
+    Clay_EndLayout(step.dt_d);
 
     if (res.status != gab_cundefined)
       goto err;
@@ -1279,12 +1286,9 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
     gab_value *ev = gab_fibat(gab_thisfiber(gab), 0);
     size_t len = gab_fibsize(gab_thisfiber(gab)) / sizeof(gab_value);
 
-    if (gab_chnmatches(gui->evch, ev)) {
-      res = gab_cvalid;
+    if (gab_chnmatches(gui->evch, reentrant)) {
+      res = reentrant;
       goto yield;
-    } else if (reentrant != gab_cvalid) {
-      res = gab_ctimeout;
-      goto put_event;
     } else {
       res = gab_cundefined;
       // Otherwise we succeeded, and can deref the values and go to next
@@ -1326,7 +1330,7 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
 
       // Assert we have a number of bytes which is reasonable for a list of
       // gab_values
-      assert(gab_fibsize(gab_thisfiber(gab)) % sizeof(gab_value) == 0);
+      gab_assert(gab_fibsize(gab_thisfiber(gab)) % sizeof(gab_value) == 0, "Bytes should be divisible by sizeof(gab_value)");
       // Determine the number of values
       size_t len = gab_fibsize(gab_thisfiber(gab)) / sizeof(gab_value);
       // Get the ptr
@@ -1337,8 +1341,8 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
       // We can yield with some value if we did put something on the channel
       // successfully
       // If we're already putting, and we match this event, then yield.
-      if (reentrant && gab_chnmatches(gui->evch, ev)) {
-        res = gab_ctimeout;
+      if (reentrant && gab_chnmatches(gui->evch, reentrant)) {
+        res = reentrant;
         goto yield;
       }
 
@@ -1377,7 +1381,6 @@ yield:
   if (gab_chnisclosed(gui->evch))
     goto fin;
 
-  assert(res != 0);
   return gab_union_ctimeout(res);
 
 fin:
@@ -1424,7 +1427,7 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
   union gab_value_pair res;
 
   for (;;) {
-    gab_value app = gab_tchntake(gab, gui->appch, 1);
+    gab_value app = gab_tchntake(gab, gui->appch, CHNTAKE_WAITTIME);
 
     if (gab_chnisclosed(gui->appch))
       goto fin;
@@ -1505,11 +1508,14 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_render) {
   struct ui *gui = gab_boxdata(vgui);
 
   if (!gui->ready) {
+    RGFW_init("gab", RGFW_initOpenGL);
+
     RGFW_glHints *hints = RGFW_getGlobalHints_OpenGL();
     hints->samples = 1;
     hints->major = 3;
     hints->minor = 1;
     RGFW_setGlobalHints_OpenGL(hints);
+
 
     gui->win.userPtr = &gui;
     if (!RGFW_createWindowPtr("", 500, 500, 500, 500, RGFW_windowOpenGL,
@@ -1580,7 +1586,7 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_render) {
     if (gab_chnisclosed(gui->evch))
       goto fin;
 
-    gab_value app = gab_tchntake(gab, gui->appch, 1);
+    gab_value app = gab_tchntake(gab, gui->appch, CHNTAKE_WAITTIME);
 
     if (app == gab_cundefined)
       goto fin;
@@ -1686,12 +1692,9 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_event) {
     gab_value *ev = gab_fibat(gab_thisfiber(gab), 0);
     size_t len = gab_fibsize(gab_thisfiber(gab)) / sizeof(gab_value);
 
-    if (gab_chnmatches(gui->evch, ev)) {
-      res = gab_cvalid;
+    if (gab_chnmatches(gui->evch, reentrant)) {
+      res = reentrant;
       goto yield;
-    } else if (reentrant != gab_cvalid) {
-      res = gab_ctimeout;
-      goto put_event;
     } else {
       res = gab_cundefined;
       // Otherwise we succeeded, and can deref the values and go to next
@@ -1730,15 +1733,15 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_event) {
 
       // Assert we have a number of bytes which is reasonable for a list of
       // gab_values
-      assert(gab_fibsize(gab_thisfiber(gab)) % sizeof(gab_value) == 0);
-      assert(gab_fibsize(gab_thisfiber(gab)) > 0);
+      gab_assert(gab_fibsize(gab_thisfiber(gab)) % sizeof(gab_value) == 0, "Bytes should be divisible by sizeof(gab_value)");
+      gab_assert(gab_fibsize(gab_thisfiber(gab)) > 0, "Should have bytes");
       // Determine the number of values
       size_t len = gab_fibsize(gab_thisfiber(gab)) / sizeof(gab_value);
       // Get the ptr
       gab_value *ev = gab_fibat(gab_thisfiber(gab), 0);
 
-      if (reentrant && gab_chnmatches(gui->evch, ev)) {
-        res = gab_ctimeout;
+      if (reentrant && gab_chnmatches(gui->evch, reentrant)) {
+        res = reentrant;
         goto yield;
       }
 
@@ -1768,7 +1771,7 @@ yield:
   if (gab_chnisclosed(gui->evch))
     goto fin;
 
-  assert(res != 0);
+  gab_assert(res != 0, "Cannot yield res == 0");
   return gab_union_ctimeout(res);
 
 fin:
@@ -1836,7 +1839,7 @@ GAB_DYNLIB_NATIVE_FN(ui, run) {
                .receiver = gab_snative(gab, render_rec_name, render_rec_target),
                .len = 1,
                .argv = (gab_value[]){vgui},
-               .pin = 1,
+               .pinmask = 1,
            });
 
   if (res.status != gab_cvalid) {
@@ -1849,7 +1852,7 @@ GAB_DYNLIB_NATIVE_FN(ui, run) {
                .receiver = gab_snative(gab, event_rec_name, event_rec_target),
                .len = 1,
                .argv = (gab_value[]){vgui},
-               .pin = 1,
+               .pinmask = 1,
            });
 
   if (res.status != gab_cvalid) {
@@ -1868,10 +1871,8 @@ GAB_DYNLIB_MAIN_FN {
               gab_snative(gab, "run", gab_mod_ui_run),
           }, );
 
-  gab_value res[] = {gab_ok, mod};
-
   return (union gab_value_pair){
       .status = gab_cvalid,
-      .aresult = a_gab_value_create(res, sizeof(res) / sizeof(gab_value)),
+      .aresult = gab_valarray(gab_ok, mod),
   };
 }

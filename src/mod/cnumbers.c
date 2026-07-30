@@ -1,7 +1,7 @@
 /**
  *  MIT License
  *
- *  Copyright (c) 2023 Teddy Randby
+ *  Copyright (c) 2023-2026 Teddy Randby
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy
  *  of this software and associated documentation files (the "Software"), to
@@ -22,7 +22,7 @@
  * IN THE SOFTWARE.
  */
 
-#include "gab.h"
+#include "cgab.h"
 
 // Required for windows
 #define _USE_MATH_DEFINES
@@ -208,10 +208,8 @@ GAB_DYNLIB_MAIN_FN {
               gab_snative(gab, "float\\between", gab_mod_number_between),
           });
 
-  gab_value res[] = {gab_ok, mod};
-
   return (union gab_value_pair){
       .status = gab_cvalid,
-      .aresult = a_gab_value_create(res, sizeof(res) / sizeof(gab_value)),
+      .aresult = gab_valarray(gab_ok, mod),
   };
 }

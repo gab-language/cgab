@@ -1,7 +1,7 @@
 /**
  *  MIT License
  *
- *  Copyright (c) 2023 Teddy Randby
+ *  Copyright (c) 2023-2026 Teddy Randby
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy
  *  of this software and associated documentation files (the "Software"), to
@@ -22,7 +22,7 @@
  * IN THE SOFTWARE.
  */
 
-#include "gab.h"
+#include "cgab.h"
 #include <stdint.h>
 
 GAB_DYNLIB_NATIVE_FN(shp, at) {
@@ -32,7 +32,7 @@ GAB_DYNLIB_NATIVE_FN(shp, at) {
   if (!gab_valisshp(shp))
     return gab_pktypemismatch(gab, shp, kGAB_SHAPE);
 
-  if (!gab_valisnum(key))
+  if (!gab_valisn(key))
     return gab_pktypemismatch(gab, shp, kGAB_NUMBER);
 
   gab_uint idx = gab_valtou(key);
@@ -210,7 +210,7 @@ GAB_DYNLIB_NATIVE_FN(shp, seq_next) {
   if (gab_valkind(shp) != kGAB_SHAPE)
     return gab_pktypemismatch(gab, shp, kGAB_SHAPE);
 
-  if (!gab_valisnum(old_key))
+  if (!gab_valisn(old_key))
     return gab_pktypemismatch(gab, old_key, kGAB_NUMBER);
 
   uint64_t len = gab_shplen(shp);
@@ -244,12 +244,12 @@ GAB_DYNLIB_NATIVE_FN(shp, from_list) {
     return gab_panicf(gab, "Should be a list, not @", gab_recshp(list));
 
   uint64_t len = gab_reclen(list);
-  gab_value* keys = malloc(len * sizeof(gab_value));
+  gab_value *keys = malloc(len * sizeof(gab_value));
   for (uint64_t i = 0; i < len; i++) {
     keys[i] = gab_uvrecat(list, i);
   }
 
-  gab_value shp = gab_shape(gab, 1, len, keys, nullptr);
+  gab_value shp = gab_shape(gab, 1, len, keys);
   gab_push(gab, shp);
   free(keys);
 
@@ -321,10 +321,8 @@ GAB_DYNLIB_MAIN_FN {
               gab_snative(gab, "seq\\init", gab_mod_shp_seq_init),
           });
 
-  gab_value res[] = {gab_ok, gab_strtomsg(t)};
-
   return (union gab_value_pair){
       .status = gab_cvalid,
-      .aresult = a_gab_value_create(res, sizeof(res) / sizeof(gab_value)),
+      .aresult = gab_valarray(gab_ok, gab_strtomsg(t)),
   };
 }

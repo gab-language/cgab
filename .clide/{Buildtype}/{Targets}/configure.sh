@@ -15,19 +15,15 @@ export binflags
 
 # Create a small script which will export the variables we need, and then 
 case "$buildtype" in
-  debug)          cflags="-g -O0 -fsanitize=address,undefined,leak,memory -DcGAB_THREADS_NATIVE" ;;
+  debug)          cflags="-g -O0 -fsanitize=address,undefined -DcGAB_THREADS_NATIVE" ;;
   debugoptimized) cflags="-g -O2 -DcGAB_THREADS_NATIVE -DNDEBUG" ;;
-  deterministic)  cflags="-g -O0 -fsanitize=address,undefined,leak,memory -Ivendor/unthread/include" ;;
-  deterministicoptimized)  cflags="-g -O2 -Ivendor/unthread/include" ;;
-  release)        cflags="-Os -DcGAB_THREADS_NATIVE -DNDEBUG"    ;;
+  release)        cflags="-O3 -DcGAB_THREADS_NATIVE -DNDEBUG"    ;;
 esac
 
 # For the deterministic build, we have to include the unthread.o library.
 case "$buildtype" in
   debug)          binflags="" ;;
   debugoptimized) binflags="" ;;
-  deterministic)  binflags="vendor/unthread/bin/unthread.o" ;;
-  deterministicoptimized)  binflags="vendor/unthread/bin/unthread.o" ;;
   release)        binflags=""    ;;
 esac
 
@@ -38,10 +34,10 @@ export dynlib_fileending=""
 
 function configure_target() {
   if [[ "$1" =~ "linux" ]]; then
-    cflags="$cflags $unixflags -D_GNU_SOURCE=1 -DGAB_PLATFORM_LINUX -isystem vendor/x11-headers"
+    cflags="$cflags $unixflags -D_GNU_SOURCE=1 -DGAB_PLATFORM_LINUX"
     dynlib_fileending=".so"
   elif [[ "$1" =~ "mac" ]]; then
-    cflags="$cflags $unixflags -D_DARWIN_C_SOURCE=1 -DGAB_PLATFORM_MACOS -isystem vendor/xcode-frameworks/include -L vendor/xcode-frameworks/lib -F vendor/xcode-frameworks/Frameworks"
+    cflags="$cflags $unixflags -D_DARWIN_C_SOURCE=1 -DGAB_PLATFORM_MACOS"
     dynlib_fileending=".dylib"
   elif [[ "$1" =~ "windows" ]]; then
     cflags="$cflags $winflags -DOEMRESOURCE"
@@ -52,12 +48,6 @@ function configure_target() {
   fi
 
   echo "#!/usr/bin/env bash" >> "$1.configuration"
-  echo "mkdir -p build-$1" >> "$1.configuration"
-  echo "mkdir -p build-$1/mod" >> "$1.configuration"
-  echo "mkdir -p build-$1/gab" >> "$1.configuration"
-  echo "mkdir -p build-$1/cgab" >> "$1.configuration"
-  echo "mkdir -p build-$1/stencil" >> "$1.configuration"
-  echo "mkdir -p build-$1/jit" >> "$1.configuration"
   echo "export GAB_CCFLAGS=\""$cflags"\"" >> "$1.configuration"
   echo "export GAB_BINARYFLAGS=\""$binflags"\"" >> "$1.configuration"
   echo "export GAB_TARGETS=\""$1"\"" >> "$1.configuration"
@@ -68,14 +58,14 @@ function configure_target() {
   echo "export cstrings_FLAGS=\"-lgrapheme\"" >> "$1.configuration"
 
   if [[ "$1" =~ "linux" ]]; then
-    echo "export cui_FLAGS=\"-DRGFW_USE_XDL\"" >> "$1.configuration"
-    echo "export cio_FLAGS=\"-lbearssl -DQIO_LINUX\"" >> "$1.configuration"
+    echo "export cui_FLAGS=\"-isystem vendor/x11-headers\"" >> "$1.configuration"
+    echo "export cio_FLAGS=\"-lbearssl\"" >> "$1.configuration"
   elif [[ "$1" =~ "windows" ]]; then
     echo "export cui_FLAGS=\"-lopengl32 -lgdi32\"" >> "$1.configuration"
-    echo "export cio_FLAGS=\"-lbearssl -DQIO_WINDOWS -lws2_32\"" >> "$1.configuration"
+    echo "export cio_FLAGS=\"-lbearssl -lws2_32\"" >> "$1.configuration"
   elif [[ "$1" =~ "mac" ]]; then
-    echo "export cui_FLAGS=\"-DRGFW_NO_IOKIT -framework Cocoa\"" >> "$1.configuration"
-    echo "export cio_FLAGS=\"-lbearssl -DQIO_MACOS\"" >> "$1.configuration"
+    echo "export cui_FLAGS=\"-isystem vendor/xcode-frameworks/include -L vendor/xcode-frameworks/lib -F vendor/xcode-frameworks/Frameworks -framework Cocoa\"" >> "$1.configuration"
+    echo "export cio_FLAGS=\"-lbearssl\"" >> "$1.configuration"
   fi
 
   chmod +x "$1.configuration"

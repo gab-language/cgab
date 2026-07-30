@@ -1,7 +1,7 @@
 /**
  *  MIT License
  *
- *  Copyright (c) 2023 Teddy Randby
+ *  Copyright (c) 2023-2026 Teddy Randby
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy
  *  of this software and associated documentation files (the "Software"), to
@@ -25,7 +25,7 @@
 #define JSMN_STATIC
 #include "jsmn/jsmn.h"
 
-#include "gab.h"
+#include "cgab.h"
 
 bool unescape_into(char *buf, const char *str, size_t len) {
   size_t buflen = 0;
@@ -252,10 +252,8 @@ GAB_DYNLIB_MAIN_FN {
                    gab_snative(gab, "as\\json", gab_mod_json_decode),
                });
 
-  gab_value res[] = {gab_ok};
-
   return (union gab_value_pair){
       .status = gab_cvalid,
-      .aresult = a_gab_value_create(res, sizeof(res) / sizeof(gab_value)),
+      .aresult = gab_valarray(gab_ok),
   };
 }

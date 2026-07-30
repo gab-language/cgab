@@ -1,7 +1,7 @@
 /**
  *  MIT License
  *
- *  Copyright (c) 2023 Teddy Randby
+ *  Copyright (c) 2023-2026 Teddy Randby
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy
  *  of this software and associated documentation files (the "Software"), to
@@ -22,9 +22,12 @@
  * IN THE SOFTWARE.
  */
 
-#include "gab.h"
+#include "cgab.h"
 #include "libgrapheme/grapheme.h"
 #include <ctype.h>
+
+#define T char
+#include "slice.h"
 
 static inline bool instr(char c, const char *set) {
   while (*set != '\0')
@@ -188,7 +191,7 @@ GAB_DYNLIB_NATIVE_FN(binary, tos) {
 
   gab_value str = gab_bintostr(bin);
 
-  if (str == gab_cvalid)
+  if (str == gab_cinvalid)
     gab_vmpush(gab_thisvm(gab), gab_err,
                gab_string(gab, "Binary is not valid UTF-8"));
   else
@@ -755,10 +758,8 @@ GAB_DYNLIB_MAIN_FN {
               gab_snative(gab, "pop", gab_mod_string_pop),
           });
 
-  gab_value res[] = {gab_ok, gab_strtomsg(t)};
-
   return (union gab_value_pair){
       .status = gab_cvalid,
-      .aresult = a_gab_value_create(res, sizeof(res) / sizeof(gab_value)),
+      .aresult = gab_valarray(gab_ok, gab_strtomsg(t)),
   };
 }

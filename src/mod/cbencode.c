@@ -1,7 +1,7 @@
 /**
  *  MIT License
  *
- *  Copyright (c) 2023 Teddy Randby
+ *  Copyright (c) 2023-2026 Teddy Randby
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy
  *  of this software and associated documentation files (the "Software"), to deal
@@ -25,7 +25,7 @@
 #define BENCODE_IMPL
 #include "bencode-c/bencode.h"
 
-#include "gab.h"
+#include "cgab.h"
 
 int push_value(struct gab_triple gab, struct bencode *bncd,
                v_gab_value *stack) {
@@ -136,10 +136,8 @@ GAB_DYNLIB_MAIN_FN {
                    gab_snative(gab, "as\\bencode", gab_mod_bencode_decode),
                });
 
-  gab_value res[] = {gab_ok};
-
   return (union gab_value_pair){
       .status = gab_cvalid,
-      .aresult = a_gab_value_create(res, sizeof(res) / sizeof(gab_value)),
+      .aresult = gab_valarray(gab_ok),
   };
 }

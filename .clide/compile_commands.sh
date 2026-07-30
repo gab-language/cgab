@@ -11,7 +11,7 @@ fi
 export GAB_BUILDTYPE=
 export GAB_CCFLAGS=
 export GAB_TARGETS=
-source configuration || exit 1
+source *.configuration || exit 1
 targets="$GAB_TARGETS"
 
 export unixflags="-DGAB_PLATFORM_UNIX -D_POSIX_C_SOURCE=200809L"
@@ -28,6 +28,6 @@ elif [[ "$targets" =~ "windows" ]]; then
   platform="$winflags"
 fi
 
-flags="-std=c2x -fPIC -Wall -DGAB_CORE -Iinclude -Ivendor -Lbuild-$targets -DGAB_TARGET_TRIPLE=\"$targets\" -DGAB_DYNLIB_FILEENDING=\"$dynlib_fileending\" $GAB_CCFLAGS"
+flags="-std=c2x -fPIC -Wall -DGAB_CORE -Iinclude -Ivendor -Lbuild-$targets -DGAB_BUILDTYPE=\"$GAB_BUILDTYPE\" -DGAB_TARGET_TRIPLE=\"$targets\" -DGAB_DYNLIB_FILEENDING=\"$dynlib_fileending\" $GAB_CCFLAGS"
 
-bear -- clang $flags $platform -DGAB_CORE -c -o "build-$targets/libcgab.a" "src/gab/main.c"
+bear -- clang $flags $platform -DGAB_CORE -c -o "build-$targets/libcgab.a" "src/gab/gab.c"
