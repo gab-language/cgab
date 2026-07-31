@@ -408,7 +408,7 @@
  * Static size of the gc mod buffers. Statically known from the below inputs.
  * essentially: sizeof(stack) * max_num_stacks
  */
-#define GAB_GC_MOD_BUFF_MAX (cGAB_STACK_MAX * cGAB_WORKER_LOCALQUEUE_MAX)
+#define GAB_GC_MOD_BUFF_MAX (cGAB_STACK_MAX * (cGAB_WORKER_LOCALQUEUE_MAX + 1))
 
 #if GAB_GC_MOD_BUFF_MAX < (cGAB_STACK_MAX * cGAB_WORKER_LOCALQUEUE_MAX)
 #error "cGAB_GC_MOD_BUFF_MAX must be greater than to cGAB_STACK_MAX"

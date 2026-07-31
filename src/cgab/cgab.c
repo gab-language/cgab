@@ -1228,7 +1228,6 @@ int32_t __gab_jbgc(void *data) {
   fprintf(stderr, "[GCWORKER] BAILING\n");
 #endif
   free(g);
-  v_gab_value_destroy(&job->lock_keep);
   cnd_destroy(&gab.eg->gc_cnd);
   mtx_unlock(&gab.eg->gc_mtx);
   return 0;
@@ -1490,8 +1489,6 @@ bail:
       gab.wkid, job->locked);
 
   __gab_jbunalive(gab, gab.wkid);
-
-  v_gab_value_destroy(&job->lock_keep);
 }
 
 GAB_API uint64_t gab_egalive(struct gab_eg *eg) {
@@ -1567,7 +1564,7 @@ GAB_INTERNAL bool __gab_job(struct gab_triple gab, struct gab_job *job,
 #endif
 
   job->locked = 0;
-  v_gab_value_create(&job->lock_keep, 8);
+  job->nlocked = 0;
   q_gab_value_create(&job->working_queue, 32);
   q_gab_value_dyn_create(&job->waiting_queue, 32);
 
@@ -3912,7 +3909,11 @@ GAB_INTERNAL struct gab_obj *__gab_objcreate(struct gab_triple gab, uint64_t sz,
 
   struct gab_job *wk = gab.eg->jobs + gab.wkid;
   if (wk->locked) {
-    v_gab_value_push(&wk->lock_keep, __gab_obj(self));
+    gab_assert(
+        wk->nlocked < GAB_GC_MOD_BUFF_MAX,
+        "Ran out of space when creating object while in locked state. %u < %u",
+        wk->nlocked, GAB_GC_MOD_BUFF_MAX);
+    wk->lockbuf[wk->nlocked++] = __gab_obj(self);
     // TODO @cgab @bug: Is buffering when locked correct?
     // I think this would just leak memory
     // if it actually did anything.
@@ -8679,6 +8680,7 @@ GAB_INTERNAL gab_value __gab_prsexpbody(struct gab_triple gab,
   uint64_t begin = parser->offset;
 
   gab_value result = __gab_nodeempty(gab, parser);
+  gab_iref(gab, result);
 
   __gab_prsnewlines(gab, parser);
 
@@ -8691,9 +8693,18 @@ GAB_INTERNAL gab_value __gab_prsexpbody(struct gab_triple gab,
       return gab_cinvalid;
 
     gab_value tup = __gab_nodeval(gab, exp);
+    gab_iref(gab, tup);
+
     __gab_nodeinfosteal(parser->src, exp, tup);
 
-    result = gab_lstcat(gab, result, tup);
+    gab_value newresult = gab_lstcat(gab, result, tup);
+
+    gab_iref(gab, newresult);
+    gab_dref(gab, result);
+    gab_dref(gab, exp);
+    gab_dref(gab, tup);
+
+    result = newresult;
 
     if (result == gab_cinvalid)
       return gab_cinvalid;
@@ -8716,6 +8727,7 @@ GAB_INTERNAL gab_value __gab_prsexpuntil(struct gab_triple gab,
   uint64_t begin = parser->offset;
 
   gab_value result = __gab_nodeempty(gab, parser);
+  gab_iref(gab, result);
 
   __gab_prsnewlines(gab, parser);
 
@@ -8727,7 +8739,12 @@ GAB_INTERNAL gab_value __gab_prsexpuntil(struct gab_triple gab,
     if (exp == gab_cinvalid)
       return gab_cinvalid;
 
-    result = gab_lstcat(gab, result, exp);
+    gab_value newresult = gab_lstcat(gab, result, exp);
+    gab_iref(gab, newresult);
+    gab_dref(gab, result);
+    gab_dref(gab, exp);
+
+    result = newresult;
 
     if (result == gab_cinvalid)
       return gab_cinvalid;
@@ -8759,6 +8776,7 @@ GAB_INTERNAL gab_value __gab_prsexp(struct gab_triple gab,
   uint64_t begin = parser->offset;
 
   gab_value node = rule.prefix(gab, parser, gab_cinvalid);
+  gab_iref(gab, node);
 
   gab_assert(node != gab_cundefined, "Invalid node\n");
 
@@ -8789,8 +8807,12 @@ GAB_INTERNAL gab_value __gab_prsexp(struct gab_triple gab,
 
     rule = __gab_prsrule(__gab_prsprevtok(parser));
 
-    if (rule.infix != nullptr)
-      node = rule.infix(gab, parser, node);
+    if (rule.infix != nullptr) {
+      gab_value newnode = rule.infix(gab, parser, node);
+      gab_iref(gab, newnode);
+      gab_dref(gab, node);
+      node = newnode;
+    }
 
     gab_assert(node != gab_cundefined, "Invalid node\n");
 
@@ -9142,8 +9164,6 @@ GAB_API union gab_value_pair gab_parse(struct gab_triple gab,
 
   args.name = args.name ? args.name : "__main__";
 
-  gab_gclock(gab);
-
   gab_value name = gab_string(gab, args.name);
 
   struct gab_src *src =
@@ -9153,8 +9173,6 @@ GAB_API union gab_value_pair gab_parse(struct gab_triple gab,
   struct parser parser = {.src = src, .err = gab_cundefined};
 
   gab_value ast = __gab_parse(gab, &parser);
-
-  gab_gcunlock(gab);
 
   gab_assert(ast != gab_cinvalid || parser.err != gab_cundefined,
              "Shall either have an ast or an error");
@@ -10640,8 +10658,6 @@ GAB_API union gab_value_pair gab_build(struct gab_triple gab,
 
   args.name = args.name ? args.name : "__main__";
 
-  gab_gclock(gab);
-
   gab_value mod = gab_string(gab, args.name);
 
   union gab_value_pair ast = gab_parse(gab, args);
@@ -10649,13 +10665,15 @@ GAB_API union gab_value_pair gab_build(struct gab_triple gab,
   gab_assert(ast.vresult != gab_cundefined, "Shall have vresult in all cases");
 
   if (ast.status != gab_cvalid)
-    return gab_gcunlock(gab), ast;
+    return ast;
 
   struct gab_src *src = d_gab_src_read(&gab.eg->sources, mod);
 
   if (src == nullptr)
-    return gab_gcunlock(gab), (union gab_value_pair){.status = gab_cinvalid,
+    return (union gab_value_pair){.status = gab_cinvalid,
                                                      .vresult = gab_cundefined};
+
+  gab_gclock(gab);
 
   // Default to empty list here
   gab_value bindings = gab_listof(gab);
@@ -11270,12 +11288,12 @@ GAB_API void gab_gcunlock(struct gab_triple gab) {
   wk->locked -= 1;
 
   if (!wk->locked) {
-    for (uint64_t i = 0; i < wk->lock_keep.len; i++)
-      GAB_OBJ_NOT_BUFFERED(gab_valtoo(v_gab_value_val_at(&wk->lock_keep, i)));
+    for (uint64_t i = 0; i < wk->nlocked; i++)
+      GAB_OBJ_NOT_BUFFERED(gab_valtoo(wk->lockbuf[i]));
 
-    gab_ndref(gab, 1, wk->lock_keep.len, wk->lock_keep.data);
+    gab_ndref(gab, 1, wk->nlocked, wk->lockbuf);
 
-    wk->lock_keep.len = 0;
+    wk->nlocked = 0;
   }
 }
 
@@ -11372,9 +11390,9 @@ GAB_INTERNAL void __gab_gcdoepoch(struct gab_triple gab, int32_t e) {
 fin:
   // Treat the lock_keep list as a root set - they might need to keep children
   // alive.
-  for (uint64_t i = 0; i < wk->lock_keep.len; i++) {
-    gab_value o = wk->lock_keep.data[i];
-    gab_assert(gab_valiso(o), "Should only have objects locked here");
+  for (uint64_t i = 0; i < wk->nlocked; i++) {
+    gab_value o = wk->lockbuf[i];
+    gab_precondition(gab_valiso(o), "Should only have objects locked here");
     __gab_gcbufpush(gab, kGAB_BUF_STK, gab.wkid, e, gab_valtoo(o));
   }
 

@@ -716,16 +716,6 @@ struct gab_eg {
     // Unique thread identifier.
     thrd_t td;
 
-    // GC epoch.
-    uint32_t epoch;
-    // Used by gab_gclock() to prevent collection while locked > 0.
-    // Useful when allocating a lot of gab objects at once, and they
-    // need to be kept alive until you're done.
-    // While locked, gab objects are queued into the jobs lock_keep vector.
-    // When the lock is released, the vector is flushed into the GC algorithm.
-    int32_t locked;
-    v_gab_value lock_keep;
-
     // A work channel specific to this job. Useful for sending work to a
     // specific job, instead of any available.
     gab_value work_channel;
@@ -736,6 +726,17 @@ struct gab_eg {
     // to this queue.
     q_gab_value working_queue;
     q_gab_value_dyn waiting_queue;
+
+    // GC epoch.
+    uint32_t epoch;
+
+    // Used by gab_gclock() to prevent collection while locked > 0.
+    // Useful when allocating a lot of gab objects at once, and they
+    // need to be kept alive until you're done.
+    // While locked, gab objects are queued into the jobs lock_keep vector.
+    // When the lock is released, the vector is flushed into the GC algorithm.
+    int32_t locked, nlocked;
+    gab_value lockbuf[GAB_GC_MOD_BUFF_MAX];
 
     // GC inc/dec ref count tracking buffer.
     struct gab_gcbuf {
