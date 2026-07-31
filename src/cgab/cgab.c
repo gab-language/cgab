@@ -5965,7 +5965,6 @@ GAB_API gab_value gab_record(struct gab_triple gab, uint64_t stride,
                              uint64_t len, gab_value *keys, gab_value *vals) {
   gab_gclock(gab);
 
-  // TODO @cgab @bug: Handle duplicate values somehow.
   gab_value shp = gab_shape(gab, stride, len, keys);
 
   if (shp == gab_ctimeout || shp == gab_cinvalid)
@@ -6041,6 +6040,9 @@ GAB_API gab_value gab_nlstcat(struct gab_triple gab, uint64_t len,
 
   gab_gclock(gab);
 
+  // DO this first so as not to collect *while* initiating a shape.
+  gab_value shape = gab_shape(gab, 1, total_len, total_keys);
+
   uint64_t shift = __gab_pvecshift(total_len);
 
   uint64_t rootlen = __gab_pveclen(total_len, shift);
@@ -6048,7 +6050,7 @@ GAB_API gab_value gab_nlstcat(struct gab_triple gab, uint64_t len,
   struct gab_orec *self =
       GAB_CREATE_FLEX_OBJ(gab_orec, gab_value, rootlen, kGAB_RECORD);
 
-  self->shape = gab_shape(gab, 1, total_len, total_keys);
+  self->shape = shape;
   self->shift = shift;
   self->len = rootlen;
 
@@ -11050,6 +11052,7 @@ GAB_INTERNAL void __gab_gcobjeachdo(struct gab_obj *obj,
     struct gab_orec *rec = (struct gab_orec *)obj;
     uint64_t len = (rec->len);
 
+    gab_assert(gab_valiso(rec->shape), "Record shape should be an object, not %u.", gab_valkind(rec->shape));
     fnc(gab, gab_valtoo(rec->shape));
 
     for (uint64_t i = 0; i < len; i++)

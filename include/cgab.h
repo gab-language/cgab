@@ -2505,12 +2505,12 @@ gab_pktypemismatch(struct gab_triple gab, gab_value found,
 
 #define gab_iref(gab, val) (__gab_iref(gab, val, __FUNCTION__, __LINE__))
 
-gab_value __gab_iref(struct gab_triple gab, gab_value val, const char *file,
+GAB_API gab_value __gab_iref(struct gab_triple gab, gab_value val, const char *file,
                      int line);
 
 #define gab_dref(gab, val) (__gab_dref(gab, val, __FUNCTION__, __LINE__))
 
-gab_value __gab_dref(struct gab_triple gab, gab_value val, const char *file,
+GAB_API gab_value __gab_dref(struct gab_triple gab, gab_value val, const char *file,
                      int line);
 
 /**
@@ -2519,7 +2519,7 @@ gab_value __gab_dref(struct gab_triple gab, gab_value val, const char *file,
  * @param vm The vm.
  * @param value The value.
  */
-void __gab_niref(struct gab_triple gab, uint64_t stride, uint64_t len,
+GAB_API void __gab_niref(struct gab_triple gab, uint64_t stride, uint64_t len,
                  gab_value values[len], const char *file, int line);
 #define gab_niref(gab, stride, len, values)                                    \
   (__gab_niref(gab, stride, len, values, __FUNCTION__, __LINE__))
@@ -2530,7 +2530,7 @@ void __gab_niref(struct gab_triple gab, uint64_t stride, uint64_t len,
  * @param vm The vm.
  * @param value The value.
  */
-void __gab_ndref(struct gab_triple gab, uint64_t stride, uint64_t len,
+GAB_API void __gab_ndref(struct gab_triple gab, uint64_t stride, uint64_t len,
                  gab_value values[len], const char *file, int line);
 #define gab_ndref(gab, stride, len, values)                                    \
   (__gab_ndref(gab, stride, len, values, __FUNCTION__, __LINE__))
