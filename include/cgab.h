@@ -701,7 +701,7 @@ static inline void __gab_assert_fail(const char *prelude, const char *expr,
                               format __VA_OPT__(, ) __VA_ARGS__))
 
 #ifdef NDEBUG
-#define gab_verify(expr, format, ...) (void)(expr)
+#define gab_verify(expr, format, ...)
 #else
 #define gab_verify(expr, format, ...)                                          \
   ((expr) ? (void)(0)                                                          \

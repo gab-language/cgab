@@ -3559,8 +3559,9 @@ GAB_API union gab_value_pair gab_asend(struct gab_triple gab,
 
     // TODO @cgab @bug: Properly test & try all allowed workers in the pinmask.
     if (!__gab_jbisalive(gab, wkid))
-      return __gab_jbspawn(gab, fb) ? (union gab_value_pair){{gab_cvalid, fb}}
-                                    : (union gab_value_pair){{gab_cinvalid, gab_cinvalid}};
+      return __gab_jbspawn(gab, fb)
+                 ? (union gab_value_pair){{gab_cvalid, fb}}
+                 : (union gab_value_pair){{gab_cinvalid, gab_cinvalid}};
 
     if (gab.wkid == wkid)
       q_gab_value_dyn_push(&gab.eg->jobs[wkid].waiting_queue, fb);
@@ -4227,7 +4228,7 @@ GAB_API void __gab_objdestroy(struct gab_triple gab, struct gab_obj *self) {
   }
   case kGAB_SHAPE:
   case kGAB_SHAPELIST: {
-    gab_assert(mtx_trylock(&gab.eg->gc_mtx) == thrd_busy,
+    gab_verify(mtx_trylock(&gab.eg->gc_mtx) == thrd_busy,
                "This thread must be holding the gc_mtx already.");
     // TODO @cgab @opt: Shapes aren't guaranteed to be in here, if they were
     // created intermittently.
@@ -4236,7 +4237,7 @@ GAB_API void __gab_objdestroy(struct gab_triple gab, struct gab_obj *self) {
     break;
   }
   case kGAB_STRING: {
-    gab_assert(mtx_trylock(&gab.eg->gc_mtx) == thrd_busy,
+    gab_verify(mtx_trylock(&gab.eg->gc_mtx) == thrd_busy,
                "This thread must be holding the gc_mtx already.");
     d_strings_remove(&gab.eg->strings, (struct gab_ostring *)self);
     // gab_assert(removed, "Must succeed in removing string");
@@ -4336,8 +4337,12 @@ GAB_API gab_value gab_tnstring(struct gab_triple gab, uint64_t len,
 
   mtx_unlock(&gab.eg->gc_mtx);
 
-  if (interned)
+  if (interned) {
+#if cGAB_LOG_GC
+    fprintf(stderr, "(%i) INTERN REUSE %p.\n", gab.wkid, interned);
+#endif
     return __gab_obj(interned);
+  }
 
   /*
    * We can't hold the strings_mtx lock here in the call
@@ -4551,8 +4556,12 @@ GAB_API gab_value gab_tstrcat(struct gab_triple gab, gab_value _a,
 
   mtx_unlock(&gab.eg->gc_mtx);
 
-  if (interned)
+  if (interned) {
+#if cGAB_LOG_GC
+    fprintf(stderr, "(%i) INTERN REUSE %p.\n", gab.wkid, interned);
+#endif
     return a_char_destroy(buff), __gab_obj(interned);
+  }
 
   gab_value result = __gab_nstring(gab, hash, len, buff->data);
 
@@ -5013,7 +5022,9 @@ GAB_INTERNAL uint32_t __gab_shpmidx(uint64_t hash, uint64_t shift) {
 }
 
 GAB_API uint64_t gab_shpfind(gab_value shape, gab_value key) {
-  gab_precondition(gab_valkind(shape) == kGAB_SHAPE || gab_valkind(shape) == kGAB_SHAPELIST, "Invalid kind %u", gab_valkind(shape));
+  gab_precondition(gab_valkind(shape) == kGAB_SHAPE ||
+                       gab_valkind(shape) == kGAB_SHAPELIST,
+                   "Invalid kind %u", gab_valkind(shape));
   gab_value node = shape;
 
   for (uint64_t shift = 0;; shift = __gab_shpishift(shift)) {
@@ -5787,6 +5798,7 @@ GAB_API gab_value gab_nlstpush(struct gab_triple gab, gab_value list,
 
   gab_gclock(gab);
 
+  // TODO @cgab @bug: GC when locked
   for (uint64_t i = 0; i < len; i++) {
     gab_value key = gab_number(start + i);
     gab_value val = values[i];
@@ -6010,7 +6022,8 @@ GAB_API gab_value gab_nlstcat(struct gab_triple gab, uint64_t len,
 
   for (uint64_t i = 0; i < len; i++) {
     gab_precondition(gab_valkind(records[i]), "Each element must be a record");
-    gab_precondition(gab_valkind(gab_recshp(records[i])), "Each element must be a list-record");
+    gab_precondition(gab_valkind(gab_recshp(records[i])),
+                     "Each element must be a list-record");
   }
 
   uint64_t total_len = 0;
@@ -6045,7 +6058,8 @@ GAB_API gab_value gab_nlstcat(struct gab_triple gab, uint64_t len,
              "Total length shall match constructed shape length");
 
   gab_assert(gab_valkind(self->shape) == kGAB_SHAPELIST,
-             "List-cat should result in a list, not %u", gab_valkind(self->shape));
+             "List-cat should result in a list, not %u",
+             gab_valkind(self->shape));
 
   gab_value res = __gab_obj(self);
 
@@ -6170,8 +6184,12 @@ GAB_API gab_value gab_tshape(struct gab_triple gab, uint64_t stride,
 
   mtx_unlock(&gab.eg->gc_mtx);
 
-  if (interned)
+  if (interned) {
+#if cGAB_LOG_GC
+    fprintf(stderr, "(%i) INTERN REUSE %p.\n", gab.wkid, interned);
+#endif
     return __gab_obj(interned);
+  }
 
   gab_gclock(gab);
 
@@ -6351,8 +6369,12 @@ GAB_API gab_value gab_tshpwithout(struct gab_triple gab, gab_value shape,
 
   mtx_unlock(&gab.eg->gc_mtx);
 
-  if (interned)
+  if (interned) {
+#if cGAB_LOG_GC
+    fprintf(stderr, "(%i) INTERN REUSE %p.\n", gab.wkid, interned);
+#endif
     return __gab_obj(interned);
+  }
 
   gab_gclock(gab);
 
@@ -6449,8 +6471,12 @@ GAB_API gab_value gab_tshpwith(struct gab_triple gab, gab_value shp,
 
   mtx_unlock(&gab.eg->gc_mtx);
 
-  if (interned)
+  if (interned) {
+#if cGAB_LOG_GC
+    fprintf(stderr, "(%i) INTERN REUSE %p.\n", gab.wkid, interned);
+#endif
     return __gab_obj(interned);
+  }
 
   gab_gclock(gab);
 
@@ -8762,7 +8788,6 @@ GAB_INTERNAL gab_value __gab_prsexp(struct gab_triple gab,
       return gab_cinvalid;
 
     rule = __gab_prsrule(__gab_prsprevtok(parser));
-
 
     if (rule.infix != nullptr)
       node = rule.infix(gab, parser, node);
@@ -11302,8 +11327,9 @@ GAB_INTERNAL void __gab_gcdoepoch(struct gab_triple gab, int32_t e) {
     goto fin;
 
 #if cGAB_LOG_GC
-  fprintf(stderr, "QUEUENOTEMPTY\t%u\t%u\t%u\n", wk->queue.head, wk->queue.tail,
-          wk->queue.head - wk->queue.tail);
+  fprintf(stderr, "QUEUENOTEMPTY\t%u\t%u\t%u\n", wk->working_queue.head,
+          wk->working_queue.tail,
+          wk->working_queue.head - wk->working_queue.tail);
 #endif
 
   for (uint64_t idx = wk->working_queue.head; idx != wk->working_queue.tail;
@@ -11329,10 +11355,6 @@ GAB_INTERNAL void __gab_gcdoepoch(struct gab_triple gab, int32_t e) {
     gab_assert(stack_size < cGAB_STACK_MAX,
                "The stack size is requred to be less than %lu", cGAB_STACK_MAX);
 
-    gab_assert(stack_size + wk->lock_keep.len + 2 < GAB_GC_MOD_BUFF_MAX,
-               "The total amount of queued modifications cannot exceed %lu",
-               GAB_GC_MOD_BUFF_MAX);
-
     __gab_gcbufpush(gab, kGAB_BUF_STK, gab.wkid, e, gab_valtoo(fiber));
 
     for (uint64_t i = 0; i < stack_size; i++) {
@@ -11348,6 +11370,14 @@ GAB_INTERNAL void __gab_gcdoepoch(struct gab_triple gab, int32_t e) {
   }
 
 fin:
+  // Treat the lock_keep list as a root set - they might need to keep children
+  // alive.
+  for (uint64_t i = 0; i < wk->lock_keep.len; i++) {
+    gab_value o = wk->lock_keep.data[i];
+    gab_assert(gab_valiso(o), "Should only have objects locked here");
+    __gab_gcbufpush(gab, kGAB_BUF_STK, gab.wkid, e, gab_valtoo(o));
+  }
+
   __gab_gcepochinc(gab);
 #if cGAB_LOG_GC
   fprintf(stderr, "(%i) PEPOCH!\t%i\n", gab.wkid, __gab_gcepoch(gab));
@@ -11366,7 +11396,6 @@ GAB_INTERNAL void __gab_gcassert_workers_have_epoch(struct gab_triple gab,
 #if cGAB_LOG_GC
 GAB_API void __gab_gcepochnext(struct gab_triple gab, const char *func,
                                int line) {
-
   fprintf(stderr, "EPOCH\t%i\t%i\t%s:%i\n", __gab_gcepoch(gab), gab.wkid, func,
           line);
 #else
