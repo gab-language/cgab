@@ -59,8 +59,6 @@ const char *symtoknownhole(const char *symbol) {
 void emit_sym(bfd *bfd, struct bfd_symbol *sym) {
   const char *scn_name = sym->section->name;
 
-  assert(sym->section->flags & SEC_IN_MEMORY);
-
   size_t scn_name_len = strlen(scn_name);
 
   // Comment Description
@@ -163,6 +161,11 @@ int main(int argc, const char **argv) {
 
   fprintf(stderr, "[BFD]: Reading %u sections\n", bfd_count_sections(bfd));
   fprintf(stderr, "[BFD]: %s\n", bfd_errmsg(bfd_get_error()));
+
+  if (!bfd_check_format(bfd, bfd_object)) {
+    fprintf(stderr, "[BFD]: %s\n", bfd_errmsg(bfd_get_error()));
+    return -1;
+  }
 
   // bfd_map_over_sections(bfd, handle_section, nullptr);
 
