@@ -27,7 +27,7 @@ static MunitResult test_channel_send_put(const MunitParameter params[],
   // asynchronously send a put
   union gab_value_pair put_res =
       gab_asend(gab, (struct gab_send_argt){
-                         .message = gab_message(gab, mGAB_PUT),
+                         .message = gab_message(gab, mGAB_CHNPUT),
                          .receiver = ch,
                          .argv = (gab_value[]){val_in},
                          .len = 1,
@@ -53,7 +53,7 @@ static MunitResult test_channel_send_closed(const MunitParameter params[],
 
   union gab_value_pair put_res =
       gab_send(gab, (struct gab_send_argt){
-                        .message = gab_message(gab, mGAB_PUT),
+                        .message = gab_message(gab, mGAB_CHNPUT),
                         .receiver = ch,
                         .argv = (gab_value[]){val_in},
                         .len = 1,
@@ -95,7 +95,7 @@ test_channel_stress_concurrent_putters(const MunitParameter params[],
   gab_value ch = gab_channel(gab);
   const uint64_t num_fibers = 5000;
   gab_value fibers[num_fibers];
-  gab_value msg_put = gab_message(gab, mGAB_PUT);
+  gab_value msg_put = gab_message(gab, mGAB_CHNPUT);
 
   // 1. Queue up thousands of concurrent putters.
   for (uint64_t i = 0; i < num_fibers; i++) {
@@ -147,7 +147,7 @@ static MunitResult test_channel_concurrent_takers(const MunitParameter params[],
   gab_value ch = gab_channel(gab);
   const uint64_t num_fibers = 5000;
   gab_value fibers[num_fibers];
-  gab_value msg_take = gab_message(gab, mGAB_TAKE);
+  gab_value msg_take = gab_message(gab, mGAB_CHNTAKE);
 
   for (uint64_t i = 0; i < num_fibers; i++) {
     // NOTE: Pin the send to a *different thread*.
@@ -210,8 +210,8 @@ static MunitResult test_channel_stress_randomized(const MunitParameter params[],
   const uint64_t total_fibers = num_pairs * 2;
 
   gab_value fibers[total_fibers];
-  gab_value msg_put = gab_message(gab, mGAB_PUT);
-  gab_value msg_take = gab_message(gab, mGAB_TAKE);
+  gab_value msg_put = gab_message(gab, mGAB_CHNPUT);
+  gab_value msg_take = gab_message(gab, mGAB_CHNTAKE);
 
   // 0 = PUT, 1 = TAKE
   int actions[total_fibers];

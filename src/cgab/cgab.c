@@ -985,6 +985,21 @@ struct primitive kind_primitives[] = {
         .primitive = gab_primitive(OP_SEND_PRIMITIVE_SPLATLIST),
     },
     {
+        .name = mGAB_RECAT,
+        .kind = kGAB_RECORD,
+        .primitive = gab_primitive(OP_SEND_PRIMITIVE_RECORD_AT),
+    },
+    {
+        .name = mGAB_RECPUT,
+        .kind = kGAB_RECORD,
+        .primitive = gab_primitive(OP_SEND_PRIMITIVE_RECORD_PUT),
+    },
+    {
+        .name = mGAB_RECTAKE,
+        .kind = kGAB_RECORD,
+        .primitive = gab_primitive(OP_SEND_PRIMITIVE_RECORD_TAKE),
+    },
+    {
         .name = mGAB_SPLATLIST,
         .kind = kGAB_SHAPE,
         .primitive = gab_primitive(OP_SEND_PRIMITIVE_SPLATSHAPE),
@@ -1015,14 +1030,14 @@ struct primitive kind_primitives[] = {
         .primitive = gab_primitive(OP_SEND_PRIMITIVE_CALL_BLOCK),
     },
     {
-        .name = mGAB_PUT,
+        .name = mGAB_CHNPUT,
         .kind = kGAB_CHANNEL,
-        .primitive = gab_primitive(OP_SEND_PRIMITIVE_PUT),
+        .primitive = gab_primitive(OP_SEND_PRIMITIVE_CHANNEL_PUT),
     },
     {
-        .name = mGAB_TAKE,
+        .name = mGAB_CHNTAKE,
         .kind = kGAB_CHANNEL,
-        .primitive = gab_primitive(OP_SEND_PRIMITIVE_TAKE),
+        .primitive = gab_primitive(OP_SEND_PRIMITIVE_CHANNEL_TAKE),
     },
 };
 
@@ -10673,7 +10688,7 @@ GAB_API union gab_value_pair gab_build(struct gab_triple gab,
 
   if (src == nullptr)
     return (union gab_value_pair){.status = gab_cinvalid,
-                                                     .vresult = gab_cundefined};
+                                  .vresult = gab_cundefined};
 
   gab_gclock(gab);
 
@@ -11052,7 +11067,9 @@ GAB_INTERNAL void __gab_gcobjeachdo(struct gab_obj *obj,
     struct gab_orec *rec = (struct gab_orec *)obj;
     uint64_t len = (rec->len);
 
-    gab_assert(gab_valiso(rec->shape), "Record shape should be an object, not %u.", gab_valkind(rec->shape));
+    gab_assert(gab_valiso(rec->shape),
+               "Record shape should be an object, not %u.",
+               gab_valkind(rec->shape));
     fnc(gab, gab_valtoo(rec->shape));
 
     for (uint64_t i = 0; i < len; i++)
@@ -12779,11 +12796,43 @@ extern void putcs(char *arg);
                "Should not have overwritten return frame");                    \
   })
 
+#define MICRO_OP_RECORD_AT(r, k)                                               \
+  ({                                                                           \
+    gab_value res = gab_recat(r, k);                                           \
+    DROP_N(have + FRAME_SIZE);\
+    if (res == gab_cundefined) { \
+      PUSH(gab_none);\
+      SET_HV(below_have + 1);\
+    } else {\
+      PUSH(gab_ok);\
+      PUSH(res);                                                                 \
+      SET_HV(below_have + 2);\
+    }\
+  })
+
+#define MICRO_OP_RECORD_PUT(r, k, v)                                           \
+  ({                                                                           \
+    gab_value res = gab_recput(GAB(), r, k, v);                                \
+    DROP_N(have + FRAME_SIZE);\
+    PUSH(res);                                                                 \
+    SET_HV(below_have + 1);\
+  })
+
+#define MICRO_OP_RECORD_TAKE(r, k)                                             \
+  ({                                                                           \
+    gab_value v;                                                               \
+    gab_value res = gab_rectake(GAB(), r, k, &v);                          \
+    DROP_N(have + FRAME_SIZE);\
+    PUSH(res);                                                                 \
+    PUSH(v);                                                                   \
+    SET_HV(below_have + 2);\
+  })
+
 /*
  * These primitives need some sort of control-flow in order
  * to work cleanly with the JIT IR.
  */
-#define MICRO_OP_TAKE(channel)                                                 \
+#define MICRO_OP_CHANNEL_TAKE(channel)                                         \
   ({                                                                           \
     if (!REENTRANT()) {                                                        \
       SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);                    \
@@ -12843,7 +12892,7 @@ extern void putcs(char *arg);
     }                                                                          \
   })
 
-#define MICRO_OP_PUT(channel)                                                  \
+#define MICRO_OP_CHANNEL_PUT(channel)                                          \
   ({                                                                           \
     if (!REENTRANT()) {                                                        \
       SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);                    \
@@ -13523,7 +13572,7 @@ extern void putcs(char *arg);
     len;                                                                       \
   })
 
-#define MICRO_OP_CONS_RECORD(r, arg) (gab_lstpush(GAB(), r, arg))
+#define MICRO_OP_CONS_RECORD(r, n, p) (gab_nlstpush(GAB(), r, n, p))
 
 #define MICRO_OP_CONS(a, b) (gab_listof(GAB(), a, b))
 
@@ -14173,11 +14222,9 @@ CASE_CODE(SEND_PRIMITIVE_CONS_RECORD) {
 
   STORE_SP();
 
-  gab_value arg = PEEK_N(have - 1);
-
   gab_gclock(GAB());
 
-  gab_value res = MICRO_OP_CONS_RECORD(r, arg);
+  gab_value res = MICRO_OP_CONS_RECORD(r, have - 1, SP() - (have - 1));
 
   DROP_N(have + FRAME_SIZE);
 
@@ -14665,24 +14712,85 @@ CASE_CODE(SEND) {
   NEXT();
 }
 
-CASE_CODE(SEND_PRIMITIVE_TAKE) {
+CASE_CODE(SEND_PRIMITIVE_CHANNEL_TAKE) {
   gab_value *ks = READ_SENDCONSTANTS;
   uint64_t have = HV();
   uint64_t below_have = BELOW_HV();
 
   gab_value c = PEEK_N(have);
 
-  MICRO_OP_TAKE(c);
+  MICRO_OP_CHANNEL_TAKE(c);
 }
 
-CASE_CODE(SEND_PRIMITIVE_PUT) {
+CASE_CODE(SEND_PRIMITIVE_CHANNEL_PUT) {
   gab_value *ks = READ_SENDCONSTANTS;
   uint64_t have = HV();
   uint64_t below_have = BELOW_HV();
 
   gab_value c = PEEK_N(have);
 
-  MICRO_OP_PUT(c);
+  MICRO_OP_CHANNEL_PUT(c);
+}
+
+CASE_CODE(SEND_PRIMITIVE_RECORD_AT) {
+  gab_value *ks = READ_SENDCONSTANTS;
+  uint64_t have = HV();
+  uint64_t below_have = BELOW_HV();
+
+  SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);                    
+
+  gab_value r = PEEK_N(have);
+
+  SEND_GUARD_KIND(r, kGAB_RECORD);
+
+  NILPAD_GUARD_ARGS_GTE(2);
+
+  gab_value k = PEEK_N(have - 1);
+
+  MICRO_OP_RECORD_AT(r, k);
+
+  NEXT();
+}
+
+CASE_CODE(SEND_PRIMITIVE_RECORD_PUT) {
+  gab_value *ks = READ_SENDCONSTANTS;
+  uint64_t have = HV();
+  uint64_t below_have = BELOW_HV();
+
+  SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);                    
+
+  gab_value r = PEEK_N(have);
+
+  SEND_GUARD_KIND(r, kGAB_RECORD);
+
+  NILPAD_GUARD_ARGS_GTE(3);
+
+  gab_value k = PEEK_N(have - 1);
+  gab_value v = PEEK_N(have - 2);
+
+  MICRO_OP_RECORD_PUT(r, k, v);
+
+  NEXT();
+}
+
+CASE_CODE(SEND_PRIMITIVE_RECORD_TAKE) {
+  gab_value *ks = READ_SENDCONSTANTS;
+  uint64_t have = HV();
+  uint64_t below_have = BELOW_HV();
+
+  SEND_GUARD_CACHED_MESSAGE_SPECS(ks[GAB_SEND_KSPECS]);                    
+
+  gab_value r = PEEK_N(have);
+
+  SEND_GUARD_KIND(r, kGAB_RECORD);
+
+  NILPAD_GUARD_ARGS_GTE(2);
+
+  gab_value k = PEEK_N(have - 1);
+
+  MICRO_OP_RECORD_TAKE(r, k);
+
+  NEXT();
 }
 
 CASE_CODE(SEND_PRIMITIVE_FIBER) {

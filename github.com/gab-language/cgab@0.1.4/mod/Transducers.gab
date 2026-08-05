@@ -177,7 +177,7 @@ td\do_split:.defcase {
     ([] r.reduce\step(acc split))
   end
   false: (r acc xs split) :: do
-    (split.push(xs*) next: r acc)
+    (split.cons(xs*) next: r acc)
   end
 }
 
