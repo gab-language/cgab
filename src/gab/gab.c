@@ -342,13 +342,10 @@ union gab_value_pair gab_use_dynlib(struct gab_triple gab, const char *path,
   /*gab.flags |= fGAB_ERR_QUIET;*/
 
   if (res.status != gab_cvalid)
-    return gab_panicf(gab, "Failed to load c module.");
+    return res;
 
   if (res.aresult[0] != gab_ok)
-    return gab_panicf(
-        gab,
-        "Failed to load module. Module returned:\n\n$\n\nExpected:\n\n$\n\n",
-        res.aresult[0], gab_ok);
+    return res;
 
   if (gab_segmodput(gab.eg, path, res.aresult) == nullptr)
     return gab_panicf(gab, "Failed to cache c module.");
@@ -2233,15 +2230,18 @@ int run(struct command_arguments *args) {
 }
 
 int exec(struct command_arguments *args) {
-  if (args->argc < 1)
-    return missing_subcommand_argument_error("exec", "code"), 1;
+  const char* str;
+  if (args->argc < 1) {
+    a_char* src = gab_fosread(stdin);
+    str = src->data;
+  } else {
+    str = args->argv[0];
+    args->argc--;
+    args->argv++;
+  }
 
   v_pkg modules = {0};
   int nmodules = init_modules(&modules, args);
-
-  const char* str = args->argv[0];
-  args->argc--;
-  args->argv++;
 
   int res = run_string(str, args->flags, args->wait, args->njobs,
                        nmodules - 1, modules.data, args->argc, args->argv);

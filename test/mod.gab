@@ -314,6 +314,32 @@ blocks\work_with_varargs\test: .def (t :: do
   varfunc.(onetwothree.())
 end)
 
+blocks\repeated_with_varargs\test: .def (t :: do
+  varfunc := (first rest*) :: do
+    (first rest)
+  end
+
+  (one, rest) := varfunc.(1 2 3 4 5)
+
+  t.expect(one ==: 1)
+  t.expect(rest.len, ==: 4)
+  t.expect(rest.at 0 .unwrap, ==: 2)
+  t.expect(rest.at 1 .unwrap, ==: 3)
+  t.expect(rest.at 2 .unwrap, ==: 4)
+  t.expect(rest.at 3 .unwrap, ==: 5)
+
+  (one) := varfunc.(1)
+  t.expect(one ==: 1)
+
+  (one, rest, rest2) := varfunc.(1 2 3 4 5 6 7 8 9 10 11 12)
+  [one, rest, rest2].println
+
+  t.expect(one ==: 1)
+  t.expect(rest.len, ==: 11)
+  t.expect(rest.at 0 .unwrap, ==: 2)
+  t.expect(rest.at 10 .unwrap, ==: 12)
+end)
+
 blocks\empty_varargs\test: .def (t :: do
   varfunc := (first args*, other last) :: do
     t.expect(first ==: 1)

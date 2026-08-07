@@ -463,8 +463,9 @@
 #define GAB_SEND_KTYPE 2
 #define GAB_SEND_KSPEC 3
 #define GAB_SEND_KOFFSET 4
-#define GAB_SEND_KGENERIC_CALL_MESSAGE 5
 #define GAB_SEND_KNATIVE_REENTRANT_USERDATA 6
+
+#define GAB_PACK_LIST_KSHAPE 0
 
 /*
  * Hash a gab value for checking against the cache in match-sends.
@@ -616,8 +617,9 @@ static inline void __gab_assert_fail(const char *prelude, const char *expr,
   va_list va;
   va_start(va, reason);
 
-  fprintf(stdout, "\n\n%s\n[%s:%" PRId64 " %s] assertion '%s' failed: ", prelude,
-          file, line, function, expr);
+  fprintf(stdout,
+          "\n\n%s\n[%s:%" PRId64 " %s] assertion '%s' failed: ", prelude, file,
+          line, function, expr);
 
   vfprintf(stdout, reason, va);
 
@@ -644,42 +646,42 @@ static inline void __gab_assert_fail(const char *prelude, const char *expr,
   "*-----------------------------------------------------------------------*\n" 
 
 #define GAB_ASSERT_PRECONDITION_PRELUDE                                         \
-  "*-----------------------------------------------------------------------*\n" \
-  "|                                                                       |\n" \
-  "| Uh Oh!                                                                |\n" \
-  "|                                                                       |\n" \
-  "| cgab found an unmet precondition.                                     |\n" \
-  "|                                                                       |\n" \
-  "| This is often due to misuse of the libcgab c api.                     |\n" \
-  "|                                                                       |\n" \
-  "| If this occurrs in third part code, consider creating an issue there. |\n" \
-  "|                                                                       |\n" \
-  "| Otherwise, consider creating an issue at:                             |\n" \
-  "|                                                                       |\n" \
-  "|    https://github.com/gab-language/cgab                               |\n" \
-  "|                                                                       |\n" \
-  "| Include the following details in your submission.                     |\n" \
-  "|                                                                       |\n" \
-  "*-----------------------------------------------------------------------*\n" 
+  "*------------------------------------------------------------------------*\n" \
+  "|                                                                        |\n" \
+  "| Uh Oh!                                                                 |\n" \
+  "|                                                                        |\n" \
+  "| cgab found an unmet precondition.                                      |\n" \
+  "|                                                                        |\n" \
+  "| This is often due to misuse of the libcgab c api.                      |\n" \
+  "|                                                                        |\n" \
+  "| If this occurrs in third party code, consider creating an issue there. |\n" \
+  "|                                                                        |\n" \
+  "| Otherwise, consider creating an issue at:                              |\n" \
+  "|                                                                        |\n" \
+  "|    https://github.com/gab-language/cgab                                |\n" \
+  "|                                                                        |\n" \
+  "| Include the following details in your submission.                      |\n" \
+  "|                                                                        |\n" \
+  "*------------------------------------------------------------------------*\n" 
 
 #define GAB_ASSERT_DEFAULT_PRELUDE                                              \
-  "*-----------------------------------------------------------------------*\n" \
-  "|                                                                       |\n" \
-  "| Uh Oh!                                                                |\n" \
-  "|                                                                       |\n" \
-  "| cgab encountered an unexpected state.                                 |\n" \
-  "|                                                                       |\n" \
-  "| This may be due to misuse of the libcgab c api, or a bug in cgab.     |\n" \
-  "|                                                                       |\n" \
-  "| If this occurrs in third part code, consider creating an issue there. |\n" \
-  "|                                                                       |\n" \
-  "| Otherwise, consider creating an issue at:                             |\n" \
-  "|                                                                       |\n" \
-  "|    https://github.com/gab-language/cgab                               |\n" \
-  "|                                                                       |\n" \
-  "| Include the following details in your submission.                     |\n" \
-  "|                                                                       |\n" \
-  "*-----------------------------------------------------------------------*\n" 
+  "*------------------------------------------------------------------------*\n" \
+  "|                                                                        |\n" \
+  "| Uh Oh!                                                                 |\n" \
+  "|                                                                        |\n" \
+  "| cgab encountered an unexpected state.                                  |\n" \
+  "|                                                                        |\n" \
+  "| This may be due to misuse of the libcgab c api, or a bug in cgab.      |\n" \
+  "|                                                                        |\n" \
+  "| If this occurrs in third party code, consider creating an issue there. |\n" \
+  "|                                                                        |\n" \
+  "| Otherwise, consider creating an issue at:                              |\n" \
+  "|                                                                        |\n" \
+  "|    https://github.com/gab-language/cgab                                |\n" \
+  "|                                                                        |\n" \
+  "| Include the following details in your submission.                      |\n" \
+  "|                                                                        |\n" \
+  "*------------------------------------------------------------------------*\n" 
 
 #define GAB_ASSERT_VERIFICATION_PRELUDE                                         \
   "*-----------------------------------------------------------------------*\n" \
@@ -768,8 +770,8 @@ static inline void __gab_assert_fail(const char *prelude, const char *expr,
  *
  */
 #ifndef GAB_CORE
-#include <windows.h>
 #include <delayimp.h>
+#include <windows.h>
 thread_local static DWORD g_oldProtect = 0;
 ExternC FARPROC gab_delayload(unsigned dliNotify, PDelayLoadInfo pdli) {
   switch (dliNotify) {
@@ -1796,7 +1798,7 @@ union gab_value_pair {
  */
 #define gab_valarray(...)                                                      \
   ({                                                                           \
-    gab_value data[] = {__VA_ARGS__ __VA_OPT__(,) gab_cinvalid};                                          \
+    gab_value data[] = {__VA_ARGS__ __VA_OPT__(, ) gab_cinvalid};              \
     gab_nvalarray(sizeof(data) / sizeof(gab_value), data);                     \
   })
 
@@ -2508,13 +2510,13 @@ gab_pktypemismatch(struct gab_triple gab, gab_value found,
 
 #define gab_iref(gab, val) (__gab_iref(gab, val, __FUNCTION__, __LINE__))
 
-GAB_API gab_value __gab_iref(struct gab_triple gab, gab_value val, const char *file,
-                     int line);
+GAB_API gab_value __gab_iref(struct gab_triple gab, gab_value val,
+                             const char *file, int line);
 
 #define gab_dref(gab, val) (__gab_dref(gab, val, __FUNCTION__, __LINE__))
 
-GAB_API gab_value __gab_dref(struct gab_triple gab, gab_value val, const char *file,
-                     int line);
+GAB_API gab_value __gab_dref(struct gab_triple gab, gab_value val,
+                             const char *file, int line);
 
 /**
  * @brief Increment the reference count of the value(s)
@@ -2523,7 +2525,7 @@ GAB_API gab_value __gab_dref(struct gab_triple gab, gab_value val, const char *f
  * @param value The value.
  */
 GAB_API void __gab_niref(struct gab_triple gab, uint64_t stride, uint64_t len,
-                 gab_value values[len], const char *file, int line);
+                         gab_value values[len], const char *file, int line);
 #define gab_niref(gab, stride, len, values)                                    \
   (__gab_niref(gab, stride, len, values, __FUNCTION__, __LINE__))
 
@@ -2534,7 +2536,7 @@ GAB_API void __gab_niref(struct gab_triple gab, uint64_t stride, uint64_t len,
  * @param value The value.
  */
 GAB_API void __gab_ndref(struct gab_triple gab, uint64_t stride, uint64_t len,
-                 gab_value values[len], const char *file, int line);
+                         gab_value values[len], const char *file, int line);
 #define gab_ndref(gab, stride, len, values)                                    \
   (__gab_ndref(gab, stride, len, values, __FUNCTION__, __LINE__))
 
@@ -3025,6 +3027,22 @@ GAB_API gab_value gab_shape(struct gab_triple gab, uint64_t stride,
                             uint64_t len, gab_value *keys);
 
 /*
+ * @brief Create a list-shape of length len.
+ *
+ * @param gab The engine
+ * @param len The length of the list shape
+ * @return The new shape.
+ */
+GAB_API_INLINE gab_value gab_lshape(struct gab_triple gab, uint64_t len) {
+  gab_value keys[len];
+
+  for (uint64_t i = 0; i < len; i++)
+    keys[i] = gab_number(i);
+
+  return gab_shape(gab, 1, len, keys);
+}
+
+/*
  * @brief Check if the given shape is a list.
  */
 GAB_API_INLINE bool gab_shpisl(gab_value shp) {
@@ -3462,9 +3480,10 @@ struct gab_fiber_argt {
 /**
  * @brief Create a fiber.
  *
- * TODO @cgab @bug: Should fibers store their return value at all? Can we avoid this?
- * It exposes surface area to the user which may complicate the runtime and implementation.
- * Neither go nor the BEAM allow users to do this sort of thing - it makes me hesitant.
+ * TODO @cgab @bug: Should fibers store their return value at all? Can we avoid
+ * this? It exposes surface area to the user which may complicate the runtime
+ * and implementation. Neither go nor the BEAM allow users to do this sort of
+ * thing - it makes me hesitant.
  *
  * @param gab The engine
  * @param receiver The receiver to send message to

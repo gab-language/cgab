@@ -182,12 +182,12 @@ record\put_via_by: .defspec {
   }
 }
 
-record\push: .defspec {
+record\cons: .defspec {
   help: "
-  Return a new record with the given value at the *end* of the record. The key will be the length of the record *before* inserting.
+  Return a new record with the given values at the *end* of the record. The key will be the length of the record *before* inserting.
 
   ```gab
-  arr := [1 2 3] .push 4
+  arr := [1 2 3] .cons 4
 
   arr # :: [1 2 3 4]
   ```
@@ -195,7 +195,7 @@ record\push: .defspec {
   spec: s.message {
     receiver: record\spec
     message:  push:
-    input:    VALUE
+    input:    s.*(VALUE)
     output:   record\spec
     semantics: nil:
   }
