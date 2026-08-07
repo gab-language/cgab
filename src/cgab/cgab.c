@@ -48,6 +48,7 @@
 
 #include <ctype.h>
 #include <stdatomic.h>
+#include <stdint.h>
 #include <threads.h>
 
 /* Append a c-string to a slice of chars */
@@ -1105,6 +1106,8 @@ GAB_INTERNAL bool __gab_jbisalive(struct gab_triple gab, int32_t wkid) {
 
 GAB_INTERNAL void __gab_jbunalive(struct gab_triple gab, int32_t wkid) {
   for (;;) {
+    gab_busywait(gab);
+
     switch (gab_yield(gab)) {
     case sGAB_TERM:
       // This should remain the *only* place in the system
@@ -1118,6 +1121,7 @@ GAB_INTERNAL void __gab_jbunalive(struct gab_triple gab, int32_t wkid) {
     default:
       break;
     }
+
     struct gab_sig sig = atomic_load(&gab.eg->sig);
     struct gab_sig next = {
         .schedule = sig.schedule,
@@ -1170,28 +1174,35 @@ int32_t __gab_jbgc(void *data) {
   cnd_init(&gab.eg->gc_cnd);
   mtx_lock(&gab.eg->gc_mtx);
 
-#if cGAB_LOG_EG
-  fprintf(stderr, "[GCWORKER] WAITING\n");
-#endif
-
   while (gab_njobs(gab) > 0) {
-    struct timespec ts = {.tv_nsec = 10000};
-    int res = cnd_timedwait(&gab.eg->gc_cnd, &gab.eg->gc_mtx, &ts);
+    // struct timespec ts = {.tv_nsec = 10000};
+    // int res = cnd_timedwait(&gab.eg->gc_cnd, &gab.eg->gc_mtx, &ts);
+
+#if cGAB_LOG_EG
+    fprintf(stderr, "[GCWORKER] WAITING\n");
+#endif
+    int res = cnd_wait(&gab.eg->gc_cnd, &gab.eg->gc_mtx);
 
     if (res == thrd_error)
       continue;
 
-    // Try to read a signal, whether we timed-out or succeeded
-    struct gab_sig sig = atomic_load(&gab.eg->sig);
-
-    if (sig.schedule == gab.wkid)
-      goto read_signal;
-
-    struct gab_sig expected = {sig.mask, -2, sig.signal};
-    struct gab_sig desired = {sig.mask, -1, sig.signal};
-    // If we fail, loop again.
-    if (!atomic_compare_exchange_strong(&gab.eg->sig, &expected, desired))
+    if (res == thrd_timedout)
       continue;
+
+    for (;;) {
+      // Try to read a signal, whether we timed-out or succeeded
+      struct gab_sig sig = atomic_load(&gab.eg->sig);
+
+      gab_assert(sig.schedule != gab.wkid, "Impossible");
+      gab_assert(sig.schedule == -2, "Impossible");
+
+      struct gab_sig expected = {sig.mask, -2, sig.signal};
+      struct gab_sig desired = {sig.mask, -1, sig.signal};
+      if (atomic_compare_exchange_weak(&gab.eg->sig, &expected, desired))
+        break;
+
+      gab_busywait(gab);
+    }
 
     // If we succeed, wait for the signal to arrive for us
 
@@ -3374,13 +3385,11 @@ GAB_API union gab_value_pair gab_use(struct gab_triple gab,
 
   const char *package = args.spackage_name;
   if (args.vpackage_name) {
-    gab_fprintf(stderr, "pkg: $\n", args.vpackage_name);
     package = gab_strdata(&args.vpackage_name);
   }
 
   const char *module = args.smodule_name;
   if (args.vmodule_name) {
-    gab_fprintf(stderr, "mod: $\n", args.vmodule_name);
     module = gab_strdata(&args.vmodule_name);
   }
 
@@ -3742,12 +3751,14 @@ GAB_API inline bool gab_signext(struct gab_triple gab, int wkid) {
 
     struct gab_sig sig = atomic_load(&gab.eg->sig);
 
-    if (!sig.mask)
-      return true;
-
 #if cGAB_LOG_EG
     fprintf(stderr, "(%i) TRY NEXT %i: against %b\n", gab.wkid, wkid, sig.mask);
 #endif
+
+    gab_precondition(sig.schedule != wkid, "Redundant call");
+
+    if (!sig.mask)
+      return true;
 
     gab_precondition(sig.signal > 0, "Should have a signal to propagate");
     gab_precondition(sig.schedule >= -1,
@@ -3767,6 +3778,11 @@ GAB_API inline bool gab_signext(struct gab_triple gab, int wkid) {
       };
 
       gab_assert(next.signal != sGAB_IGN, "Should have a signal to propagate");
+
+#if cGAB_LOG_EG
+      fprintf(stderr, "(%i) TRY WRAP NEXT %i: against %b\n", gab.wkid, 0,
+              sig.mask);
+#endif
 
       if (atomic_compare_exchange_weak(&gab.eg->sig, &sig, next))
         return true;
@@ -3792,9 +3808,9 @@ GAB_API inline bool gab_signext(struct gab_triple gab, int wkid) {
 
       uint32_t last_job = n ? n : gab.eg->len;
 
-#if cGAB_LOG_GC
-      fprintf(stderr, "(%i) (%b) SKIPPING %u to %u\n", gab.wkid, sig.mask, wkid,
-              last_job);
+#if cGAB_LOG_EG
+      fprintf(stderr, "(%i) (%b) TRY NEXT SKIP %u to %u\n", gab.wkid, sig.mask,
+              wkid, last_job);
 #endif
 
       // Ugly way of incrementing epoch for not-alive jobs.
@@ -3823,26 +3839,28 @@ GAB_API inline bool gab_signext(struct gab_triple gab, int wkid) {
           .signal = sig.signal,
       };
 
+#if cGAB_LOG_EG
+      fprintf(stderr, "(%i) (%b) TRY NEXT %u\n", gab.wkid, sig.mask, wkid);
+#endif
+
       gab_assert(next.signal != sGAB_IGN, "Next signal should not be ignore");
+
       if (atomic_compare_exchange_weak(&gab.eg->sig, &sig, next))
         return true;
       else
         continue;
     }
-
-    // gab_assert(sig.signal != sGAB_IGN, "Signal should not be ignore");
-    // if (sig.schedule == wkid)
-    //   return true;
-    // else
-    //   continue;
   }
 }
 
 GAB_API inline bool gab_sigclear(struct gab_triple gab) {
   for (;;) {
+    gab_busywait(gab);
+
     struct gab_sig sig = atomic_load(&gab.eg->sig);
     struct gab_sig exp = (struct gab_sig){sig.mask, 0, sig.signal};
     struct gab_sig next = (struct gab_sig){sig.mask, -1, sGAB_IGN};
+
     if (atomic_compare_exchange_weak(&gab.eg->sig, &exp, next)) {
 #if cGAB_LOG_EG
       fprintf(stderr, "(%i) CLEAR %i\n", gab.wkid, sig.signal);
@@ -3862,6 +3880,8 @@ GAB_API inline bool gab_signal(struct gab_triple gab, enum gab_signal s,
   gab_precondition(s != sGAB_IGN, "Cannot signal GAB_IGN");
 
   for (;;) {
+    gab_busywait(gab);
+
     struct gab_sig sig = atomic_load(&gab.eg->sig);
     struct gab_sig none = {sig.mask, -1, sGAB_IGN};
 
@@ -3881,33 +3901,40 @@ GAB_API inline bool gab_signal(struct gab_triple gab, enum gab_signal s,
       }
     }
 
+#if cGAB_LOG_EG
+    fprintf(stderr, "(%i) TRYSIGNAL %i TO %b\n", gab.wkid, s, sig.mask);
+#endif
     if (atomic_compare_exchange_weak(&gab.eg->sig, &none,
                                      ((struct gab_sig){sig.mask, -2, s}))) {
 #if cGAB_LOG_EG
       fprintf(stderr, "(%i) SIGNAL %i TO %b\n", gab.wkid, s, sig.mask);
 #endif
-
-      int res = mtx_lock(&gab.eg->gc_mtx);
-      gab_assert(res == thrd_success, "Can't fail to signal gc thread");
-      res = cnd_signal(&gab.eg->gc_cnd);
-      gab_assert(res == thrd_success, "Can't fail to signal gc thread");
-      res = mtx_unlock(&gab.eg->gc_mtx);
-      gab_assert(res == thrd_success, "Can't fail to signal gc thread");
-
       for (;;) {
-        struct gab_sig sig = atomic_load(&gab.eg->sig);
+        gab_busywait(gab);
 
-        // gab_assert(__gab_jbisalive(gab, 0), "GC Worker died before receiving
-        // signal. %b", sig.mask);
+        int res = mtx_lock(&gab.eg->gc_mtx);
+        gab_assert(res == thrd_success, "Can't fail to signal gc thread");
+        res = cnd_signal(&gab.eg->gc_cnd);
+        gab_assert(res == thrd_success, "Can't fail to signal gc thread");
+        res = mtx_unlock(&gab.eg->gc_mtx);
+        gab_assert(res == thrd_success, "Can't fail to signal gc thread");
 
-        /* acknowledgment received */
-        if (sig.schedule == -1)
-          break;
+        for (uint64_t i = 0; i < 1000; i++) {
+          struct gab_sig sig = atomic_load(&gab.eg->sig);
 
-        if (!__gab_jbisalive(gab, 0))
-          return true;
+          // gab_assert(__gab_jbisalive(gab, 0), "GC Worker died before
+          // receiving signal. %b", sig.mask);
+
+          /* acknowledgment received */
+          if (sig.schedule == -1)
+            return gab_signext(gab, wkid);
+
+          if (!__gab_jbisalive(gab, 0))
+            return true;
+
+          gab_busywait(gab);
+        }
       }
-      return gab_signext(gab, wkid);
     }
   }
 };
@@ -5833,13 +5860,19 @@ GAB_API gab_value gab_nlstpush(struct gab_triple gab, gab_value list,
 
   gab_gclock(gab);
 
+  gab_iref(gab, list);
   // TODO @cgab @bug: GC when locked
   for (uint64_t i = 0; i < len; i++) {
     gab_value key = gab_number(start + i);
     gab_value val = values[i];
-    list = gab_recput(gab, list, key, val);
+
+    gab_value newlist = gab_recput(gab, list, key, val);
+    gab_iref(gab, newlist);
+    gab_dref(gab, list);
+    list = newlist;
   }
 
+  gab_dref(gab, list);
   return gab_gcunlock(gab), list;
 }
 
@@ -6709,13 +6742,21 @@ GAB_API union gab_value_pair gab_fibawait(struct gab_triple gab, gab_value f) {
     if (res.status != gab_ctimeout)
       return res;
 
-    if (!__gab_jbisalive(gab, gab.wkid) ||
-        !__gab_jbstep(gab, gab.eg->jobs + gab.wkid))
-      return __gab_jbbail(gab, gab.eg->jobs + gab.wkid),
-             gab_tfibawait(gab, f, 1);
+    if (gab_step(gab))
+      return gab_tfibawait(gab, f, 1);
   }
 
   gab_unreachable("Should not break out of above loop");
+}
+
+GAB_API bool gab_step(struct gab_triple gab) {
+  gab_precondition(gab.wkid == 1, "May only step from main thread");
+
+  if (!__gab_jbisalive(gab, gab.wkid) ||
+      !__gab_jbstep(gab, gab.eg->jobs + gab.wkid))
+    return __gab_jbbail(gab, gab.eg->jobs + gab.wkid), true;
+
+  return false;
 }
 
 GAB_API void *gab_fibmalloc(gab_value f, uint64_t n) {
@@ -7230,10 +7271,8 @@ GAB_API gab_value gab_chnput(struct gab_triple gab, gab_value c,
     if (res != gab_ctimeout)
       return res;
 
-    if (!__gab_jbisalive(gab, gab.wkid) ||
-        !__gab_jbstep(gab, gab.eg->jobs + gab.wkid))
-      return __gab_jbbail(gab, gab.eg->jobs + gab.wkid),
-             gab_tchnput(gab, c, value, 1);
+    if (gab_step(gab))
+      return gab_tchnput(gab, c, value, 1);
   }
 }
 
@@ -7300,10 +7339,8 @@ GAB_API gab_value gab_chntake(struct gab_triple gab, gab_value c) {
     if (res != gab_ctimeout)
       return res;
 
-    if (!__gab_jbisalive(gab, gab.wkid) ||
-        !__gab_jbstep(gab, gab.eg->jobs + gab.wkid))
-      return __gab_jbbail(gab, gab.eg->jobs + gab.wkid),
-             gab_tchntake(gab, c, 1);
+    if (gab_step(gab))
+      return gab_tchntake(gab, c, 1);
   }
 
   gab_unreachable("Should not break out of above loop");
@@ -9856,21 +9893,17 @@ GAB_INTERNAL void __gab_bclistpack(struct gab_triple gab, struct bc *bc,
                                    uint8_t below, uint8_t above,
                                    gab_value node) {
 
-  uint16_t ks = __gab_bcaddk(gab, bc, gab_cinvalid);
   __gab_obcpush(bc, OP_PACK_LIST, node);
   __gab_bbcpush(bc, below, node);
   __gab_bbcpush(bc, above, node);
-  __gab_sbcpush(bc, ks, node);
 }
 
 GAB_INTERNAL void __gab_bcdictpack(struct gab_triple gab, struct bc *bc,
                                    uint8_t below, uint8_t above,
                                    gab_value node) {
-  uint16_t ks = __gab_bcaddk(gab, bc, gab_cinvalid);
   __gab_obcpush(bc, OP_PACK_DICT, node);
   __gab_bbcpush(bc, below, node);
   __gab_bbcpush(bc, above, node);
-  __gab_sbcpush(bc, ks, node);
 }
 
 GAB_INTERNAL void __gab_bcret(struct gab_triple gab, struct bc *bc,
@@ -9923,8 +9956,8 @@ GAB_INTERNAL void __gab_bcret(struct gab_triple gab, struct bc *bc,
 GAB_INTERNAL void __gab_bcpatchinit(struct bc *bc, uint8_t nlocals) {
   if (v_uint8_t_val_at(&bc->bc, 0) == OP_TRIM)
     v_uint8_t_set(&bc->bc, 1, nlocals);
-  else if (v_uint8_t_val_at(&bc->bc, 5) == OP_TRIM)
-    v_uint8_t_set(&bc->bc, 6, nlocals);
+  else if (v_uint8_t_val_at(&bc->bc, 3) == OP_TRIM)
+    v_uint8_t_set(&bc->bc, 4, nlocals);
   else
     gab_unreachable("Imposible init patch");
 }
@@ -13181,7 +13214,7 @@ extern void putcs(char *arg);
 
 #define MISS_CACHED_PACK_LIST(reason)                                          \
   ({                                                                           \
-    IP() -= 4;                                                                 \
+    IP() -= 2;                                                                 \
     [[clang::musttail]] return OP_PACK_LIST_HANDLER(DISPATCH_ARGS());          \
   })
 
@@ -13518,14 +13551,14 @@ extern void putcs(char *arg);
     uint64_t want = below + above;                                             \
                                                                                \
     if (have <= want && (want - have) < 10) {                                  \
-      WRITE_BYTE(5, OP_PACK_LIST_UP0 + (want - have));                         \
-      IP() -= 5;                                                               \
+      WRITE_BYTE(3, OP_PACK_LIST_UP0 + (want - have));                         \
+      IP() -= 3;                                                               \
       NEXT();                                                                  \
     }                                                                          \
                                                                                \
     if (have > want && (have - want) < 10) {                                   \
-      WRITE_BYTE(5, OP_PACK_LIST_DOWN0 + (have - want));                       \
-      IP() -= 5;                                                               \
+      WRITE_BYTE(3, OP_PACK_LIST_DOWN0 + (have - want));                       \
+      IP() -= 3;                                                               \
       NEXT();                                                                  \
     }                                                                          \
                                                                                \
@@ -13843,7 +13876,6 @@ extern void putcs(char *arg);
   CASE_CODE(PACK_LIST_UP##n) {                                                 \
     uint8_t below = READ_BYTE;                                                 \
     uint8_t above = READ_BYTE;                                                 \
-    SKIP_SHORT;                                                                \
                                                                                \
     PACK_LIST_GUARD_UP_N((uint64_t)n, (below + above));                        \
                                                                                \
@@ -13854,7 +13886,6 @@ extern void putcs(char *arg);
   CASE_CODE(PACK_LIST_DOWN##n) {                                               \
     uint8_t below = READ_BYTE;                                                 \
     uint8_t above = READ_BYTE;                                                 \
-    SKIP_SHORT;                                                                \
                                                                                \
     PACK_LIST_GUARD_DOWN_N((uint64_t)n, (below + above));                      \
                                                                                \
@@ -14755,7 +14786,6 @@ CASE_CODE(RETURN) {
 CASE_CODE(PACK_DICT) {
   uint8_t below = READ_BYTE;
   uint8_t above = READ_BYTE;
-  SKIP_SHORT;
 
   MICRO_OP_PACK_DICT(below, above);
 
@@ -14776,7 +14806,6 @@ IMPL_PACK_LIST_N(9);
 CASE_CODE(PACK_LIST) {
   uint8_t below = READ_BYTE;
   uint8_t above = READ_BYTE;
-  SKIP_SHORT;
   uint64_t have = HV();
 
   MICRO_OP_PACK_LIST(have, below, above);

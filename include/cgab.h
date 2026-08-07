@@ -1731,6 +1731,10 @@ GAB_API int64_t gab_npsprintf(char *dst, uint64_t n, const char *prefix,
  */
 GAB_API uint64_t gab_eglen(struct gab_eg *eg);
 
+GAB_API int32_t gab_njobs(struct gab_triple gab);
+
+GAB_API bool gab_step(struct gab_triple gab);
+
 /**
  * @brief return the number of jobs currently alive.
  */

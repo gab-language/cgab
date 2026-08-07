@@ -216,28 +216,16 @@ bool check_and_printerr(union gab_value_pair *res) {
   if (!gab.eg)
     return false;
 
-  while (gab_signaling(gab))
-    switch (gab_yield(gab)) {
-    case sGAB_TERM:
-      gab_sigpropagate(gab);
-      break;
-    case sGAB_COLL:
-      gab_gcepochnext(gab);
-      gab_sigpropagate(gab);
-      break;
-    default:
-      continue;
-    }
-
-  // if (res->status == gab_cvalid && res->aresult->data[0] != gab_ok)
-  //   while (gab_egalive(gab.eg) > 1) // The GC thread will stay alive
-  //     gab_busywait(gab);
+  if (res->status == gab_cvalid && res->aresult[0] != gab_ok)
+    while (!gab_step(gab))
+      gab_busywait(gab);
 
   pop_and_printerr(gab);
 
   if (res->status != gab_cvalid) {
     if (res->status == gab_cinvalid && res->vresult &&
         res->vresult != gab_cinvalid) {
+
       assert(gab_valkind(res->vresult) == kGAB_RECORD);
       const char *errstr = gab_errtocs(gab, res->vresult);
       assert(errstr != nullptr);
