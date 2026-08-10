@@ -7430,7 +7430,7 @@ GAB_INTERNAL uint64_t __gab_insdumppack(FILE *stream,
   const char *name =
       gab_opcode_names[v_uint8_t_val_at(&self->src->bytecode, offset)];
   fprintf(stream, "%-25s -> %hhx %hhx\n", name, operandA, operandB);
-  return offset + 5;
+  return offset + 3;
 }
 
 GAB_INTERNAL uint64_t __gab_insdumpconstant(FILE *stream,
@@ -9893,21 +9893,17 @@ GAB_INTERNAL void __gab_bclistpack(struct gab_triple gab, struct bc *bc,
                                    uint8_t below, uint8_t above,
                                    gab_value node) {
 
-  uint16_t ks = __gab_bcaddk(gab, bc, gab_cinvalid);
   __gab_obcpush(bc, OP_PACK_LIST, node);
   __gab_bbcpush(bc, below, node);
   __gab_bbcpush(bc, above, node);
-  __gab_sbcpush(bc, ks, node);
 }
 
 GAB_INTERNAL void __gab_bcdictpack(struct gab_triple gab, struct bc *bc,
                                    uint8_t below, uint8_t above,
                                    gab_value node) {
-  uint16_t ks = __gab_bcaddk(gab, bc, gab_cinvalid);
   __gab_obcpush(bc, OP_PACK_DICT, node);
   __gab_bbcpush(bc, below, node);
   __gab_bbcpush(bc, above, node);
-  __gab_sbcpush(bc, ks, node);
 }
 
 GAB_INTERNAL void __gab_bcret(struct gab_triple gab, struct bc *bc,
@@ -9960,8 +9956,8 @@ GAB_INTERNAL void __gab_bcret(struct gab_triple gab, struct bc *bc,
 GAB_INTERNAL void __gab_bcpatchinit(struct bc *bc, uint8_t nlocals) {
   if (v_uint8_t_val_at(&bc->bc, 0) == OP_TRIM)
     v_uint8_t_set(&bc->bc, 1, nlocals);
-  else if (v_uint8_t_val_at(&bc->bc, 5) == OP_TRIM)
-    v_uint8_t_set(&bc->bc, 6, nlocals);
+  else if (v_uint8_t_val_at(&bc->bc, 3) == OP_TRIM)
+    v_uint8_t_set(&bc->bc, 4, nlocals);
   else
     gab_unreachable("Imposible init patch");
 }
@@ -11885,7 +11881,7 @@ static handler handlers[] = {
     KB() + shrt;                                                               \
   })
 
-#define READ_CONSTANTS                                                          \
+#define READ_CONSTANTS                                                         \
   ({                                                                           \
     uint16_t shrt = READ_SHORT;                                                \
     KB() + shrt;                                                               \
@@ -13224,7 +13220,7 @@ extern void putcs(char *arg);
 
 #define MISS_CACHED_PACK_LIST(reason)                                          \
   ({                                                                           \
-    IP() -= 4;                                                                 \
+    IP() -= 2;                                                                 \
     [[clang::musttail]] return OP_PACK_LIST_HANDLER(DISPATCH_ARGS());          \
   })
 
@@ -13537,8 +13533,7 @@ extern void putcs(char *arg);
                                                                                \
     STORE_SP();                                                                \
                                                                                \
-    gab_value rec =                                                            \
-        gab_recordfrom(GAB(), ks[GAB_PACK_LIST_KSHAPE], 1, len, ap - len);     \
+    gab_value rec = gab_list(GAB(), 1, len, ap - len);                         \
                                                                                \
     CHECK_SIGNAL();                                                            \
                                                                                \
@@ -13563,16 +13558,14 @@ extern void putcs(char *arg);
     uint64_t want = below + above;                                             \
                                                                                \
     if (have <= want && (want - have) < 10) {                                  \
-      WRITE_BYTE(5, OP_PACK_LIST_UP0 + (want - have));                         \
-      IP() -= 5;                                                               \
+      WRITE_BYTE(3, OP_PACK_LIST_UP0 + (want - have));                         \
+      IP() -= 3;                                                               \
       NEXT();                                                                  \
     }                                                                          \
                                                                                \
     if (have > want && (have - want) < 10) {                                   \
-      ks[GAB_PACK_LIST_KSHAPE] = gab_lshape(GAB(), (have - want));             \
-      gab_egkeep(EG(), gab_iref(GAB(), ks[GAB_PACK_LIST_KSHAPE]));             \
-      WRITE_BYTE(5, OP_PACK_LIST_DOWN0 + (have - want));                       \
-      IP() -= 5;                                                               \
+      WRITE_BYTE(3, OP_PACK_LIST_DOWN0 + (have - want));                       \
+      IP() -= 3;                                                               \
       NEXT();                                                                  \
     }                                                                          \
                                                                                \
@@ -13890,7 +13883,6 @@ extern void putcs(char *arg);
   CASE_CODE(PACK_LIST_UP##n) {                                                 \
     uint8_t below = READ_BYTE;                                                 \
     uint8_t above = READ_BYTE;                                                 \
-    SKIP_SHORT;                                                                \
                                                                                \
     PACK_LIST_GUARD_UP_N((uint64_t)n, (below + above));                        \
                                                                                \
@@ -13901,7 +13893,6 @@ extern void putcs(char *arg);
   CASE_CODE(PACK_LIST_DOWN##n) {                                               \
     uint8_t below = READ_BYTE;                                                 \
     uint8_t above = READ_BYTE;                                                 \
-    gab_value *ks = READ_CONSTANTS;                                            \
                                                                                \
     PACK_LIST_GUARD_DOWN_N((uint64_t)n, (below + above));                      \
                                                                                \
@@ -14802,7 +14793,6 @@ CASE_CODE(RETURN) {
 CASE_CODE(PACK_DICT) {
   uint8_t below = READ_BYTE;
   uint8_t above = READ_BYTE;
-  SKIP_SHORT;
 
   MICRO_OP_PACK_DICT(below, above);
 
@@ -14823,7 +14813,6 @@ IMPL_PACK_LIST_N(9);
 CASE_CODE(PACK_LIST) {
   uint8_t below = READ_BYTE;
   uint8_t above = READ_BYTE;
-  gab_value* ks = READ_CONSTANTS;
   uint64_t have = HV();
 
   MICRO_OP_PACK_LIST(have, below, above);
