@@ -2060,6 +2060,7 @@ const char *check_installation(const char *target, const char *tag) {
   v_char_spush(&signal, s_char_cstr(tag));
   v_char_push(&signal, '-');
   v_char_spush(&signal, s_char_cstr(target));
+  v_char_spush(&signal, s_char_cstr(".exe"));
   v_char_push(&signal, '\0');
 
   bool exists = file_exister(signal.data);
