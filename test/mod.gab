@@ -332,7 +332,6 @@ blocks\repeated_with_varargs\test: .def (t :: do
   t.expect(one ==: 1)
 
   (one, rest, rest2) := varfunc.(1 2 3 4 5 6 7 8 9 10 11 12)
-  [one, rest, rest2].println
 
   t.expect(one ==: 1)
   t.expect(rest.len, ==: 11)
