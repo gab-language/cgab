@@ -31,7 +31,9 @@ There are several sub-projects within this repository.
 - There are two other Gab modules `gab/nrepl` and `gab/lsp`, which are likely to be broken out into their own repos in the future.
 
 # Dependencies
-libc is the only dependency.
+libc is the only dependency for the cgab static library itself. It does require the C11 threads api, however.
+There are many native modules which do require dependencies. All of these are vendored in the `vendor` directory as git submodules.
+Therefore, all that is needed to clone `cgab` and all its dependencies for building `gab` and all standard-library modules is `git clone --recurse-submodules`
 
 # Installation
 This project is built with `Make`. The `Makefile` expects some environment variables to be present. Specifically:
