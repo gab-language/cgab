@@ -88,9 +88,9 @@ mz_zip_archive zip = {0};
  *  When installing a package, gab installs it in the appropriate directory
  *  for its cgab abi and platform.
  *
- *  For a package like github.com/gab-language/cgab@0.1.4, gab installs it at:
+ *  For a package like github.com/gab-language/cgab@0.1.5, gab installs it at:
  *
- *  ~/gab/0.1.4-x86_64-linux-gnu/github.com/gab-language/cgab@0.1.4
+ *  ~/gab/0.1.5-x86_64-linux-gnu/github.com/gab-language/cgab@0.1.4
  *        ^^^^^                                               ^^^^^
  *
  *  Note that the cgab-abi and the cgab library version here are there same.
@@ -216,28 +216,16 @@ bool check_and_printerr(union gab_value_pair *res) {
   if (!gab.eg)
     return false;
 
-  while (gab_signaling(gab))
-    switch (gab_yield(gab)) {
-    case sGAB_TERM:
-      gab_sigpropagate(gab);
-      break;
-    case sGAB_COLL:
-      gab_gcepochnext(gab);
-      gab_sigpropagate(gab);
-      break;
-    default:
-      continue;
-    }
-
-  // if (res->status == gab_cvalid && res->aresult->data[0] != gab_ok)
-  //   while (gab_egalive(gab.eg) > 1) // The GC thread will stay alive
-  //     gab_busywait(gab);
+  if (res->status == gab_cvalid && res->aresult[0] != gab_ok)
+    while (!gab_step(gab))
+      gab_busywait(gab);
 
   pop_and_printerr(gab);
 
   if (res->status != gab_cvalid) {
     if (res->status == gab_cinvalid && res->vresult &&
         res->vresult != gab_cinvalid) {
+
       assert(gab_valkind(res->vresult) == kGAB_RECORD);
       const char *errstr = gab_errtocs(gab, res->vresult);
       assert(errstr != nullptr);
@@ -342,13 +330,10 @@ union gab_value_pair gab_use_dynlib(struct gab_triple gab, const char *path,
   /*gab.flags |= fGAB_ERR_QUIET;*/
 
   if (res.status != gab_cvalid)
-    return gab_panicf(gab, "Failed to load c module.");
+    return res;
 
   if (res.aresult[0] != gab_ok)
-    return gab_panicf(
-        gab,
-        "Failed to load module. Module returned:\n\n$\n\nExpected:\n\n$\n\n",
-        res.aresult[0], gab_ok);
+    return res;
 
   if (gab_segmodput(gab.eg, path, res.aresult) == nullptr)
     return gab_panicf(gab, "Failed to cache c module.");
@@ -1045,7 +1030,7 @@ int step(struct step *step) {
       /*
        * Each filename should begin with the same prefix as in *dst*.
        *
-       * For example, the package `github.com/gab-language/cgab@0.1.4`
+       * For example, the package `github.com/gab-language/cgab@0.1.5`
        *
        * will resolve to url, which will fetch a bundle `cgab-<gab
        * version>-<platform-triple>`
@@ -1055,7 +1040,7 @@ int step(struct step *step) {
        *
        * These modules should start with a path which matches the package name.
        *
-       * `github.com/gab-language/cgab@0.1.4/<module>`
+       * `github.com/gab-language/cgab@0.1.5/<module>`
        *
        * We should only do this if we are unzipping a package, and not a generic
        * zip we downloaded.
@@ -2075,6 +2060,7 @@ const char *check_installation(const char *target, const char *tag) {
   v_char_spush(&signal, s_char_cstr(tag));
   v_char_push(&signal, '-');
   v_char_spush(&signal, s_char_cstr(target));
+  v_char_spush(&signal, s_char_cstr(".exe"));
   v_char_push(&signal, '\0');
 
   bool exists = file_exister(signal.data);
@@ -2233,15 +2219,18 @@ int run(struct command_arguments *args) {
 }
 
 int exec(struct command_arguments *args) {
-  if (args->argc < 1)
-    return missing_subcommand_argument_error("exec", "code"), 1;
+  const char* str;
+  if (args->argc < 1) {
+    a_char* src = gab_fosread(stdin);
+    str = src->data;
+  } else {
+    str = args->argv[0];
+    args->argc--;
+    args->argv++;
+  }
 
   v_pkg modules = {0};
   int nmodules = init_modules(&modules, args);
-
-  const char* str = args->argv[0];
-  args->argc--;
-  args->argv++;
 
   int res = run_string(str, args->flags, args->wait, args->njobs,
                        nmodules - 1, modules.data, args->argc, args->argv);
@@ -2597,7 +2586,7 @@ int build_lib(struct command_arguments *args) {
 
   /* Add an additional kind of resource for builds such as these:
    * A BUNDLE loading resource.
-   * cgab@0.1.4 -> gab-language/cgab/cgab-0.1.4-x86_64-linux-gnu
+   * cgab@0.1.5 -> gab-language/cgab/cgab-0.1.4-x86_64-linux-gnu
    */
   platform_file_resources[0] = (struct gab_resource){
       .prefix = "",

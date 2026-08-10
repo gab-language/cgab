@@ -64,9 +64,6 @@
 [submodule "vendor/crossline"]
 	path = vendor/crossline
 	url = https://github.com/jcwangxp/Crossline.git
-[submodule "vendor/unthread"]
-	path = vendor/unthread
-	url = https://github.com/mpdn/unthread.git
 [submodule "vendor/munit"]
 	path = vendor/munit
 	url = https://github.com/nemequ/munit.git

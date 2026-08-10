@@ -24,23 +24,6 @@
 
 #include "cgab.h"
 
-GAB_DYNLIB_NATIVE_FN(rec, at) {
-  gab_value rec = gab_arg(0);
-  gab_value key = gab_arg(1);
-
-  if (gab_valkind(rec) != kGAB_RECORD)
-    return gab_pktypemismatch(gab, rec, kGAB_RECORD);
-
-  gab_value val = gab_recat(rec, key);
-
-  if (val == gab_cundefined)
-    gab_vmpush(gab_thisvm(gab), gab_none);
-  else
-    gab_vmpush(gab_thisvm(gab), gab_ok, val);
-
-  return gab_union_cvalid(gab_nil);
-}
-
 #define MIN(a, b) (a < b ? a : b)
 #define MAX(a, b) (a > b ? a : b)
 #define CLAMP(a, b) (MAX(0, MIN(a, b)))
@@ -111,18 +94,6 @@ GAB_DYNLIB_NATIVE_FN(rec, cat) {
   return gab_union_cvalid(gab_nil);
 }
 
-GAB_DYNLIB_NATIVE_FN(rec, push) {
-  gab_value rec = gab_arg(0);
-
-  if (gab_valkind(rec) != kGAB_RECORD)
-    return gab_pktypemismatch(gab, rec, kGAB_RECORD);
-
-  rec = gab_nlstpush(gab, rec, argc - 1, argv + 1);
-
-  gab_vmpush(gab_thisvm(gab), rec);
-  return gab_union_cvalid(gab_nil);
-}
-
 GAB_DYNLIB_NATIVE_FN(rec, pop) {
   gab_value rec = gab_arg(0);
 
@@ -137,35 +108,6 @@ GAB_DYNLIB_NATIVE_FN(rec, pop) {
   gab_value value, key;
   gab_value result = gab_recpop(gab, rec, &value, &key);
   gab_vmpush(gab_thisvm(gab), result, value, key);
-
-  return gab_union_cvalid(gab_nil);
-}
-
-GAB_DYNLIB_NATIVE_FN(rec, put) {
-  gab_value rec = gab_arg(0);
-  gab_value key = gab_arg(1);
-  gab_value val = gab_arg(2);
-
-  if (gab_valkind(rec) != kGAB_RECORD)
-    return gab_pktypemismatch(gab, rec, kGAB_RECORD);
-
-  gab_vmpush(gab_thisvm(gab), gab_recput(gab, rec, key, val));
-
-  return gab_union_cvalid(gab_nil);
-}
-
-GAB_DYNLIB_NATIVE_FN(rec, take) {
-  gab_value rec = gab_arg(0);
-  gab_value key = gab_arg(1);
-
-  if (gab_valkind(rec) != kGAB_RECORD)
-    return gab_pktypemismatch(gab, rec, kGAB_RECORD);
-
-  gab_value v = gab_nil;
-
-  gab_vmpush(gab_thisvm(gab), gab_rectake(gab, rec, key, &v));
-
-  gab_vmpush(gab_thisvm(gab), v);
 
   return gab_union_cvalid(gab_nil);
 }
@@ -399,11 +341,6 @@ GAB_DYNLIB_MAIN_FN {
               gab_snative(gab, "at_via", gab_mod_rec_at_via),
           },
           {
-              gab_message(gab, "push"),
-              t,
-              gab_snative(gab, "push", gab_mod_rec_push),
-          },
-          {
               gab_message(gab, "+"),
               t,
               gab_snative(gab, "+", gab_mod_rec_cat),
@@ -419,24 +356,9 @@ GAB_DYNLIB_MAIN_FN {
               gab_snative(gab, "is\\list", gab_mod_rec_is_list),
           },
           {
-              gab_message(gab, "take"),
-              t,
-              gab_snative(gab, "take", gab_mod_rec_take),
-          },
-          {
               gab_message(gab, "pop"),
               t,
               gab_snative(gab, "pop", gab_mod_rec_pop),
-          },
-          {
-              gab_message(gab, "put"),
-              t,
-              gab_snative(gab, "put", gab_mod_rec_put),
-          },
-          {
-              gab_message(gab, "at"),
-              t,
-              gab_snative(gab, "at", gab_mod_rec_at),
           },
           {
               gab_message(gab, "vals"),
