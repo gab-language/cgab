@@ -10,32 +10,6 @@ shape\spec := shape: .defspec {
   spec:  s.shape
 }
 
-shape\push: .defspec {
-  help:
-  "
-  Push additional keys to the end of a shape.
-  "
-  spec: s.message {
-    receiver:  shape\spec
-    message:   push:
-    input:     s.unknown
-    output:    s.shape
-  }
-}
-
-shape\pop: .defspec {
-  help:
-  "
-  Pop a key off the back of the shape
-  "
-  spec: s.message {
-    receiver:  shape\spec
-    message:   pop:
-    input:     s.unknown
-    output:    s.cat('remaining' s.shape)
-  }
-}
-
 shape\len: .defspec {
   help:
   "

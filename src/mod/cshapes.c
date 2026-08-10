@@ -123,32 +123,6 @@ GAB_DYNLIB_NATIVE_FN(shp, cat) {
   return gab_union_cvalid(gab_nil);
 }
 
-GAB_DYNLIB_NATIVE_FN(shp, push) {
-  gab_value shp = gab_arg(0);
-
-  if (gab_valkind(shp) != kGAB_SHAPE)
-    return gab_pktypemismatch(gab, shp, kGAB_SHAPE);
-
-  shp = gab_nlstpush(gab, shp, argc - 1, argv + 1);
-
-  gab_vmpush(gab_thisvm(gab), shp);
-  return gab_union_cvalid(gab_nil);
-}
-
-GAB_DYNLIB_NATIVE_FN(shp, pop) {
-  gab_value shp = gab_arg(0);
-
-  if (gab_valkind(shp) != kGAB_SHAPE)
-    return gab_pktypemismatch(gab, shp, kGAB_SHAPE);
-
-  gab_value res;
-
-  gab_vmpush(gab_thisvm(gab), gab_recpop(gab, shp, &res, nullptr));
-  gab_vmpush(gab_thisvm(gab), res);
-
-  return gab_union_cvalid(gab_nil);
-}
-
 GAB_DYNLIB_NATIVE_FN(shp, is_empty) {
   gab_value shp = gab_arg(0);
 
@@ -276,11 +250,6 @@ GAB_DYNLIB_MAIN_FN {
               gab_snative(gab, "slice", gab_mod_shp_slice),
           },
           {
-              gab_message(gab, "push"),
-              t,
-              gab_snative(gab, "push", gab_mod_shp_push),
-          },
-          {
               gab_message(gab, "+"),
               t,
               gab_snative(gab, "+", gab_mod_shp_cat),
@@ -294,11 +263,6 @@ GAB_DYNLIB_MAIN_FN {
               gab_message(gab, "is\\list"),
               t,
               gab_snative(gab, "is\\list", gab_mod_shp_is_list),
-          },
-          {
-              gab_message(gab, "pop"),
-              t,
-              gab_snative(gab, "pop", gab_mod_shp_pop),
           },
           {
               gab_message(gab, "at"),
