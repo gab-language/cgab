@@ -88,9 +88,9 @@ mz_zip_archive zip = {0};
  *  When installing a package, gab installs it in the appropriate directory
  *  for its cgab abi and platform.
  *
- *  For a package like github.com/gab-language/cgab@0.1.4, gab installs it at:
+ *  For a package like github.com/gab-language/cgab@0.1.5, gab installs it at:
  *
- *  ~/gab/0.1.4-x86_64-linux-gnu/github.com/gab-language/cgab@0.1.4
+ *  ~/gab/0.1.5-x86_64-linux-gnu/github.com/gab-language/cgab@0.1.4
  *        ^^^^^                                               ^^^^^
  *
  *  Note that the cgab-abi and the cgab library version here are there same.
@@ -1030,7 +1030,7 @@ int step(struct step *step) {
       /*
        * Each filename should begin with the same prefix as in *dst*.
        *
-       * For example, the package `github.com/gab-language/cgab@0.1.4`
+       * For example, the package `github.com/gab-language/cgab@0.1.5`
        *
        * will resolve to url, which will fetch a bundle `cgab-<gab
        * version>-<platform-triple>`
@@ -1040,7 +1040,7 @@ int step(struct step *step) {
        *
        * These modules should start with a path which matches the package name.
        *
-       * `github.com/gab-language/cgab@0.1.4/<module>`
+       * `github.com/gab-language/cgab@0.1.5/<module>`
        *
        * We should only do this if we are unzipping a package, and not a generic
        * zip we downloaded.
@@ -2586,7 +2586,7 @@ int build_lib(struct command_arguments *args) {
 
   /* Add an additional kind of resource for builds such as these:
    * A BUNDLE loading resource.
-   * cgab@0.1.4 -> gab-language/cgab/cgab-0.1.4-x86_64-linux-gnu
+   * cgab@0.1.5 -> gab-language/cgab/cgab-0.1.4-x86_64-linux-gnu
    */
   platform_file_resources[0] = (struct gab_resource){
       .prefix = "",
