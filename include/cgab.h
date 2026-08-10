@@ -770,8 +770,10 @@ static inline void __gab_assert_fail(const char *prelude, const char *expr,
  *
  */
 #ifndef GAB_CORE
-#include <delayimp.h>
 #include <windows.h>
+
+#include <delayimp.h>
+
 thread_local static DWORD g_oldProtect = 0;
 ExternC FARPROC gab_delayload(unsigned dliNotify, PDelayLoadInfo pdli) {
   switch (dliNotify) {
