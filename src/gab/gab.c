@@ -27,7 +27,7 @@
 #define T s_char
 #include "vector.h"
 
-#define T const char*
+#define T const char *
 #define NAME cstr
 #include "vector.h"
 
@@ -222,34 +222,7 @@ bool check_and_printerr(union gab_value_pair *res) {
 
   pop_and_printerr(gab);
 
-  if (res->status != gab_cvalid) {
-    if (res->status == gab_cinvalid && res->vresult &&
-        res->vresult != gab_cinvalid) {
-
-      assert(gab_valkind(res->vresult) == kGAB_RECORD);
-      const char *errstr = gab_errtocs(gab, res->vresult);
-      assert(errstr != nullptr);
-
-      if (errstr) {
-        fputs(errstr, stderr);
-        fflush(stderr);
-      }
-    }
-
-    return false;
-  }
-
-  if (res->aresult[0] != gab_ok) {
-    const char *errstr = gab_errtocs(gab, res->aresult[1]);
-    assert(errstr != nullptr);
-    fputs(errstr, stderr);
-    fflush(stderr);
-    // TODO @gab: fixleak
-    // return a_gab_value_destroy(res->aresult), false;
-    return false;
-  }
-
-  return true;
+  return res->status == gab_cvalid && res->aresult[0] == gab_ok;
 }
 
 int copy_file(FILE *in, FILE *out) {
@@ -505,7 +478,7 @@ union gab_value_pair gab_use_source(struct gab_triple gab, const char *path,
 
   if (src == nullptr) {
     gab_value reason = gab_string(gab, strerror(errno));
-    return gab_panicf(gab, "Failed to load module: $", reason);
+    return gab_panicf(gab, "Failed to load module: @", reason);
   }
 
   union gab_value_pair fiber =
@@ -550,7 +523,7 @@ static struct gab_package default_modules[] = {
     {"github.com/gab-language/cgab@" GAB_VERSION_TAG},
     {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Ranges"},
     {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Transducers"},
-    {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Io"},
+    // {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Io"},
     {}, // List terminator.
 };
 static const uint64_t ndefault_modules = LEN_CARRAY(default_modules) - 1;
@@ -591,7 +564,8 @@ static const struct gab_resource native_zip_resources[] = {
 
 static const char *roots[4] = {};
 
-gab_value build_process_module(struct gab_triple gab, uint64_t nargs, const char **args){
+gab_value build_process_module(struct gab_triple gab, uint64_t nargs,
+                               const char **args) {
   gab_value ProcessModule = gab_message(gab, "gab\\process");
 
   gab_def(gab, {
@@ -636,7 +610,8 @@ int run_repl(int flags, uint32_t wait, uint64_t nmodules,
 
   uint64_t len = gab_varrlen(res.aresult);
 
-  gab_assert(len - 1 == nmodules, "Found %lu modules, expected %lu", len - 1, nmodules);
+  gab_assert(len - 1 == nmodules, "Found %lu modules, expected %lu", len - 1,
+             nmodules);
 
   const char *sargs[len];
 
@@ -671,7 +646,8 @@ int run_repl(int flags, uint32_t wait, uint64_t nmodules,
 }
 
 int run_string(const char *string, int flags, uint32_t wait, uint64_t jobs,
-               uint64_t nmodules, struct gab_package *packages, uint64_t nargs, const char** args) {
+               uint64_t nmodules, struct gab_package *packages, uint64_t nargs,
+               const char **args) {
   gab_ossignal(SIGINT, propagate_term);
 
   union gab_value_pair res = gab_create(
@@ -689,7 +665,8 @@ int run_string(const char *string, int flags, uint32_t wait, uint64_t jobs,
     return gab_destroy(gab), 0;
 
   uint64_t len = gab_varrlen(res.aresult);
-  gab_assert(len - 1 == nmodules, "Found %lu modules, expected %lu", len - 1, nmodules);
+  gab_assert(len - 1 == nmodules, "Found %lu modules, expected %lu", len - 1,
+             nmodules);
 
   const char *sargs[len];
   for (int i = 0; i < len; i++)
@@ -770,7 +747,8 @@ int run_bundle(const char *mod, uint64_t argc, const char **argv) {
     return gab_destroy(gab), 1;
 
   uint64_t len = gab_varrlen(res.aresult);
-  gab_assert(len - 1 == ndefault_modules, "Found %lu modules, expected %lu", len - 1, ndefault_modules);
+  gab_assert(len - 1 == ndefault_modules, "Found %lu modules, expected %lu",
+             len - 1, ndefault_modules);
 
   const char *sargs[len];
   for (int i = 0; i < len; i++)
@@ -803,7 +781,8 @@ int run_bundle(const char *mod, uint64_t argc, const char **argv) {
 }
 
 int run_file(const char *package, int flags, uint32_t wait, uint64_t jobs,
-             uint64_t nmodules, struct gab_package *packages, uint64_t nargs, const char** args) {
+             uint64_t nmodules, struct gab_package *packages, uint64_t nargs,
+             const char **args) {
   gab_ossignal(SIGINT, propagate_term);
 
   union gab_value_pair res = gab_create(
@@ -821,7 +800,8 @@ int run_file(const char *package, int flags, uint32_t wait, uint64_t jobs,
     return gab_destroy(gab), 1;
 
   uint64_t len = gab_varrlen(res.aresult);
-  gab_assert(len - 1 == nmodules, "Found %lu modules, expected %lu", len - 1, nmodules);
+  gab_assert(len - 1 == nmodules, "Found %lu modules, expected %lu", len - 1,
+             nmodules);
 
   const char *sargs[len];
   for (int i = 0; i < len; i++)
@@ -2219,9 +2199,9 @@ int run(struct command_arguments *args) {
 }
 
 int exec(struct command_arguments *args) {
-  const char* str;
+  const char *str;
   if (args->argc < 1) {
-    a_char* src = gab_fosread(stdin);
+    a_char *src = gab_fosread(stdin);
     str = src->data;
   } else {
     str = args->argv[0];
@@ -2232,8 +2212,8 @@ int exec(struct command_arguments *args) {
   v_pkg modules = {0};
   int nmodules = init_modules(&modules, args);
 
-  int res = run_string(str, args->flags, args->wait, args->njobs,
-                       nmodules - 1, modules.data, args->argc, args->argv);
+  int res = run_string(str, args->flags, args->wait, args->njobs, nmodules - 1,
+                       modules.data, args->argc, args->argv);
 
   v_pkg_destroy(&modules);
 
@@ -2244,7 +2224,8 @@ int repl(struct command_arguments *args) {
   v_pkg modules = {0};
   int nmodules = init_modules(&modules, args);
 
-  int res = run_repl(args->flags, args->wait, nmodules - 1, modules.data, args->argc, args->argv);
+  int res = run_repl(args->flags, args->wait, nmodules - 1, modules.data,
+                     args->argc, args->argv);
 
   v_pkg_destroy(&modules);
 
@@ -2293,12 +2274,13 @@ void cmd_details(int i) {
 
 int welcome(struct command_arguments *args) {
   printf("%s\n%s", welcome_message,
-         "To get started, run `gab help` for a list of commands."
+         "To get started, run " GREEN("gab")" "  YELLOW("help")" for a list of commands."
          "\n\n");
 
   if (!check_installation(GAB_TARGET_TRIPLE, GAB_VERSION_TAG))
-    printf(SECTION("INSTALLATION") "\n\n\tRun `gab get` to complete "
-                                   "your installation.\n");
+    printf(SECTION("INSTALLATION") "\n\n\tNo installation of "CYAN("cgab-"GAB_VERSION_TAG"-"GAB_TARGET_TRIPLE)" found.\n\n\tRun " GREEN("gab") " " YELLOW(
+        "get") " to complete "
+               "your installation.\n");
 
   return 0;
 }
@@ -2327,11 +2309,11 @@ struct {
   const char *name, *target;
 } possible_targets[] = {
     {
-        "x64 linux",
+        "x64   linux",
         "x86_64-linux-gnu",
     },
     {
-        "x64 macos",
+        "x64   macos",
         "x86_64-macos-none",
     },
     {
@@ -2339,11 +2321,11 @@ struct {
         "x86_64-windows-gnu",
     },
     {
-        "arm linux",
+        "arm   linux",
         "aarch64-linux-gnu",
     },
     {
-        "arm macos",
+        "arm   macos",
         "aarch64-macos-none",
     },
     {

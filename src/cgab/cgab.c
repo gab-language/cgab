@@ -2208,7 +2208,20 @@ GAB_API union gab_value_pair gab_aexec(struct gab_triple gab,
                                                  .argv = args.sargv,
                                              });
 
-  if (main.status != gab_cvalid || gab.flags & fGAB_BUILD_CHECK)
+  if (main.status != gab_cvalid) {
+    // When execing, publish a build-error as an error.
+    gab_iref(gab, main.vresult);
+    gab_egkeep(gab.eg, main.vresult);
+
+    v_gab_value_thrd_push(&gab.eg->err, main.vresult);
+
+    if (gab.flags & fGAB_SIGTERM_ON_ERR)
+      gab_sigterm(gab);
+
+    return main;
+  }
+
+  if (gab.flags & fGAB_BUILD_CHECK)
     return main;
 
   return gab_arun(gab, (struct gab_run_argt){
@@ -9247,6 +9260,9 @@ GAB_API union gab_value_pair gab_parse(struct gab_triple gab,
 
   gab_value ast = __gab_parse(gab, &parser);
 
+  if (ast == gab_cinvalid && parser.err == gab_cundefined)
+    __gab_prserror(gab, &parser, GAB_PANIC, "");
+
   gab_assert(ast != gab_cinvalid || parser.err != gab_cundefined,
              "Shall either have an ast or an error");
 
@@ -12279,6 +12295,11 @@ GAB_API union gab_value_pair gab_vpanicf(struct gab_triple gab, const char *fmt,
     if (err != gab_cinvalid) {
       gab_iref(gab, err);
       gab_egkeep(gab.eg, err);
+
+      v_gab_value_thrd_push(&gab.eg->err, err);
+
+      if (gab.flags & fGAB_SIGTERM_ON_ERR)
+        gab_sigterm(gab);
     }
 
     gab_value res[] = {gab_err, err, gab_cinvalid};
