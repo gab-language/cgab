@@ -5753,6 +5753,11 @@ GAB_INTERNAL gab_value __gab_reccons(struct gab_triple gab, gab_value rec,
                                      gab_value v, gab_value shp) {
   gab_precondition(gab_valkind(rec) == kGAB_RECORD, "Invalid kind %d",
                    gab_valkind(rec));
+
+  gab_precondition(gab_valkind(shp) == kGAB_SHAPE ||
+                       gab_valkind(shp) == kGAB_SHAPELIST,
+                   "Invalid kind %d", gab_valkind(shp));
+
   struct gab_orec *r = GAB_VAL_TO_REC(rec);
 
   uint64_t i = gab_reclen(rec);
@@ -6118,10 +6123,13 @@ GAB_API gab_value gab_nlstcat(struct gab_triple gab, uint64_t len,
   for (uint64_t i = 0; i < total_len; i++)
     total_keys[i] = gab_number(i);
 
-  gab_gclock(gab);
-
   // DO this first so as not to collect *while* initiating a shape.
   gab_value shape = gab_shape(gab, 1, total_len, total_keys);
+
+  if (shape == gab_cinvalid)
+    return gab_cinvalid;
+
+  gab_gclock(gab);
 
   uint64_t shift = __gab_pvecshift(total_len);
 
@@ -6133,9 +6141,6 @@ GAB_API gab_value gab_nlstcat(struct gab_triple gab, uint64_t len,
   self->shape = shape;
   self->shift = shift;
   self->len = rootlen;
-
-  if (gab_valkind(self->shape) != kGAB_SHAPELIST)
-    gab_fprintf(stdout, "UHOH:\n$\n", self->shape);
 
   gab_assert(total_len == gab_shplen(self->shape),
              "Total length shall match constructed shape length");
@@ -6169,6 +6174,9 @@ GAB_API gab_value gab_nreccat(struct gab_triple gab, uint64_t len,
     shapes[i] = gab_recshp(records[i]);
 
   gab_value new_shp = gab_nshpcat(gab, len, shapes);
+
+  if (new_shp == gab_cinvalid)
+    return gab_cinvalid;
 
   uint64_t total_len = gab_shplen(new_shp);
   uint64_t shift = __gab_pvecshift(total_len);
