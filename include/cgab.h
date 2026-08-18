@@ -356,7 +356,7 @@
  * The cutoff at which point cgab shapes will no longer print their keys.
  */
 #ifndef cGAB_SHAPE_LEN_CUTOFF
-#define cGAB_SHAPE_LEN_CUTOFF 16
+#define cGAB_SHAPE_LEN_CUTOFF 32
 #endif
 
 /*
@@ -372,7 +372,7 @@
  * values.
  */
 #ifndef cGAB_DICT_LEN_CUTOFF
-#define cGAB_DICT_LEN_CUTOFF 16
+#define cGAB_DICT_LEN_CUTOFF 32
 #endif
 
 /*

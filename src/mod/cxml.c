@@ -107,6 +107,11 @@ bool unescape_into(char *buf, const char *str, size_t len) {
 gab_value *push_value(struct gab_triple gab, hoxml_context_t *hoxml,
                       const char *content, size_t content_length,
                       hoxml_code_t t, gab_value *sp) {
+
+  if (t < 0) {
+    return nullptr;
+  }
+
   switch (t) {
   case HOXML_ATTRIBUTE: {
     size_t len = strlen(hoxml->attribute);
@@ -117,13 +122,18 @@ gab_value *push_value(struct gab_triple gab, hoxml_context_t *hoxml,
 
     *sp++ = gab_string(gab, buf);
 
-     len = strlen(hoxml->value);
-     char valbuf[len];
+    if (hoxml->value) {
+      len = strlen(hoxml->value);
+      char valbuf[len];
 
-    if (!unescape_into(valbuf, hoxml->value, len))
-      assert(false && "unreachable");
+      if (!unescape_into(valbuf, hoxml->value, len))
+        assert(false && "unreachable");
 
-    *sp++ = gab_string(gab, valbuf);
+      *sp++ = gab_string(gab, valbuf);
+    } else {
+      *sp++ = gab_true;
+    }
+
     break;
   }
   case HOXML_ELEMENT_BEGIN: {
@@ -132,6 +142,28 @@ gab_value *push_value(struct gab_triple gab, hoxml_context_t *hoxml,
     *sp++ = gab_string(gab, hoxml->tag);
 
     hoxml_code_t code;
+    while ((code = hoxml_parse(hoxml, content, content_length)) ==
+           HOXML_ATTRIBUTE) {
+      sp = push_value(gab, hoxml, content, content_length, code, sp);
+
+      if (sp == nullptr)
+        return nullptr;
+    }
+
+    size_t attrs = sp - (save + 1);
+    gab_assert(attrs % 2 == 0, "Should have even elements after attrs");
+
+    sp = save + 1;
+    *sp++ = gab_record(gab, 2, attrs / 2, save + 1, save + 2);
+
+    if (code == HOXML_ELEMENT_END)
+      goto done;
+
+    sp = push_value(gab, hoxml, content, content_length, code, sp);
+
+    if (sp == nullptr)
+      return nullptr;
+
     while ((code = hoxml_parse(hoxml, content, content_length)) !=
            HOXML_ELEMENT_END) {
       sp = push_value(gab, hoxml, content, content_length, code, sp);
@@ -140,14 +172,14 @@ gab_value *push_value(struct gab_triple gab, hoxml_context_t *hoxml,
         return nullptr;
     }
 
-    size_t attrs = sp - (save + 1);
-    sp = save + 1;
-    *sp++ = gab_record(gab, 2, attrs / 2, save + 1, save + 2);
+  done:
+    if (hoxml->content)
+      *sp++ = gab_string(gab, hoxml->content);
 
-    *sp++ = gab_string(gab, hoxml->content);
+    size_t children = sp - (save);
 
     sp = save;
-    *sp++ = gab_list(gab, 1, 3, save);
+    *sp++ = gab_list(gab, 1, children, save);
     break;
   }
   default:
@@ -168,7 +200,8 @@ GAB_DYNLIB_NATIVE_FN(xml, decode) {
   uint64_t len = gab_strlen(str);
 
   hoxml_context_t hoxml;
-  // Maybe allocating on the stack isn't the safest? Apply a max here?
+  // TODO @cxml @bug: Maybe allocating on the stack isn't the safest? Apply a
+  // max here?
   char buf[len * 10];
   hoxml_init(&hoxml, buf, len * 10);
 

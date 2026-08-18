@@ -1233,10 +1233,11 @@ GAB_DYNLIB_NATIVE_FN(ui, hui_render) {
     res = render_componentlist(gab, gui, app, CLAY_TOP_TO_BOTTOM,
                                (Clay_ChildAlignment){});
 
-    Clay_EndLayout(step.dt_d);
-
+    // Don't call end layout if our render failed.
     if (res.status != gab_cundefined)
       goto err;
+
+    Clay_EndLayout(step.dt_d);
 
     gab_dref(gab, app);
   }

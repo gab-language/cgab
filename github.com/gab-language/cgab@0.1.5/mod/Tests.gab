@@ -22,8 +22,10 @@ Colors := {
 
 Spacer := [ box: { width\grow: 10 } [] ]
 
+how := hui:
+
 Ui
-  .run(hui: events app)
+  .run(how events app)
   .unwrap
 
 is\unittest:.def(
@@ -88,6 +90,10 @@ Behavior := test\behavior:.defclass(
   expect: (lhs cmp rhs) :: do
     # Run the comparison of the expect
     assertion\outcome := cmp .test\compare (lhs, rhs)
+
+    (how == hui: & assertion\outcome.!) .then () :: do
+      'Assertion failed: $ $ $'.panicf(lhs, cmp, rhs)
+    end
 
     path := self.test\path
 

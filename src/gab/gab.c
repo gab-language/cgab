@@ -523,7 +523,7 @@ static struct gab_package default_modules[] = {
     {"github.com/gab-language/cgab@" GAB_VERSION_TAG},
     {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Ranges"},
     {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Transducers"},
-    // {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Io"},
+    {"github.com/gab-language/cgab@" GAB_VERSION_TAG, "Io"},
     {}, // List terminator.
 };
 static const uint64_t ndefault_modules = LEN_CARRAY(default_modules) - 1;
@@ -1605,9 +1605,13 @@ static struct command commands[] =
         },
         {
             "info",
-            "Log information about the local gab environment.",
+            "Print information about the local gab environment.",
             // clang-format off
-            "\tDump compile-time configuration about this binary, as well as list the targets installed locally",
+            "\tPrint information about the local gab environment, for cgab version "GAB_VERSION_TAG".\n\n"
+            "\tThis includes compile-time configuration for cgab itself, as well as:\n"
+              "\t\t- Installations of cgab "GAB_VERSION_TAG" for other targets\n"
+              "\t\t- Hosts configured for remote packages\n"
+              "\t\t- Paths checked by the engine when importing other files\n",
             // clang-format on
             .example =
                 {
@@ -2274,13 +2278,16 @@ void cmd_details(int i) {
 
 int welcome(struct command_arguments *args) {
   printf("%s\n%s", welcome_message,
-         "To get started, run " GREEN("gab")" "  YELLOW("help")" for a list of commands."
-         "\n\n");
+         "To get started, run " GREEN("gab") " " YELLOW(
+             "help") " for a list of commands."
+                     "\n\n");
 
   if (!check_installation(GAB_TARGET_TRIPLE, GAB_VERSION_TAG))
-    printf(SECTION("INSTALLATION") "\n\n\tNo installation of "CYAN("cgab-"GAB_VERSION_TAG"-"GAB_TARGET_TRIPLE)" found.\n\n\tRun " GREEN("gab") " " YELLOW(
-        "get") " to complete "
-               "your installation.\n");
+    printf(SECTION("INSTALLATION") "\n\n\tNo installation of " CYAN(
+        "cgab-" GAB_VERSION_TAG
+        "-" GAB_TARGET_TRIPLE) " found.\n\n\tRun " GREEN("gab") " " YELLOW("ge"
+                                                                           "t") " to complete "
+                                                                                "your installation.\n");
 
   return 0;
 }
@@ -2294,7 +2301,7 @@ struct {
     {"superinsts?", STR(cGAB_SUPERINSTRUCTIONS)},
     {"tailcall?", STR(cGAB_TAILCALL)},
     {"likely?", STR(cGAB_LIKELY)},
-    {"eg-idle tries", STR(cGAB_WORKER_IDLE_TRIES)},
+    {"eg-idle tries", STR(cGAB_JOB_IDLE_TRIES)},
     {"vm-put tries", STR(cGAB_VM_CHANNEL_PUT_TRIES)},
     {"vm-take tries", STR(cGAB_VM_CHANNEL_TAKE_TRIES)},
     {"busywait-ns", STR(cGAB_DEFAULT_WAIT_NS)},
@@ -2335,13 +2342,13 @@ struct {
 };
 
 int info(struct command_arguments *args) {
-  printf("%17s\n", SECTION("CONFIGURATION") "\n");
+  printf("%s\n", SECTION("CONFIGURATION") "\n");
 
   for (int i = 0; i < LEN_CARRAY(compile_info); i++) {
     printf("%17s | %s\n", compile_info[i].name, compile_info[i].value);
   }
 
-  printf("\n%17s\n", SECTION(GAB_VERSION_TAG " TARGETS") "\n");
+  printf("\n%s\n", SECTION(GAB_VERSION_TAG " TARGETS") "\n");
 
   for (int i = 0; i < LEN_CARRAY(possible_targets); i++) {
     /*
@@ -2352,11 +2359,31 @@ int info(struct command_arguments *args) {
     const char *target = possible_targets[i].target;
 
     const char *exists = check_installation(target, GAB_VERSION_TAG);
-    printf("%17s | %s\n", possible_targets[i].name,
-           exists ? exists : "not installed");
+    printf("%17s | %s%s" GAB_RESET "\n", possible_targets[i].name,
+           exists ? GAB_GREEN : GAB_RED, exists ? exists : "not installed");
 
     free((void *)exists);
   }
+
+  printf("\n%s\n", SECTION("HOSTS") "\n");
+
+  for (int i = 0; i < LEN_CARRAY(known_hosts); i++) {
+    struct host *host = &known_hosts[i];
+    printf("%17s | " GREEN("%s\n"), host->hostname, host->pattern);
+  }
+
+  printf("\n%s\n", SECTION("RESOURCES") "\n");
+  for (int i = 0; i < LEN_CARRAY(roots); i++) {
+    if (!roots[i])
+      break;
+    for (int j = 0; j < LEN_CARRAY(native_file_resources); j++) {
+      if (!native_file_resources[j].exister)
+        continue;
+      const struct gab_resource *res = &native_file_resources[j];
+      printf("      %s%s"GREEN("<>")"%s\n", roots[i], res->prefix, res->suffix);
+    }
+  }
+
   return 0;
 }
 

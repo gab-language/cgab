@@ -1,0 +1,47 @@
+xml := 'github.com/gab-language/cgab@0.1.5' .use 'cxml'
+Transducers := 'github.com/gab-language/cgab@0.1.5' .use 'Transducers'
+
+array_xf := Transducers.map(e :: e.to\xml)
+        |> Transducers.interpose ","
+
+object_xf := Transducers.map((v k) :: k.to\xml\tag\begin + v.to\xml + k.to\xml\tag\end)
+
+to\xml\tag\begin: .defcase {
+  Messages.t
+  () :: Strings.make("<" self ">")
+
+  Strings.t
+  () :: Strings.make("<" self ">")
+}
+
+to\xml\tag\end: .defcase {
+  Messages.t
+  () :: Strings.make("</" self ">")
+
+  Strings.t
+  () :: Strings.make("</" self ">")
+}
+
+xml\do_encode_record: .defcase {
+  true: array :: Strings.make(array.join("" array_xf))
+  false: object :: Strings.make(object.join("" object_xf))
+}
+
+to\xml: .defcase {
+  nil:          'null'
+  true:         'true'
+  false:        'false'
+  Numbers.t
+  () :: self.to\string
+
+  Messages.t
+  () :: self.to\string.to\xml
+
+  Strings.t
+  () :: Strings.make('"' self '"')
+
+  Records.t
+  () :: self.is\list.xml\do_encode_record self
+}
+
+xml

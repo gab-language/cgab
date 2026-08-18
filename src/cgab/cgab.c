@@ -3056,6 +3056,10 @@ GAB_API gab_value gab_vspanicf(struct gab_triple gab, va_list va,
       gab_number(err.col_end), vbyte_begin, gab_number(err.byte_begin),
       vbyte_end, gab_number(err.byte_end), vthrd, gab_number(args.wkid), );
 
+  // TODO @cgab @bug: This swallows an error?
+  if (rec == gab_cinvalid)
+    return gab_gcunlock(gab), gab_cinvalid;
+
   gab_assert(gab_reclen(rec) == 11,
              "Error record shall be constructed correctly");
 
@@ -5690,6 +5694,10 @@ GAB_INTERNAL gab_value __gab_recsetshp(gab_value rec, gab_value shp) {
   gab_precondition(gab_valkind(rec) == kGAB_RECORD, "Invalid kind %d",
                    gab_valkind(rec));
 
+  gab_precondition(gab_valkind(shp) == kGAB_SHAPE ||
+                       gab_valkind(shp) == kGAB_SHAPELIST,
+                   "Invalid kind %d", gab_valkind(shp));
+
   struct gab_orec *r = GAB_VAL_TO_REC(rec);
   r->shape = shp;
   return rec;
@@ -5811,6 +5819,9 @@ GAB_API gab_value gab_recput(struct gab_triple gab, gab_value rec,
   if (idx == -1) {
     gab_value newshp = gab_shpwith(gab, gab_recshp(rec), key);
 
+    if (newshp == gab_cinvalid)
+      return gab_gcunlock(gab), gab_cinvalid;
+
     gab_value result = __gab_reccons(gab, rec, val, newshp);
 
     return gab_gcunlock(gab), result;
@@ -5857,12 +5868,15 @@ GAB_API gab_value gab_rectake(struct gab_triple gab, gab_value rec,
   if (gab_reclen(rec) == 1)
     return gab_gcunlock(gab), gab_erecord(gab);
 
+  gab_value s = gab_shpwithout(gab, gab_recshp(rec), key);
+
+  if (s == gab_cinvalid)
+    return gab_gcunlock(gab), gab_cinvalid;
+
   gab_value dissoc_out;
   gab_value result =
       __gab_rectake(gab, GAB_VAL_TO_REC(rec)->shift, rec, idx,
                     gab_uvrecat(rec, gab_reclen(rec) - 1), &dissoc_out);
-
-  gab_value s = gab_shpwithout(gab, gab_recshp(rec), key);
 
   result = __gab_recsetshp(result, s);
 
@@ -5976,11 +5990,12 @@ GAB_API gab_value gab_shptorec(struct gab_triple gab, gab_value shp) {
   struct gab_orec *self =
       GAB_CREATE_FLEX_OBJ(gab_orec, gab_value, rootlen, kGAB_RECORD);
 
-  self->shape = shp;
   self->shift = shift;
   self->len = rootlen;
 
   gab_value res = __gab_obj(self);
+
+  __gab_recsetshp(res, shp);
 
   if (len) {
     __gab_recfillchildren(gab, res, shift, len, rootlen, true);
@@ -5988,6 +6003,11 @@ GAB_API gab_value gab_shptorec(struct gab_triple gab, gab_value shp) {
     for (uint64_t i = 0; i < len; i++)
       __gab_mrecput(gab, res, gab_nil, i);
   }
+
+  gab_assert(gab_valkind(self->shape) == kGAB_SHAPE ||
+                 gab_valkind(self->shape) == kGAB_SHAPELIST,
+             "Records must have shape kind shape, not %d",
+             gab_valkind(self->shape));
 
   return gab_gcunlock(gab), res;
 }
@@ -6013,11 +6033,12 @@ GAB_API gab_value gab_recordfrom(struct gab_triple gab, gab_value shape,
   struct gab_orec *self =
       GAB_CREATE_FLEX_OBJ(gab_orec, gab_value, rootlen, kGAB_RECORD);
 
-  self->shape = shape;
   self->shift = shift;
   self->len = rootlen;
 
   gab_value res = __gab_obj(self);
+
+  __gab_recsetshp(res, shape);
 
   len = real_len < len ? real_len : len;
 
@@ -6043,6 +6064,11 @@ GAB_API gab_value gab_recordfrom(struct gab_triple gab, gab_value shape,
         real_i, real_len);
   }
 
+  gab_assert(gab_valkind(self->shape) == kGAB_SHAPE ||
+                 gab_valkind(self->shape) == kGAB_SHAPELIST,
+             "Records must have shape kind shape, not %d",
+             gab_valkind(self->shape));
+
   return gab_gcunlock(gab), res;
 }
 
@@ -6057,7 +6083,7 @@ GAB_API gab_value gab_record(struct gab_triple gab, uint64_t stride,
 
   uint64_t actual_len = gab_shplen(shp);
 
-  if (actual_len < len) {
+  if (__gab_unlikely(actual_len < len)) {
     // In the slow case where we saw duplicate keys
     gab_value dedup_values[actual_len];
 
@@ -6138,18 +6164,15 @@ GAB_API gab_value gab_nlstcat(struct gab_triple gab, uint64_t len,
   struct gab_orec *self =
       GAB_CREATE_FLEX_OBJ(gab_orec, gab_value, rootlen, kGAB_RECORD);
 
-  self->shape = shape;
   self->shift = shift;
   self->len = rootlen;
 
+  gab_value res = __gab_obj(self);
+
+  __gab_recsetshp(res, shape);
+
   gab_assert(total_len == gab_shplen(self->shape),
              "Total length shall match constructed shape length");
-
-  gab_assert(gab_valkind(self->shape) == kGAB_SHAPELIST,
-             "List-cat should result in a list, not %u",
-             gab_valkind(self->shape));
-
-  gab_value res = __gab_obj(self);
 
   if (total_len) {
     __gab_recfillchildren(gab, res, shift, total_len, rootlen, true);
@@ -6185,14 +6208,15 @@ GAB_API gab_value gab_nreccat(struct gab_triple gab, uint64_t len,
   struct gab_orec *self =
       GAB_CREATE_FLEX_OBJ(gab_orec, gab_value, rootlen, kGAB_RECORD);
 
-  self->shape = new_shp;
   self->shift = shift;
   self->len = rootlen;
 
+  gab_value res = __gab_obj(self);
+
+  __gab_recsetshp(res, new_shp);
+
   gab_assert(total_len == gab_shplen(self->shape),
              "Total length shall match constructed shape length");
-
-  gab_value res = __gab_obj(self);
 
   if (total_len) {
     __gab_recfillchildren(gab, res, shift, total_len, rootlen, true);
