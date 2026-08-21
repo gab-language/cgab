@@ -2348,6 +2348,10 @@ int info(struct command_arguments *args) {
     printf("%17s | %s\n", compile_info[i].name, compile_info[i].value);
   }
 
+  printf("\n%s\n", SECTION("BINDIR") "\n");
+  const char* dir = gab_osprefix_install("bin");
+  printf("\t%s\n", dir);
+
   printf("\n%s\n", SECTION(GAB_VERSION_TAG " TARGETS") "\n");
 
   for (int i = 0; i < LEN_CARRAY(possible_targets); i++) {
