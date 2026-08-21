@@ -590,7 +590,7 @@ const char *welcome_message =
    "\\___/_/ |_/____/  |  in: " CYAN(GAB_BUILDTYPE) "\n";
 // clang-format on
 
-int run_repl(int flags, uint32_t wait, uint64_t nmodules,
+int run_repl(uint64_t flags, uint32_t wait, uint64_t nmodules,
              struct gab_package *packages, uint64_t nargs, const char **args) {
   gab_ossignal(SIGINT, propagate_term);
 
@@ -645,7 +645,7 @@ int run_repl(int flags, uint32_t wait, uint64_t nmodules,
   return gab_destroy(gab), 0;
 }
 
-int run_string(const char *string, int flags, uint32_t wait, uint64_t jobs,
+int run_string(const char *string, uint64_t flags, uint32_t wait, uint64_t jobs,
                uint64_t nmodules, struct gab_package *packages, uint64_t nargs,
                const char **args) {
   gab_ossignal(SIGINT, propagate_term);
@@ -780,7 +780,7 @@ int run_bundle(const char *mod, uint64_t argc, const char **argv) {
   return gab_destroy(gab), 0;
 }
 
-int run_file(const char *package, int flags, uint32_t wait, uint64_t jobs,
+int run_file(const char *package, uint64_t flags, uint32_t wait, uint64_t jobs,
              uint64_t nmodules, struct gab_package *packages, uint64_t nargs,
              const char **args) {
   gab_ossignal(SIGINT, propagate_term);
@@ -1296,7 +1296,8 @@ int execute_steps(int len, struct step steps[len], bool noisy) {
 }
 
 struct command_arguments {
-  uint32_t argc, flags, wait, njobs;
+  uint32_t argc, wait, njobs;
+  uint64_t flags;
   const char **argv, *platform, *dynlib_fileending;
   v_s_char packages;
   v_s_char package_aliases;
@@ -1307,7 +1308,7 @@ struct option {
   const char *desc;
   char shorthand;
   bool takes_argument;
-  int flag;
+  uint64_t flag;
   int (*handler_f)(struct command_arguments *args);
 };
 
@@ -1334,13 +1335,14 @@ int info(struct command_arguments *args);
 
 #define DEFAULT_COMMAND commands[0]
 
-enum cliflag {
-  FLAG_DUMP_AST = fGAB_AST_DUMP,
-  FLAG_DUMP_BC = fGAB_BUILD_DUMP,
-  FLAG_STRUCT_ERR = fGAB_ERR_STRUCTURED,
-  FLAG_BUILD_TARGET = 1 << 4,
-  FLAG_STEP_AUTOCONFIRM = 1 << 5,
-  FLAG_STEP_VERBOSE = 1 << 6,
+enum cliflag : uint64_t {
+  FLAG_DUMP_AST = (uint64_t)fGAB_AST_DUMP,
+  FLAG_DUMP_BC = (uint64_t)fGAB_BUILD_DUMP,
+  FLAG_STRUCT_ERR = (uint64_t)fGAB_ERR_STRUCTURED,
+  FLAG_SIGTERM_ON_ERR = (uint64_t)fGAB_SIGTERM_ON_ERR,
+  FLAG_BUILD_TARGET = (uint64_t)1 << 32,
+  FLAG_STEP_AUTOCONFIRM = (uint64_t)1 << 33,
+  FLAG_STEP_VERBOSE = (uint64_t)1 << 34,
 };
 
 const struct option dumpast_option = {
@@ -1766,7 +1768,7 @@ struct command_arguments parse_options(int argc, const char **argv,
       .wait = cGAB_DEFAULT_WAIT_NS,
       .platform = GAB_TARGET_TRIPLE,
       .dynlib_fileending = GAB_DYNLIB_FILEENDING,
-      .flags = fGAB_SIGTERM_ON_ERR,
+      .flags = ((uint64_t)1) | fGAB_SIGTERM_ON_ERR,
   };
 
   v_s_char_create(&args.packages, 32);
@@ -1775,7 +1777,7 @@ struct command_arguments parse_options(int argc, const char **argv,
     const char *arg = *args.argv;
 
     if (arg[0] != '-')
-      return args;
+      goto fin;
 
     if (arg[1] == '-') {
       for (int j = 0; j < MAX_OPTIONS; j++) {
@@ -1819,21 +1821,38 @@ struct command_arguments parse_options(int argc, const char **argv,
   next:
   }
 
+fin:
   return args;
 }
 
-#define GAB_RELEASE_DOWNLOAD_URL                                               \
-  "http://github.com/gab-language/cgab/releases/download/"
-
-const char *split_pkg(char *pkg) {
+bool split_pkg(char *pkg, const char **tag, const char **mod,
+               const char **res) {
+  *tag = nullptr;
+  *mod = nullptr;
+  *res = nullptr;
   char *cursor = strchr(pkg, '@');
 
   if (!cursor)
-    return cursor;
+    return false;
 
   *cursor = '\0';
+  *tag = cursor + 1;
 
-  return ++cursor;
+  char *mod_cursor = strchr(*tag, ':');
+  char *res_cursor = strchr(*tag, '#');
+
+  if (mod_cursor && res_cursor)
+    return false;
+
+  if (mod_cursor) {
+    *mod_cursor = '\0';
+    *mod = mod_cursor + 1;
+  } else if (res_cursor) {
+    *res_cursor = '\0';
+    *res = res_cursor + 1;
+  }
+
+  return true;
 }
 
 struct host {
@@ -1918,38 +1937,15 @@ char *url_from_package(const char *package, const char *tag,
   return nullptr;
 };
 
-int get_package(v_step *steps, struct command_arguments *args,
-                const char *package, const char *resource,
-                const char *gab_target, const char *gab_tag) {
-
-  // Split the requested package into its package and tag.
-  const uint64_t pkglen = strlen(package);
-
-  char pkgbuf[pkglen + 1];
-
-  strncpy(pkgbuf, package, pkglen);
-  pkgbuf[pkglen] = '\0';
-
-  // Now pkg and tag point to our package and tag.
-  const char *pkg = strlen(pkgbuf) ? pkgbuf : nullptr;
-  const char *tag = split_pkg(pkgbuf);
-
-  if (!tag)
-    return clierror("Could not resolve tag for '%s'.\n\tTry `gab "
-                    "help get`.",
-                    package),
-           1;
-
-  if (!pkg)
-    return clierror(
-               "Could not resolve package for '%s'.\n\tTry `gab help get`.",
-               package),
-           1;
-
+int get_package(v_step *steps, struct command_arguments *args, const char *pkg,
+                const char *tag, const char *res, const char *gab_target,
+                const char *gab_tag) {
   v_char bundle = {0};
 
-  if (resource) {
-    v_char_spush(&bundle, s_char_cstr(resource));
+
+  if (res) {
+  printf("GET RES %s\n", res);
+    v_char_spush(&bundle, s_char_cstr(res));
     v_char_push(&bundle, '-');
   }
 
@@ -1958,7 +1954,7 @@ int get_package(v_step *steps, struct command_arguments *args,
   v_char_push(&bundle, '-');
   v_char_spush(&bundle, s_char_cstr(gab_target));
 
-  if (resource) {
+  if (res) {
     v_char_spush(&bundle, s_char_cstr(".exe"));
   }
 
@@ -1967,25 +1963,18 @@ int get_package(v_step *steps, struct command_arguments *args,
   const char *url = url_from_package(pkg, tag, bundle.data);
 
   if (!url)
-    return clierror("Unknown host for package '%s'.\n", package), 1;
+    return clierror("Unknown host for package '%s'.\n", pkg), 1;
 
-  const char *install_dir = install_location(gab_target, gab_tag, nullptr);
+  const char *install_dir = install_location(gab_target, gab_tag, pkg);
 
   v_char bundle_dst = {};
   v_char_spush(&bundle_dst, s_char_cstr(install_dir));
-  v_char_spush(&bundle_dst, s_char_cstr(package));
-  v_char_push(&bundle_dst, '/');
   v_char_spush(&bundle_dst, s_char_cstr(bundle.data));
   v_char_push(&bundle_dst, '\0');
 
-  v_char pkg_dst = {};
-  v_char_spush(&pkg_dst, s_char_cstr(install_dir));
-  v_char_spush(&pkg_dst, s_char_cstr(package));
-  v_char_push(&pkg_dst, '\0');
-
   v_step_push(steps, (struct step){
                          kSTEP_MKDIRP,
-                         .as.mkdirp.path = pkg_dst.data,
+                         .as.mkdirp.path = install_dir,
                      });
 
   v_step_push(steps, (struct step){
@@ -1994,7 +1983,7 @@ int get_package(v_step *steps, struct command_arguments *args,
                          .as.fetch.dst = bundle_dst.data,
                      });
 
-  if (resource) {
+  if (res) {
     // If we are downloading a resource which matches
     // our native target, we can *install* it into ~/gab/bin also.
     if (!strcmp(gab_target, GAB_TARGET_TRIPLE)) {
@@ -2012,7 +2001,7 @@ int get_package(v_step *steps, struct command_arguments *args,
 
       v_char dest = {0};
       v_char_spush(&dest, s_char_cstr(bindir));
-      v_char_spush(&dest, s_char_cstr(resource));
+      v_char_spush(&dest, s_char_cstr(res));
       v_char_push(&dest, '\0');
 
       v_step_push(steps, (struct step){
@@ -2026,7 +2015,7 @@ int get_package(v_step *steps, struct command_arguments *args,
                            kSTEP_UNZIP,
                            .as.unzip.src = bundle_dst.data,
                            .as.unzip.dst = install_dir,
-                           .as.unzip.pkg = package,
+                           .as.unzip.pkg = strdup(pkg),
                        });
   }
 
@@ -2062,87 +2051,155 @@ int get_gab(v_step *steps, struct command_arguments *args,
   if (check_installation(gab_target, gab_tag))
     return clisuccess("Already installed.\n"), 0;
 
-  /*
-   * Fetch the standard libraries package.
-   */
-  v_char package = {};
-  v_char_spush(&package, s_char_cstr("github.com/gab-language/cgab@"));
-  v_char_spush(&package, s_char_cstr(gab_tag));
-  v_char_push(&package, '\0');
+  get_package(steps, args, "github.com/gab-language/cgab", GAB_VERSION_TAG,
+              nullptr, gab_target, gab_tag);
 
-  get_package(steps, args, package.data, nullptr, gab_target, gab_tag);
-
-  // TODO @cli @bug: Should this have the tag in the resource?
-  get_package(steps, args, package.data, "gab", gab_target, gab_tag);
+  get_package(steps, args, "github.com/gab-language/cgab", GAB_VERSION_TAG,
+              "gab", gab_target, gab_tag);
 
   return 0;
 }
 
-int get(struct command_arguments *args) {
-  const char *pkg = args->argc ? args->argv[0] : "@";
-  args->argc--;
-  args->argv++;
-
+bool resolve_package(struct command_arguments *args, v_step *steps, char *pkg,
+                     const char **tag, const char **res, const char **mod) {
   // Split the requested package into its package and tag.
-  const uint64_t pkglen = strlen(pkg);
-  char pkgbuf[pkglen + 4];
-  strncpy(pkgbuf, pkg, pkglen);
-  pkgbuf[pkglen] = '\0';
+  bool status = split_pkg(pkg, tag, mod, res);
 
-  const char *tag = split_pkg(pkgbuf);
-
-  if (!tag) {
+  if (!status) {
     clierror("Could not resolve package and tag for '%s'.\n\tNote: Packages "
              "have the format <url>@<tag>.\n",
-             pkgbuf);
-    return false;
+             pkg);
+    return 1;
   }
 
-  /* Copy the tag into a new buffer */
-  const uint64_t taglen = strlen(tag);
-  char tagbuf[taglen + 10];
-
-  strncpy(tagbuf, tag, taglen);
-  tagbuf[taglen] = '\0';
-
   /* Now we can check that the pkg exists, and default to Gab if it doesnt. */
-  if (!strlen(pkgbuf))
-    strncpy(pkgbuf, "gab", 4);
+  if (!strlen(pkg))
+    strncpy(pkg, "gab", 4);
 
   /*
    * If we didn't find a tag in the package, then that *might* be an
    * unrecoverable error. If the user meant to download the builtin Gab package,
    * then we have a sane default. Otherwise, we error.
    */
-  if (!taglen) {
-    if (!strcmp(pkgbuf, "gab")) {
-      strncpy(tagbuf, GAB_VERSION_TAG, 10 + taglen);
+  if (!strlen(*tag)) {
+    if (!strcmp(pkg, "gab")) {
+      *tag = GAB_VERSION_TAG;
     } else {
       clierror("To download a package, a tag must be specfied. Try " GREEN(
                    "%s") "@" YELLOW("<some tag>") ".\n",
-               pkgbuf);
+               pkg);
       return 1;
     }
   }
 
-  const char *resource = args->argc ? args->argv[0] : nullptr;
-  args->argc--;
-  args->argv++;
+  char resbuf[strlen(pkg) + strlen(*tag) + 2];
+  if (*res && !strlen(*res)) {
+    char *app = strrchr(pkg, '/');
+    app = app ? app + 1 : pkg;
+    memcpy(resbuf, app, strlen(app));
+    resbuf[strlen(app)] = '@';
+    memcpy(resbuf + strlen(app) + 1, *tag, strlen(*tag));
+    resbuf[strlen(app) + 1 + strlen(*tag)] = '\0';
+    *res = strdup(resbuf);
+  }
+
+  return 0;
+};
+
+#define PACKAGE_NAME_MAX 2048
+
+int get(struct command_arguments *args) {
+  v_cstr packages = {};
+
+  if (!gab_osfisatty(stdin)) {
+    char line[PACKAGE_NAME_MAX];
+
+    while (fgets(line, PACKAGE_NAME_MAX, stdin)) {
+      int len = strlen(line);
+      // TODO @cgab @cli: Skip whitespace before and after.
+
+      // Skip empty lines
+      if (!len)
+        continue;
+
+      // Skip comments
+      if (line[0] == '#')
+        continue;
+
+      // Trim out that newline, if we have it.
+      // In some cases, we might get an EOF before a newline.
+      if (line[len - 1] == '\n')
+        len--;
+
+      line[len] = '\0';
+
+      // These are allocated, just leak em who cares.
+      a_char *module = a_char_create(line, len + 1);
+
+      // Add the module to our module list.
+      v_cstr_push(&packages, module->data);
+    }
+  }
+
+  if (args->argc) {
+    const char *pkg = args->argv[0];
+    args->argc--;
+    args->argv++;
+    v_cstr_push(&packages, pkg);
+  }
+
+  if (!packages.len)
+    v_cstr_push(&packages, "gab@" GAB_VERSION_TAG);
+
+  char pkgbufbuf[packages.len + 1][PACKAGE_NAME_MAX];
+  int npkgs = 0;
 
   v_step steps = {0};
-  int res = 0;
 
-  // If we match the special Gab package, then defer to that helper.
-  if (!strcmp(pkgbuf, "gab"))
-    res = get_gab(&steps, args, args->platform, tagbuf);
-  else
-    res = get_package(&steps, args, pkg, resource, args->platform,
-                      GAB_VERSION_TAG);
+  for (size_t i = 0; i < packages.len; i++) {
+    const char *package = v_cstr_val_at(&packages, i);
 
-  if (res)
-    return res;
+    const uint64_t pkglen = strlen(package);
+    char pkg[pkglen + 4];
+    strncpy(pkg, package, pkglen);
+    pkg[pkglen] = '\0';
 
-  // Nothing to do
+    const char *tag, *res, *mod;
+    bool status = resolve_package(args, &steps, pkg, &tag, &res, &mod);
+    if (status) {
+      clierror("Failed to resolve package %s.", pkg);
+      return 1;
+    }
+
+    memcpy(pkgbufbuf[npkgs], pkg, strlen(pkg));
+    pkgbufbuf[npkgs][strlen(pkg)] = '@';
+    memcpy(pkgbufbuf[npkgs] + strlen(pkg) + 1, tag, strlen(tag));
+    pkgbufbuf[npkgs][strlen(pkg) + 1 + strlen(tag)] = '\0';
+
+    for (uint64_t i = 0; i < npkgs; i++) {
+      char *thispkg = pkgbufbuf[i];
+      if (!strcmp(thispkg, pkgbufbuf[npkgs])) {
+        cliwarn("Skipping duplicate package %s, inferred from %s\n", thispkg,
+                package);
+        goto skip;
+      }
+    }
+
+    // We are downloading this package for sure.
+    npkgs++;
+
+    if (!strcmp(pkg, "gab")) {
+      if (get_gab(&steps, args, args->platform, tag))
+        return 1;
+    } else {
+      if (get_package(&steps, args, pkg, tag, res, args->platform,
+                      GAB_VERSION_TAG))
+        return 1;
+    }
+
+  skip:
+  };
+
   if (!steps.len)
     return 0;
 
@@ -2349,7 +2406,7 @@ int info(struct command_arguments *args) {
   }
 
   printf("\n%s\n", SECTION("BINDIR") "\n");
-  const char* dir = gab_osprefix_install("bin");
+  const char *dir = gab_osprefix_install("bin");
   printf("\t%s\n", dir);
 
   printf("\n%s\n", SECTION(GAB_VERSION_TAG " TARGETS") "\n");
@@ -2384,7 +2441,8 @@ int info(struct command_arguments *args) {
       if (!native_file_resources[j].exister)
         continue;
       const struct gab_resource *res = &native_file_resources[j];
-      printf("      %s%s"GREEN("<>")"%s\n", roots[i], res->prefix, res->suffix);
+      printf("      %s%s" GREEN("<>") "%s\n", roots[i], res->prefix,
+             res->suffix);
     }
   }
 
