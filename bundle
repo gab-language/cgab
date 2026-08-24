@@ -19,6 +19,7 @@ github.com/gab-language/cgab@0.1.5:Channels
 github.com/gab-language/cgab@0.1.5:Fibers
 github.com/gab-language/cgab@0.1.5:Io
 github.com/gab-language/cgab@0.1.5:Json
+github.com/gab-language/cgab@0.1.5:Xml
 github.com/gab-language/cgab@0.1.5:Messages
 github.com/gab-language/cgab@0.1.5:Numbers
 github.com/gab-language/cgab@0.1.5:Ranges

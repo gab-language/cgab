@@ -44,6 +44,9 @@
  *
  * We accomplish this by lazily establishing a connection for
  * each Gab worker thread that wants to access the sqlite database.
+ *
+ * prepared statements don't ever survive beyond a single native function,
+ * so there is no synchronization needed for them.
  */
 
 #define cGAB_CSQLITE_TYPE "db\\row"
@@ -209,7 +212,7 @@ GAB_DYNLIB_NATIVE_FN(row, exec) {
     }
   }
 
-  // TODO @bug: Locking the GC while performing the step isn't idea.
+  // TODO @bug: Locking the GC while performing the step isn't ideal.
   // In general, it might be better to allow the *user* to lazyily step
   // statement. We could simply implement seq\init and seq\next.
   gab_gclock(gab);
