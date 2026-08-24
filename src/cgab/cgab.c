@@ -1193,8 +1193,7 @@ int32_t __gab_jbgc(void *data) {
       // Try to read a signal, whether we timed-out or succeeded
       struct gab_sig sig = atomic_load(&gab.eg->sig);
 
-      gab_assert(sig.schedule != gab.wkid, "Impossible");
-      gab_assert(sig.schedule == -2, "Impossible");
+      gab_assert(sig.schedule == -2, "Schedule should be -2 before gc thread acknowledges signal. Saw: %i", sig.schedule);
 
       struct gab_sig expected = {sig.mask, -2, sig.signal};
       struct gab_sig desired = {sig.mask, -1, sig.signal};

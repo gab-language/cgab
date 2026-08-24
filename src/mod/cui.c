@@ -105,7 +105,6 @@ unsigned char fontData[] = {
 #define SOKOL_CLAY_IMPL
 #include "Clay/renderers/sokol/sokol_clay.h"
 
-
 #include "cgab.h"
 
 #define UI_BOX_TYPE "gab\\ui"
@@ -147,7 +146,7 @@ struct ui {
   };
 };
 
-#define MAX_MS_PER_FRAME 15 
+#define MAX_MS_PER_FRAME 15
 #define CHNTAKE_WAITTIME 0
 
 struct timestep {
@@ -854,6 +853,8 @@ const struct ui_image *image_cache_read(struct gab_triple gab, struct ui *gui,
         Clay_Termbox_Image_Load_Memory(gab_strdata(&data), gab_strlen(data));
     break;
   }
+#else
+  case kGAB_TUI:
 #endif
   case kGAB_HUI:
     break;
@@ -1331,7 +1332,8 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
 
       // Assert we have a number of bytes which is reasonable for a list of
       // gab_values
-      gab_assert(gab_fibsize(gab_thisfiber(gab)) % sizeof(gab_value) == 0, "Bytes should be divisible by sizeof(gab_value)");
+      gab_assert(gab_fibsize(gab_thisfiber(gab)) % sizeof(gab_value) == 0,
+                 "Bytes should be divisible by sizeof(gab_value)");
       // Determine the number of values
       size_t len = gab_fibsize(gab_thisfiber(gab)) / sizeof(gab_value);
       // Get the ptr
@@ -1516,7 +1518,6 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_render) {
     hints->major = 3;
     hints->minor = 1;
     RGFW_setGlobalHints_OpenGL(hints);
-
 
     gui->win.userPtr = &gui;
     if (!RGFW_createWindowPtr("", 500, 500, 500, 500, RGFW_windowOpenGL,
@@ -1734,7 +1735,8 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_event) {
 
       // Assert we have a number of bytes which is reasonable for a list of
       // gab_values
-      gab_assert(gab_fibsize(gab_thisfiber(gab)) % sizeof(gab_value) == 0, "Bytes should be divisible by sizeof(gab_value)");
+      gab_assert(gab_fibsize(gab_thisfiber(gab)) % sizeof(gab_value) == 0,
+                 "Bytes should be divisible by sizeof(gab_value)");
       gab_assert(gab_fibsize(gab_thisfiber(gab)) > 0, "Should have bytes");
       // Determine the number of values
       size_t len = gab_fibsize(gab_thisfiber(gab)) / sizeof(gab_value);
