@@ -1768,7 +1768,7 @@ struct command_arguments parse_options(int argc, const char **argv,
       .wait = cGAB_DEFAULT_WAIT_NS,
       .platform = GAB_TARGET_TRIPLE,
       .dynlib_fileending = GAB_DYNLIB_FILEENDING,
-      .flags = ((uint64_t)1) | fGAB_SIGTERM_ON_ERR,
+      .flags = ((uint64_t)0) | fGAB_SIGTERM_ON_ERR,
   };
 
   v_s_char_create(&args.packages, 32);
