@@ -205,6 +205,10 @@ union gab_value_pair step_stmt(struct gab_triple gab,
     return gab_union_ctimeout(gab_nil);
 
   gab_assert(res == thrd_success, "Must not fail if not busy");
+
+  if (!stmt->stmts)
+    goto done;
+
   res = sqlite3_step(stmt->stmts);
 
   switch (res) {
@@ -237,6 +241,9 @@ union gab_value_pair step_stmt(struct gab_triple gab,
     }
     return mtx_unlock(&stmt->mtx), gab_union_cvalid(gab_nil);
   case SQLITE_DONE:
+    sqlite3_finalize(stmt->stmts);
+    stmt->stmts = nullptr;
+  done:
     gab_push(gab, gab_none);
     return mtx_unlock(&stmt->mtx), gab_union_cvalid(gab_nil);
   case SQLITE_BUSY:

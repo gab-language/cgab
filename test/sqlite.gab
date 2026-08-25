@@ -201,19 +201,20 @@ res := [
 res.println
 
 stmt := db.query(
-            "SELECT * FROM Employees WHERE EmployeeID = $ID;"
-            "$ID" 1
+            "SELECT * FROM Employees WHERE EmployeeID > $ID;"
+            "$ID" 0
          ).unwrap
 
 
 workers := Ranges
   .make(0 10)
   .map(() :: Fibers.make () :: do
-    stmt.collect
-  end.await)
+    stmt.collect .or []
+  end)
 
 workers.println
 
-res := workers.map (w :: w.await.unwrap)
+res := workers.map(w :: w.await.unwrap).join []
 
 res.println
+res.len.println # Should be 164 - same as highest id

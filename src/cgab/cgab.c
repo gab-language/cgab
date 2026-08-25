@@ -3965,13 +3965,11 @@ GAB_API inline bool gab_signal(struct gab_triple gab, enum gab_signal s,
         for (;;) {
           struct gab_sig sig = atomic_load(&gab.eg->sig);
 
-          // gab_assert(__gab_jbisalive(gab, 0),
-          //            "GC Worker died before receiving signal. %b", sig.mask);
-
           /* acknowledgment received */
           if (sig.schedule == -1)
             return gab_signext(gab, wkid);
 
+          /* Whole thang dead */
           if (!__gab_jbisalive(gab, 0))
             return true;
 
