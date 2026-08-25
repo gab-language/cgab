@@ -25,6 +25,6 @@ make:.def(
   end
 }
 
-Ranges.t .defseq
+Ranges.t.defseq
 
 Ranges

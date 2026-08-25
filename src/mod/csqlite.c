@@ -92,7 +92,6 @@ int get_conn(struct gab_triple gab, gab_value conn, sqlite3 **out_conn) {
 }
 
 struct gab_sqlite_stmt {
-  sqlite3 *sqlite;
   sqlite3_stmt *stmts;
   mtx_t mtx;
 };
@@ -106,7 +105,7 @@ void destroy_stmts(struct gab_triple, uint64_t len, char data[len]) {
 }
 
 gab_value make_stmts(struct gab_triple gab, sqlite3 *sqlite, uint64_t len,
-                     const char sql[len], uint64_t argc, gab_value argv[argc]) {
+                     const char sql[len], uint64_t argc, gab_value *argv) {
   struct gab_sqlite_stmt stmts = {};
   int res = mtx_init(&stmts.mtx, mtx_plain);
 
@@ -128,14 +127,15 @@ gab_value make_stmts(struct gab_triple gab, sqlite3 *sqlite, uint64_t len,
 
     if (!idx)
       return gab_vmpush(gab_thisvm(gab), gab_err,
-                        gab_string(gab, "Invalid parameter name")),
+                        gab_string(gab, "Invalid parameter name"), sname),
              gab_cinvalid;
 
     switch (gab_valkind(value)) {
     case kGAB_NUMBER: {
       if (sqlite3_bind_double(stmts.stmts, idx, gab_valtof(value)) != SQLITE_OK)
         return gab_vmpush(gab_thisvm(gab), gab_err,
-                          gab_string(gab, "Could not bind number parameter")),
+                          gab_string(gab, "Could not bind parameter"), sname,
+                          value),
                gab_cinvalid;
       break;
     }
@@ -147,7 +147,8 @@ gab_value make_stmts(struct gab_triple gab, sqlite3 *sqlite, uint64_t len,
       if (sqlite3_bind_text(stmts.stmts, idx, gab_strdata(&value),
                             gab_strlen(value), SQLITE_TRANSIENT) != SQLITE_OK)
         return gab_vmpush(gab_thisvm(gab), gab_err,
-                          gab_string(gab, "Could not bind string parameter")),
+                          gab_string(gab, "Could not bind parameter"), sname,
+                          value),
                gab_cinvalid;
       break;
     }
@@ -155,7 +156,8 @@ gab_value make_stmts(struct gab_triple gab, sqlite3 *sqlite, uint64_t len,
       if (sqlite3_bind_blob(stmts.stmts, idx, gab_strdata(&value),
                             gab_strlen(value), SQLITE_TRANSIENT) != SQLITE_OK)
         return gab_vmpush(gab_thisvm(gab), gab_err,
-                          gab_string(gab, "Could not bind binary parameter")),
+                          gab_string(gab, "Could not bind parameter"), sname,
+                          value),
                gab_cinvalid;
       break;
     }
@@ -163,7 +165,8 @@ gab_value make_stmts(struct gab_triple gab, sqlite3 *sqlite, uint64_t len,
       if (value == gab_nil) {
         if (sqlite3_bind_null(stmts.stmts, idx) != SQLITE_OK)
           return gab_vmpush(gab_thisvm(gab), gab_err,
-                            gab_string(gab, "Could not bind nil parameter")),
+                            gab_string(gab, "Could not bind parameter"), sname,
+                            value),
                  gab_cinvalid;
 
         break;
@@ -173,12 +176,13 @@ gab_value make_stmts(struct gab_triple gab, sqlite3 *sqlite, uint64_t len,
       // Should they just bind to ints?
 
       return gab_vmpush(gab_thisvm(gab), gab_err,
-                        gab_string(gab, "Could not bind message parameter")),
+                        gab_string(gab, "Invalid message value for binding")),
              gab_cinvalid;
     }
     default:
       return gab_vmpush(gab_thisvm(gab), gab_err,
-                        gab_string(gab, "Cannot bind parameter of this type")),
+                        gab_string(gab, "Unhandled value type for binding"),
+                        sname, value),
              gab_cinvalid;
     }
   }
@@ -194,10 +198,14 @@ gab_value make_stmts(struct gab_triple gab, sqlite3 *sqlite, uint64_t len,
   return vstmts;
 };
 
-union gab_value_pair step_stmt(struct gab_triple gab, sqlite3 *sqlite,
+union gab_value_pair step_stmt(struct gab_triple gab,
                                struct gab_sqlite_stmt *stmt) {
-  mtx_lock(&stmt->mtx);
-  int res = sqlite3_step(stmt->stmts);
+  int res = mtx_trylock(&stmt->mtx);
+  if (res == thrd_busy)
+    return gab_union_ctimeout(gab_nil);
+
+  gab_assert(res == thrd_success, "Must not fail if not busy");
+  res = sqlite3_step(stmt->stmts);
 
   switch (res) {
   case SQLITE_ROW:
@@ -227,18 +235,18 @@ union gab_value_pair step_stmt(struct gab_triple gab, sqlite3 *sqlite,
         break;
       }
     }
-    break;
+    return mtx_unlock(&stmt->mtx), gab_union_cvalid(gab_nil);
   case SQLITE_DONE:
     gab_push(gab, gab_none);
-    break;
+    return mtx_unlock(&stmt->mtx), gab_union_cvalid(gab_nil);
+  case SQLITE_BUSY:
+    return mtx_unlock(&stmt->mtx), gab_union_ctimeout(gab_nil);
   default:
     return mtx_unlock(&stmt->mtx),
-           gab_panicf(gab, "SQLITE ERR $: $", gab_number(res),
-                      gab_string(gab, sqlite3_errmsg(sqlite)));
+           gab_panicf(gab, "sqlite status @: @", gab_number(res),
+                      gab_string(gab, sqlite3_errstr(res)));
     break;
   }
-
-  return mtx_unlock(&stmt->mtx), gab_union_cvalid(gab_nil);
 }
 
 GAB_DYNLIB_NATIVE_FN(row, open) {
@@ -269,7 +277,7 @@ GAB_DYNLIB_NATIVE_FN(row, open) {
   return gab_push(gab, gab_ok, conn), gab_union_cvalid(gab_nil);
 }
 
-GAB_DYNLIB_NATIVE_FN(row, exec) {
+GAB_DYNLIB_NATIVE_FN(row, query) {
   gab_value conn = gab_arg(0);
 
   sqlite3 *sqlite;
@@ -303,7 +311,7 @@ GAB_DYNLIB_NATIVE_FN(row, seq_init) {
 
   struct gab_sqlite_stmt *stmt = gab_boxdata(vstmt);
 
-  return step_stmt(gab, stmt->sqlite, stmt);
+  return step_stmt(gab, stmt);
 }
 
 GAB_DYNLIB_NATIVE_FN(row, seq_next) {
@@ -311,24 +319,41 @@ GAB_DYNLIB_NATIVE_FN(row, seq_next) {
 
   struct gab_sqlite_stmt *stmt = gab_boxdata(vstmt);
 
-  return step_stmt(gab, stmt->sqlite, stmt);
+  return step_stmt(gab, stmt);
 }
 
 GAB_DYNLIB_MAIN_FN {
-  gab_value mod = gab_message(gab, "sqlite");
   gab_value conn_type = gab_string(gab, cGAB_CSQLITE_TYPE);
+  gab_value conn_mod = gab_strtomsg(conn_type);
+
   gab_value stmt_type = gab_string(gab, cGAB_CSQLITE_STMT_TYPE);
+  gab_value stmt_mod = gab_strtomsg(stmt_type);
 
   gab_def(gab,
           {
               gab_message(gab, "make"),
-              mod,
+              conn_mod,
               gab_snative(gab, "make", gab_mod_row_open),
           },
           {
-              gab_message(gab, "eval"),
+              gab_message(gab, "t"),
+              conn_mod,
               conn_type,
-              gab_snative(gab, "eval", gab_mod_row_exec),
+          },
+          {
+              gab_message(gab, "Query"),
+              conn_mod,
+              stmt_mod,
+          },
+          {
+              gab_message(gab, "t"),
+              stmt_mod,
+              stmt_type,
+          },
+          {
+              gab_message(gab, "query"),
+              conn_type,
+              gab_snative(gab, "query", gab_mod_row_query),
           },
           {
               gab_message(gab, "seq\\init"),
@@ -343,6 +368,6 @@ GAB_DYNLIB_MAIN_FN {
 
   return (union gab_value_pair){
       .status = gab_cvalid,
-      .aresult = gab_valarray(gab_ok, mod),
+      .aresult = gab_valarray(gab_ok, conn_mod),
   };
 }

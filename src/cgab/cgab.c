@@ -1193,7 +1193,10 @@ int32_t __gab_jbgc(void *data) {
       // Try to read a signal, whether we timed-out or succeeded
       struct gab_sig sig = atomic_load(&gab.eg->sig);
 
-      gab_assert(sig.schedule == -2, "Schedule should be -2 before gc thread acknowledges signal. Saw: %i", sig.schedule);
+      gab_assert(
+          sig.schedule == -2,
+          "Schedule should be -2 before gc thread acknowledges signal. Saw: %i",
+          sig.schedule);
 
       struct gab_sig expected = {sig.mask, -2, sig.signal};
       struct gab_sig desired = {sig.mask, -1, sig.signal};
@@ -3055,6 +3058,8 @@ GAB_API gab_value gab_vspanicf(struct gab_triple gab, va_list va,
       gab_number(err.col_end), vbyte_begin, gab_number(err.byte_begin),
       vbyte_end, gab_number(err.byte_end), vthrd, gab_number(args.wkid), );
 
+  gab_egkeep(gab.eg, gab_iref(gab, rec));
+
   // TODO @cgab @bug: This swallows an error?
   if (rec == gab_cinvalid)
     return gab_gcunlock(gab), gab_cinvalid;
@@ -3071,46 +3076,57 @@ GAB_INTERNAL gab_value __gab_errtos(struct gab_triple gab, gab_value err) {
   gab_value token_type = gab_mrecat(gab, err, "tok\\t");
   if (token_type == gab_cinvalid)
     return gab_cinvalid;
+  gab_assert(token_type != gab_cundefined, "Must contain token_type");
 
   gab_value srcname = gab_mrecat(gab, err, "src");
   if (srcname == gab_cinvalid)
     return gab_cinvalid;
+  gab_assert(srcname != gab_cundefined, "Must contain srcname");
 
   gab_value status = gab_mrecat(gab, err, "status");
   if (status == gab_cinvalid)
     return gab_cinvalid;
+  gab_assert(status != gab_cundefined, "Must contain status");
 
   gab_value hint = gab_mrecat(gab, err, "hint");
   if (hint == gab_cinvalid)
     return gab_cinvalid;
+  gab_assert(hint != gab_cundefined, "Must contain hint");
 
   gab_value vtoken = gab_mrecat(gab, err, "tok\\offset");
   if (vtoken == gab_cinvalid)
     return gab_cinvalid;
+  gab_assert(vtoken != gab_cundefined, "Must contain vtoken");
 
   gab_value vrow = gab_mrecat(gab, err, "row");
   if (vrow == gab_cinvalid)
     return gab_cinvalid;
+  gab_assert(vrow != gab_cundefined, "Must contain vrow");
 
   gab_value vcol_begin = gab_mrecat(gab, err, "col\\begin");
   if (vcol_begin == gab_cinvalid)
     return gab_cinvalid;
+  gab_assert(vcol_begin != gab_cundefined, "Must contain vcol_begin");
 
   gab_value vcol_end = gab_mrecat(gab, err, "col\\end");
   if (vcol_end == gab_cinvalid)
     return gab_cinvalid;
+  gab_assert(vcol_end != gab_cundefined, "Must contain vcol_end");
 
   gab_value vbyte_begin = gab_mrecat(gab, err, "byte\\begin");
   if (vbyte_begin == gab_cinvalid)
     return gab_cinvalid;
+  gab_assert(vbyte_begin != gab_cundefined, "Must contain vbyte_begin");
 
   gab_value vbyte_end = gab_mrecat(gab, err, "byte\\end");
   if (vbyte_end == gab_cinvalid)
     return gab_cinvalid;
+  gab_assert(vbyte_end != gab_cundefined, "Must contain vbyte_end");
 
   gab_value vwkid = gab_mrecat(gab, err, "thread");
   if (vwkid == gab_cinvalid)
     return gab_cinvalid;
+  gab_assert(vwkid != gab_cundefined, "Must contain vwkid");
 
   gab_assert(gab_valkind(vtoken) == kGAB_NUMBER,
              "tok\\offset shall be a number");
@@ -3132,10 +3148,11 @@ GAB_INTERNAL gab_value __gab_errtos(struct gab_triple gab, gab_value err) {
   uint64_t byte_begin = gab_valtou(vbyte_begin);
 
   gab_assert(gab_valkind(vbyte_end) == kGAB_NUMBER,
-             "byte\\end shall be a number");
+             "byte\\end shall be a number, saw %u", gab_valkind(vbyte_end));
   uint64_t byte_end = gab_valtou(vbyte_end);
 
-  gab_assert(gab_valkind(vwkid) == kGAB_NUMBER, "wkid shall be a number");
+  gab_assert(gab_valkind(vwkid) == kGAB_NUMBER,
+             "wkid shall be a number, saw %u", gab_valkind(vwkid));
   uint64_t wkid = gab_valtou(vwkid);
   gab_assert(wkid != 0, "wkid shall not be zero");
 
@@ -3928,18 +3945,28 @@ GAB_API inline bool gab_signal(struct gab_triple gab, enum gab_signal s,
       for (;;) {
         gab_busywait(gab);
 
-        int res = mtx_lock(&gab.eg->gc_mtx);
+        int res = mtx_trylock(&gab.eg->gc_mtx);
+
+        if (res == thrd_busy)
+          continue;
+
+        if (res == thrd_error)
+          continue;
+
         gab_assert(res == thrd_success, "Can't fail to signal gc thread");
         res = cnd_signal(&gab.eg->gc_cnd);
-        gab_assert(res == thrd_success, "Can't fail to signal gc thread");
-        res = mtx_unlock(&gab.eg->gc_mtx);
-        gab_assert(res == thrd_success, "Can't fail to signal gc thread");
 
-        for (uint64_t i = 0; i < 1000; i++) {
+        /* Always unlock. We either signal, or release for next try */
+        mtx_unlock(&gab.eg->gc_mtx);
+
+        if (res != thrd_success)
+          continue;
+
+        for (;;) {
           struct gab_sig sig = atomic_load(&gab.eg->sig);
 
-          // gab_assert(__gab_jbisalive(gab, 0), "GC Worker died before
-          // receiving signal. %b", sig.mask);
+          // gab_assert(__gab_jbisalive(gab, 0),
+          //            "GC Worker died before receiving signal. %b", sig.mask);
 
           /* acknowledgment received */
           if (sig.schedule == -1)
@@ -4406,9 +4433,8 @@ GAB_API gab_value gab_tnstring(struct gab_triple gab, uint64_t len,
   case thrd_success:
     break;
   case thrd_busy:
-    return gab_ctimeout;
   case thrd_error:
-    return gab_cinvalid;
+    return gab_ctimeout;
   }
 
   struct gab_ostring *interned = __gab_egstrfind(gab.eg, hash, len, data);
@@ -4430,23 +4456,29 @@ GAB_API gab_value gab_tnstring(struct gab_triple gab, uint64_t len,
    */
   gab_value s = __gab_nstring(gab, hash, len, data);
 
-  /*
-   * TODO @cgab @bug: Potential str mem leak
-   * Inbetween the two lock holds here, another thread
-   * *could* insert the string we want into the dict.
-   * In that case, we'd stomp over the old value
-   * and leak its memory.
-   *
-   * If this is a big deal, we can simply perform another check after locking.
-   */
-
   switch (mtx_trylock(&gab.eg->gc_mtx)) {
   case thrd_success:
     break;
   case thrd_busy:
-    return gab_ctimeout;
   case thrd_error:
-    return gab_cinvalid;
+    return gab_ctimeout;
+  }
+
+  /*
+   * Since we released the mtx above, we may have given another thread
+   * an opportunity to create the string we wanted. We must check again.
+   *
+   * At this point, the duplicate we made will be freed later (there is already
+   * a dec queued.)
+   */
+
+  interned = __gab_egstrfind(gab.eg, hash, len, data);
+
+  if (interned) {
+#if cGAB_LOG_GC
+    fprintf(stderr, "(%i) INTERN REUSE %p.\n", gab.wkid, interned);
+#endif
+    return mtx_unlock(&gab.eg->gc_mtx), __gab_obj(interned);
   }
 
   d_strings_insert(&gab.eg->strings, GAB_VAL_TO_STRING(s), 0);
@@ -4625,9 +4657,8 @@ GAB_API gab_value gab_tstrcat(struct gab_triple gab, gab_value _a,
   case thrd_success:
     break;
   case thrd_busy:
-    return gab_ctimeout;
   case thrd_error:
-    return gab_cinvalid;
+    return gab_ctimeout;
   }
 
   struct gab_ostring *interned = __gab_egstrfind(gab.eg, hash, len, buff->data);
@@ -4647,9 +4678,25 @@ GAB_API gab_value gab_tstrcat(struct gab_triple gab, gab_value _a,
   case thrd_success:
     break;
   case thrd_busy:
-    return gab_ctimeout;
   case thrd_error:
-    return gab_cinvalid;
+    return gab_ctimeout;
+  }
+
+  /*
+   * Since we released the mtx above, we may have given another thread
+   * an opportunity to create the string we wanted. We must check again.
+   *
+   * At this point, the duplicate we made will be freed later (there is already
+   * a dec queued.)
+   */
+
+  interned = __gab_egstrfind(gab.eg, hash, len, buff->data);
+
+  if (interned) {
+#if cGAB_LOG_GC
+    fprintf(stderr, "(%i) INTERN REUSE %p.\n", gab.wkid, interned);
+#endif
+    return mtx_unlock(&gab.eg->gc_mtx), __gab_obj(interned);
   }
 
   d_strings_insert(&gab.eg->strings, GAB_VAL_TO_STRING(result), 0);
@@ -6288,9 +6335,8 @@ GAB_API gab_value gab_tshape(struct gab_triple gab, uint64_t stride,
   case thrd_success:
     break;
   case thrd_busy:
-    return gab_ctimeout;
   case thrd_error:
-    return gab_cinvalid;
+    return gab_ctimeout;
   }
 
   struct gab_oshape *interned =
@@ -6313,9 +6359,19 @@ GAB_API gab_value gab_tshape(struct gab_triple gab, uint64_t stride,
   case thrd_success:
     break;
   case thrd_busy:
-    return gab_gcunlock(gab), gab_ctimeout;
   case thrd_error:
-    return gab_gcunlock(gab), gab_cinvalid;
+    return gab_gcunlock(gab), gab_ctimeout;
+  }
+
+  /* Must check again after releasing mtx */
+
+  interned = __gab_egshpfind(gab.eg, hash, 1, newlen, newdata);
+
+  if (interned) {
+#if cGAB_LOG_GC
+    fprintf(stderr, "(%i) INTERN REUSE %p.\n", gab.wkid, interned);
+#endif
+    return gab_gcunlock(gab), mtx_unlock(&gab.eg->gc_mtx), __gab_obj(interned);
   }
 
   d_shapes_insert(&gab.eg->shapes, GAB_VAL_TO_SHAPE(s), 0);
@@ -6473,9 +6529,8 @@ GAB_API gab_value gab_tshpwithout(struct gab_triple gab, gab_value shape,
   case thrd_success:
     break;
   case thrd_busy:
-    return gab_ctimeout;
   case thrd_error:
-    return gab_cinvalid;
+    return gab_ctimeout;
   }
 
   struct gab_oshape *interned =
@@ -6505,11 +6560,17 @@ GAB_API gab_value gab_tshpwithout(struct gab_triple gab, gab_value shape,
   case thrd_success:
     break;
   case thrd_busy:
+  case thrd_error:
     // fprintf(stderr, "(%i) TAKE BUSY DROP_ON_FLOOR %p\n", gab.wkid, self);
     return gab_gcunlock(gab), gab_ctimeout;
-  case thrd_error:
-    // fprintf(stderr, "(%i) TAKE ERR DROP_ON_FLOOR %p\n", gab.wkid, self);
-    return gab_gcunlock(gab), gab_cinvalid;
+  }
+
+  interned = __gab_egshpfind(gab.eg, hash, 1, newlen, newdata);
+  if (interned) {
+#if cGAB_LOG_GC
+    fprintf(stderr, "(%i) INTERN REUSE %p.\n", gab.wkid, interned);
+#endif
+    return gab_gcunlock(gab), mtx_unlock(&gab.eg->gc_mtx), __gab_obj(interned);
   }
 
   d_shapes_insert(&gab.eg->shapes, self, 0);
@@ -6575,9 +6636,8 @@ GAB_API gab_value gab_tshpwith(struct gab_triple gab, gab_value shp,
   case thrd_success:
     break;
   case thrd_busy:
-    return gab_ctimeout;
   case thrd_error:
-    return gab_cinvalid;
+    return gab_ctimeout;
   }
 
   struct gab_oshape *interned =
@@ -6607,11 +6667,18 @@ GAB_API gab_value gab_tshpwith(struct gab_triple gab, gab_value shp,
   case thrd_success:
     break;
   case thrd_busy:
+  case thrd_error:
     // fprintf(stderr, "(%i) PUT BUSY DROP_ON_FLOOR %p\n", gab.wkid, self);
     return gab_gcunlock(gab), gab_ctimeout;
-  case thrd_error:
-    // fprintf(stderr, "(%i) PUT ERR DROP_ON_FLOOR %p\n", gab.wkid, self);
-    return gab_gcunlock(gab), gab_cinvalid;
+  }
+
+  interned = __gab_legshpfind(gab.eg, hash, s->len, shp, key);
+
+  if (interned) {
+#if cGAB_LOG_GC
+    fprintf(stderr, "(%i) INTERN REUSE %p.\n", gab.wkid, interned);
+#endif
+    return gab_gcunlock(gab), mtx_unlock(&gab.eg->gc_mtx), __gab_obj(interned);
   }
 
   d_shapes_insert(&gab.eg->shapes, self, 0);
@@ -13050,13 +13117,13 @@ extern void putcs(char *arg);
 // TODO @cgab @bug: Fiber creation leak
 // When a fiber is created but the put yields,
 // we essentially have dangling ptr that may end up collected.
-#define MICRO_OP_FIBER(block, have)                                            \
+#define MICRO_OP_FIBER(block, nargs)                                           \
   ({                                                                           \
     STORE_SP();                                                                \
                                                                                \
     CHECK_SIGNAL();                                                            \
                                                                                \
-    uint64_t argc = have;                                                      \
+    uint64_t argc = nargs;                                                     \
                                                                                \
     gab_value fb =                                                             \
         gab_fiber(GAB(), (struct gab_fiber_argt){                              \
@@ -13434,6 +13501,7 @@ extern void putcs(char *arg);
       PANIC_GUARD_STACKSPACE(n - have);                                        \
       while (have < n)                                                         \
         PUSH(MICRO_OP_NIL()), have++;                                          \
+      SET_HV(have);                                                            \
     }                                                                          \
   })
 
