@@ -25,6 +25,14 @@ nums := [1 2 3 4]
 # at inlining to solve creating local blocks and slowing
 # control flow?
 
+:def (Records.t) + (other) do
+
+end
+
+def: .defmacro (m, ts, args, blk) :: \(do
+    k  
+end)
+
 def: .defmacro (m, ts, args, blk) :: ~~do
   (!!m).def(!!(ts*), !!args :: !!blk) 
 end

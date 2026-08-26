@@ -13115,7 +13115,7 @@ extern void putcs(char *arg);
 // TODO @cgab @bug: Fiber creation leak
 // When a fiber is created but the put yields,
 // we essentially have dangling ptr that may end up collected.
-#define MICRO_OP_FIBER(block, nargs)                                           \
+#define MICRO_OP_FIBER(receiver, message, nargs)                               \
   ({                                                                           \
     STORE_SP();                                                                \
                                                                                \
@@ -13123,14 +13123,13 @@ extern void putcs(char *arg);
                                                                                \
     uint64_t argc = nargs;                                                     \
                                                                                \
-    gab_value fb =                                                             \
-        gab_fiber(GAB(), (struct gab_fiber_argt){                              \
-                             .message = gab_message(GAB(), mGAB_CALL),         \
-                             .receiver = block,                                \
-                             .flags = GAB().flags,                             \
-                             .argv = SP() - argc,                              \
-                             .argc = argc,                                     \
-                         });                                                   \
+    gab_value fb = gab_fiber(GAB(), (struct gab_fiber_argt){                   \
+                                        .receiver = receiver,                  \
+                                        .message = message,                    \
+                                        .flags = GAB().flags,                  \
+                                        .argv = SP() - argc,                   \
+                                        .argc = argc,                          \
+                                    });                                        \
                                                                                \
     bool spawned = __gab_jbspawn(GAB(), fb);                                   \
                                                                                \
@@ -15103,13 +15102,16 @@ CASE_CODE(SEND_PRIMITIVE_FIBER) {
   SEND_GUARD_CACHED_RECEIVER_TYPE(PEEK_N(have));
 
   // TODO @cgab @bug: Breaks when yielding.
-  NILPAD_GUARD_ARGS_GTE(2);
+  NILPAD_GUARD_ARGS_GTE(3);
 
-  gab_value block = PEEK_N(have - 1);
+  gab_value receiver = PEEK_N(have - 1);
 
-  PANIC_GUARD_KIND(block, kGAB_BLOCK);
+  gab_value message = PEEK_N(have - 2);
 
-  MICRO_OP_FIBER(block, have - 2);
+  if (message == gab_nil)
+    message = gab_message(GAB(), mGAB_CALL);
+
+  MICRO_OP_FIBER(receiver, message, have - 3);
 
   NEXT();
 }

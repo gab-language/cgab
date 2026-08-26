@@ -206,6 +206,8 @@ stmt := db.query(
          ).unwrap
 
 
+# Not an *efficient* thing to do but it does work
+# Each seq/init, seq/next has to hold/release the mutex
 workers := Ranges
   .make(0 10)
   .map(() :: Fibers.make () :: do

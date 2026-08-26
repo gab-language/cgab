@@ -202,8 +202,8 @@ GAB_DYNLIB_NATIVE_FN(xml, decode) {
   hoxml_context_t hoxml;
   // TODO @cxml @bug: Maybe allocating on the stack isn't the safest? Apply a
   // max here?
-  char buf[len * 10];
-  hoxml_init(&hoxml, buf, len * 10);
+  char buf[len * 8];
+  hoxml_init(&hoxml, buf, len * 8);
 
   gab_value stack[len];
   gab_value *sp = stack;

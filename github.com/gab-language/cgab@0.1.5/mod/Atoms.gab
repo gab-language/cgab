@@ -1,15 +1,21 @@
 Atoms := gab\atom:
 
+do\atom\loop: .defcase {
+  ok: (reply, f, loop, state) :: do
+    new_state := f.(state)
+    reply <! new_state
+    loop.(new_state)
+  end
+  none: none:
+}
+
 make: .def (Atoms, (initial) :: do
   ch := Channels.make
 
   loop := (state) :: do
-    (reply, f) := ch.>!.unwrap
-
-    new_state := f.(state)
-
-    reply <! new_state
-    self.(new_state)
+    ch
+      .>!
+      .do\atom\loop(self, state)
   end
 
   Fibers.make () :: loop.(initial)
