@@ -1,19 +1,8 @@
-sqlite := 'github.com/gab-language/cgab@0.1.5'.use 'csqlite'
+Dbrow := 'github.com/gab-language/cgab@0.1.5'.use 'Dbrow'
 
-db := sqlite.make.unwrap
+db := Dbrow.make.unwrap
 
 "Opened $.".sprintf(db).println
-
-sqlite.Query.t.defseq
-
-eval: .def (
-  sqlite.t
-  (sql, vars*) :: do
-    stmt := db.query(sql, vars*).unwrap
-    stmt.collect
-  end)
-
-#db.eval "CREATE DATABASE SampleDB; USE SampleDB;"
 
 db.eval "CREATE TABLE Employees (
     EmployeeID INT PRIMARY KEY,

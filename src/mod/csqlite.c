@@ -313,15 +313,7 @@ GAB_DYNLIB_NATIVE_FN(row, query) {
     return gab_push(gab, gab_ok, box), gab_union_cvalid(gab_nil);
 }
 
-GAB_DYNLIB_NATIVE_FN(row, seq_init) {
-  gab_value vstmt = gab_arg(0);
-
-  struct gab_sqlite_stmt *stmt = gab_boxdata(vstmt);
-
-  return step_stmt(gab, stmt);
-}
-
-GAB_DYNLIB_NATIVE_FN(row, seq_next) {
+GAB_DYNLIB_NATIVE_FN(row, source) {
   gab_value vstmt = gab_arg(0);
 
   struct gab_sqlite_stmt *stmt = gab_boxdata(vstmt);
@@ -363,15 +355,11 @@ GAB_DYNLIB_MAIN_FN {
               gab_snative(gab, "query", gab_mod_row_query),
           },
           {
-              gab_message(gab, "seq\\init"),
+              gab_message(gab, ">!"),
               stmt_type,
-              gab_snative(gab, "seq\\init", gab_mod_row_seq_init),
+              gab_snative(gab, ">!", gab_mod_row_source),
           },
-          {
-              gab_message(gab, "seq\\next"),
-              stmt_type,
-              gab_snative(gab, "seq\\next", gab_mod_row_seq_next),
-          }, );
+          );
 
   return (union gab_value_pair){
       .status = gab_cvalid,

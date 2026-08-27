@@ -1,6 +1,6 @@
 s := 'github.com/gab-language/cgab@0.1.5'.use 'Specs'
 
-dbrow: .defspec {
+dbrow := dbrow: .defspec {
   help:
   "
   A connection to a row-based database. This implementation wraps sqlite.
@@ -8,7 +8,7 @@ dbrow: .defspec {
   spec: s.box "db\row"
 }
 
-dbrow\stmt: .defspec {
+dbrow\stmt := dbrow\stmt: .defspec {
   help:
   "
   A compiled sql statement.
@@ -16,6 +16,55 @@ dbrow\stmt: .defspec {
   Implements the seqable protocol.
   "
   spec: s.box "db\row\stmt"
+}
+
+dbrow\stmt\source: .defspec {
+  help:
+  "
+  Lazily produce the next row from the query.
+
+  See the sourceable protocol.
+  "
+  spec: s.message {
+    receiver: dbrow\stmt
+    input: s.cat
+    message: >!:
+    output: s.option(s.unknown)
+  }
+}
+
+dbrow\stmt\seq\init: .defspec {
+  help:
+  "
+  Begin iterating the result rows of a query. Lazily produces rows as requested.
+
+  Implemented using the sourceable protocol.
+
+  See the seqable protocol.
+  "
+  spec: s.message {
+    receiver: dbrow\stmt
+    input: s.cat
+    message: seq\init:
+    output: s.option(s.unknown)
+  }
+}
+
+dbrow\stmt\seq\next: .defspec {
+  help:
+  "
+  Continue iterating the result rows of a query. Lazily produces rows as requested.
+
+  Implemented using the sourceable protocol.
+
+  See the seqable protocol.
+  "
+  spec: s.message {
+    receiver: dbrow\stmt
+    input: s.cat
+    message: seq\next:
+    output: s.option(s.unknown)
+  }
 }
 
 dbrow\query: .defspec {
@@ -26,7 +75,7 @@ dbrow\query: .defspec {
   Returns an error if compilation fails.
   "
   spec: s.message {
-    receiver: dbrow:
+    receiver: dbrow
     input: s.string
     message: query:
     output: s.result(s.cat(s.*(s.unknown)), s.string)
@@ -39,7 +88,7 @@ dbrow\eval: .defspec {
   Evaluate the sql string argument against the database `self`.
   "
   spec: s.message {
-    receiver: dbrow:
+    receiver: dbrow
     input: s.string
     message: eval:
     output: s.result(s.cat(s.*(s.unknown)), s.string)
