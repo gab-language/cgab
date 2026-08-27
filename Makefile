@@ -19,6 +19,7 @@ GAB_CCFLAGS          ?= -Os -DcGAB_THREADS_NATIVE -DNDEBUG -D_POSIX_C_SOURCE=200
 GAB_TARGETS          ?= $(UNAME_ARCH)-macos-none
 cui_FLAGS            ?= -isystem vendor/xcode-frameworks/include -L vendor/xcode-frameworks/lib -F vendor/xcode-frameworks/Frameworks -framework Cocoa
 cio_FLAGS            ?= -lbearssl
+cxml_FLAGS					 ?= -lyxml
 else
 # Assume building on linux
 GAB_DYNLIB_FILENDING ?=.so
@@ -26,6 +27,7 @@ GAB_CCFLAGS          ?= -Os -DcGAB_THREADS_NATIVE -DNDEBUG -D_POSIX_C_SOURCE=200
 GAB_TARGETS          ?= $(UNAME_ARCH)-linux-gnu
 cui_FLAGS            ?= -isystem vendor/x11-headers
 cio_FLAGS            ?= -lbearssl
+cxml_FLAGS					 ?= -lyxml
 endif
 
 # Actual commands used by the rest of the makefile.
@@ -175,6 +177,7 @@ $(BUILD_PREFIX)/mod/%.cgab-$(GAB_VERSION_TAG)-$(GAB_TARGETS)$(GAB_DYNLIB_FILEEND
 							$(BUILD_PREFIX)/libbearssl.a 	\
 							$(BUILD_PREFIX)/libllhttp.a  	\
 							$(BUILD_PREFIX)/libgrapheme.a \
+							$(BUILD_PREFIX)/libyxml.a \
 							$(VENDOR_PREFIX)/sqlite3.c
 	$(TARGETCC) $(CFLAGS) $(CSHARED_FLAGS) $($(basename $(notdir $<))_FLAGS) $< -o $@
 
@@ -255,6 +258,11 @@ $(BUILD_PREFIX)/libbearssl.a:
 	make clean -s -C $(VENDOR_PREFIX)/BearSSL
 	make BUILD=$(BUILD_PREFIX) AR="zig ar" LD="$(TARGETCC)" CC="$(TARGETCC)" -s -C $(VENDOR_PREFIX)/BearSSL lib
 	cp $(VENDOR_PREFIX)/BearSSL/$(BUILD_PREFIX)/libbearssl.a $(BUILD_PREFIX)/
+
+$(BUILD_PREFIX)/libyxml.a:
+	make clean -s -C $(VENDOR_PREFIX)/yxml
+	make AR="zig ar" LD="$(TARGETCC)" CC="$(TARGETCC)" -s -C $(VENDOR_PREFIX)/yxml libyxml.a
+	cp $(VENDOR_PREFIX)/yxml/libyxml.a $(BUILD_PREFIX)/
 
 # These are some convenience rules for making the cli simpler.
 

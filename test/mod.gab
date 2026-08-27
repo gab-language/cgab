@@ -688,31 +688,31 @@ json\serialize_simple\test: .def t :: do
   t.expect(js ==: '{"hello":1,"world":2}')
 end
 
-#'github.com/gab-language/cgab@0.1.5' .use 'Xml'
-#
-#xml\parse_simple\test: .def t :: do
-#  (ok, xml) := '<hello type="number" small="true">"before"<tag>3</tag><tag2/>"after"</hello>'.as\xml
-#
-#  t.expect(ok ==: ok:)
-#  (tag, attrs, children*, content) := xml.*.*
-#
-#  t.expect(tag ==: "hello")
-#
-#  t.expect(attrs.at "type" .unwrap,  ==: "number")
-#  t.expect(attrs.at "small" .unwrap, ==: "true")
-#  t.expect(content ==: '"before""after"')
-#  
-#  tag  := children.at 0 .unwrap
-#  tag2 := children.at 1 .unwrap
-#  
-#  t.expect(tag.at 0 .unwrap, ==: "tag")
-#  t.expect(tag2.at 0 .unwrap, ==: "tag2")
-#end
-#
-#xml\serialize_simple\test: .def t :: do
-#  js := { hello: 1 "world" 2 }.to\xml
-#  t.expect(js ==: '<hello>1</hello><world>2</world>')
-#end
+'github.com/gab-language/cgab@0.1.5' .use 'Xml'
+
+xml\parse_simple\test: .def t :: do
+  (ok, xml) := '<hello type="number" small="true">"before"<tag>3</tag><tag2/>"after"</hello>'.as\xml
+
+  t.expect(ok ==: ok:)
+  (tag, attrs, content, children*) := xml.*.*
+
+  t.expect(tag ==: "hello")
+
+  t.expect(attrs.at "type" .unwrap,  ==: "number")
+  t.expect(attrs.at "small" .unwrap, ==: "true")
+  t.expect(content ==: '"before""after"')
+  
+  tag  := children.at 0 .unwrap
+  tag2 := children.at 1 .unwrap
+  
+  t.expect(tag.at 0 .unwrap, ==: "tag")
+  t.expect(tag2.at 0 .unwrap, ==: "tag2")
+end
+
+xml\serialize_simple\test: .def t :: do
+  js := { hello: 1 "world" 2 }.to\xml
+  t.expect(js ==: '<hello>1</hello><world>2</world>')
+end
 
 #This doesn't seem to work in github actions
 #io\should_make_working_tls_request\test: .def t :: do

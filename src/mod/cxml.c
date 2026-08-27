@@ -21,10 +21,22 @@
  * IN THE SOFTWARE.
  */
 
-#define HOXML_IMPLEMENTATION
-#include "hoxml/hoxml.h"
+#include "yxml/yxml.h"
 
 #include "cgab.h"
+
+#define T char
+#include "vector.h"
+
+struct xml_elem {
+  v_char content;
+  gab_value *base;
+  uint64_t nattrs;
+};
+
+#define T struct xml_elem
+#define NAME xml
+#include "vector.h"
 
 bool unescape_into(char *buf, const char *str, size_t len) {
   size_t buflen = 0;
@@ -104,82 +116,67 @@ bool unescape_into(char *buf, const char *str, size_t len) {
   return true;
 }
 
-gab_value *push_value(struct gab_triple gab, hoxml_context_t *hoxml,
-                      const char *content, size_t content_length,
-                      hoxml_code_t t, gab_value *sp) {
+gab_value *push_value(struct gab_triple gab, yxml_t *yxml, yxml_ret_t t,
+                      v_char *data, v_xml *elems, gab_value *sp) {
 
   if (t < 0) {
     return nullptr;
   }
 
   switch (t) {
-  case HOXML_ATTRIBUTE: {
-    size_t len = strlen(hoxml->attribute);
-    char buf[len];
-
-    if (!unescape_into(buf, hoxml->attribute, len))
-      assert(false && "unreachable");
-
-    *sp++ = gab_string(gab, buf);
-
-    if (hoxml->value) {
-      len = strlen(hoxml->value);
-      char valbuf[len];
-
-      if (!unescape_into(valbuf, hoxml->value, len))
-        assert(false && "unreachable");
-
-      *sp++ = gab_string(gab, valbuf);
-    } else {
-      *sp++ = gab_true;
-    }
-
+  case YXML_OK:
+    break;
+  case YXML_ELEMSTART: {
+    v_xml_push(elems, (struct xml_elem){
+                          .base = sp,
+                      });
+    *sp++ = gab_string(gab, yxml->elem);
     break;
   }
-  case HOXML_ELEMENT_BEGIN: {
-    gab_value *save = sp;
+  case YXML_ATTRSTART: {
+    *sp++ = gab_string(gab, yxml->attr);
+    data->len = 0;
+    break;
+  }
+  case YXML_ATTRVAL: {
+    v_char_push(data, yxml->data[0]);
+    break;
+  }
+  case YXML_ATTREND: {
+    v_xml_ref_at(elems, elems->len - 1)->nattrs++;
+    *sp++ = gab_nstring(gab, data->len, data->data);
+    data->len = 0;
+    break;
+  }
+  case YXML_CONTENT: {
+    v_char *content = &v_xml_ref_at(elems, elems->len - 1)->content;
+    v_char_push(content, yxml->data[0]);
+    break;
+  }
+  case YXML_ELEMEND: {
+    struct xml_elem elem = v_xml_pop(elems);
 
-    *sp++ = gab_string(gab, hoxml->tag);
+    uint64_t stkspace = sp - elem.base;
 
-    hoxml_code_t code;
-    while ((code = hoxml_parse(hoxml, content, content_length)) ==
-           HOXML_ATTRIBUTE) {
-      sp = push_value(gab, hoxml, content, content_length, code, sp);
+    uint64_t nchildren = stkspace - 1 - (elem.nattrs * 2);
 
-      if (sp == nullptr)
-        return nullptr;
-    }
+    gab_value attrs =
+        gab_record(gab, 2, elem.nattrs, elem.base + 1, elem.base + 2);
 
-    size_t attrs = sp - (save + 1);
-    gab_assert(attrs % 2 == 0, "Should have even elements after attrs");
+    memcpy(elem.base + 3, sp - nchildren, nchildren * sizeof(gab_value));
+    // gab_value children = gab_list(gab, 1, nchildren, sp - nchildren);
 
-    sp = save + 1;
-    *sp++ = gab_record(gab, 2, attrs / 2, save + 1, save + 2);
+    sp = elem.base + 1;
 
-    if (code == HOXML_ELEMENT_END)
-      goto done;
+    *sp++ = attrs;
 
-    sp = push_value(gab, hoxml, content, content_length, code, sp);
+    *sp++ = gab_nstring(gab, elem.content.len, elem.content.data);
 
-    if (sp == nullptr)
-      return nullptr;
 
-    while ((code = hoxml_parse(hoxml, content, content_length)) !=
-           HOXML_ELEMENT_END) {
-      sp = push_value(gab, hoxml, content, content_length, code, sp);
+    sp = elem.base;
+    *sp++ = gab_list(gab, 1, 3 + nchildren, elem.base);
 
-      if (sp == nullptr)
-        return nullptr;
-    }
-
-  done:
-    if (hoxml->content)
-      *sp++ = gab_string(gab, hoxml->content);
-
-    size_t children = sp - (save);
-
-    sp = save;
-    *sp++ = gab_list(gab, 1, children, save);
+    v_char_destroy(&elem.content);
     break;
   }
   default:
@@ -199,23 +196,27 @@ GAB_DYNLIB_NATIVE_FN(xml, decode) {
   const char *cstr = gab_strdata(&str);
   uint64_t len = gab_strlen(str);
 
-  hoxml_context_t hoxml;
+  yxml_t yxml;
   // TODO @cxml @bug: Maybe allocating on the stack isn't the safest? Apply a
   // max here?
   char buf[len * 8];
-  hoxml_init(&hoxml, buf, len * 8);
+  yxml_init(&yxml, buf, len * 8);
+
+  v_char data = {};
+  v_xml elems = {};
 
   gab_value stack[len];
   gab_value *sp = stack;
 
-  hoxml_code_t code;
-  while ((code = hoxml_parse(&hoxml, cstr, len)) != HOXML_END_OF_DOCUMENT) {
-    sp = push_value(gab, &hoxml, cstr, len, code, sp);
+  yxml_ret_t code;
+  for (uint64_t i = 0; i < len; i++) {
+    code = yxml_parse(&yxml, cstr[i]);
+    sp = push_value(gab, &yxml, code, &data, &elems, sp);
 
     if (sp == nullptr) {
       // Encountered an invalid token.
       gab_vmpush(gab_thisvm(gab), gab_err,
-                 gab_string(gab, "Invalid XML value"));
+                 gab_string(gab, "Invalid XML value: $"), gab_number(code));
       return gab_union_cvalid(gab_nil);
     }
   }
