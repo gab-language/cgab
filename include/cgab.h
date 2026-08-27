@@ -356,7 +356,7 @@
  * The cutoff at which point cgab shapes will no longer print their keys.
  */
 #ifndef cGAB_SHAPE_LEN_CUTOFF
-#define cGAB_SHAPE_LEN_CUTOFF 16
+#define cGAB_SHAPE_LEN_CUTOFF 32
 #endif
 
 /*
@@ -372,7 +372,7 @@
  * values.
  */
 #ifndef cGAB_DICT_LEN_CUTOFF
-#define cGAB_DICT_LEN_CUTOFF 16
+#define cGAB_DICT_LEN_CUTOFF 32
 #endif
 
 /*
@@ -499,7 +499,7 @@ enum gab_status {
 /* VERSION */
 #define GAB_VERSION_MAJOR "0"
 #define GAB_VERSION_MINOR "1"
-#define GAB_VERSION_PATCH "5"
+#define GAB_VERSION_PATCH "6"
 #define GAB_VERSION_TAG                                                        \
   GAB_VERSION_MAJOR "." GAB_VERSION_MINOR "." GAB_VERSION_PATCH
 

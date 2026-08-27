@@ -1,10 +1,8 @@
-sqlite := 'github.com/gab-language/cgab@0.1.5'.use 'cduckdb'
+Dbrow := 'github.com/gab-language/cgab@0.1.6'.use 'Dbrow'
 
-db := sqlite.make.unwrap
+db := Dbrow.make.unwrap
 
 "Opened $.".sprintf(db).println
-
-db.eval "CREATE DATABASE SampleDB;USE SampleDB;"
 
 db.eval "CREATE TABLE Employees (
     EmployeeID INT PRIMARY KEY,
@@ -13,16 +11,201 @@ db.eval "CREATE TABLE Employees (
     HireDate DATE
 );"
 
-db.eval "INSERT INTO Employees (EmployeeID, FirstName, LastName, HireDate) VALUES
+res := db.eval "INSERT INTO Employees (EmployeeID, FirstName, LastName, HireDate) VALUES
 (1, 'John', 'Doe', '2023-01-15'),
-(2, 'Jane', 'Smith', '2023-02-20');"
+(2, 'John', 'Doe', '2023-01-15'),
+(3, 'John', 'Doe', '2023-01-15'),
+(4, 'John', 'Doe', '2023-01-15'),
+(5, 'John', 'Doe', '2023-01-15'),
+(6, 'John', 'Doe', '2023-01-15'),
+(7, 'John', 'Doe', '2023-01-15'),
+(8, 'John', 'Doe', '2023-01-15'),
+(9, 'John', 'Doe', '2023-01-15'),
+(10, 'John', 'Doe', '2023-01-15'),
+(11, 'John', 'Doe', '2023-01-15'),
+(12, 'John', 'Doe', '2023-01-15'),
+(13, 'John', 'Doe', '2023-01-15'),
+(14, 'John', 'Doe', '2023-01-15'),
+(15, 'John', 'Doe', '2023-01-15'),
+(16, 'John', 'Doe', '2023-01-15'),
+(17, 'John', 'Doe', '2023-01-15'),
+(18, 'John', 'Doe', '2023-01-15'),
+(19, 'John', 'Doe', '2023-01-15'),
+(20, 'John', 'Doe', '2023-01-15'),
+(21, 'John', 'Doe', '2023-01-15'),
+(22, 'John', 'Doe', '2023-01-15'),
+(23, 'John', 'Doe', '2023-01-15'),
+(24, 'John', 'Doe', '2023-01-15'),
+(25, 'John', 'Doe', '2023-01-15'),
+(26, 'John', 'Doe', '2023-01-15'),
+(27, 'John', 'Doe', '2023-01-15'),
+(28, 'John', 'Doe', '2023-01-15'),
+(29, 'John', 'Doe', '2023-01-15'),
+(30, 'John', 'Doe', '2023-01-15'),
+(31, 'John', 'Doe', '2023-01-15'),
+(32, 'John', 'Doe', '2023-01-15'),
+(33, 'John', 'Doe', '2023-01-15'),
+(34, 'John', 'Doe', '2023-01-15'),
+(35, 'John', 'Doe', '2023-01-15'),
+(36, 'John', 'Doe', '2023-01-15'),
+(37, 'John', 'Doe', '2023-01-15'),
+(38, 'John', 'Doe', '2023-01-15'),
+(39, 'John', 'Doe', '2023-01-15'),
+(40, 'John', 'Doe', '2023-01-15'),
+(41, 'John', 'Doe', '2023-01-15'),
+(42, 'John', 'Doe', '2023-01-15'),
+(43, 'John', 'Doe', '2023-01-15'),
+(44, 'John', 'Doe', '2023-01-15'),
+(45, 'John', 'Doe', '2023-01-15'),
+(46, 'John', 'Doe', '2023-01-15'),
+(47, 'John', 'Doe', '2023-01-15'),
+(48, 'John', 'Doe', '2023-01-15'),
+(49, 'John', 'Doe', '2023-01-15'),
+(50, 'John', 'Doe', '2023-01-15'),
+(51, 'John', 'Doe', '2023-01-15'),
+(52, 'John', 'Doe', '2023-01-15'),
+(53, 'John', 'Doe', '2023-01-15'),
+(54, 'John', 'Doe', '2023-01-15'),
+(55, 'John', 'Doe', '2023-01-15'),
+(56, 'John', 'Doe', '2023-01-15'),
+(57, 'John', 'Doe', '2023-01-15'),
+(58, 'John', 'Doe', '2023-01-15'),
+(59, 'John', 'Doe', '2023-01-15'),
+(60, 'John', 'Doe', '2023-01-15'),
+(61, 'John', 'Doe', '2023-01-15'),
+(62, 'John', 'Doe', '2023-01-15'),
+(63, 'John', 'Doe', '2023-01-15'),
+(64, 'John', 'Doe', '2023-01-15'),
+(65, 'John', 'Doe', '2023-01-15'),
+(66, 'John', 'Doe', '2023-01-15'),
+(67, 'John', 'Doe', '2023-01-15'),
+(68, 'John', 'Doe', '2023-01-15'),
+(69, 'John', 'Doe', '2023-01-15'),
+(70, 'John', 'Doe', '2023-01-15'),
+(71, 'John', 'Doe', '2023-01-15'),
+(72, 'John', 'Doe', '2023-01-15'),
+(73, 'John', 'Doe', '2023-01-15'),
+(74, 'John', 'Doe', '2023-01-15'),
+(75, 'John', 'Doe', '2023-01-15'),
+(76, 'John', 'Doe', '2023-01-15'),
+(77, 'John', 'Doe', '2023-01-15'),
+(78, 'John', 'Doe', '2023-01-15'),
+(79, 'John', 'Doe', '2023-01-15'),
+(80, 'John', 'Doe', '2023-01-15'),
+(81, 'John', 'Doe', '2023-01-15'),
+(82, 'John', 'Doe', '2023-01-15'),
+(83, 'John', 'Doe', '2023-01-15'),
+(84, 'John', 'Doe', '2023-01-15'),
+(85, 'John', 'Doe', '2023-01-15'),
+(86, 'John', 'Doe', '2023-01-15'),
+(87, 'John', 'Doe', '2023-01-15'),
+(88, 'John', 'Doe', '2023-01-15'),
+(89, 'John', 'Doe', '2023-01-15'),
+(90, 'John', 'Doe', '2023-01-15'),
+(91, 'John', 'Doe', '2023-01-15'),
+(92, 'John', 'Doe', '2023-01-15'),
+(93, 'John', 'Doe', '2023-01-15'),
+(94, 'John', 'Doe', '2023-01-15'),
+(95, 'John', 'Doe', '2023-01-15'),
+(96, 'John', 'Doe', '2023-01-15'),
+(97, 'John', 'Doe', '2023-01-15'),
+(98, 'John', 'Doe', '2023-01-15'),
+(99, 'John', 'Doe', '2023-01-15'),
+(100, 'John', 'Doe', '2023-01-15'),
+(101, 'John', 'Doe', '2023-01-15'),
+(102, 'John', 'Doe', '2023-01-15'),
+(103, 'John', 'Doe', '2023-01-15'),
+(104, 'John', 'Doe', '2023-01-15'),
+(105, 'John', 'Doe', '2023-01-15'),
+(106, 'John', 'Doe', '2023-01-15'),
+(107, 'John', 'Doe', '2023-01-15'),
+(108, 'John', 'Doe', '2023-01-15'),
+(109, 'John', 'Doe', '2023-01-15'),
+(110, 'John', 'Doe', '2023-01-15'),
+(111, 'John', 'Doe', '2023-01-15'),
+(112, 'John', 'Doe', '2023-01-15'),
+(113, 'John', 'Doe', '2023-01-15'),
+(114, 'John', 'Doe', '2023-01-15'),
+(115, 'John', 'Doe', '2023-01-15'),
+(116, 'John', 'Doe', '2023-01-15'),
+(117, 'John', 'Doe', '2023-01-15'),
+(118, 'John', 'Doe', '2023-01-15'),
+(119, 'John', 'Doe', '2023-01-15'),
+(120, 'John', 'Doe', '2023-01-15'),
+(121, 'John', 'Doe', '2023-01-15'),
+(122, 'John', 'Doe', '2023-01-15'),
+(123, 'John', 'Doe', '2023-01-15'),
+(124, 'John', 'Doe', '2023-01-15'),
+(125, 'John', 'Doe', '2023-01-15'),
+(126, 'John', 'Doe', '2023-01-15'),
+(127, 'John', 'Doe', '2023-01-15'),
+(128, 'John', 'Doe', '2023-01-15'),
+(129, 'John', 'Doe', '2023-01-15'),
+(130, 'John', 'Doe', '2023-01-15'),
+(131, 'John', 'Doe', '2023-01-15'),
+(132, 'John', 'Doe', '2023-01-15'),
+(133, 'John', 'Doe', '2023-01-15'),
+(134, 'John', 'Doe', '2023-01-15'),
+(135, 'John', 'Doe', '2023-01-15'),
+(136, 'John', 'Doe', '2023-01-15'),
+(137, 'John', 'Doe', '2023-01-15'),
+(138, 'John', 'Doe', '2023-01-15'),
+(139, 'John', 'Doe', '2023-01-15'),
+(140, 'John', 'Doe', '2023-01-15'),
+(141, 'John', 'Doe', '2023-01-15'),
+(142, 'John', 'Doe', '2023-01-15'),
+(143, 'John', 'Doe', '2023-01-15'),
+(144, 'John', 'Doe', '2023-01-15'),
+(145, 'John', 'Doe', '2023-01-15'),
+(146, 'John', 'Doe', '2023-01-15'),
+(147, 'John', 'Doe', '2023-01-15'),
+(148, 'John', 'Doe', '2023-01-15'),
+(149, 'John', 'Doe', '2023-01-15'),
+(150, 'John', 'Doe', '2023-01-15'),
+(151, 'John', 'Doe', '2023-01-15'),
+(152, 'John', 'Doe', '2023-01-15'),
+(153, 'John', 'Doe', '2023-01-15'),
+(154, 'John', 'Doe', '2023-01-15'),
+(155, 'John', 'Doe', '2023-01-15'),
+(156, 'John', 'Doe', '2023-01-15'),
+(157, 'John', 'Doe', '2023-01-15'),
+(158, 'John', 'Doe', '2023-01-15'),
+(159, 'John', 'Doe', '2023-01-15'),
+(160, 'John', 'Doe', '2023-01-15'),
+(161, 'John', 'Doe', '2023-01-15'),
+(162, 'John', 'Doe', '2023-01-15'),
+(163, 'John', 'Doe', '2023-01-15'),
+(164, 'Jane', 'Smith', '2023-02-20');"
+res.println
 
 res := [db.eval "SELECT * FROM Employees;"]
 res.println
 
 res := [
   db.eval(
-    "SELECT * FROM Employees WHERE EmployeeID = 1;"
+    "SELECT * FROM Employees WHERE EmployeeID = $ID;"
+    "$ID" 1
   )
 ]
 res.println
+
+stmt := db.query(
+            "SELECT * FROM Employees WHERE EmployeeID > $ID;"
+            "$ID" 0
+         ).unwrap
+
+
+# Not an *efficient* thing to do but it does work
+# Each seq/init, seq/next has to hold/release the mutex
+workers := Ranges
+  .make(0 10)
+  .map(() :: Fibers.make () :: do
+    stmt.collect .or []
+  end)
+
+workers.println
+
+res := workers.map(w :: w.await.unwrap).join []
+
+res.println
+res.len.println # Should be 164 - same as highest id

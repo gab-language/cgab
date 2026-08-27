@@ -1193,8 +1193,10 @@ int32_t __gab_jbgc(void *data) {
       // Try to read a signal, whether we timed-out or succeeded
       struct gab_sig sig = atomic_load(&gab.eg->sig);
 
-      gab_assert(sig.schedule != gab.wkid, "Impossible");
-      gab_assert(sig.schedule == -2, "Impossible");
+      gab_assert(
+          sig.schedule == -2,
+          "Schedule should be -2 before gc thread acknowledges signal. Saw: %i",
+          sig.schedule);
 
       struct gab_sig expected = {sig.mask, -2, sig.signal};
       struct gab_sig desired = {sig.mask, -1, sig.signal};
@@ -2208,7 +2210,20 @@ GAB_API union gab_value_pair gab_aexec(struct gab_triple gab,
                                                  .argv = args.sargv,
                                              });
 
-  if (main.status != gab_cvalid || gab.flags & fGAB_BUILD_CHECK)
+  if (main.status != gab_cvalid) {
+    // When execing, publish a build-error as an error.
+    gab_iref(gab, main.vresult);
+    gab_egkeep(gab.eg, main.vresult);
+
+    v_gab_value_thrd_push(&gab.eg->err, main.vresult);
+
+    if (gab.flags & fGAB_SIGTERM_ON_ERR)
+      gab_sigterm(gab);
+
+    return main;
+  }
+
+  if (gab.flags & fGAB_BUILD_CHECK)
     return main;
 
   return gab_arun(gab, (struct gab_run_argt){
@@ -3043,6 +3058,12 @@ GAB_API gab_value gab_vspanicf(struct gab_triple gab, va_list va,
       gab_number(err.col_end), vbyte_begin, gab_number(err.byte_begin),
       vbyte_end, gab_number(err.byte_end), vthrd, gab_number(args.wkid), );
 
+  gab_egkeep(gab.eg, gab_iref(gab, rec));
+
+  // TODO @cgab @bug: This swallows an error?
+  if (rec == gab_cinvalid)
+    return gab_gcunlock(gab), gab_cinvalid;
+
   gab_assert(gab_reclen(rec) == 11,
              "Error record shall be constructed correctly");
 
@@ -3055,46 +3076,57 @@ GAB_INTERNAL gab_value __gab_errtos(struct gab_triple gab, gab_value err) {
   gab_value token_type = gab_mrecat(gab, err, "tok\\t");
   if (token_type == gab_cinvalid)
     return gab_cinvalid;
+  gab_assert(token_type != gab_cundefined, "Must contain token_type");
 
   gab_value srcname = gab_mrecat(gab, err, "src");
   if (srcname == gab_cinvalid)
     return gab_cinvalid;
+  gab_assert(srcname != gab_cundefined, "Must contain srcname");
 
   gab_value status = gab_mrecat(gab, err, "status");
   if (status == gab_cinvalid)
     return gab_cinvalid;
+  gab_assert(status != gab_cundefined, "Must contain status");
 
   gab_value hint = gab_mrecat(gab, err, "hint");
   if (hint == gab_cinvalid)
     return gab_cinvalid;
+  gab_assert(hint != gab_cundefined, "Must contain hint");
 
   gab_value vtoken = gab_mrecat(gab, err, "tok\\offset");
   if (vtoken == gab_cinvalid)
     return gab_cinvalid;
+  gab_assert(vtoken != gab_cundefined, "Must contain vtoken");
 
   gab_value vrow = gab_mrecat(gab, err, "row");
   if (vrow == gab_cinvalid)
     return gab_cinvalid;
+  gab_assert(vrow != gab_cundefined, "Must contain vrow");
 
   gab_value vcol_begin = gab_mrecat(gab, err, "col\\begin");
   if (vcol_begin == gab_cinvalid)
     return gab_cinvalid;
+  gab_assert(vcol_begin != gab_cundefined, "Must contain vcol_begin");
 
   gab_value vcol_end = gab_mrecat(gab, err, "col\\end");
   if (vcol_end == gab_cinvalid)
     return gab_cinvalid;
+  gab_assert(vcol_end != gab_cundefined, "Must contain vcol_end");
 
   gab_value vbyte_begin = gab_mrecat(gab, err, "byte\\begin");
   if (vbyte_begin == gab_cinvalid)
     return gab_cinvalid;
+  gab_assert(vbyte_begin != gab_cundefined, "Must contain vbyte_begin");
 
   gab_value vbyte_end = gab_mrecat(gab, err, "byte\\end");
   if (vbyte_end == gab_cinvalid)
     return gab_cinvalid;
+  gab_assert(vbyte_end != gab_cundefined, "Must contain vbyte_end");
 
   gab_value vwkid = gab_mrecat(gab, err, "thread");
   if (vwkid == gab_cinvalid)
     return gab_cinvalid;
+  gab_assert(vwkid != gab_cundefined, "Must contain vwkid");
 
   gab_assert(gab_valkind(vtoken) == kGAB_NUMBER,
              "tok\\offset shall be a number");
@@ -3116,10 +3148,11 @@ GAB_INTERNAL gab_value __gab_errtos(struct gab_triple gab, gab_value err) {
   uint64_t byte_begin = gab_valtou(vbyte_begin);
 
   gab_assert(gab_valkind(vbyte_end) == kGAB_NUMBER,
-             "byte\\end shall be a number");
+             "byte\\end shall be a number, saw %u", gab_valkind(vbyte_end));
   uint64_t byte_end = gab_valtou(vbyte_end);
 
-  gab_assert(gab_valkind(vwkid) == kGAB_NUMBER, "wkid shall be a number");
+  gab_assert(gab_valkind(vwkid) == kGAB_NUMBER,
+             "wkid shall be a number, saw %u", gab_valkind(vwkid));
   uint64_t wkid = gab_valtou(vwkid);
   gab_assert(wkid != 0, "wkid shall not be zero");
 
@@ -3912,23 +3945,31 @@ GAB_API inline bool gab_signal(struct gab_triple gab, enum gab_signal s,
       for (;;) {
         gab_busywait(gab);
 
-        int res = mtx_lock(&gab.eg->gc_mtx);
+        int res = mtx_trylock(&gab.eg->gc_mtx);
+
+        if (res == thrd_busy)
+          continue;
+
+        if (res == thrd_error)
+          continue;
+
         gab_assert(res == thrd_success, "Can't fail to signal gc thread");
         res = cnd_signal(&gab.eg->gc_cnd);
-        gab_assert(res == thrd_success, "Can't fail to signal gc thread");
-        res = mtx_unlock(&gab.eg->gc_mtx);
-        gab_assert(res == thrd_success, "Can't fail to signal gc thread");
 
-        for (uint64_t i = 0; i < 1000; i++) {
+        /* Always unlock. We either signal, or release for next try */
+        mtx_unlock(&gab.eg->gc_mtx);
+
+        if (res != thrd_success)
+          continue;
+
+        for (;;) {
           struct gab_sig sig = atomic_load(&gab.eg->sig);
-
-          // gab_assert(__gab_jbisalive(gab, 0), "GC Worker died before
-          // receiving signal. %b", sig.mask);
 
           /* acknowledgment received */
           if (sig.schedule == -1)
             return gab_signext(gab, wkid);
 
+          /* Whole thang dead */
           if (!__gab_jbisalive(gab, 0))
             return true;
 
@@ -4390,9 +4431,8 @@ GAB_API gab_value gab_tnstring(struct gab_triple gab, uint64_t len,
   case thrd_success:
     break;
   case thrd_busy:
-    return gab_ctimeout;
   case thrd_error:
-    return gab_cinvalid;
+    return gab_ctimeout;
   }
 
   struct gab_ostring *interned = __gab_egstrfind(gab.eg, hash, len, data);
@@ -4414,23 +4454,29 @@ GAB_API gab_value gab_tnstring(struct gab_triple gab, uint64_t len,
    */
   gab_value s = __gab_nstring(gab, hash, len, data);
 
-  /*
-   * TODO @cgab @bug: Potential str mem leak
-   * Inbetween the two lock holds here, another thread
-   * *could* insert the string we want into the dict.
-   * In that case, we'd stomp over the old value
-   * and leak its memory.
-   *
-   * If this is a big deal, we can simply perform another check after locking.
-   */
-
   switch (mtx_trylock(&gab.eg->gc_mtx)) {
   case thrd_success:
     break;
   case thrd_busy:
-    return gab_ctimeout;
   case thrd_error:
-    return gab_cinvalid;
+    return gab_ctimeout;
+  }
+
+  /*
+   * Since we released the mtx above, we may have given another thread
+   * an opportunity to create the string we wanted. We must check again.
+   *
+   * At this point, the duplicate we made will be freed later (there is already
+   * a dec queued.)
+   */
+
+  interned = __gab_egstrfind(gab.eg, hash, len, data);
+
+  if (interned) {
+#if cGAB_LOG_GC
+    fprintf(stderr, "(%i) INTERN REUSE %p.\n", gab.wkid, interned);
+#endif
+    return mtx_unlock(&gab.eg->gc_mtx), __gab_obj(interned);
   }
 
   d_strings_insert(&gab.eg->strings, GAB_VAL_TO_STRING(s), 0);
@@ -4609,9 +4655,8 @@ GAB_API gab_value gab_tstrcat(struct gab_triple gab, gab_value _a,
   case thrd_success:
     break;
   case thrd_busy:
-    return gab_ctimeout;
   case thrd_error:
-    return gab_cinvalid;
+    return gab_ctimeout;
   }
 
   struct gab_ostring *interned = __gab_egstrfind(gab.eg, hash, len, buff->data);
@@ -4631,9 +4676,25 @@ GAB_API gab_value gab_tstrcat(struct gab_triple gab, gab_value _a,
   case thrd_success:
     break;
   case thrd_busy:
-    return gab_ctimeout;
   case thrd_error:
-    return gab_cinvalid;
+    return gab_ctimeout;
+  }
+
+  /*
+   * Since we released the mtx above, we may have given another thread
+   * an opportunity to create the string we wanted. We must check again.
+   *
+   * At this point, the duplicate we made will be freed later (there is already
+   * a dec queued.)
+   */
+
+  interned = __gab_egstrfind(gab.eg, hash, len, buff->data);
+
+  if (interned) {
+#if cGAB_LOG_GC
+    fprintf(stderr, "(%i) INTERN REUSE %p.\n", gab.wkid, interned);
+#endif
+    return mtx_unlock(&gab.eg->gc_mtx), __gab_obj(interned);
   }
 
   d_strings_insert(&gab.eg->strings, GAB_VAL_TO_STRING(result), 0);
@@ -5677,6 +5738,10 @@ GAB_INTERNAL gab_value __gab_recsetshp(gab_value rec, gab_value shp) {
   gab_precondition(gab_valkind(rec) == kGAB_RECORD, "Invalid kind %d",
                    gab_valkind(rec));
 
+  gab_precondition(gab_valkind(shp) == kGAB_SHAPE ||
+                       gab_valkind(shp) == kGAB_SHAPELIST,
+                   "Invalid kind %d", gab_valkind(shp));
+
   struct gab_orec *r = GAB_VAL_TO_REC(rec);
   r->shape = shp;
   return rec;
@@ -5740,6 +5805,11 @@ GAB_INTERNAL gab_value __gab_reccons(struct gab_triple gab, gab_value rec,
                                      gab_value v, gab_value shp) {
   gab_precondition(gab_valkind(rec) == kGAB_RECORD, "Invalid kind %d",
                    gab_valkind(rec));
+
+  gab_precondition(gab_valkind(shp) == kGAB_SHAPE ||
+                       gab_valkind(shp) == kGAB_SHAPELIST,
+                   "Invalid kind %d", gab_valkind(shp));
+
   struct gab_orec *r = GAB_VAL_TO_REC(rec);
 
   uint64_t i = gab_reclen(rec);
@@ -5793,6 +5863,9 @@ GAB_API gab_value gab_recput(struct gab_triple gab, gab_value rec,
   if (idx == -1) {
     gab_value newshp = gab_shpwith(gab, gab_recshp(rec), key);
 
+    if (newshp == gab_cinvalid)
+      return gab_gcunlock(gab), gab_cinvalid;
+
     gab_value result = __gab_reccons(gab, rec, val, newshp);
 
     return gab_gcunlock(gab), result;
@@ -5839,12 +5912,15 @@ GAB_API gab_value gab_rectake(struct gab_triple gab, gab_value rec,
   if (gab_reclen(rec) == 1)
     return gab_gcunlock(gab), gab_erecord(gab);
 
+  gab_value s = gab_shpwithout(gab, gab_recshp(rec), key);
+
+  if (s == gab_cinvalid)
+    return gab_gcunlock(gab), gab_cinvalid;
+
   gab_value dissoc_out;
   gab_value result =
       __gab_rectake(gab, GAB_VAL_TO_REC(rec)->shift, rec, idx,
                     gab_uvrecat(rec, gab_reclen(rec) - 1), &dissoc_out);
-
-  gab_value s = gab_shpwithout(gab, gab_recshp(rec), key);
 
   result = __gab_recsetshp(result, s);
 
@@ -5958,11 +6034,12 @@ GAB_API gab_value gab_shptorec(struct gab_triple gab, gab_value shp) {
   struct gab_orec *self =
       GAB_CREATE_FLEX_OBJ(gab_orec, gab_value, rootlen, kGAB_RECORD);
 
-  self->shape = shp;
   self->shift = shift;
   self->len = rootlen;
 
   gab_value res = __gab_obj(self);
+
+  __gab_recsetshp(res, shp);
 
   if (len) {
     __gab_recfillchildren(gab, res, shift, len, rootlen, true);
@@ -5970,6 +6047,11 @@ GAB_API gab_value gab_shptorec(struct gab_triple gab, gab_value shp) {
     for (uint64_t i = 0; i < len; i++)
       __gab_mrecput(gab, res, gab_nil, i);
   }
+
+  gab_assert(gab_valkind(self->shape) == kGAB_SHAPE ||
+                 gab_valkind(self->shape) == kGAB_SHAPELIST,
+             "Records must have shape kind shape, not %d",
+             gab_valkind(self->shape));
 
   return gab_gcunlock(gab), res;
 }
@@ -5995,11 +6077,12 @@ GAB_API gab_value gab_recordfrom(struct gab_triple gab, gab_value shape,
   struct gab_orec *self =
       GAB_CREATE_FLEX_OBJ(gab_orec, gab_value, rootlen, kGAB_RECORD);
 
-  self->shape = shape;
   self->shift = shift;
   self->len = rootlen;
 
   gab_value res = __gab_obj(self);
+
+  __gab_recsetshp(res, shape);
 
   len = real_len < len ? real_len : len;
 
@@ -6025,6 +6108,11 @@ GAB_API gab_value gab_recordfrom(struct gab_triple gab, gab_value shape,
         real_i, real_len);
   }
 
+  gab_assert(gab_valkind(self->shape) == kGAB_SHAPE ||
+                 gab_valkind(self->shape) == kGAB_SHAPELIST,
+             "Records must have shape kind shape, not %d",
+             gab_valkind(self->shape));
+
   return gab_gcunlock(gab), res;
 }
 
@@ -6039,7 +6127,7 @@ GAB_API gab_value gab_record(struct gab_triple gab, uint64_t stride,
 
   uint64_t actual_len = gab_shplen(shp);
 
-  if (actual_len < len) {
+  if (__gab_unlikely(actual_len < len)) {
     // In the slow case where we saw duplicate keys
     gab_value dedup_values[actual_len];
 
@@ -6105,10 +6193,13 @@ GAB_API gab_value gab_nlstcat(struct gab_triple gab, uint64_t len,
   for (uint64_t i = 0; i < total_len; i++)
     total_keys[i] = gab_number(i);
 
-  gab_gclock(gab);
-
   // DO this first so as not to collect *while* initiating a shape.
   gab_value shape = gab_shape(gab, 1, total_len, total_keys);
+
+  if (shape == gab_cinvalid)
+    return gab_cinvalid;
+
+  gab_gclock(gab);
 
   uint64_t shift = __gab_pvecshift(total_len);
 
@@ -6117,21 +6208,15 @@ GAB_API gab_value gab_nlstcat(struct gab_triple gab, uint64_t len,
   struct gab_orec *self =
       GAB_CREATE_FLEX_OBJ(gab_orec, gab_value, rootlen, kGAB_RECORD);
 
-  self->shape = shape;
   self->shift = shift;
   self->len = rootlen;
 
-  if (gab_valkind(self->shape) != kGAB_SHAPELIST)
-    gab_fprintf(stdout, "UHOH:\n$\n", self->shape);
+  gab_value res = __gab_obj(self);
+
+  __gab_recsetshp(res, shape);
 
   gab_assert(total_len == gab_shplen(self->shape),
              "Total length shall match constructed shape length");
-
-  gab_assert(gab_valkind(self->shape) == kGAB_SHAPELIST,
-             "List-cat should result in a list, not %u",
-             gab_valkind(self->shape));
-
-  gab_value res = __gab_obj(self);
 
   if (total_len) {
     __gab_recfillchildren(gab, res, shift, total_len, rootlen, true);
@@ -6157,6 +6242,9 @@ GAB_API gab_value gab_nreccat(struct gab_triple gab, uint64_t len,
 
   gab_value new_shp = gab_nshpcat(gab, len, shapes);
 
+  if (new_shp == gab_cinvalid)
+    return gab_cinvalid;
+
   uint64_t total_len = gab_shplen(new_shp);
   uint64_t shift = __gab_pvecshift(total_len);
   uint64_t rootlen = __gab_pveclen(total_len, shift);
@@ -6164,14 +6252,15 @@ GAB_API gab_value gab_nreccat(struct gab_triple gab, uint64_t len,
   struct gab_orec *self =
       GAB_CREATE_FLEX_OBJ(gab_orec, gab_value, rootlen, kGAB_RECORD);
 
-  self->shape = new_shp;
   self->shift = shift;
   self->len = rootlen;
 
+  gab_value res = __gab_obj(self);
+
+  __gab_recsetshp(res, new_shp);
+
   gab_assert(total_len == gab_shplen(self->shape),
              "Total length shall match constructed shape length");
-
-  gab_value res = __gab_obj(self);
 
   if (total_len) {
     __gab_recfillchildren(gab, res, shift, total_len, rootlen, true);
@@ -6244,9 +6333,8 @@ GAB_API gab_value gab_tshape(struct gab_triple gab, uint64_t stride,
   case thrd_success:
     break;
   case thrd_busy:
-    return gab_ctimeout;
   case thrd_error:
-    return gab_cinvalid;
+    return gab_ctimeout;
   }
 
   struct gab_oshape *interned =
@@ -6269,9 +6357,19 @@ GAB_API gab_value gab_tshape(struct gab_triple gab, uint64_t stride,
   case thrd_success:
     break;
   case thrd_busy:
-    return gab_gcunlock(gab), gab_ctimeout;
   case thrd_error:
-    return gab_gcunlock(gab), gab_cinvalid;
+    return gab_gcunlock(gab), gab_ctimeout;
+  }
+
+  /* Must check again after releasing mtx */
+
+  interned = __gab_egshpfind(gab.eg, hash, 1, newlen, newdata);
+
+  if (interned) {
+#if cGAB_LOG_GC
+    fprintf(stderr, "(%i) INTERN REUSE %p.\n", gab.wkid, interned);
+#endif
+    return gab_gcunlock(gab), mtx_unlock(&gab.eg->gc_mtx), __gab_obj(interned);
   }
 
   d_shapes_insert(&gab.eg->shapes, GAB_VAL_TO_SHAPE(s), 0);
@@ -6429,9 +6527,8 @@ GAB_API gab_value gab_tshpwithout(struct gab_triple gab, gab_value shape,
   case thrd_success:
     break;
   case thrd_busy:
-    return gab_ctimeout;
   case thrd_error:
-    return gab_cinvalid;
+    return gab_ctimeout;
   }
 
   struct gab_oshape *interned =
@@ -6461,11 +6558,17 @@ GAB_API gab_value gab_tshpwithout(struct gab_triple gab, gab_value shape,
   case thrd_success:
     break;
   case thrd_busy:
+  case thrd_error:
     // fprintf(stderr, "(%i) TAKE BUSY DROP_ON_FLOOR %p\n", gab.wkid, self);
     return gab_gcunlock(gab), gab_ctimeout;
-  case thrd_error:
-    // fprintf(stderr, "(%i) TAKE ERR DROP_ON_FLOOR %p\n", gab.wkid, self);
-    return gab_gcunlock(gab), gab_cinvalid;
+  }
+
+  interned = __gab_egshpfind(gab.eg, hash, 1, newlen, newdata);
+  if (interned) {
+#if cGAB_LOG_GC
+    fprintf(stderr, "(%i) INTERN REUSE %p.\n", gab.wkid, interned);
+#endif
+    return gab_gcunlock(gab), mtx_unlock(&gab.eg->gc_mtx), __gab_obj(interned);
   }
 
   d_shapes_insert(&gab.eg->shapes, self, 0);
@@ -6531,9 +6634,8 @@ GAB_API gab_value gab_tshpwith(struct gab_triple gab, gab_value shp,
   case thrd_success:
     break;
   case thrd_busy:
-    return gab_ctimeout;
   case thrd_error:
-    return gab_cinvalid;
+    return gab_ctimeout;
   }
 
   struct gab_oshape *interned =
@@ -6563,11 +6665,18 @@ GAB_API gab_value gab_tshpwith(struct gab_triple gab, gab_value shp,
   case thrd_success:
     break;
   case thrd_busy:
+  case thrd_error:
     // fprintf(stderr, "(%i) PUT BUSY DROP_ON_FLOOR %p\n", gab.wkid, self);
     return gab_gcunlock(gab), gab_ctimeout;
-  case thrd_error:
-    // fprintf(stderr, "(%i) PUT ERR DROP_ON_FLOOR %p\n", gab.wkid, self);
-    return gab_gcunlock(gab), gab_cinvalid;
+  }
+
+  interned = __gab_legshpfind(gab.eg, hash, s->len, shp, key);
+
+  if (interned) {
+#if cGAB_LOG_GC
+    fprintf(stderr, "(%i) INTERN REUSE %p.\n", gab.wkid, interned);
+#endif
+    return gab_gcunlock(gab), mtx_unlock(&gab.eg->gc_mtx), __gab_obj(interned);
   }
 
   d_shapes_insert(&gab.eg->shapes, self, 0);
@@ -9246,6 +9355,9 @@ GAB_API union gab_value_pair gab_parse(struct gab_triple gab,
   struct parser parser = {.src = src, .err = gab_cundefined};
 
   gab_value ast = __gab_parse(gab, &parser);
+
+  if (ast == gab_cinvalid && parser.err == gab_cundefined)
+    __gab_prserror(gab, &parser, GAB_PANIC, "");
 
   gab_assert(ast != gab_cinvalid || parser.err != gab_cundefined,
              "Shall either have an ast or an error");
@@ -12279,6 +12391,11 @@ GAB_API union gab_value_pair gab_vpanicf(struct gab_triple gab, const char *fmt,
     if (err != gab_cinvalid) {
       gab_iref(gab, err);
       gab_egkeep(gab.eg, err);
+
+      v_gab_value_thrd_push(&gab.eg->err, err);
+
+      if (gab.flags & fGAB_SIGTERM_ON_ERR)
+        gab_sigterm(gab);
     }
 
     gab_value res[] = {gab_err, err, gab_cinvalid};
@@ -12998,22 +13115,21 @@ extern void putcs(char *arg);
 // TODO @cgab @bug: Fiber creation leak
 // When a fiber is created but the put yields,
 // we essentially have dangling ptr that may end up collected.
-#define MICRO_OP_FIBER(block, have)                                            \
+#define MICRO_OP_FIBER(receiver, message, nargs)                               \
   ({                                                                           \
     STORE_SP();                                                                \
                                                                                \
     CHECK_SIGNAL();                                                            \
                                                                                \
-    uint64_t argc = have;                                                      \
+    uint64_t argc = nargs;                                                     \
                                                                                \
-    gab_value fb =                                                             \
-        gab_fiber(GAB(), (struct gab_fiber_argt){                              \
-                             .message = gab_message(GAB(), mGAB_CALL),         \
-                             .receiver = block,                                \
-                             .flags = GAB().flags,                             \
-                             .argv = SP() - argc,                              \
-                             .argc = argc,                                     \
-                         });                                                   \
+    gab_value fb = gab_fiber(GAB(), (struct gab_fiber_argt){                   \
+                                        .receiver = receiver,                  \
+                                        .message = message,                    \
+                                        .flags = GAB().flags,                  \
+                                        .argv = SP() - argc,                   \
+                                        .argc = argc,                          \
+                                    });                                        \
                                                                                \
     bool spawned = __gab_jbspawn(GAB(), fb);                                   \
                                                                                \
@@ -13382,6 +13498,7 @@ extern void putcs(char *arg);
       PANIC_GUARD_STACKSPACE(n - have);                                        \
       while (have < n)                                                         \
         PUSH(MICRO_OP_NIL()), have++;                                          \
+      SET_HV(have);                                                            \
     }                                                                          \
   })
 
@@ -14985,13 +15102,16 @@ CASE_CODE(SEND_PRIMITIVE_FIBER) {
   SEND_GUARD_CACHED_RECEIVER_TYPE(PEEK_N(have));
 
   // TODO @cgab @bug: Breaks when yielding.
-  NILPAD_GUARD_ARGS_GTE(2);
+  NILPAD_GUARD_ARGS_GTE(3);
 
-  gab_value block = PEEK_N(have - 1);
+  gab_value receiver = PEEK_N(have - 1);
 
-  PANIC_GUARD_KIND(block, kGAB_BLOCK);
+  gab_value message = PEEK_N(have - 2);
 
-  MICRO_OP_FIBER(block, have - 2);
+  if (message == gab_nil)
+    message = gab_message(GAB(), mGAB_CALL);
+
+  MICRO_OP_FIBER(receiver, message, have - 3);
 
   NEXT();
 }

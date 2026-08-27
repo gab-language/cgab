@@ -67,6 +67,6 @@
 [submodule "vendor/munit"]
 	path = vendor/munit
 	url = https://github.com/nemequ/munit.git
-[submodule "vendor/hoxml"]
-	path = vendor/hoxml
-	url = https://github.com/luphi/hoxml.git
+[submodule "vendor/yxml"]
+	path = vendor/yxml
+	url = https://github.com/JulStrat/yxml.git
