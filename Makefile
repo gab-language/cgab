@@ -259,9 +259,11 @@ $(BUILD_PREFIX)/libbearssl.a:
 	make BUILD=$(BUILD_PREFIX) AR="zig ar" LD="$(TARGETCC)" CC="$(TARGETCC)" -s -C $(VENDOR_PREFIX)/BearSSL lib
 	cp $(VENDOR_PREFIX)/BearSSL/$(BUILD_PREFIX)/libbearssl.a $(BUILD_PREFIX)/
 
+# Annoyingly, we have to add -o yxml.o so that 
+#  the windows cross-compile emits the expected yxml.o
 $(BUILD_PREFIX)/libyxml.a:
 	make clean -s -C $(VENDOR_PREFIX)/yxml
-	make AR="zig ar" LD="$(TARGETCC)" CC="$(TARGETCC)" -s -C $(VENDOR_PREFIX)/yxml libyxml.a
+	make AR="zig ar" LD="$(TARGETCC)" CC="$(TARGETCC) -o yxml.o" -s -C $(VENDOR_PREFIX)/yxml libyxml.a
 	cp $(VENDOR_PREFIX)/yxml/libyxml.a $(BUILD_PREFIX)/
 
 # These are some convenience rules for making the cli simpler.

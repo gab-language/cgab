@@ -8,6 +8,29 @@ dbrow: .defspec {
   spec: s.box 'db\row'
 }
 
+dbrow\stmt: .defspec {
+  help:
+  "
+  A compiled sql statement.
+  "
+  spec: s.box 'db\row\stmt'
+}
+
+dbrow\query: .defspec {
+  help:
+  "
+  Compile the input query (really, this can be any statement).
+
+  
+  "
+  spec: s.message {
+    receiver: dbrow:
+    input: s.string
+    message: query:
+    output: s.result(s.cat(s.*(s.unknown)), s.string)
+  }
+}
+
 dbrow\eval: .defspec {
   help:
   "
