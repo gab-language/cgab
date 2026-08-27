@@ -1,4 +1,4 @@
-Dbrow := 'github.com/gab-language/cgab@0.1.5'.use 'Dbrow'
+Dbrow := 'github.com/gab-language/cgab@0.1.6'.use 'Dbrow'
 
 db := Dbrow.make.unwrap
 

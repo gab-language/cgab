@@ -668,7 +668,7 @@ channels\handle_multiple_values\test: .def t :: do
   t.expect(three ==: 3)
 end
 
-'github.com/gab-language/cgab@0.1.5' .use 'Json'
+'github.com/gab-language/cgab@0.1.6' .use 'Json'
 
 json\parse_simple\test: .def t :: do
   (ok, js) := '{ "hello": 1 }'.as\json
@@ -688,7 +688,7 @@ json\serialize_simple\test: .def t :: do
   t.expect(js ==: '{"hello":1,"world":2}')
 end
 
-'github.com/gab-language/cgab@0.1.5' .use 'Xml'
+'github.com/gab-language/cgab@0.1.6' .use 'Xml'
 
 xml\parse_simple\test: .def t :: do
   (ok, xml) := '<hello type="number" small="true">"before"<tag>3</tag><tag2/>"after"</hello>'.as\xml
@@ -735,4 +735,4 @@ end
 #  t.expect(ok ==: ok:)
 #end
 
-'github.com/gab-language/cgab@0.1.5' .use 'Tests'
+'github.com/gab-language/cgab@0.1.6' .use 'Tests'
