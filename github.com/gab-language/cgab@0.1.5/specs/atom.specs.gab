@@ -1,0 +1,61 @@
+s := 'github.com/gab-language/cgab@0.1.5'.use 'Specs'
+
+atom\spec := atom: .defspec {
+  help:
+  "
+  An atom is simply a channel. It holds values over time.
+  "
+  spec: s.channel(s.unknown)
+}
+
+atom\make: .defspec {
+  help:
+  "Create an atom"
+  spec: s.message {
+    receiver: atom:
+    input: s.cat()
+    message: make:
+    output: atom\spec
+  }
+}
+
+atom\atom\deref: .defspec {
+  help:
+  "
+  Retrieve the value in the atom.
+  "
+  spec: s.message {
+    receiver: atom\spec
+    input: s.cat
+    message: atom\deref:
+    output: s.unknown
+  }
+}
+
+
+atom\atom\swap: .defspec {
+  help:
+  "
+  Atomically update the value in the atom with an update-block.
+  "
+  spec: s.message {
+    receiver: atom\spec
+    input: s.block { input: s.unknown, output: s.unknown, semantics: nil:}
+    message: atom\swap:
+    output: s.unknown
+  }
+}
+
+atom\atom\reset: .defspec {
+  help:
+  "
+  Atomically reset the value in the atom to a given value.
+  "
+  spec: s.message {
+    receiver: atom\spec
+    input: s.cat(s.unknown)
+    message: atom\reset:
+    output: s.cat
+  }
+}
+

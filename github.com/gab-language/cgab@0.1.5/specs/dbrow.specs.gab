@@ -5,15 +5,17 @@ dbrow: .defspec {
   "
   A connection to a row-based database. This implementation wraps sqlite.
   "
-  spec: s.box 'db\row'
+  spec: s.box "db\row"
 }
 
 dbrow\stmt: .defspec {
   help:
   "
   A compiled sql statement.
+
+  Implements the seqable protocol.
   "
-  spec: s.box 'db\row\stmt'
+  spec: s.box "db\row\stmt"
 }
 
 dbrow\query: .defspec {
@@ -21,7 +23,7 @@ dbrow\query: .defspec {
   "
   Compile the input query (really, this can be any statement).
 
-  
+  Returns an error if compilation fails.
   "
   spec: s.message {
     receiver: dbrow:

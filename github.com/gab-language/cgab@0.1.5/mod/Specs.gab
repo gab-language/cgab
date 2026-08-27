@@ -1151,7 +1151,6 @@ spec\semantics_fits:.def(
   (input output) :: (self.(input output), self, [input output], semantics:))
 
 block\predicate := (args semantics) :: do
-  args.assert\is spec\block\Args
 
   pred := Strings.make('predicate:block:' args ':' semantics).to\message
 
@@ -1213,6 +1212,13 @@ block\predicate := (args semantics) :: do
     end)
 
   spec\type: .def(pred 'Block')
+
+  spec\explain: .def(pred () :: do
+    '$ :: $'.sprintf(
+      args.input.spec\explain,
+      args.output.spec\explain,
+    )
+  end)
   
   pred
 end
@@ -1416,11 +1422,11 @@ spec\fits: .def value :: (self == value self value)
 
 # Since a spec is just a predicate, we can simply call it and return the result
 spec\fits: .def(
-  'gab\\block'
+  Blocks.t
   (value) :: self.(value))
 
 spec\fits: .def(
-  'gab\\message'
+  Messages.t
   (value) :: do
     msg := self
     msg .at value .then () :: msg.(value)
