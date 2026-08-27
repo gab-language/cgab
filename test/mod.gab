@@ -694,7 +694,7 @@ xml\parse_simple\test: .def t :: do
   (ok, xml) := '<hello type="number" small="true">"before"<tag>3</tag><tag2/>"after"</hello>'.as\xml
 
   t.expect(ok ==: ok:)
-  (tag, attrs, content, children*) := xml.*.*
+  (tag, attrs, content, children*) := xml.*
 
   t.expect(tag ==: "hello")
 

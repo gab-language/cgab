@@ -172,7 +172,6 @@ gab_value *push_value(struct gab_triple gab, yxml_t *yxml, yxml_ret_t t,
 
     *sp++ = gab_nstring(gab, elem.content.len, elem.content.data);
 
-
     sp = elem.base;
     *sp++ = gab_list(gab, 1, 3 + nchildren, elem.base);
 
@@ -213,17 +212,22 @@ GAB_DYNLIB_NATIVE_FN(xml, decode) {
     code = yxml_parse(&yxml, cstr[i]);
     sp = push_value(gab, &yxml, code, &data, &elems, sp);
 
-    if (sp == nullptr) {
-      // Encountered an invalid token.
-      gab_vmpush(gab_thisvm(gab), gab_err,
-                 gab_string(gab, "Invalid XML value: $"), gab_number(code));
-      return gab_union_cvalid(gab_nil);
-    }
+    // Encountered an invalid token.
+    if (sp == nullptr)
+      return gab_vmpush(gab_thisvm(gab), gab_err,
+                        gab_string(gab, "Invalid XML value: $"),
+                        gab_number(code)),
+             gab_union_cvalid(gab_nil);
   }
 
-  gab_value res = gab_list(gab, 1, sp - stack, stack);
+  code = yxml_eof(&yxml);
+  if (code < 0)
+    return gab_vmpush(gab_thisvm(gab), gab_err,
+                      gab_string(gab, "Invalid XML value: $"),
+                      gab_number(code)),
+           gab_union_cvalid(gab_nil);
 
-  gab_vmpush(gab_thisvm(gab), gab_ok, res);
+  gab_vmpush(gab_thisvm(gab), gab_ok, stack[0]);
   return gab_union_cvalid(gab_nil);
 }
 

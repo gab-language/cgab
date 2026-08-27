@@ -86,6 +86,8 @@ dbrow\eval: .defspec {
   help:
   "
   Evaluate the sql string argument against the database `self`.
+
+  Does this by creating a query and sending `collect` to it. Will panic if the query fails to create.
   "
   spec: s.message {
     receiver: dbrow
