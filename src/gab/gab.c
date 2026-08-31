@@ -1944,7 +1944,6 @@ int get_package(v_step *steps, struct command_arguments *args, const char *pkg,
 
 
   if (res) {
-  printf("GET RES %s\n", res);
     v_char_spush(&bundle, s_char_cstr(res));
     v_char_push(&bundle, '-');
   }
