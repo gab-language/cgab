@@ -1964,16 +1964,24 @@ int get_package(v_step *steps, struct command_arguments *args, const char *pkg,
   if (!url)
     return clierror("Unknown host for package '%s'.\n", pkg), 1;
 
-  const char *install_dir = install_location(gab_target, gab_tag, pkg);
+  // Reconstruct the '<pkg>@<tag>'
+  char tagged_pkg[strlen(tag) + strlen(pkg) + 2];
+  strcpy(tagged_pkg, pkg);
+  tagged_pkg[strlen(pkg)] = '@';
+  strcpy(tagged_pkg + strlen(pkg) + 1, tag);
+  tagged_pkg[strlen(pkg) + 1 + strlen(tag)] = '\0';
+
+  const char *pkg_dir = install_location(gab_target, gab_tag, tagged_pkg);
+  const char *install_dir = install_location(gab_target, gab_tag, nullptr);
 
   v_char bundle_dst = {};
-  v_char_spush(&bundle_dst, s_char_cstr(install_dir));
+  v_char_spush(&bundle_dst, s_char_cstr(pkg_dir));
   v_char_spush(&bundle_dst, s_char_cstr(bundle.data));
   v_char_push(&bundle_dst, '\0');
 
   v_step_push(steps, (struct step){
                          kSTEP_MKDIRP,
-                         .as.mkdirp.path = install_dir,
+                         .as.mkdirp.path = pkg_dir,
                      });
 
   v_step_push(steps, (struct step){
@@ -2014,7 +2022,7 @@ int get_package(v_step *steps, struct command_arguments *args, const char *pkg,
                            kSTEP_UNZIP,
                            .as.unzip.src = bundle_dst.data,
                            .as.unzip.dst = install_dir,
-                           .as.unzip.pkg = strdup(pkg),
+                           .as.unzip.pkg = strdup(tagged_pkg),
                        });
   }
 
