@@ -2937,14 +2937,32 @@ GAB_API_INLINE gab_value gab_bintostr(gab_value bin) {
 
   return gab_ubintostr(bin);
 }
+GAB_API_INLINE gab_value gab_tbincat(struct gab_triple gab, gab_value a,
+                                     gab_value b) {
+  if (a == gab_cinvalid || b == gab_cinvalid)
+    return gab_cinvalid;
+
+  gab_precondition(gab_valkind(a) == kGAB_BINARY, "Unexpected type");
+  gab_precondition(gab_valkind(b) == kGAB_BINARY, "Unexpected type");
+
+  gab_value astr = gab_ubintostr(a);
+  gab_value bstr = gab_ubintostr(b);
+  gab_value abstr = gab_strcat(gab, astr, bstr);
+
+  // Invalid, timeout, return here
+  if (gab_valkind(abstr) != kGAB_STRING)
+    return abstr;
+
+  return gab_strtobin(abstr);
+}
 
 GAB_API_INLINE gab_value gab_bincat(struct gab_triple gab, gab_value a,
                                     gab_value b) {
   if (a == gab_cinvalid || b == gab_cinvalid)
     return gab_cinvalid;
 
-  assert(gab_valkind(a) == kGAB_BINARY);
-  assert(gab_valkind(b) == kGAB_BINARY);
+  gab_precondition(gab_valkind(a) == kGAB_BINARY, "Unexpected type");
+  gab_precondition(gab_valkind(b) == kGAB_BINARY, "Unexpected type");
 
   gab_value astr = gab_ubintostr(a);
   gab_value bstr = gab_ubintostr(b);

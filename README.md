@@ -22,6 +22,9 @@ Ranges
     .each spawn_task
 ```
 
+## TODO
+[ ] `close` on Io.Socket & Io.File
+
 ## Project Structure
 There are several sub-projects within this repository.
 - The first is `cgab`, a c-library which provides the functionality of the Gab language itself. The source files for this library are in `src/cgab`.

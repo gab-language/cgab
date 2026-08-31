@@ -975,7 +975,12 @@ struct primitive kind_primitives[] = {
     {
         .name = mGAB_ADD,
         .kind = kGAB_STRING,
-        .primitive = gab_primitive(OP_SEND_PRIMITIVE_CONCAT),
+        .primitive = gab_primitive(OP_SEND_PRIMITIVE_STR_CONCAT),
+    },
+    {
+        .name = mGAB_ADD,
+        .kind = kGAB_BINARY,
+        .primitive = gab_primitive(OP_SEND_PRIMITIVE_BIN_CONCAT),
     },
     {
         .name = mGAB_MAKE,
@@ -4612,8 +4617,12 @@ GAB_API int gab_binat(gab_value str, uint64_t idx) {
 */
 GAB_API gab_value gab_tstrcat(struct gab_triple gab, gab_value _a,
                               gab_value _b) {
-  gab_precondition(gab_valkind(_a) == kGAB_STRING, "Invalid kind");
-  gab_precondition(gab_valkind(_b) == kGAB_STRING, "Invalid kind");
+  gab_precondition(gab_valkind(_a) == kGAB_STRING ||
+                       gab_valkind(_a) == kGAB_BINARY,
+                   "Invalid kind");
+  gab_precondition(gab_valkind(_b) == kGAB_STRING ||
+                       gab_valkind(_b) == kGAB_BINARY,
+                   "Invalid kind");
 
   uint64_t alen = gab_strlen(_a);
   uint64_t blen = gab_strlen(_b);
@@ -7616,7 +7625,8 @@ GAB_INTERNAL uint64_t __gab_insdump(FILE *stream, struct gab_oprototype *self,
   case OP_SEND_BLOCK:
   case OP_SEND_NATIVE:
   case OP_SEND_PROPERTY:
-  case OP_SEND_PRIMITIVE_CONCAT:
+  case OP_SEND_PRIMITIVE_BIN_CONCAT:
+  case OP_SEND_PRIMITIVE_STR_CONCAT:
   case OP_SEND_PRIMITIVE_SPLATLIST:
   case OP_SEND_PRIMITIVE_SPLATDICT:
   case OP_SEND_PRIMITIVE_ADD:
@@ -13395,6 +13405,9 @@ extern void putcs(char *arg);
 
 #define SEND_GUARD_ISS(value) SEND_GUARD_KIND(value, kGAB_STRING)
 
+#define PANIC_GUARD_ISBIN(value) PANIC_GUARD_KIND(value, kGAB_BINARY)
+#define SEND_GUARD_ISBIN(value) SEND_GUARD_KIND(value, kGAB_BINARY)
+
 #define SEND_GUARD(clause, reason)                                             \
   if (__gab_unlikely(!(clause)))                                               \
     MISS_CACHED_SEND(reason);
@@ -13884,7 +13897,7 @@ extern void putcs(char *arg);
 
 #define MICRO_OP_BINARY_EQ(a, b) (gab_valeq(a, b))
 
-#define MICRO_OP_BINARY_CONCAT(a, b)                                           \
+#define MICRO_OP_BINARY_STR_CONCAT(a, b)                                       \
   ({                                                                           \
     gab_value val_ab = gab_tstrcat(GAB(), a, b);                               \
                                                                                \
@@ -13897,7 +13910,25 @@ extern void putcs(char *arg);
       VM_YIELD(gab_nil);                                                       \
                                                                                \
     gab_assert(gab_valkind(val_ab) == kGAB_STRING,                             \
-               "concat shall return string");                                  \
+               "str concat shall return string");                              \
+                                                                               \
+    val_ab;                                                                    \
+  })
+
+#define MICRO_OP_BINARY_BIN_CONCAT(a, b)                                       \
+  ({                                                                           \
+    gab_value val_ab = gab_tbincat(GAB(), a, b);                               \
+                                                                               \
+    CHECK_SIGNAL();                                                            \
+                                                                               \
+    if (val_ab == gab_cinvalid)                                                \
+      VM_TERM();                                                               \
+                                                                               \
+    if (val_ab == gab_ctimeout)                                                \
+      VM_YIELD(gab_nil);                                                       \
+                                                                               \
+    gab_assert(gab_valkind(val_ab) == kGAB_BINARY,                             \
+               "bin concat shall return binary");                              \
                                                                                \
     val_ab;                                                                    \
   })
@@ -14432,9 +14463,14 @@ IMPL_SEND_BINARY(PRIMITIVE_RSH, ISN, MICRO_OP_UNBOXU_T, MICRO_OP_UNBOXU,
                  MICRO_OP_BOXN, MICRO_OP_BINARY_RSH);
 
 // str + str = str
-IMPL_SEND_BINARY(PRIMITIVE_CONCAT, ISS, MICRO_OP_UNBOXV_T, MICRO_OP_UNBOXV,
+IMPL_SEND_BINARY(PRIMITIVE_STR_CONCAT, ISS, MICRO_OP_UNBOXV_T, MICRO_OP_UNBOXV,
                  MICRO_OP_UNBOXV_T, MICRO_OP_UNBOXV, MICRO_OP_UNBOXV_T,
-                 MICRO_OP_BOXV, MICRO_OP_BINARY_CONCAT);
+                 MICRO_OP_BOXV, MICRO_OP_BINARY_STR_CONCAT);
+
+// bin + bin = bin
+IMPL_SEND_BINARY(PRIMITIVE_BIN_CONCAT, ISBIN, MICRO_OP_UNBOXV_T,
+                 MICRO_OP_UNBOXV, MICRO_OP_UNBOXV_T, MICRO_OP_UNBOXV,
+                 MICRO_OP_UNBOXV_T, MICRO_OP_BOXV, MICRO_OP_BINARY_BIN_CONCAT);
 
 // val == val = bool
 IMPL_SEND_BINARY(PRIMITIVE_EQ, NOP, MICRO_OP_UNBOXV_T, MICRO_OP_UNBOXV,

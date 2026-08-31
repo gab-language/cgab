@@ -1,13 +1,13 @@
 # Native module which uses the LLHTTP library to implement HTTP parsing.
 Http := 'github.com/gab-language/cgab@0.1.6' .use 'chttp'
 
-to_http_headers := Transducers.map((v k) :: Strings.make(k ':' v))
+to_http_headers := Transducers.map((v k) :: Strings.make(k ': ' v))
                 |> Transducers.interpose('\r\n')
 
 to\http\headers: .def (
   Records.t
   () :: do
-    self.join('' to_http_headers)
+    self.join('\r\n' to_http_headers)
   end)
 
 # TODO @http @qol: Include HTTP version as part of this interface.
@@ -22,9 +22,9 @@ Http\Req := http\req: .defclass(
         self.http\method
         ' '
         self.http\endpoint,
-        ' HTTP/1.1\r\n'
+        ' HTTP/1.1'
         self.http\headers.to\http\headers,
-        '\r\n'
+        '\r\n\r\n'
         self.http\body
       )
     end
@@ -38,17 +38,123 @@ Http\Res := http\res: .defclass(
     () :: do
       Binaries.make(
         self.http\status.to\http\status
-        ' HTTP/1.1\r\n'
+        ' HTTP/1.1'
         self.http\headers.to\http\headers,
-        '\r\n'
+        '\r\n\r\n'
         self.http\body
       )
     end
   })
 
+# Create a custom reducer which stops when it reaches
+# the end of HTTP headers.
+[_http\read_headers:] .defmodule {
+  reduce\step: (acc x) :: do
+    acc := acc + x.as\string.unwrap
+    done := acc.has\suffix '\r\n\r\n' .and stop: .or next:
+    (done _http\read_headers: acc)  
+  end
+  reduce\done: (acc x) :: do
+    acc
+  end
+}
+
+_http\read_headers := (source) :: do
+  source
+    .reduce("" _http\read_headers:)
+    .to\binary
+end
+
+[_http\read_chunkheader:] .defmodule {
+  reduce\step: (acc x) :: do
+    acc := acc + x.as\string.unwrap
+    done := acc.has\suffix '\r\n' .and stop: .or next:
+    (done _http\read_chunkheader: acc)  
+  end
+  reduce\done: (acc x) :: do
+    acc
+  end
+}
+
+_http\doread_body: .defcase {
+  body\by_chunked: (http conn) :: do
+    # TODO: Replace these crashes
+    body := conn.join(
+      "".to\binary
+      Transducers.deduce("" _http\read_chunkheader:)
+      |> Transducers.map(lenstr :: lenstr.as\integer(16).unwrap)
+      |> Transducers.take_until(len :: len == 0)
+      |> Transducers.map(len :: do
+          data :=  conn.stream\recv(len).unwrap
+
+          breaker := conn.stream\recv 2 .unwrap
+
+          data
+      end))
+    (ok: http.put(http\body: body))
+  end
+  body\by_len: (http conn) :: do
+    len := http.http\headers.at("Content-Length").unwrap.as\integer.unwrap
+
+    (read_ok, body) := conn.stream\recv(len)
+    (read_ok, http.put(http\body: body))
+  end
+  body\by_none: (http conn) :: do
+    (ok: http)
+  end
+}
+
+_http\read_body: .defcase {
+  ok: (http, conn) :: do
+    (has_transfer, transfer_encoding) := http.http\headers.at("Transfer-Encoding")
+    (has_content_len, content_len) := http.http\headers.at("Content-Length")
+
+    read_body := (has_transfer .and (transfer_encoding == "chunked").and body\by_chunked:) 
+                  .or (has_content_len .and body\by_len:)
+                  .or (body\by_none:)
+
+    read_body._http\doread_body(http conn)
+  end
+  err: (err, conn) :: do
+    # TODO: close the conn
+    (err: err)
+  end
+}
+
+send_request := (method host path headers data) :: do
+  req := Http\Req.make(method path headers data .or '')
+  bin := req.to\http
+
+  conn := Io.Sockets.make tcp\tls: .unwrap
+
+  conn.connect(host 443).unwrap
+
+  conn.stream\send(bin).unwrap
+
+  (ok, http) := _http\read_headers.(conn)
+    .as\http
+    ._http\read_body(conn)
+
+  conn.close.unwrap
+  
+  (ok, http)
+end
+
 [Http] .defmodule {
   Req: Http\Req
   Res: Http\Res
+  get: (host path headers) :: do
+    send_request.('GET' host path headers)
+  end
+  post: (host path headers data) :: do
+    send_request.('POST' host path headers data)
+  end
+  put: (host path headers data) :: do
+    send_request.('PUT' host path headers data)
+  end
+  patch: (host path headers data) :: do
+    send_request.('PATCH' host path headers data)
+  end
 }
 
 Http
