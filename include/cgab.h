@@ -3907,9 +3907,6 @@ GAB_API gab_value gab_snative(struct gab_triple gab, const char *name,
 /**
  * @brief Get the practical runtime type of a value.
  *
- * TODO @perf: Allow this function to be completely inlined. Lets be done with
- * engine.h
- *
  * @param gab The engine
  * @param value The value
  * @return The runtime value corresponding to the type of the given value

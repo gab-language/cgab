@@ -2431,8 +2431,6 @@ GAB_INTERNAL struct gab_oshape *__gab_egshpfind(struct gab_eg *self,
         if (!len)
           return key;
 
-        // TODO @cgab @opt: This is n^2 searching the tree.
-        // Better to traverse the tree once, and compare against data.
         if (__gab_dshpcmp(__gab_obj(key), stride, len, data))
           return key;
 
@@ -3627,6 +3625,7 @@ GAB_API union gab_value_pair gab_asend(struct gab_triple gab,
                  ? (union gab_value_pair){{gab_cvalid, fb}}
                  : (union gab_value_pair){{gab_cinvalid, gab_cinvalid}};
 
+    // TODO @cgab @bug: This is certainly a race condition
     if (gab.wkid == wkid)
       q_gab_value_dyn_push(&gab.eg->jobs[wkid].waiting_queue, fb);
     else
@@ -4598,6 +4597,7 @@ GAB_API uint64_t gab_strhash(gab_value str) {
     return GAB_VAL_TO_STRING(str)->hash;
 
   // TODO @cgab @bug: Propertly hash the contents of short strings.
+  // I can't tell if this is actually a bug or not.
   return str;
 }
 
@@ -5401,7 +5401,8 @@ GAB_INTERNAL gab_value __gab_shptake(struct gab_triple gab, gab_value shape,
 GAB_INTERNAL uint64_t __gab_shpprepkeys(uint64_t stride, uint64_t len,
                                         gab_value *keys, gab_value *keys_out) {
   const uint64_t hashset_capacity = len * 2;
-  gab_value *hashset = calloc(hashset_capacity, sizeof(gab_value));
+  // Allocate hash-set on the stack.
+  gab_value hashset[hashset_capacity] = {};
 
   for (uint64_t i = 0; i < hashset_capacity; i++)
     hashset[i] = gab_cinvalid;
@@ -5423,7 +5424,6 @@ GAB_INTERNAL uint64_t __gab_shpprepkeys(uint64_t stride, uint64_t len,
   skip:
   }
 
-  free(hashset);
   return widx;
 };
 
@@ -5946,7 +5946,7 @@ GAB_API gab_value gab_nlstpush(struct gab_triple gab, gab_value list,
   gab_gclock(gab);
 
   gab_iref(gab, list);
-  // TODO @cgab @bug: GC when locked
+  // TODO @cgab @bug: GC when locked causes issues.
   for (uint64_t i = 0; i < len; i++) {
     gab_value key = gab_number(start + i);
     gab_value val = values[i];
@@ -6335,7 +6335,6 @@ GAB_API gab_value gab_tshape(struct gab_triple gab, uint64_t stride,
   gab_value newdata[len + 1];
   uint64_t newlen = __gab_shpprepkeys(stride, len, data, newdata);
 
-  // TODO @cgab @bug: Handle duplicate keys correctly.
   uint64_t hash = __gab_hshwords(newlen, newdata);
 
   switch (mtx_trylock(&gab.eg->gc_mtx)) {
@@ -6388,10 +6387,12 @@ GAB_API gab_value gab_tshape(struct gab_triple gab, uint64_t stride,
   // TODO @cgab @opt: Find more efficient fix
   // When creating and interning shapes, we need to explicitly increment
   // This shape so that all of its children are acknowledged.
-  // This bug is present because shapes are persistent and share nodes.
+  // This fixes a bug caused because shapes are persistent and share nodes.
   // If a shape is created which shares a node with
   // another shape created in an earlier epoch, and *that* shape is collected,
-  // the shared node will be collected out from underneath the new shape.
+  // the shared node may be collected out from underneath the new shape.
+  // (If the new shape isn't present anywhere at the time of collection, but is reused)
+  // (Or if the new shape is created *after* a thread publishes its roots)
   // this inc/dec pattern guarantees that each shape *acknowledges ownership* of
   // its children. This is a problem because the intern table holds *weak
   // references* to its shapes. So a shape can be re-used from the table without
@@ -6742,10 +6743,10 @@ GAB_INTERNAL gab_value __gab_fibsetup(struct gab_triple gab,
       &(uint8_t[]){
           OP_SEND,
           // These two bytes make up a short argument, with the highest bit set.
-          fHAVE_TAIL,
-          0,
           // This bit is used to determine if the send should tailcall.
           // The rest of the bits are for the k offset.
+          fHAVE_TAIL,
+          0,
           OP_RETURN,
       },
       sizeof(self->virtual_frame_bc));
