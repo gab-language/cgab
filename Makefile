@@ -178,6 +178,7 @@ $(BUILD_PREFIX)/mod/%.cgab-$(GAB_VERSION_TAG)-$(GAB_TARGETS)$(GAB_DYNLIB_FILEEND
 							$(BUILD_PREFIX)/libllhttp.a  	\
 							$(BUILD_PREFIX)/libgrapheme.a \
 							$(BUILD_PREFIX)/libyxml.a \
+							$(VENDOR_PREFIX)/zstd/build/single_file_libs/zstd.c \
 							$(VENDOR_PREFIX)/sqlite3.c
 	$(TARGETCC) $(CFLAGS) $(CSHARED_FLAGS) $($(basename $(notdir $<))_FLAGS) $< -o $@
 
@@ -219,6 +220,10 @@ $(VENDOR_PREFIX)/llhttp.h:
 	make -s -C $(VENDOR_PREFIX)/llhttp
 	cp $(VENDOR_PREFIX)/llhttp/build/llhttp.h $(VENDOR_PREFIX)/
 	make clean -s -C $(VENDOR_PREFIX)/llhttp
+
+$(VENDOR_PREFIX)/zstd/build/single_file_libs/zstd.c:
+	cd $(VENDOR_PREFIX)/zstd/build/single_file_libs && \
+		./create_single_file_library.sh
 
 $(VENDOR_PREFIX)/miniz/amalgamation/miniz.c:
 	cd $(VENDOR_PREFIX)/miniz && \

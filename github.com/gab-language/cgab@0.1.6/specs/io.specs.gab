@@ -1,0 +1,336 @@
+s := 'github.com/gab-language/cgab@0.1.6'.use 'Specs'
+'github.com/gab-language/cgab@0.1.6/specs'.use 'streamable.specs'
+'github.com/gab-language/cgab@0.1.6/specs'.use 'seqable.specs'
+'github.com/gab-language/cgab@0.1.6/specs'.use 'sourceable.specs'
+'github.com/gab-language/cgab@0.1.6/specs'.use 'sinkable.specs'
+
+file\spec := file: .defspec {
+  help:
+  "
+  A native file handle.
+  "
+  spec: s.box "io\file"
+}
+
+file\make: .defspec {
+  help:
+  "
+  Create a file.
+  "
+  spec: s.message {
+    receiver: io\file:
+    message: make:
+    input: s.cat(
+      'path' s.string
+      'permissions' s.string)
+    output: s.cat('file' file\spec)
+  }
+}
+
+file\len: .defspec {
+  help:
+  "
+  Returns the length of a file.
+  "
+  spec: s.message {
+    receiver:   file\spec
+    message:    len:
+    input:      s.cat
+    output:     s.int
+  }
+}
+
+file\stream\send: .defspec {
+  help:
+  "
+  Write bytes to a file.
+
+  See the streamable protocol for details.
+  "
+  spec: streamable\stream\send:.spec
+}
+
+file\stream\recv: .defspec {
+  help:
+  "
+  Read bytes from a file.
+
+  If you omit 'amount', then will return whatever bytes are immediately available.
+
+  Even for files on disk, `recv` with no `amount` isn't guaranteed to return the whole file.
+
+  See the streamable protocol for details.
+  "
+  spec: streamable\stream\recv:.spec
+}
+
+file\sourceable: .defspec {
+  help:
+  "
+  Files implement the `sourceable` protocol.
+
+  They yield each byte of the file sequentially using `stream\recv`.
+
+  See the sourceable protocol for details.
+  "
+  spec: sourceable: .spec
+}
+
+file\sinkable: .defspec {
+  help:
+  "
+  Files implement the `sinkable` protocol.
+
+  The first argument is converted to a binary, and then written
+  to the file with `stream\send`.
+
+  See the sinkable protocol for details.
+  "
+  spec: sinkable: .spec
+}
+
+file\seqable\seq\init: .defspec {
+  help:
+  "
+  Files implement the `seqable` protocol.
+
+  This is implemented using the `seqable` protocol, like so:
+
+  ```gab
+    [Io.Files.t] .defmodule {
+      seq\init: _ :: do
+        (ok, xs*) := self >!
+        (ok, nil:, xs*)
+      end
+    }
+  ```
+
+  See the seqable protocol for details.
+  "
+  spec: seqable\seq\init:.spec
+}
+
+file\seqable\seq\next: .defspec {
+  help:
+  "
+  Files implement the `seqable` protocol.
+
+  This is implemented using the `seqable` protocol, like so:
+
+  ```gab
+    [Io.Files.t] .defmodule {
+      seq\next: _ :: do
+        (ok, xs*) := self >!
+        (ok, nil:, xs*)
+      end
+    }
+  ```
+
+  See the seqable protocol for details.
+  "
+  spec: seqable\seq\next:.spec
+}
+
+socket\spec := socket: .defspec {
+  help:
+  "
+  A native socket handle.
+
+  Implements the `streamable` protocol.
+
+  When creating a socket, the user must choose a `protocol`. The options are:
+  - `tcp:`
+  - `udp:`
+  - `tcp\tls:`
+  - `udp\tls:`
+
+  The latter two include transport-layer-security. Sockets with and without `tls:` require different
+  arguments to messages such as `connect:` or `bind:`. See their definitions for details.
+  "
+  spec: s.box "io\socket"
+}
+
+socket\make: .defspec {
+  help:
+  "
+  Create a socket with the given protocol.
+  "
+  spec: s.message {
+    receiver: io\socket:
+    message: make:
+    input: s.cat(
+      'protocol' s.alt(
+        'TCP' tcp:
+        'UDP' udp:
+        'TCP with TLS' tcp\tls:
+        'UDP with TLS' udp\tls:
+      )
+    )
+    output: s.cat('socket' socket\spec)
+  }
+}
+
+socket\accept: .defspec {
+  help:
+  "
+  Accept a client connection on a listening server socket.
+  "
+  spec: s.message {
+    receiver: socket\spec
+    message:  accept:
+    input:    s.cat
+    output:   s.result(socket\spec, s.string)
+  }
+}
+
+socket\listen: .defspec {
+  help:
+  "
+  Begin listening for connections on a server socket.
+  "
+  spec: s.message {
+    receiver: socket\spec
+    message:  listen:
+    input:    s.cat('max_connections' s.int)
+    output:   s.alt('ok' ok: 'err' err:)
+  }
+}
+
+socket\bind: .defspec {
+  help:
+  "
+  Bind a socket to a local address. This turns a socket into a server socket.
+  "
+  spec: s.message {
+    receiver: socket\spec
+    message:  bind:
+    input:    s.alt(
+      'default' s.cat(
+        'address' s.string
+        'port'    s.int
+        )
+      'tls'    s.cat(
+        'address' s.string
+        'port'    s.int
+        'certificate' s.binary
+        'private_key' s.binary
+      )
+    )
+    output:   s.result(nil:, s.string)
+  }
+}
+
+socket\connect: .defspec {
+  help:
+  "
+  Connect to an address. This turns a socket into a client socket.
+
+  For ssl clients, Gab bundles a public mozilla client certificate chain, so the 'certificate'
+  argument is optional.
+  "
+  spec: s.message {
+    receiver: socket\spec
+    message:  connect:
+    input:    s.alt(
+      'default' s.cat(
+        'address' s.string
+        'port'    s.int
+        )
+      'tls'    s.cat(
+        'address' s.string
+        'port'    s.int
+        'certificate' s.binary
+      )
+    )
+    output:   s.result(nil:, s.string())
+  }
+}
+
+socket\stream\send: .defspec {
+  help:
+  "
+  Write bytes to a socket.
+
+  This is part of the `streamable` protocool.
+  "
+  spec: streamable\stream\send:.spec
+}
+
+socket\stream\recv: .defspec {
+  help:
+  "
+  Read 'amount' bytes from a socket.
+
+  If you omit 'amount', then will return whatever bytes are immediately available.
+
+  This is part of the `streamable` protocool.
+  "
+  spec: streamable\stream\recv:.spec
+}
+
+socket\sourceable: .defspec {
+  help:
+  "
+  Sockets implement the `sourceable` protocol.
+
+  They yield each byte of the socket sequentially using `stream\recv`.
+
+  See the sourceable protocol for details.
+  "
+  spec: sourceable: .spec
+}
+
+socket\sinkable: .defspec {
+  help:
+  "
+  Sockets implement the `sinkable` protocol.
+
+  The first argument is converted to a binary, and then written
+  to the socket with `stream\send`.
+
+  See the sinkable protocol for details.
+  "
+  spec: sinkable: .spec
+}
+
+socket\seqable\seq\init: .defspec {
+  help:
+  "
+  Sockets implement the `seqable` protocol.
+
+  This is implemented using the `seqable` protocol, like so:
+
+  ```gab
+    [Io.Sockets.t] .defmodule {
+      seq\init: _ :: do
+        (ok, xs*) := self >!
+        (ok, nil:, xs*)
+      end
+    }
+  ```
+
+  See the seqable protocol for details.
+  "
+  spec: seqable\seq\init:.spec
+}
+
+socket\seqable\seq\next: .defspec {
+  help:
+  "
+  Sockets implement the `seqable` protocol.
+
+  This is implemented using the `seqable` protocol, like so:
+
+  ```gab
+    [Io.Sockets.t] .defmodule {
+      seq\next: _ :: do
+        (ok, xs*) := self >!
+        (ok, nil:, xs*)
+      end
+    }
+  ```
+
+  See the seqable protocol for details.
+  "
+  spec: seqable\seq\next:.spec
+}

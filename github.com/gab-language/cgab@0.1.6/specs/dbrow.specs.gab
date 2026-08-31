@@ -1,4 +1,5 @@
 s := 'github.com/gab-language/cgab@0.1.6'.use 'Specs'
+'github.com/gab-language/cgab@0.1.6/specs'.use 'seqable.specs'
 
 dbrow := dbrow: .defspec {
   help:
@@ -42,12 +43,7 @@ dbrow\stmt\seq\init: .defspec {
 
   See the seqable protocol.
   "
-  spec: s.message {
-    receiver: dbrow\stmt
-    input: s.cat
-    message: seq\init:
-    output: s.option(s.unknown)
-  }
+  spec: seqable\seq\init: .spec
 }
 
 dbrow\stmt\seq\next: .defspec {
@@ -59,12 +55,7 @@ dbrow\stmt\seq\next: .defspec {
 
   See the seqable protocol.
   "
-  spec: s.message {
-    receiver: dbrow\stmt
-    input: s.cat
-    message: seq\next:
-    output: s.option(s.unknown)
-  }
+  spec: seqable\seq\init: .spec 
 }
 
 dbrow\query: .defspec {
