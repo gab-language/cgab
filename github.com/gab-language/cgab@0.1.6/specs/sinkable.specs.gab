@@ -16,3 +16,20 @@ sinkable\spec := sinkable: .defspec {
   spec: s.protocol(<!:)
 }
 
+sinkable\sink: .defspec {
+  help:
+  "
+  Perform some side-effecting action to consume a datum.
+  
+  Since a side-effect is performed (which may fail or present no data), this message returns a result.
+  "
+  spec: s.message {
+    receiver: sinkable\spec
+    input: s.cat('datum' s.unknown)
+    message: <!:
+    output: s.alt (
+      'success' s.cat('status' ok: 'value' s.unknown)
+      'error'   s.cat('status' err: 'message' s.string)
+    )
+  }
+}

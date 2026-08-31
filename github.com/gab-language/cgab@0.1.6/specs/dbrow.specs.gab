@@ -1,4 +1,5 @@
 s := 'github.com/gab-language/cgab@0.1.6'.use 'Specs'
+'github.com/gab-language/cgab@0.1.6/specs'.use 'sourceable.specs'
 'github.com/gab-language/cgab@0.1.6/specs'.use 'seqable.specs'
 
 dbrow := dbrow: .defspec {
@@ -26,12 +27,7 @@ dbrow\stmt\source: .defspec {
 
   See the sourceable protocol.
   "
-  spec: s.message {
-    receiver: dbrow\stmt
-    input: s.cat
-    message: >!:
-    output: s.option(s.unknown)
-  }
+  spec: sourceable\source: .spec
 }
 
 dbrow\stmt\seq\init: .defspec {
@@ -69,7 +65,7 @@ dbrow\query: .defspec {
     receiver: dbrow
     input: s.string
     message: query:
-    output: s.result(s.cat(s.*(s.unknown)), s.string)
+    output: s.result(s.cat('columns' s.*(s.unknown)), s.string)
   }
 }
 

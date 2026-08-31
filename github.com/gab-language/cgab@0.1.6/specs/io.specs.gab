@@ -4,7 +4,7 @@ s := 'github.com/gab-language/cgab@0.1.6'.use 'Specs'
 'github.com/gab-language/cgab@0.1.6/specs'.use 'sourceable.specs'
 'github.com/gab-language/cgab@0.1.6/specs'.use 'sinkable.specs'
 
-file\spec := file: .defspec {
+file\spec := io\file: .defspec {
   help:
   "
   A native file handle.
@@ -12,7 +12,7 @@ file\spec := file: .defspec {
   spec: s.box "io\file"
 }
 
-file\make: .defspec {
+io\file\make: .defspec {
   help:
   "
   Create a file.
@@ -27,7 +27,7 @@ file\make: .defspec {
   }
 }
 
-file\len: .defspec {
+io\file\len: .defspec {
   help:
   "
   Returns the length of a file.
@@ -40,7 +40,7 @@ file\len: .defspec {
   }
 }
 
-file\stream\send: .defspec {
+io\file\stream\send: .defspec {
   help:
   "
   Write bytes to a file.
@@ -50,7 +50,7 @@ file\stream\send: .defspec {
   spec: streamable\stream\send:.spec
 }
 
-file\stream\recv: .defspec {
+io\file\stream\recv: .defspec {
   help:
   "
   Read bytes from a file.
@@ -64,7 +64,7 @@ file\stream\recv: .defspec {
   spec: streamable\stream\recv:.spec
 }
 
-file\sourceable: .defspec {
+io\file\sourceable\source: .defspec {
   help:
   "
   Files implement the `sourceable` protocol.
@@ -73,10 +73,10 @@ file\sourceable: .defspec {
 
   See the sourceable protocol for details.
   "
-  spec: sourceable: .spec
+  spec: sourceable\source: .spec
 }
 
-file\sinkable: .defspec {
+io\file\sinkable\sink: .defspec {
   help:
   "
   Files implement the `sinkable` protocol.
@@ -86,10 +86,10 @@ file\sinkable: .defspec {
 
   See the sinkable protocol for details.
   "
-  spec: sinkable: .spec
+  spec: sinkable\sink: .spec
 }
 
-file\seqable\seq\init: .defspec {
+io\file\seqable\seq\init: .defspec {
   help:
   "
   Files implement the `seqable` protocol.
@@ -110,7 +110,7 @@ file\seqable\seq\init: .defspec {
   spec: seqable\seq\init:.spec
 }
 
-file\seqable\seq\next: .defspec {
+io\file\seqable\seq\next: .defspec {
   help:
   "
   Files implement the `seqable` protocol.
@@ -131,7 +131,7 @@ file\seqable\seq\next: .defspec {
   spec: seqable\seq\next:.spec
 }
 
-socket\spec := socket: .defspec {
+socket\spec := io\socket: .defspec {
   help:
   "
   A native socket handle.
@@ -150,7 +150,7 @@ socket\spec := socket: .defspec {
   spec: s.box "io\socket"
 }
 
-socket\make: .defspec {
+io\socket\make: .defspec {
   help:
   "
   Create a socket with the given protocol.
@@ -170,7 +170,7 @@ socket\make: .defspec {
   }
 }
 
-socket\accept: .defspec {
+io\socket\accept: .defspec {
   help:
   "
   Accept a client connection on a listening server socket.
@@ -183,7 +183,7 @@ socket\accept: .defspec {
   }
 }
 
-socket\listen: .defspec {
+io\socket\listen: .defspec {
   help:
   "
   Begin listening for connections on a server socket.
@@ -196,7 +196,7 @@ socket\listen: .defspec {
   }
 }
 
-socket\bind: .defspec {
+io\socket\bind: .defspec {
   help:
   "
   Bind a socket to a local address. This turns a socket into a server socket.
@@ -220,7 +220,7 @@ socket\bind: .defspec {
   }
 }
 
-socket\connect: .defspec {
+io\socket\connect: .defspec {
   help:
   "
   Connect to an address. This turns a socket into a client socket.
@@ -246,7 +246,7 @@ socket\connect: .defspec {
   }
 }
 
-socket\stream\send: .defspec {
+io\socket\stream\send: .defspec {
   help:
   "
   Write bytes to a socket.
@@ -256,7 +256,7 @@ socket\stream\send: .defspec {
   spec: streamable\stream\send:.spec
 }
 
-socket\stream\recv: .defspec {
+io\socket\stream\recv: .defspec {
   help:
   "
   Read 'amount' bytes from a socket.
@@ -268,7 +268,7 @@ socket\stream\recv: .defspec {
   spec: streamable\stream\recv:.spec
 }
 
-socket\sourceable: .defspec {
+io\socket\sourceable\source: .defspec {
   help:
   "
   Sockets implement the `sourceable` protocol.
@@ -277,10 +277,10 @@ socket\sourceable: .defspec {
 
   See the sourceable protocol for details.
   "
-  spec: sourceable: .spec
+  spec: sourceable\source: .spec
 }
 
-socket\sinkable: .defspec {
+io\socket\sinkable\sink: .defspec {
   help:
   "
   Sockets implement the `sinkable` protocol.
@@ -290,10 +290,10 @@ socket\sinkable: .defspec {
 
   See the sinkable protocol for details.
   "
-  spec: sinkable: .spec
+  spec: sinkable\sink: .spec
 }
 
-socket\seqable\seq\init: .defspec {
+io\socket\seqable\seq\init: .defspec {
   help:
   "
   Sockets implement the `seqable` protocol.
@@ -314,7 +314,7 @@ socket\seqable\seq\init: .defspec {
   spec: seqable\seq\init:.spec
 }
 
-socket\seqable\seq\next: .defspec {
+io\socket\seqable\seq\next: .defspec {
   help:
   "
   Sockets implement the `seqable` protocol.
