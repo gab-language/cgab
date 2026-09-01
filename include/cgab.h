@@ -784,6 +784,10 @@ static inline void __gab_assert_fail(const char *prelude, const char *expr,
  *
  * Luckily, windows has a simple lock we can statically initialize here
  * which does the trick.
+ *
+ * If mingw/binutils etc got their stuff together and we didn't have to 
+ * manually unprotect/protect the IAT table for delay loading to work,
+ * then this wouldn't even be an issue in the first place.
  */
 static SRWLOCK g_delay_lock = SRWLOCK_INIT;
 
