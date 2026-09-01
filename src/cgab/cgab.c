@@ -3626,6 +3626,8 @@ GAB_API union gab_value_pair gab_asend(struct gab_triple gab,
                  : (union gab_value_pair){{gab_cinvalid, gab_cinvalid}};
 
     // TODO @cgab @bug: This is certainly a race condition
+    // We are pushing to an arbitrary thread's worker queue,
+    // and don't have any locking surrounding it.
     if (gab.wkid == wkid)
       q_gab_value_dyn_push(&gab.eg->jobs[wkid].waiting_queue, fb);
     else
@@ -7099,8 +7101,6 @@ GAB_INTERNAL gab_value __gab_chnput(struct gab_ochannel *channel, uint64_t len,
  * Try to load up to n values from the channel into dest.
  * If successful, return a gab_number of the number of values actually loaded.
  * Else return gab_cundefined.
- *
- * TODO @cgab @bug: Somehow it is still possible for this race
  */
 GAB_INTERNAL gab_value __gab_chntake(struct gab_ochannel *channel, uint64_t n,
                                      gab_value *dest) {

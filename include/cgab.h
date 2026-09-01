@@ -774,7 +774,21 @@ static inline void __gab_assert_fail(const char *prelude, const char *expr,
 
 #include <delayimp.h>
 
+/*
+ * Because we have to virtual protect/unprotect
+ * the IAT pages, we actually need a lock to prevent
+ * races when protect/unprotecting.
+ *
+ * Otherwise, multiple parallel delay-load resolutions
+ * could interfere with each other and cause crashes.
+ *
+ * Luckily, windows has a simple lock we can statically initialize here
+ * which does the trick.
+ */
+static SRWLOCK g_delay_lock = SRWLOCK_INIT;
+
 thread_local static DWORD g_oldProtect = 0;
+
 ExternC FARPROC gab_delayload(unsigned dliNotify, PDelayLoadInfo pdli) {
   switch (dliNotify) {
   case dliNotePreLoadLibrary:
@@ -782,9 +796,49 @@ ExternC FARPROC gab_delayload(unsigned dliNotify, PDelayLoadInfo pdli) {
     if (_stricmp(pdli->szDll, "gab") == 0) {
       return (FARPROC)GetModuleHandle(NULL);
     }
+    break;
+
+  case dliNotePreGetProcAddress:
+    // This is called right before the helper tries to resolve the symbol
+    // and write to the IAT. We make the IAT entry writable here.
+    if (pdli->ppfn) {
+      AcquireSRWLockExclusive(&g_delay_lock);
+      if (!VirtualProtect(pdli->ppfn, sizeof(void *), PAGE_READWRITE,
+                          &g_oldProtect)) {
+        printf("GAB_DELAY: Failed to unprotect IAT at %p (Error: %lu)\n",
+               pdli->ppfn, GetLastError());
+      }
+    }
+    break;
+
+  case dliNoteEndProcessing:
+    // This is called after the helper has successfully written the address
+    // to *pdli->ppfn. We restore the original Read-Only protection now.
+    if (g_oldProtect != 0 && pdli->ppfn) {
+      DWORD dummy;
+      if (!VirtualProtect(pdli->ppfn, sizeof(void *), g_oldProtect, &dummy)) {
+        printf("GAB_DELAY: Failed to restore protection at %p\n", pdli->ppfn);
+      }
+      g_oldProtect = 0; // Reset state
+      ReleaseSRWLockExclusive(&g_delay_lock);
+    }
+    break;
+
+  case dliFailLoadLib:
+    printf("GAB_DELAY: Critical Failure - Could not load library %s\n",
+           pdli->szDll);
+    break;
+
+  case dliFailGetProc:
+    printf("GAB_DELAY: Critical Failure - Could not find function %s\n",
+           pdli->dlp.szProcName);
+    break;
+
   default:
     return NULL;
   }
+
+  return NULL;
 }
 PfnDliHook __pfnDliNotifyHook2 = gab_delayload;
 PfnDliHook __pfnDliFailureHook2 = gab_delayload;
