@@ -784,29 +784,29 @@ ExternC FARPROC gab_delayload(unsigned dliNotify, PDelayLoadInfo pdli) {
     }
     break;
 
-  // case dliNotePreGetProcAddress:
-  //   // This is called right before the helper tries to resolve the symbol
-  //   // and write to the IAT. We make the IAT entry writable here.
-  //   if (pdli->ppfn) {
-  //     if (!VirtualProtect(pdli->ppfn, sizeof(void *), PAGE_READWRITE,
-  //                         &g_oldProtect)) {
-  //       printf("GAB_DELAY: Failed to unprotect IAT at %p (Error: %lu)\n",
-  //              pdli->ppfn, GetLastError());
-  //     }
-  //   }
-  //   break;
+  case dliNotePreGetProcAddress:
+    // This is called right before the helper tries to resolve the symbol
+    // and write to the IAT. We make the IAT entry writable here.
+    if (pdli->ppfn) {
+      if (!VirtualProtect(pdli->ppfn, sizeof(void *), PAGE_READWRITE,
+                          &g_oldProtect)) {
+        printf("GAB_DELAY: Failed to unprotect IAT at %p (Error: %lu)\n",
+               pdli->ppfn, GetLastError());
+      }
+    }
+    break;
 
-  // case dliNoteEndProcessing:
-  //   // This is called after the helper has successfully written the address
-  //   // to *pdli->ppfn. We restore the original Read-Only protection now.
-  //   if (g_oldProtect != 0 && pdli->ppfn) {
-  //     DWORD dummy;
-  //     if (!VirtualProtect(pdli->ppfn, sizeof(void *), g_oldProtect, &dummy)) {
-  //       printf("GAB_DELAY: Failed to restore protection at %p\n", pdli->ppfn);
-  //     }
-  //     g_oldProtect = 0; // Reset state
-  //   }
-  //   break;
+  case dliNoteEndProcessing:
+    // This is called after the helper has successfully written the address
+    // to *pdli->ppfn. We restore the original Read-Only protection now.
+    if (g_oldProtect != 0 && pdli->ppfn) {
+      DWORD dummy;
+      if (!VirtualProtect(pdli->ppfn, sizeof(void *), g_oldProtect, &dummy)) {
+        printf("GAB_DELAY: Failed to restore protection at %p\n", pdli->ppfn);
+      }
+      g_oldProtect = 0; // Reset state
+    }
+    break;
 
   case dliFailLoadLib:
     printf("GAB_DELAY: Critical Failure - Could not load library %s\n",
