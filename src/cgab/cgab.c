@@ -3773,14 +3773,14 @@ GAB_API gab_value gab_thisfibmsg(struct gab_triple gab) {
 }
 
 GAB_API inline bool gab_sigwaiting(struct gab_triple gab) {
-  struct gab_sig sig = atomic_load_explicit(&gab.eg->sig, memory_order_acquire);
+  struct gab_sig sig = atomic_load(&gab.eg->sig);
   return sig.schedule == gab.wkid;
 }
 
 GAB_API inline bool gab_signaling(struct gab_triple gab) {
   /*printf("SCHEDULE: %i, SIGNALING: %d\n", gab.eg->sig.schedule,
    * gab.eg->sig.schedule >= 0);*/
-  struct gab_sig sig = atomic_load_explicit(&gab.eg->sig, memory_order_acquire);
+  struct gab_sig sig = atomic_load(&gab.eg->sig);
   return sig.signal;
 }
 
@@ -6393,12 +6393,13 @@ GAB_API gab_value gab_tshape(struct gab_triple gab, uint64_t stride,
   // If a shape is created which shares a node with
   // another shape created in an earlier epoch, and *that* shape is collected,
   // the shared node may be collected out from underneath the new shape.
-  // (If the new shape isn't present anywhere at the time of collection, but is reused)
-  // (Or if the new shape is created *after* a thread publishes its roots)
-  // this inc/dec pattern guarantees that each shape *acknowledges ownership* of
-  // its children. This is a problem because the intern table holds *weak
-  // references* to its shapes. So a shape can be re-used from the table without
-  // ever having been incremented (and therefore, kept its children alive).
+  // (If the new shape isn't present anywhere at the time of collection, but is
+  // reused) (Or if the new shape is created *after* a thread publishes its
+  // roots) this inc/dec pattern guarantees that each shape *acknowledges
+  // ownership* of its children. This is a problem because the intern table
+  // holds *weak references* to its shapes. So a shape can be re-used from the
+  // table without ever having been incremented (and therefore, kept its
+  // children alive).
 
   // These must occur after unlocking the mutex, as they may trigger a
   // collection.
@@ -6739,19 +6740,18 @@ GAB_INTERNAL gab_value __gab_fibsetup(struct gab_triple gab,
                                       struct gab_ofiber *self) {
   struct gab_vm *vm = &self->vm;
 
-  memcpy(
-      self->virtual_frame_bc,
-      // TODO @cgab @bug: Primitives don't handle being tailcalled well.
-      &(uint8_t[]){
-          OP_SEND,
-          // These two bytes make up a short argument, with the highest bit set.
-          // This bit is used to determine if the send should tailcall.
-          // The rest of the bits are for the k offset.
-          fHAVE_TAIL,
-          0,
-          OP_RETURN,
-      },
-      sizeof(self->virtual_frame_bc));
+  memcpy(self->virtual_frame_bc,
+         // TODO @cgab @bug: Primitives don't handle being tailcalled well.
+         &(uint8_t[]){
+             OP_SEND,
+             // These two bytes make up a short argument, with the highest bit
+             // set. This bit is used to determine if the send should tailcall.
+             // The rest of the bits are for the k offset.
+             fHAVE_TAIL,
+             0,
+             OP_RETURN,
+         },
+         sizeof(self->virtual_frame_bc));
 
   memcpy(self->virtual_frame_ks,
          &(gab_value[]){
@@ -7000,7 +7000,7 @@ GAB_API bool gab_chnmatches(gab_value c, gab_value tk) {
                    "Invalid kind");
 
   struct gab_ochannel *channel = GAB_VAL_TO_CHANNEL(c);
-  uint32_t e = atomic_load_explicit(&channel->epoch, memory_order_acquire);
+  uint32_t e = atomic_load(&channel->epoch);
   uint32_t tk_e = gab_valtou(tk);
 
   gab_precondition(tk_e != 0, "Invalid token value");
@@ -7027,18 +7027,16 @@ GAB_API bool gab_chnisfull(gab_value c) {
 };
 
 GAB_INTERNAL bool __gab_chntrylock(struct gab_ochannel *channel) {
-  return !(
-      atomic_load(&channel->spinlock) ||
-      atomic_exchange_explicit(&channel->spinlock, 1, memory_order_acquire));
+  return !(atomic_load(&channel->spinlock) ||
+           atomic_exchange(&channel->spinlock, 1));
 }
 
 GAB_INTERNAL void __gab_chnunlock(struct gab_ochannel *channel) {
-  return atomic_store_explicit(&channel->spinlock, 0, memory_order_release);
+  return atomic_store(&channel->spinlock, 0);
 }
 
 GAB_INTERNAL uint32_t __gab_chnepochinc(struct gab_ochannel *channel) {
-  return atomic_fetch_add_explicit(&channel->epoch, 2, memory_order_release) +
-         2;
+  return atomic_fetch_add(&channel->epoch, 2) + 2;
 }
 
 /*
@@ -7055,14 +7053,14 @@ GAB_INTERNAL bool __gab_bchnabandon(struct gab_triple gab,
   gab_verify(atomic_load(&channel->spinlock) == 1, "Shall be locked");
 
   // Reset values
-  uint32_t e = atomic_load_explicit(&channel->epoch, memory_order_acquire);
+  uint32_t e = atomic_load(&channel->epoch);
 
   if (gab_valtou(tk) != e) {
     return __gab_chnunlock(channel), false;
   }
 
-  atomic_store_explicit(&channel->len, 0, memory_order_release);
-  atomic_store_explicit(&channel->data, nullptr, memory_order_release);
+  atomic_store(&channel->len, 0);
+  atomic_store(&channel->data, nullptr);
   __gab_chnepochinc(channel);
 
   return __gab_chnunlock(channel), true;
@@ -7078,8 +7076,8 @@ GAB_INTERNAL gab_value __gab_chnput(struct gab_ochannel *channel, uint64_t len,
     return 0;
 
   // Load our values now that we have the lock.
-  gab_value *src = atomic_load_explicit(&channel->data, memory_order_acquire);
-  uint64_t avail = atomic_load_explicit(&channel->len, memory_order_acquire);
+  gab_value *src = atomic_load(&channel->data);
+  uint64_t avail = atomic_load(&channel->len);
 
   gab_assert(!avail == !src, "Shall have both src and avail, or neither");
 
@@ -7088,8 +7086,8 @@ GAB_INTERNAL gab_value __gab_chnput(struct gab_ochannel *channel, uint64_t len,
     return __gab_chnunlock(channel), 0;
 
   // Store values
-  atomic_store_explicit(&channel->data, vs, memory_order_release);
-  atomic_store_explicit(&channel->len, len, memory_order_release);
+  atomic_store(&channel->data, vs);
+  atomic_store(&channel->len, len);
   uint32_t e = __gab_chnepochinc(channel);
 
   gab_assert(e != 0, "0 is invalid epoch number");
@@ -7109,10 +7107,8 @@ GAB_INTERNAL gab_value __gab_chntake(struct gab_ochannel *channel, uint64_t n,
     return gab_cundefined;
 
   // Reset values
-  uint64_t avail =
-      atomic_exchange_explicit(&channel->len, 0, memory_order_acquire);
-  gab_value *src =
-      atomic_exchange_explicit(&channel->data, nullptr, memory_order_acquire);
+  uint64_t avail = atomic_exchange(&channel->len, 0);
+  gab_value *src = atomic_exchange(&channel->data, nullptr);
 
   gab_assert(!avail == !src, "Shall have both src and avail, or neither");
 
