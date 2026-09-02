@@ -28,3 +28,22 @@ sourceable\spec := sourceable: .defspec {
   spec: s.protocol(>!:)
 }
 
+sourceable\source: .defspec {
+  help:
+  "
+  Perform some side-effecting action to obtain a datum.
+  
+  Since a side-effect is performed (which may fail or present no data),
+  this message returns a result or option.
+  "
+  spec: s.message {
+    receiver: sourceable\spec
+    input: s.cat()
+    message: >!:
+    output: s.alt (
+      'success' s.cat('status' ok: 'value' s.unknown)
+      'error'   s.cat('status' err: 'message' s.string)
+      'none'    s.cat('status' none:)
+    )
+  }
+}

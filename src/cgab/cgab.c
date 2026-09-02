@@ -975,7 +975,12 @@ struct primitive kind_primitives[] = {
     {
         .name = mGAB_ADD,
         .kind = kGAB_STRING,
-        .primitive = gab_primitive(OP_SEND_PRIMITIVE_CONCAT),
+        .primitive = gab_primitive(OP_SEND_PRIMITIVE_STR_CONCAT),
+    },
+    {
+        .name = mGAB_ADD,
+        .kind = kGAB_BINARY,
+        .primitive = gab_primitive(OP_SEND_PRIMITIVE_BIN_CONCAT),
     },
     {
         .name = mGAB_MAKE,
@@ -2426,8 +2431,6 @@ GAB_INTERNAL struct gab_oshape *__gab_egshpfind(struct gab_eg *self,
         if (!len)
           return key;
 
-        // TODO @cgab @opt: This is n^2 searching the tree.
-        // Better to traverse the tree once, and compare against data.
         if (__gab_dshpcmp(__gab_obj(key), stride, len, data))
           return key;
 
@@ -3622,6 +3625,9 @@ GAB_API union gab_value_pair gab_asend(struct gab_triple gab,
                  ? (union gab_value_pair){{gab_cvalid, fb}}
                  : (union gab_value_pair){{gab_cinvalid, gab_cinvalid}};
 
+    // TODO @cgab @bug: This is certainly a race condition
+    // We are pushing to an arbitrary thread's worker queue,
+    // and don't have any locking surrounding it.
     if (gab.wkid == wkid)
       q_gab_value_dyn_push(&gab.eg->jobs[wkid].waiting_queue, fb);
     else
@@ -3767,14 +3773,14 @@ GAB_API gab_value gab_thisfibmsg(struct gab_triple gab) {
 }
 
 GAB_API inline bool gab_sigwaiting(struct gab_triple gab) {
-  struct gab_sig sig = atomic_load_explicit(&gab.eg->sig, memory_order_acquire);
+  struct gab_sig sig = atomic_load(&gab.eg->sig);
   return sig.schedule == gab.wkid;
 }
 
 GAB_API inline bool gab_signaling(struct gab_triple gab) {
   /*printf("SCHEDULE: %i, SIGNALING: %d\n", gab.eg->sig.schedule,
    * gab.eg->sig.schedule >= 0);*/
-  struct gab_sig sig = atomic_load_explicit(&gab.eg->sig, memory_order_acquire);
+  struct gab_sig sig = atomic_load(&gab.eg->sig);
   return sig.signal;
 }
 
@@ -4593,6 +4599,7 @@ GAB_API uint64_t gab_strhash(gab_value str) {
     return GAB_VAL_TO_STRING(str)->hash;
 
   // TODO @cgab @bug: Propertly hash the contents of short strings.
+  // I can't tell if this is actually a bug or not.
   return str;
 }
 
@@ -4612,8 +4619,12 @@ GAB_API int gab_binat(gab_value str, uint64_t idx) {
 */
 GAB_API gab_value gab_tstrcat(struct gab_triple gab, gab_value _a,
                               gab_value _b) {
-  gab_precondition(gab_valkind(_a) == kGAB_STRING, "Invalid kind");
-  gab_precondition(gab_valkind(_b) == kGAB_STRING, "Invalid kind");
+  gab_precondition(gab_valkind(_a) == kGAB_STRING ||
+                       gab_valkind(_a) == kGAB_BINARY,
+                   "Invalid kind");
+  gab_precondition(gab_valkind(_b) == kGAB_STRING ||
+                       gab_valkind(_b) == kGAB_BINARY,
+                   "Invalid kind");
 
   uint64_t alen = gab_strlen(_a);
   uint64_t blen = gab_strlen(_b);
@@ -5392,7 +5403,8 @@ GAB_INTERNAL gab_value __gab_shptake(struct gab_triple gab, gab_value shape,
 GAB_INTERNAL uint64_t __gab_shpprepkeys(uint64_t stride, uint64_t len,
                                         gab_value *keys, gab_value *keys_out) {
   const uint64_t hashset_capacity = len * 2;
-  gab_value *hashset = calloc(hashset_capacity, sizeof(gab_value));
+  // Allocate hash-set on the stack.
+  gab_value hashset[hashset_capacity] = {};
 
   for (uint64_t i = 0; i < hashset_capacity; i++)
     hashset[i] = gab_cinvalid;
@@ -5414,7 +5426,6 @@ GAB_INTERNAL uint64_t __gab_shpprepkeys(uint64_t stride, uint64_t len,
   skip:
   }
 
-  free(hashset);
   return widx;
 };
 
@@ -5937,7 +5948,7 @@ GAB_API gab_value gab_nlstpush(struct gab_triple gab, gab_value list,
   gab_gclock(gab);
 
   gab_iref(gab, list);
-  // TODO @cgab @bug: GC when locked
+  // TODO @cgab @bug: GC when locked causes issues.
   for (uint64_t i = 0; i < len; i++) {
     gab_value key = gab_number(start + i);
     gab_value val = values[i];
@@ -6326,7 +6337,6 @@ GAB_API gab_value gab_tshape(struct gab_triple gab, uint64_t stride,
   gab_value newdata[len + 1];
   uint64_t newlen = __gab_shpprepkeys(stride, len, data, newdata);
 
-  // TODO @cgab @bug: Handle duplicate keys correctly.
   uint64_t hash = __gab_hshwords(newlen, newdata);
 
   switch (mtx_trylock(&gab.eg->gc_mtx)) {
@@ -6379,14 +6389,17 @@ GAB_API gab_value gab_tshape(struct gab_triple gab, uint64_t stride,
   // TODO @cgab @opt: Find more efficient fix
   // When creating and interning shapes, we need to explicitly increment
   // This shape so that all of its children are acknowledged.
-  // This bug is present because shapes are persistent and share nodes.
+  // This fixes a bug caused because shapes are persistent and share nodes.
   // If a shape is created which shares a node with
   // another shape created in an earlier epoch, and *that* shape is collected,
-  // the shared node will be collected out from underneath the new shape.
-  // this inc/dec pattern guarantees that each shape *acknowledges ownership* of
-  // its children. This is a problem because the intern table holds *weak
-  // references* to its shapes. So a shape can be re-used from the table without
-  // ever having been incremented (and therefore, kept its children alive).
+  // the shared node may be collected out from underneath the new shape.
+  // (If the new shape isn't present anywhere at the time of collection, but is
+  // reused) (Or if the new shape is created *after* a thread publishes its
+  // roots) this inc/dec pattern guarantees that each shape *acknowledges
+  // ownership* of its children. This is a problem because the intern table
+  // holds *weak references* to its shapes. So a shape can be re-used from the
+  // table without ever having been incremented (and therefore, kept its
+  // children alive).
 
   // These must occur after unlocking the mutex, as they may trigger a
   // collection.
@@ -6727,19 +6740,18 @@ GAB_INTERNAL gab_value __gab_fibsetup(struct gab_triple gab,
                                       struct gab_ofiber *self) {
   struct gab_vm *vm = &self->vm;
 
-  memcpy(
-      self->virtual_frame_bc,
-      // TODO @cgab @bug: Primitives don't handle being tailcalled well.
-      &(uint8_t[]){
-          OP_SEND,
-          // These two bytes make up a short argument, with the highest bit set.
-          fHAVE_TAIL,
-          0,
-          // This bit is used to determine if the send should tailcall.
-          // The rest of the bits are for the k offset.
-          OP_RETURN,
-      },
-      sizeof(self->virtual_frame_bc));
+  memcpy(self->virtual_frame_bc,
+         // TODO @cgab @bug: Primitives don't handle being tailcalled well.
+         &(uint8_t[]){
+             OP_SEND,
+             // These two bytes make up a short argument, with the highest bit
+             // set. This bit is used to determine if the send should tailcall.
+             // The rest of the bits are for the k offset.
+             fHAVE_TAIL,
+             0,
+             OP_RETURN,
+         },
+         sizeof(self->virtual_frame_bc));
 
   memcpy(self->virtual_frame_ks,
          &(gab_value[]){
@@ -6988,7 +7000,7 @@ GAB_API bool gab_chnmatches(gab_value c, gab_value tk) {
                    "Invalid kind");
 
   struct gab_ochannel *channel = GAB_VAL_TO_CHANNEL(c);
-  uint32_t e = atomic_load_explicit(&channel->epoch, memory_order_acquire);
+  uint32_t e = atomic_load(&channel->epoch);
   uint32_t tk_e = gab_valtou(tk);
 
   gab_precondition(tk_e != 0, "Invalid token value");
@@ -7015,18 +7027,16 @@ GAB_API bool gab_chnisfull(gab_value c) {
 };
 
 GAB_INTERNAL bool __gab_chntrylock(struct gab_ochannel *channel) {
-  return !(
-      atomic_load(&channel->spinlock) ||
-      atomic_exchange_explicit(&channel->spinlock, 1, memory_order_acquire));
+  return !(atomic_load(&channel->spinlock) ||
+           atomic_exchange(&channel->spinlock, 1));
 }
 
 GAB_INTERNAL void __gab_chnunlock(struct gab_ochannel *channel) {
-  return atomic_store_explicit(&channel->spinlock, 0, memory_order_release);
+  return atomic_store(&channel->spinlock, 0);
 }
 
 GAB_INTERNAL uint32_t __gab_chnepochinc(struct gab_ochannel *channel) {
-  return atomic_fetch_add_explicit(&channel->epoch, 2, memory_order_release) +
-         2;
+  return atomic_fetch_add(&channel->epoch, 2) + 2;
 }
 
 /*
@@ -7043,14 +7053,14 @@ GAB_INTERNAL bool __gab_bchnabandon(struct gab_triple gab,
   gab_verify(atomic_load(&channel->spinlock) == 1, "Shall be locked");
 
   // Reset values
-  uint32_t e = atomic_load_explicit(&channel->epoch, memory_order_acquire);
+  uint32_t e = atomic_load(&channel->epoch);
 
   if (gab_valtou(tk) != e) {
     return __gab_chnunlock(channel), false;
   }
 
-  atomic_store_explicit(&channel->len, 0, memory_order_release);
-  atomic_store_explicit(&channel->data, nullptr, memory_order_release);
+  atomic_store(&channel->len, 0);
+  atomic_store(&channel->data, nullptr);
   __gab_chnepochinc(channel);
 
   return __gab_chnunlock(channel), true;
@@ -7066,8 +7076,8 @@ GAB_INTERNAL gab_value __gab_chnput(struct gab_ochannel *channel, uint64_t len,
     return 0;
 
   // Load our values now that we have the lock.
-  gab_value *src = atomic_load_explicit(&channel->data, memory_order_acquire);
-  uint64_t avail = atomic_load_explicit(&channel->len, memory_order_acquire);
+  gab_value *src = atomic_load(&channel->data);
+  uint64_t avail = atomic_load(&channel->len);
 
   gab_assert(!avail == !src, "Shall have both src and avail, or neither");
 
@@ -7076,8 +7086,8 @@ GAB_INTERNAL gab_value __gab_chnput(struct gab_ochannel *channel, uint64_t len,
     return __gab_chnunlock(channel), 0;
 
   // Store values
-  atomic_store_explicit(&channel->data, vs, memory_order_release);
-  atomic_store_explicit(&channel->len, len, memory_order_release);
+  atomic_store(&channel->data, vs);
+  atomic_store(&channel->len, len);
   uint32_t e = __gab_chnepochinc(channel);
 
   gab_assert(e != 0, "0 is invalid epoch number");
@@ -7089,8 +7099,6 @@ GAB_INTERNAL gab_value __gab_chnput(struct gab_ochannel *channel, uint64_t len,
  * Try to load up to n values from the channel into dest.
  * If successful, return a gab_number of the number of values actually loaded.
  * Else return gab_cundefined.
- *
- * TODO @cgab @bug: Somehow it is still possible for this race
  */
 GAB_INTERNAL gab_value __gab_chntake(struct gab_ochannel *channel, uint64_t n,
                                      gab_value *dest) {
@@ -7099,10 +7107,8 @@ GAB_INTERNAL gab_value __gab_chntake(struct gab_ochannel *channel, uint64_t n,
     return gab_cundefined;
 
   // Reset values
-  uint64_t avail =
-      atomic_exchange_explicit(&channel->len, 0, memory_order_acquire);
-  gab_value *src =
-      atomic_exchange_explicit(&channel->data, nullptr, memory_order_acquire);
+  uint64_t avail = atomic_exchange(&channel->len, 0);
+  gab_value *src = atomic_exchange(&channel->data, nullptr);
 
   gab_assert(!avail == !src, "Shall have both src and avail, or neither");
 
@@ -7616,7 +7622,8 @@ GAB_INTERNAL uint64_t __gab_insdump(FILE *stream, struct gab_oprototype *self,
   case OP_SEND_BLOCK:
   case OP_SEND_NATIVE:
   case OP_SEND_PROPERTY:
-  case OP_SEND_PRIMITIVE_CONCAT:
+  case OP_SEND_PRIMITIVE_BIN_CONCAT:
+  case OP_SEND_PRIMITIVE_STR_CONCAT:
   case OP_SEND_PRIMITIVE_SPLATLIST:
   case OP_SEND_PRIMITIVE_SPLATDICT:
   case OP_SEND_PRIMITIVE_ADD:
@@ -13395,6 +13402,9 @@ extern void putcs(char *arg);
 
 #define SEND_GUARD_ISS(value) SEND_GUARD_KIND(value, kGAB_STRING)
 
+#define PANIC_GUARD_ISBIN(value) PANIC_GUARD_KIND(value, kGAB_BINARY)
+#define SEND_GUARD_ISBIN(value) SEND_GUARD_KIND(value, kGAB_BINARY)
+
 #define SEND_GUARD(clause, reason)                                             \
   if (__gab_unlikely(!(clause)))                                               \
     MISS_CACHED_SEND(reason);
@@ -13884,7 +13894,7 @@ extern void putcs(char *arg);
 
 #define MICRO_OP_BINARY_EQ(a, b) (gab_valeq(a, b))
 
-#define MICRO_OP_BINARY_CONCAT(a, b)                                           \
+#define MICRO_OP_BINARY_STR_CONCAT(a, b)                                       \
   ({                                                                           \
     gab_value val_ab = gab_tstrcat(GAB(), a, b);                               \
                                                                                \
@@ -13897,7 +13907,25 @@ extern void putcs(char *arg);
       VM_YIELD(gab_nil);                                                       \
                                                                                \
     gab_assert(gab_valkind(val_ab) == kGAB_STRING,                             \
-               "concat shall return string");                                  \
+               "str concat shall return string");                              \
+                                                                               \
+    val_ab;                                                                    \
+  })
+
+#define MICRO_OP_BINARY_BIN_CONCAT(a, b)                                       \
+  ({                                                                           \
+    gab_value val_ab = gab_tbincat(GAB(), a, b);                               \
+                                                                               \
+    CHECK_SIGNAL();                                                            \
+                                                                               \
+    if (val_ab == gab_cinvalid)                                                \
+      VM_TERM();                                                               \
+                                                                               \
+    if (val_ab == gab_ctimeout)                                                \
+      VM_YIELD(gab_nil);                                                       \
+                                                                               \
+    gab_assert(gab_valkind(val_ab) == kGAB_BINARY,                             \
+               "bin concat shall return binary");                              \
                                                                                \
     val_ab;                                                                    \
   })
@@ -14432,9 +14460,14 @@ IMPL_SEND_BINARY(PRIMITIVE_RSH, ISN, MICRO_OP_UNBOXU_T, MICRO_OP_UNBOXU,
                  MICRO_OP_BOXN, MICRO_OP_BINARY_RSH);
 
 // str + str = str
-IMPL_SEND_BINARY(PRIMITIVE_CONCAT, ISS, MICRO_OP_UNBOXV_T, MICRO_OP_UNBOXV,
+IMPL_SEND_BINARY(PRIMITIVE_STR_CONCAT, ISS, MICRO_OP_UNBOXV_T, MICRO_OP_UNBOXV,
                  MICRO_OP_UNBOXV_T, MICRO_OP_UNBOXV, MICRO_OP_UNBOXV_T,
-                 MICRO_OP_BOXV, MICRO_OP_BINARY_CONCAT);
+                 MICRO_OP_BOXV, MICRO_OP_BINARY_STR_CONCAT);
+
+// bin + bin = bin
+IMPL_SEND_BINARY(PRIMITIVE_BIN_CONCAT, ISBIN, MICRO_OP_UNBOXV_T,
+                 MICRO_OP_UNBOXV, MICRO_OP_UNBOXV_T, MICRO_OP_UNBOXV,
+                 MICRO_OP_UNBOXV_T, MICRO_OP_BOXV, MICRO_OP_BINARY_BIN_CONCAT);
 
 // val == val = bool
 IMPL_SEND_BINARY(PRIMITIVE_EQ, NOP, MICRO_OP_UNBOXV_T, MICRO_OP_UNBOXV,

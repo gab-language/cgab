@@ -45,7 +45,7 @@ deftransducer: .def (
   end)
 
 td\conditionally: .defcase {
-  ok: (r, acc, xs, s) :: (s, r.reduce\step(acc, xs*))
+  ok:   (r, acc, xs, s) :: (s, r.reduce\step(acc, xs*))
   true: (r, acc, xs, s) :: (s, r.reduce\step(acc, xs*))
   next: (r, acc, xs, s) :: (s, r.reduce\step(acc, xs*))
 
@@ -79,6 +79,30 @@ mapfilter:.deftransducer(
 
     ok.td\conditionally(r, acc, vs)
   end)
+
+td\dodeduce: .defcase {
+  next: (r, acc, xs, s) :: (s, next:, r, acc)
+
+  # Restart the sequence with initial state, call reducer with acc
+  stop:  (r, acc, xs, s) :: ({ r: nil: acc: nil: }, r.reduce\step(acc, xs*))
+}
+
+deduce: .deftransducer(
+  (inner_acc inner_r)
+    :: (outer_r, outer_acc, xs, state)
+      :: do
+        # Get the recent reduce and accumulator out of the state
+        r := state.r.or inner_r
+        acc := state.acc.or inner_acc
+
+        # Step these by the xs
+        (cmd, r, acc) := r.reduce\step(acc, xs*) 
+
+        # Apply the new inner accumulator to our outer reducer
+        # If our command tells us to
+        cmd.td\dodeduce(outer_r, outer_acc, [acc], { r: r acc: acc })
+      end
+  { r: nil: acc: nil: })
 
 reduce:.deftransducer(
   (inner_acc inner_r)

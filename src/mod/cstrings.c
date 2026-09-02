@@ -25,6 +25,9 @@
 #include "cgab.h"
 #include "libgrapheme/grapheme.h"
 #include <ctype.h>
+#include <errno.h>
+#include <limits.h>
+#include <math.h>
 
 #define T char
 #include "slice.h"
@@ -504,13 +507,22 @@ GAB_DYNLIB_NATIVE_FN(string, tom) {
   return gab_union_cvalid(gab_nil);
 }
 
-GAB_DYNLIB_NATIVE_FN(string, ton) {
+GAB_DYNLIB_NATIVE_FN(string, asdouble) {
   const char *str = gab_strdata(argv + 0);
 
-  gab_value res = gab_number(strtod(str, nullptr));
+  char *endstr = (char *)str;
+  double res = strtod(str, &endstr);
 
-  gab_vmpush(gab_thisvm(gab), res);
-  return gab_union_cvalid(gab_nil);
+  if (!endstr)
+    return gab_push(gab, gab_none), gab_union_cvalid(gab_nil);
+
+  if ((res == HUGE_VAL || res == -HUGE_VAL || res == DBL_MIN) &&
+      errno == ERANGE)
+    return gab_push(gab, gab_err,
+                    gab_string(gab, "Number parsed would over/underflow")),
+           gab_union_cvalid(gab_nil);
+
+  return gab_push(gab, gab_ok, gab_number(res)), gab_union_cvalid(gab_nil);
 };
 
 GAB_DYNLIB_NATIVE_FN(string, toint) {
@@ -526,10 +538,18 @@ GAB_DYNLIB_NATIVE_FN(string, toint) {
     base = gab_valtou(vbase);
   }
 
-  gab_value res = gab_number(strtol(str, nullptr, base));
+  char *endstr = (char *)str;
+  long res = strtol(str, &endstr, base);
 
-  gab_vmpush(gab_thisvm(gab), res);
-  return gab_union_cvalid(gab_nil);
+  if (!endstr)
+    return gab_push(gab, gab_none), gab_union_cvalid(gab_nil);
+
+  if ((res == LONG_MIN || res == LONG_MAX) && errno == ERANGE)
+    return gab_push(gab, gab_err,
+                    gab_string(gab, "Number parsed would over/underflow")),
+           gab_union_cvalid(gab_nil);
+
+  return gab_push(gab, gab_ok, gab_number(res)), gab_union_cvalid(gab_nil);
 };
 
 GAB_DYNLIB_NATIVE_FN(string, pop) {
@@ -688,9 +708,9 @@ GAB_DYNLIB_MAIN_FN {
               gab_snative(gab, "to\\binary", gab_mod_string_tob),
           },
           {
-              gab_message(gab, "as\\number"),
+              gab_message(gab, "as\\double"),
               t,
-              gab_snative(gab, "as\\number", gab_mod_string_ton),
+              gab_snative(gab, "as\\double", gab_mod_string_asdouble),
           },
           {
               gab_message(gab, "as\\integer"),

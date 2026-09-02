@@ -13,6 +13,7 @@ github.com/gab-language/cgab@0.1.6:crecords
 github.com/gab-language/cgab@0.1.6:cshapes
 github.com/gab-language/cgab@0.1.6:csqlite
 github.com/gab-language/cgab@0.1.6:cstrings
+github.com/gab-language/cgab@0.1.6:czstd
 github.com/gab-language/cgab@0.1.6:Bencode
 github.com/gab-language/cgab@0.1.6:Binaries
 github.com/gab-language/cgab@0.1.6:Blocks
@@ -31,3 +32,4 @@ github.com/gab-language/cgab@0.1.6:Specs
 github.com/gab-language/cgab@0.1.6:Transducers
 github.com/gab-language/cgab@0.1.6:Strings
 github.com/gab-language/cgab@0.1.6:Tests
+github.com/gab-language/cgab@0.1.6:Dbrow

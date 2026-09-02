@@ -774,20 +774,39 @@ static inline void __gab_assert_fail(const char *prelude, const char *expr,
 
 #include <delayimp.h>
 
+/*
+ * Because we have to virtual protect/unprotect
+ * the IAT pages, we actually need a lock to prevent
+ * races when protect/unprotecting.
+ *
+ * Otherwise, multiple parallel delay-load resolutions
+ * could interfere with each other and cause crashes.
+ *
+ * Luckily, windows has a simple lock we can statically initialize here
+ * which does the trick.
+ *
+ * If mingw/binutils etc got their stuff together and we didn't have to 
+ * manually unprotect/protect the IAT table for delay loading to work,
+ * then this wouldn't even be an issue in the first place.
+ */
+static SRWLOCK g_delay_lock = SRWLOCK_INIT;
+
 thread_local static DWORD g_oldProtect = 0;
+
 ExternC FARPROC gab_delayload(unsigned dliNotify, PDelayLoadInfo pdli) {
   switch (dliNotify) {
   case dliNotePreLoadLibrary:
-    // 1. Alias "gab" to the current running process (the .exe)
+    // Alias "gab" to the current running process (the .exe)
     if (_stricmp(pdli->szDll, "gab") == 0) {
       return (FARPROC)GetModuleHandle(NULL);
     }
     break;
 
   case dliNotePreGetProcAddress:
-    // 2. This is called right before the helper tries to resolve the symbol
+    // This is called right before the helper tries to resolve the symbol
     // and write to the IAT. We make the IAT entry writable here.
     if (pdli->ppfn) {
+      AcquireSRWLockExclusive(&g_delay_lock);
       if (!VirtualProtect(pdli->ppfn, sizeof(void *), PAGE_READWRITE,
                           &g_oldProtect)) {
         printf("GAB_DELAY: Failed to unprotect IAT at %p (Error: %lu)\n",
@@ -797,7 +816,7 @@ ExternC FARPROC gab_delayload(unsigned dliNotify, PDelayLoadInfo pdli) {
     break;
 
   case dliNoteEndProcessing:
-    // 3. This is called after the helper has successfully written the address
+    // This is called after the helper has successfully written the address
     // to *pdli->ppfn. We restore the original Read-Only protection now.
     if (g_oldProtect != 0 && pdli->ppfn) {
       DWORD dummy;
@@ -805,6 +824,7 @@ ExternC FARPROC gab_delayload(unsigned dliNotify, PDelayLoadInfo pdli) {
         printf("GAB_DELAY: Failed to restore protection at %p\n", pdli->ppfn);
       }
       g_oldProtect = 0; // Reset state
+      ReleaseSRWLockExclusive(&g_delay_lock);
     }
     break;
 
@@ -2937,14 +2957,32 @@ GAB_API_INLINE gab_value gab_bintostr(gab_value bin) {
 
   return gab_ubintostr(bin);
 }
+GAB_API_INLINE gab_value gab_tbincat(struct gab_triple gab, gab_value a,
+                                     gab_value b) {
+  if (a == gab_cinvalid || b == gab_cinvalid)
+    return gab_cinvalid;
+
+  gab_precondition(gab_valkind(a) == kGAB_BINARY, "Unexpected type");
+  gab_precondition(gab_valkind(b) == kGAB_BINARY, "Unexpected type");
+
+  gab_value astr = gab_ubintostr(a);
+  gab_value bstr = gab_ubintostr(b);
+  gab_value abstr = gab_strcat(gab, astr, bstr);
+
+  // Invalid, timeout, return here
+  if (gab_valkind(abstr) != kGAB_STRING)
+    return abstr;
+
+  return gab_strtobin(abstr);
+}
 
 GAB_API_INLINE gab_value gab_bincat(struct gab_triple gab, gab_value a,
                                     gab_value b) {
   if (a == gab_cinvalid || b == gab_cinvalid)
     return gab_cinvalid;
 
-  assert(gab_valkind(a) == kGAB_BINARY);
-  assert(gab_valkind(b) == kGAB_BINARY);
+  gab_precondition(gab_valkind(a) == kGAB_BINARY, "Unexpected type");
+  gab_precondition(gab_valkind(b) == kGAB_BINARY, "Unexpected type");
 
   gab_value astr = gab_ubintostr(a);
   gab_value bstr = gab_ubintostr(b);
@@ -3888,9 +3926,6 @@ GAB_API gab_value gab_snative(struct gab_triple gab, const char *name,
 
 /**
  * @brief Get the practical runtime type of a value.
- *
- * TODO @perf: Allow this function to be completely inlined. Lets be done with
- * engine.h
  *
  * @param gab The engine
  * @param value The value

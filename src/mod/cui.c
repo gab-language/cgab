@@ -1110,7 +1110,6 @@ GAB_DYNLIB_NATIVE_FN(ui, hui_event) {
     return gab_ptypemismatch(gab, vgui, gab_string(gab, UI_BOX_TYPE));
 
   struct ui *gui = gab_boxdata(vgui);
-  union gab_value_pair res;
   static gab_value ev[2] = {};
 
   if (!reentrant) {
@@ -1130,13 +1129,15 @@ GAB_DYNLIB_NATIVE_FN(ui, hui_event) {
     // Try to put on the channel.
     tk = gab_untchnput(gab, gui->evch, LEN_CARRAY(ev), ev, 1);
 
+    /* It is possible for the chisclosed to pass, and then we receive
+     * termination while blocking */
+
     if (tk == gab_cundefined)
       goto fin;
 
-    if (tk == gab_cinvalid) {
-      res = gab_panicf(gab, "Crashed UI thrd due to some error");
-      goto err;
-    }
+    /* Terminate signal received */
+    if (tk == gab_cinvalid)
+      return gab_union_cvalid(gab_nil);
 
     goto yield;
   }
@@ -1154,11 +1155,6 @@ yield:
   default:
     return gab_union_ctimeout(tk);
   }
-
-err:
-  gab_chnclose(gui->appch);
-  gab_chnclose(gui->evch);
-  return res;
 
 fin:
   gab_chnclose(gui->appch);
@@ -1219,10 +1215,9 @@ GAB_DYNLIB_NATIVE_FN(ui, hui_render) {
     if (app == gab_ctimeout)
       goto yield;
 
-    if (app == gab_cinvalid) {
-      res = gab_panicf(gab, "Crashed UI thrd due to some error");
-      goto err;
-    }
+    /* Terminate signal received */
+    if (app == gab_cinvalid)
+      return gab_union_cvalid(gab_nil);
 
     gab_iref(gab, app);
 
@@ -1441,10 +1436,9 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
     if (app == gab_cundefined)
       goto fin;
 
-    if (app == gab_cinvalid) {
-      res = gab_panicf(gab, "Crashed UI thrd due to some error");
-      goto err;
-    }
+    /* Terminate signal received */
+    if (app == gab_cinvalid)
+      return gab_union_cvalid(gab_nil);
 
     if (app == gab_ctimeout)
       return gab_union_ctimeout(gab_cundefined);
@@ -1593,10 +1587,9 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_render) {
     if (app == gab_cundefined)
       goto fin;
 
-    if (app == gab_cinvalid) {
-      res = gab_panicf(gab, "Crashed UI thrd due to some error");
-      goto err;
-    }
+    /* Terminate signal received */
+    if (app == gab_cinvalid)
+      return gab_union_cvalid(gab_nil);
 
     if (app == gab_ctimeout)
       return gab_union_ctimeout(gab_cundefined);
