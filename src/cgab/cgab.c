@@ -2144,8 +2144,6 @@ GAB_API void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
     if (__gab_replchkres(gab, block))
       goto fin;
 
-    // gab_value before_env = gab_blkshp(block.vresult);
-
     union gab_value_pair fiber = gab_arun(gab, (struct gab_run_argt){
                                                    .flags = args.flags,
                                                    .len = n,
@@ -2159,27 +2157,6 @@ GAB_API void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
     __gab_replwait(gab, &args, fiber.vresult);
 
     union gab_value_pair res = gab_fibawait(gab, fiber.vresult);
-
-    /* Setup env regardless of run failing/succeeding */
-    // TODO @bug: replace awaite - thats gross.
-    // how else can I get variables to work in the repl?
-    // gab_value new_env = gab_fibawaite(gab, fiber.vresult);
-
-    /* Sometimes the env that is returned from here is
-     *  an env from a ~different~ block. This is because
-     *  we always tailcall, so the bottom frame can change the block
-     *  it belongs to throughout execution.
-     **/
-
-    // if (env == gab_cinvalid || new_env == gab_cinvalid)
-    // env = new_env;
-    // If the block's environment is equal to the fiber's final environment
-    // then we know we *didn't* tailcall out of the block.
-    // TODO @cgab @bug: Don't leak this reccat below
-    // else if (before_env == gab_recshp(new_env))
-    // env = gab_iref(gab, gab_reccat(gab, env, new_env));
-
-    // gab_assert(env != gab_cinvalid, "Should have a valid env");
 
     if (__gab_replchkres(gab, res))
       goto fin;
@@ -6807,7 +6784,6 @@ GAB_API gab_value gab_fiber(struct gab_triple gab, struct gab_fiber_argt args) {
   *self->vm.sp = args.argc + 1; // have
 
   self->vm.ip = nullptr;
-  self->res_env = gab_cinvalid;
 
   return __gab_fibsetup(gab, self);
 }
@@ -6942,28 +6918,6 @@ GAB_API void gab_fibclear(gab_value f) {
                    "Invalid kind");
   struct gab_ofiber *fiber = GAB_VAL_TO_FIBER(f);
   fiber->allocator.len = 0;
-}
-
-GAB_API gab_value gab_fibawaite(struct gab_triple gab, gab_value f) {
-  gab_precondition(gab_valkind(f) >= kGAB_FIBER &&
-                       gab_valkind(f) <= kGAB_FIBERRUNNING,
-                   "Invalid kind");
-
-  struct gab_ofiber *fiber = GAB_VAL_TO_FIBER(f);
-
-  while (fiber->header.kind != kGAB_FIBERDONE)
-    switch (gab_yield(gab)) {
-    case sGAB_COLL:
-      gab_gcepochnext(gab);
-      gab_sigpropagate(gab);
-      break;
-    case sGAB_TERM:
-      return gab_cinvalid;
-    default:
-      break;
-    }
-
-  return fiber->res_env;
 }
 
 GAB_API gab_value gab_channel(struct gab_triple gab) {
@@ -11823,6 +11777,7 @@ static handler handlers[] = {
 #define VM() (__vm)
 #define SET_BLOCK(b) ({ FB()[-(1 + FRAME_BK)] = (uintptr_t)(b); });
 #define BLOCK() ((struct gab_oblock *)(uintptr_t)FB()[-(1 + FRAME_BK)])
+#define HAS_BLOCK() (BLOCK())
 #define BLOCK_PROTO()                                                          \
   ({                                                                           \
     gab_assert(BLOCK(), "Null block while accessing block prototype");         \
@@ -11870,7 +11825,7 @@ static handler handlers[] = {
                                                                                \
     LOG(GAB(), o);                                                             \
                                                                                \
-    gab_assert(SP() < VM()->sb + cGAB_STACK_MAX, "Shall have stackspace");     \
+    gab_verify(SP() < VM()->sb + cGAB_STACK_MAX, "Shall have stackspace");     \
                                                                                \
     [[clang::musttail]] return handlers[o](DISPATCH_ARGS());                   \
   })
@@ -11932,12 +11887,12 @@ static handler handlers[] = {
                                                                                \
     int64_t delta = (SP() - have) - FB();                                      \
                                                                                \
-    gab_assert((SP() - have) > FB(), "Previous frame shall be below new");     \
-    gab_assert(delta > 0, "Previous frame must be different from below");      \
-    gab_assert(delta < UINT32_MAX, "Delta must fit within 32 bits");           \
-    gab_assert(SP()[-(int64_t)(have + 1 + FRAME_IP)] == FRAME_IP,              \
+    gab_verify(delta >= 0, "Previous frame must be different from below");     \
+    gab_verify(delta < UINT32_MAX, "Delta must fit within 32 bits");           \
+    gab_verify((SP() - have) >= FB(), "Previous frame shall be below new");    \
+    gab_verify(SP()[-(int64_t)(have + 1 + FRAME_IP)] == FRAME_IP,              \
                "Frame setup correctly");                                       \
-    gab_assert(SP()[-(int64_t)(have + 1 + FRAME_BK)] == FRAME_BK,              \
+    gab_verify(SP()[-(int64_t)(have + 1 + FRAME_BK)] == FRAME_BK,              \
                "Frame setup correctly");                                       \
                                                                                \
     SP()[-(int64_t)(have + 1)] |= ((uint64_t)delta << 32);                     \
@@ -12188,10 +12143,6 @@ GAB_INTERNAL union gab_value_pair __gab_vvmterm(struct gab_triple gab,
              "(%i) Terminating fiber %p must be running, not: %d. Terminating.",
              gab.wkid, GAB_VAL_TO_FIBER(fiber), gab_valkind(fiber));
 
-  gab_assert(GAB_VAL_TO_FIBER(fiber)->res_env == gab_cinvalid,
-             "(%i) Terminating fiber %p res_env shall be uninitialized.",
-             gab.wkid, GAB_VAL_TO_FIBER(fiber));
-
   gab_assert(atomic_load(&GAB_VAL_TO_FIBER(fiber)->res_status) == 0,
              "(%i) Terminating fiber %p res shall be uninitialized.", gab.wkid,
              GAB_VAL_TO_FIBER(fiber));
@@ -12224,7 +12175,6 @@ GAB_INTERNAL union gab_value_pair __gab_vvmterm(struct gab_triple gab,
   atomic_store(&GAB_VAL_TO_FIBER(fiber)->res_status, gab_cinvalid);
   atomic_store(&GAB_VAL_TO_FIBER(fiber)->as.vresult, gab_cinvalid);
 
-  GAB_VAL_TO_FIBER(fiber)->res_env = env;
   GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERDONE;
 #if cGAB_LOG_EG
   gab_fprintf(stderr, "($) VMTERM finished fiber $.\n", gab_number(gab.wkid),
@@ -12252,9 +12202,6 @@ __gab_vmgivenerror(struct gab_triple gab, union gab_value_pair given) {
              "Terminating fiber %p must be running, not: %d. Given err.",
              GAB_VAL_TO_FIBER(fiber), gab_valkind(fiber));
 
-  gab_assert(GAB_VAL_TO_FIBER(fiber)->res_env == gab_cinvalid,
-             "Terminating fiber res_env shall be uninitialized.");
-
   gab_assert(atomic_load(&GAB_VAL_TO_FIBER(fiber)->res_status) == 0,
              "(%i) Terminating fiber %p res shall be uninitialized.", gab.wkid,
              GAB_VAL_TO_FIBER(fiber));
@@ -12263,16 +12210,6 @@ __gab_vmgivenerror(struct gab_triple gab, union gab_value_pair given) {
 
   atomic_store(&GAB_VAL_TO_FIBER(fiber)->res_status, given.status);
   atomic_store(&GAB_VAL_TO_FIBER(fiber)->as.vresult, given.vresult);
-
-  if (__gab_vmframeblk(vm->fp)) {
-    gab_value p = __gab_vmframeblk(vm->fp)->p;
-    gab_value shape = gab_prtshp(p);
-
-    gab_value env = gab_recordfrom(gab, shape, 1, gab_shplen(shape), vm->fp);
-    gab_egkeep(gab.eg, gab_iref(gab, env));
-
-    GAB_VAL_TO_FIBER(fiber)->res_env = env;
-  }
 
   GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERDONE;
 #if cGAB_LOG_EG
@@ -12292,9 +12229,6 @@ GAB_INTERNAL union gab_value_pair __gab_vvmerror(struct gab_triple gab,
       gab_valkind(fiber) == kGAB_FIBERRUNNING,
       "(%i) Terminating fiber must be running, not: %d. Error status %s.",
       gab.wkid, gab_valkind(fiber), gab_status_names[s]);
-
-  gab_assert(GAB_VAL_TO_FIBER(fiber)->res_env == gab_cinvalid,
-             "Terminating fiber res_env shall be uninitialized.");
 
   gab_assert(atomic_load(&GAB_VAL_TO_FIBER(fiber)->res_status) == 0,
              "(%i) Terminating fiber %p res shall be uninitialized.", gab.wkid,
@@ -12328,18 +12262,6 @@ GAB_INTERNAL union gab_value_pair __gab_vvmerror(struct gab_triple gab,
   atomic_store(&GAB_VAL_TO_FIBER(fiber)->res_status, res.status);
   atomic_store(&GAB_VAL_TO_FIBER(fiber)->as.aresult, res.aresult);
 
-  if (__gab_vmframeblk(vm->fp)) {
-    gab_value p = __gab_vmframeblk(vm->fp)->p;
-
-    gab_value shape = gab_prtshp(p);
-
-    gab_value env = gab_recordfrom(gab, shape, 1, gab_shplen(shape), vm->fp);
-
-    gab_egkeep(gab.eg, gab_iref(gab, env));
-    gab_assert(GAB_VAL_TO_FIBER(fiber)->res_env == gab_cinvalid,
-               "res_env shall not be populated");
-    GAB_VAL_TO_FIBER(fiber)->res_env = env;
-  }
   GAB_VAL_TO_FIBER(fiber)->header.kind = kGAB_FIBERDONE;
 
 #if cGAB_LOG_EG
@@ -12659,30 +12581,12 @@ cGAB_VM_OPCODE_ATTRIBUTES union gab_value_pair __gab_vmok(OP_HANDLER_ARGS) {
              "(%i) Terminating fiber %p must be running, not: %d. OK!",
              GAB().wkid, fiber, fiber->header.kind);
 
-  gab_assert(fiber->res_env == gab_cinvalid,
-             "(%i) Terminating fiber %p res_env shall be uninitialized.",
-             GAB().wkid, fiber);
-
   gab_assert(atomic_load(&fiber->res_status) == 0,
              "(%i) Terminating fiber %p res shall be uninitialized.",
              GAB().wkid, fiber);
 
   atomic_store(&fiber->res_status, res.status);
   atomic_store(&fiber->as.vresult, res.vresult);
-
-  // TODO @bug: Find some way to pull the env out of a fiber.
-  // if (frame_block(VM()->fp)) {
-  //   gab_value p = frame_block(VM()->fp)->p;
-  //   gab_value shape = gab_prtshp(p);
-  //
-  //   gab_value env =
-  //       gab_recordfrom(GAB(), shape, 1, gab_shplen(shape), VM()->fp,
-  //       nullptr);
-  //
-  //   gab_egkeep(EG(), gab_iref(GAB(), env));
-  //
-  //   fiber->res_env = env;
-  // }
 
   fiber->header.kind = kGAB_FIBERDONE;
 #if cGAB_LOG_EG
@@ -12704,7 +12608,9 @@ GAB_INTERNAL union gab_value_pair __gab_vmexec(struct gab_triple gab,
 
   gab.flags |= fiber->flags;
 
-  gab_assert(fiber->vm.sb[2] == 0, "Shall not have return frame");
+  gab_assert(fiber->vm.sb[2] == 0, "Shall not have return frame delta, saw %lu",
+             fiber->vm.sb[2]);
+
   gab_assert(fiber->vm.kb, "Shall have constant table");
   gab_assert(fiber->vm.ip, "Shall have ip");
 
@@ -12829,9 +12735,9 @@ extern void putcs(char *arg);
     IP() = proto_ip(GAB(), p);                                                 \
     KB() = proto_ks(GAB(), p);                                                 \
     FB() = SP() - have;                                                        \
-    gab_assert(BLOCK()->header.kind == kGAB_BLOCK,                             \
+    gab_verify(BLOCK()->header.kind == kGAB_BLOCK,                             \
                "Block shall be gab\\block");                                   \
-    gab_assert(BLOCK_PROTO()->header.kind == kGAB_PROTOTYPE,                   \
+    gab_verify(BLOCK_PROTO()->header.kind == kGAB_PROTOTYPE,                   \
                "Proto shall be gab\\proto");                                   \
   })
 
@@ -12845,9 +12751,9 @@ extern void putcs(char *arg);
                                                                                \
     IP() = (void *)ks[GAB_SEND_KOFFSET];                                       \
     FB() = SP() - have;                                                        \
-    gab_assert(BLOCK()->header.kind == kGAB_BLOCK,                             \
+    gab_verify(BLOCK()->header.kind == kGAB_BLOCK,                             \
                "Block shall be gab\\block");                                   \
-    gab_assert(BLOCK_PROTO()->header.kind == kGAB_PROTOTYPE,                   \
+    gab_verify(BLOCK_PROTO()->header.kind == kGAB_PROTOTYPE,                   \
                "Proto shall be gab\\proto");                                   \
                                                                                \
     SET_HV(have);                                                              \
@@ -13166,7 +13072,7 @@ extern void putcs(char *arg);
     gab_value r = PEEK_N(have);                                                \
     gab_value m = ks[GAB_SEND_KMESSAGE];                                       \
                                                                                \
-    if (BLOCK() && try_setup_localmatch(GAB(), m, ks, BLOCK_PROTO())) {        \
+    if (HAS_BLOCK() && try_setup_localmatch(GAB(), m, ks, BLOCK_PROTO())) {    \
       WRITE_BYTE(GAB_SEND_CACHE_SIZE, OP_MATCHSEND_BLOCK + adjust);            \
       IP() -= GAB_SEND_CACHE_SIZE;                                             \
       NEXT();                                                                  \
@@ -13704,7 +13610,7 @@ extern void putcs(char *arg);
                                                                                \
     SET_HV(have);                                                              \
                                                                                \
-    gab_assert(have >= want, "Shall have padded values to at least want");     \
+    gab_verify(have >= want, "Shall have padded values to at least want");     \
     int64_t len = have - want;                                                 \
                                                                                \
     gab_value *ap = SP() - above;                                              \
@@ -13744,7 +13650,7 @@ extern void putcs(char *arg);
                                                                                \
     SET_HV(have);                                                              \
                                                                                \
-    gab_assert(have >= want, "Shall have padded values to at least want");     \
+    gab_verify(have >= want, "Shall have padded values to at least want");     \
     int64_t len = have - want;                                                 \
                                                                                \
     gab_value *ap = SP() - above;                                              \
@@ -13799,8 +13705,10 @@ extern void putcs(char *arg);
 #define PUSHTUPLE(n)                                                           \
   ({                                                                           \
     SP() += 2;                                                                 \
-    SP()[-1] = FRAME_IP;                                                       \
-    SP()[-2] = FRAME_BK;                                                       \
+    gab_verify(SP()[-1] = FRAME_IP,                                            \
+               "Conditionally place this as sentinel for later");              \
+    gab_verify(SP()[-2] = FRAME_BK,                                            \
+               "Conditionally place this as sentinel for later");              \
     PUSH(n);                                                                   \
   })
 
@@ -13821,7 +13729,7 @@ extern void putcs(char *arg);
       [[clang::musttail]] return __gab_vmok(DISPATCH_ARGS());                  \
     }                                                                          \
                                                                                \
-    gab_assert(RETURN_IP() != nullptr, "Shall not return to nullptr ip");      \
+    gab_verify(RETURN_IP() != nullptr, "Shall not return to nullptr ip");      \
                                                                                \
     LOAD_FRAME();                                                              \
                                                                                \
@@ -13829,11 +13737,11 @@ extern void putcs(char *arg);
     SP() = to + have;                                                          \
     SET_HV(have + below_have);                                                 \
                                                                                \
-    gab_assert(FB() >= VM()->sb + FRAME_SIZE,                                  \
+    gab_verify(FB() >= VM()->sb + FRAME_SIZE,                                  \
                "FB shall be within vm stack range");                           \
-    gab_assert(BLOCK()->header.kind == kGAB_BLOCK,                             \
+    gab_verify(BLOCK()->header.kind == kGAB_BLOCK,                             \
                "Block shall be gab\\block");                                   \
-    gab_assert(BLOCK_PROTO()->header.kind == kGAB_PROTOTYPE,                   \
+    gab_verify(BLOCK_PROTO()->header.kind == kGAB_PROTOTYPE,                   \
                "Proto shall be gab\\proto");                                   \
   })
 
@@ -13909,7 +13817,7 @@ extern void putcs(char *arg);
     if (val_ab == gab_ctimeout)                                                \
       VM_YIELD(gab_nil);                                                       \
                                                                                \
-    gab_assert(gab_valkind(val_ab) == kGAB_STRING,                             \
+    gab_verify(gab_valkind(val_ab) == kGAB_STRING,                             \
                "str concat shall return string");                              \
                                                                                \
     val_ab;                                                                    \
@@ -13927,7 +13835,7 @@ extern void putcs(char *arg);
     if (val_ab == gab_ctimeout)                                                \
       VM_YIELD(gab_nil);                                                       \
                                                                                \
-    gab_assert(gab_valkind(val_ab) == kGAB_BINARY,                             \
+    gab_verify(gab_valkind(val_ab) == kGAB_BINARY,                             \
                "bin concat shall return binary");                              \
                                                                                \
     val_ab;                                                                    \
@@ -14187,7 +14095,7 @@ CASE_CODE(POPSTORE_LOCAL) {
 
   STORE_LOCAL(READ_BYTE, POP());
 
-  gab_assert(have >= 1, "May not underflow have");
+  gab_verify(have >= 1, "May not underflow have");
   SET_HV(have - 1);
   NEXT();
 }
@@ -14197,7 +14105,7 @@ CASE_CODE(NPOPSTORE_LOCAL) {
 
   uint8_t n = READ_BYTE;
 
-  gab_assert(have >= n, "May not underflow have");
+  gab_verify(have >= n, "May not underflow have");
   have -= n;
 
   while (n--)
@@ -14212,7 +14120,7 @@ CASE_CODE(NPOPSTORE_STORE_LOCAL) {
 
   uint8_t n = READ_BYTE;
 
-  gab_assert(have >= n, "May not underflow have");
+  gab_verify(have >= n, "May not underflow have");
   have -= n;
 
   while (n-- > 1)
@@ -14988,7 +14896,7 @@ CASE_CODE(SEND) {
   gab_value r = PEEK_N(have);
   gab_value m = ks[GAB_SEND_KMESSAGE];
 
-  if (BLOCK() && __gab_vmtrysetuplocalmatch(GAB(), m, ks, BLOCK_PROTO())) {
+  if (HAS_BLOCK() && __gab_vmtrysetuplocalmatch(GAB(), m, ks, BLOCK_PROTO())) {
     WRITE_BYTE(GAB_SEND_CACHE_SIZE, OP_MATCHSEND_BLOCK + adjust);
     IP() -= GAB_SEND_CACHE_SIZE;
     NEXT();
@@ -15023,7 +14931,7 @@ CASE_CODE(SEND) {
     struct gab_oblock *b = GAB_VAL_TO_BLOCK(spec);
     struct gab_oprototype *p = GAB_VAL_TO_PROTOTYPE(b->p);
 
-    uint8_t local = (BLOCK() && BLOCK_PROTO()->src == p->src);
+    uint8_t local = (HAS_BLOCK() && BLOCK_PROTO()->src == p->src);
     adjust |= (local << 1);
 
     if (local) {
@@ -15146,6 +15054,8 @@ CASE_CODE(SEND_PRIMITIVE_FIBER) {
 
   if (message == gab_nil)
     message = gab_message(GAB(), mGAB_CALL);
+
+  PANIC_GUARD_KIND(message, kGAB_MESSAGE);
 
   MICRO_OP_FIBER(receiver, message, have - 3);
 

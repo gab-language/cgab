@@ -34,9 +34,7 @@ GAB_DYNLIB_NATIVE_FN(fib, await) {
   }
 
   if (res.status == gab_cvalid) {
-    gab_value env = gab_fibawaite(gab, fib);
     gab_nvmpush(gab_thisvm(gab), gab_varrlen(res.aresult), res.aresult);
-    gab_vmpush(gab_thisvm(gab), env);
     return gab_union_cvalid(gab_nil);
   }
 

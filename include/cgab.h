@@ -3172,8 +3172,6 @@ GAB_API gab_value gab_record(struct gab_triple gab, uint64_t stride,
  * @param shape The shape that the record should have.
  * @param stride The stride between the values in vals
  * @param vals The vals
- * @param km A key-mask produced by @see gab_shape, for skipping repeat
- * values.
  * @return The new record
  */
 GAB_API gab_value gab_recordfrom(struct gab_triple gab, gab_value shape,
@@ -3564,15 +3562,6 @@ GAB_API union gab_value_pair gab_fibawait(struct gab_triple gab,
  */
 GAB_API union gab_value_pair gab_tfibawait(struct gab_triple gab,
                                            gab_value fiber, uint64_t tries);
-
-/*
- * @brief Block the caller until the fiber is completed.
- *
- * @param gab   The engine
- * @param fiber The fiber
- * @return The fiber's environment upon completion.
- */
-GAB_API gab_value gab_fibawaite(struct gab_triple gab, gab_value fiber);
 
 /*
  * @brief Return a value comprising the stacktrace of the fiber.

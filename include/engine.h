@@ -444,11 +444,6 @@ struct gab_ofiber {
   } as;
 
   /**
-   * The environment after execution finished
-   */
-  gab_value res_env;
-
-  /**
    * Length of data array member
    */
   uint64_t len;
