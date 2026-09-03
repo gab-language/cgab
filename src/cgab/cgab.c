@@ -5402,6 +5402,9 @@ GAB_INTERNAL gab_value __gab_shptake(struct gab_triple gab, gab_value shape,
 // A tiny hashtable used to de-duplicate keys we see in the input table.
 GAB_INTERNAL uint64_t __gab_shpprepkeys(uint64_t stride, uint64_t len,
                                         gab_value *keys, gab_value *keys_out) {
+  if (!len)
+    return 0;
+
   const uint64_t hashset_capacity = len * 2;
   // Allocate hash-set on the stack.
   gab_value hashset[hashset_capacity] = {};
