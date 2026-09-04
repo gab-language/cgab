@@ -1,12 +1,11 @@
-nums := [1 2 3 4 5 6 7 8 9]
+  ch := Channels.make
 
-xf := Transducers.deduce([] (xs x) :: do
-      xs := xs .cons x
-      done := xs.len > 4
-      '$ $ $\n'.printf(done xs x)
-      (done, xs)
-    end)
+  Fibers.make () :: do
+    ch <! (dog: red: 'clifford')
+    ch <! (dog: blue: 'bluey')
+    ch.close
+  end
 
-new_nums := nums.collect([] xf)
+  animals := ch.zip {}
 
-'$\n' .printf new_nums
+  '$'.printf animals

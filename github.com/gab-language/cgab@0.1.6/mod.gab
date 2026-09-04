@@ -171,24 +171,24 @@ defseq: .def do
     end,
     every: f :: do
       xf := transducer:.drop_while f
-        |> transducer:.take 1
+         |> transducer:.take 1
 
       self.collect([] xf).is\empty
     end,
     any: f :: do
       xf := transducer:.filter f
-        |> transducer:.take 1
+         |> transducer:.take 1
 
       self.collect([] xf).is\empty.!
     end,
-    join: (start xf) :: do
-      self.transduce(start (acc x) :: acc + x, xf)
+    join: (into xf) :: do
+      self.transduce(into (acc x) :: acc + x, xf)
     end,
     collect: (into xf) :: do
       self.transduce(into (acc x) :: acc.cons x,  xf)
     end,
     zip: (into xf) :: do
-      self.transduce(into (acc v k) :: acc.put(k v), xf)
+      self.transduce(into (acc v k*) :: acc.put_via(v k*), xf)
     end,
     pipe: (into xf) :: do
       self.transduce(into (acc x) :: acc <! x, xf)
