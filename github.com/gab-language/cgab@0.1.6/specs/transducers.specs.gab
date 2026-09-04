@@ -1,0 +1,336 @@
+s := 'github.com/gab-language/cgab@0.1.6'.use 'Specs'
+'github.com/gab-language/cgab@0.1.6/specs'.use 'transduceable.specs'
+
+transducers\map: .defspec {
+  help:
+  "
+  Create a transducer which maps tuples from `(x) => (y)` via `f`.
+
+  ```gab
+  nums := [ 1,2,3,4 ]
+
+  # Calling your transducer 'xf', short for 'transformer' is a common convention.
+  # Create a transducer which transforms the values it sees by squaring them.
+  xf   := Transducers.map(x :: x * x)
+
+  squared_nums := nums.collect(xf)
+  ```
+  "
+  spec: s.message {
+    receiver: Transducers
+    message:  map:
+    input: s.cat('f' s.block { input: s.unknown; output: s.unknown})
+    output: s.cat('transducer' transduceable:.spec)
+  }
+}
+
+transducers\filter: .defspec {
+  help:
+  "
+  Create a transducer which filters values via the predicate `f`.
+
+  ```gab
+  nums := [ 1,2,3,4 ]
+
+  # Create a transducer which filters out the odd numbers
+  xf   := Transducers.filter(x :: x.is\even)
+
+  even_nums := nums.collect(xf)
+  ```
+  "
+  spec: s.message {
+    receiver: Transducers
+    message:  filter:
+    input: s.cat('f' s.block { input: s.unknown; output: s.boolean})
+    output: s.cat('transducer' transduceable:.spec)
+  }
+}
+
+transducers\mapfilter: .defspec {
+  help:
+  "
+  Create a transducer which both maps *and* filters values by the block `f`.
+
+  ```gab
+  nums := [ 1,2,3,4 ]
+
+  # Create a transducer which filters out the odd numbers, and squares the remaining ones.
+  xf   := Transducers.mapfilter(x :: (x.is\even, x * x))
+
+  squared_even_nums := nums.collect(xf)
+
+  # This could also be accomplished by composing the map and filter transducers:
+  xf   := Transducers.filter(x :: x.is\even)
+          |> Transducers.map(x :: x * x)
+
+  squared_even_nums := nums.collect(xf)
+  ```
+  "
+  spec: s.message {
+    receiver: Transducers
+    message:  mapfilter:
+    input: s.cat('f' s.block { input: s.unknown; output: s.cat(s.boolean, s.unknown)})
+    output: s.cat('transducer' transduceable:.spec)
+  }
+}
+
+transducers\reduce: .defspec {
+  help:
+  "
+  Create a transducer which yields each accumulator value as it applies the reducing block `f`
+
+  ```gab
+  nums := [ 1,2,3,4 ]
+
+  # Create a transducer which accumulates values into a list.
+  # Each intermediate value is passed through.
+  xf   := Transducers.reduce([], (list, x) :: list.cons x)
+
+  lists := nums.collect(xf)
+  # [ [1], [1, 2], [1, 2, 3], [1, 2, 3, 4] ]
+  ```
+  "
+  spec: s.message {
+    receiver: Transducers
+    message:  reduce:
+    input: s.cat('initial' s.unknown, 'f' s.block { input: s.unknown; output: s.cat(s.boolean, s.unknown)})
+    output: s.cat('transducer' transduceable:.spec)
+  }
+}
+
+transducers\transduce: .defspec {
+  help:
+  "
+  Like reduce, except it accepts a transducer *and* a reducer, and first wraps the reducer with the transducer.
+
+  ```gab
+  nums := [ 1,2,3,4 ]
+
+  # Create a transducer which accumulates values into a list.
+  # Each intermediate value is passed through.
+  xf   := Transducers.transduce([], (list, x) :: list.cons x, Transducers.map(square))
+
+  lists := nums.collect(xf)
+  # [ [1], [1, 4], [1, 4, 9], [1, 4, 9, 16] ]
+  ```
+  "
+  spec: s.message {
+    receiver: Transducers
+    message:  transduce:
+    input: s.cat('initial' s.unknown, 'f' s.block { input: s.unknown; output: s.cat(s.boolean, s.unknown)} 'xf' transduceable:.spec)
+    output: s.cat('transducer' transduceable:.spec)
+  }
+}
+
+transducers\deduce: .defspec {
+  help:
+  "
+  A more interesting version of reduce. Explanation TBD.
+  "
+  spec: s.message {
+    receiver: Transducers
+    message:  deduce:
+    input: s.cat('initial' s.unknown, 'f' s.block { input: s.unknown; output: s.cat(s.boolean, s.unknown)})
+    output: s.cat('transducer' transduceable:.spec)
+  }
+}
+
+transducers\tap: .defspec {
+  help:
+  "
+  Create a transducer which applies a side-effect to each value.
+
+  ```gab
+  nums := [ 1,2,3,4 ]
+
+  xf   := Transducers.tap(num :: num.println)
+
+  same_nums := nums.collect([] xf)
+  # 1
+  # 2
+  # 3
+  # 4
+  ```
+  "
+  spec: s.message {
+    receiver: Transducers
+    message:  tap:
+    input: s.cat('f' s.block { input: s.unknown; output: s.cat(s.boolean, s.unknown)})
+    output: s.cat('transducer' transduceable:.spec)
+  }
+}
+
+transducers\skip: .defspec {
+  help:
+  "
+  Create a transducer which skips values based on the predicate `f`. Consider `skip` the inverse of `filter`.
+
+  ```gab
+  nums := [ 1,2,3,4 ]
+
+  xf   := Transducers.skip(num :: num.is\even)
+
+  odd_nums := nums.collect([] xf)
+  ```
+  "
+  spec: s.message {
+    receiver: Transducers
+    message:  skip:
+    input: s.cat('f' s.block { input: s.unknown; output: s.cat(s.boolean) })
+    output: s.cat('transducer' transduceable:.spec)
+  }
+}
+
+transducers\take: .defspec {
+  help:
+  "
+  Create a transducer which accepts up to `n` values.
+
+  ```gab
+  nums := [ 1,2,3,4,5 ]
+
+  xf   := Transducers.take 2
+
+  two_nums := nums.collect([] xf)
+  # [1, 2]
+  ```
+  "
+  spec: s.message {
+    receiver: Transducers
+    message:  take:
+    input: s.cat('n' s.int)
+    output: s.cat('transducer' transduceable:.spec)
+  }
+}
+
+transducers\drop: .defspec {
+  help:
+  "
+  Create a transducer which ignores up to `n` values, then accepts the rest.
+
+  ```gab
+  nums := [ 1,2,3,4,5 ]
+
+  xf   := Transducers.drop 2
+
+  three_nums := nums.collect([] xf)
+  # [3, 4, 5]
+  ```
+  "
+  spec: s.message {
+    receiver: Transducers
+    message:  drop:
+    input: s.cat('n' s.int)
+    output: s.cat('transducer' transduceable:.spec)
+  }
+}
+
+transducers\take_while: .defspec {
+  help:
+  "
+  Create a transducer which accepts values while `f` returns `true:` - then ignores the rest.
+
+  ```gab
+  nums := [ 1,2,3,4,5 ]
+
+  xf   := Transducers.take_while(x :: x <= 2)
+
+  two_nums := nums.collect([] xf)
+  # [1, 2]
+  ```
+  "
+  spec: s.message {
+    receiver: Transducers
+    message:  take_while:
+    input: s.cat('f' s.block { input: s.unknown, output: s.boolean })
+    output: s.cat('transducer' transduceable:.spec)
+  }
+}
+
+transducers\take_until: .defspec {
+  help:
+  "
+  Create a transducer which accepts values until `f` returns `true:` - then ignores the rest.
+
+  ```gab
+  nums := [ 1,2,3,4,5 ]
+
+  xf   := Transducers.take_until(x :: x == 3)
+
+  two_nums := nums.collect([] xf)
+  # [1, 2]
+  ```
+  "
+  spec: s.message {
+    receiver: Transducers
+    message:  take_until:
+    input: s.cat('f' s.block { input: s.unknown, output: s.boolean })
+    output: s.cat('transducer' transduceable:.spec)
+  }
+}
+
+transducers\drop_while: .defspec {
+  help:
+  "
+  Create a transducer which ignores values while `f` returns `true:` - then accepts the rest.
+
+  ```gab
+  nums := [ 1,2,3,4,5 ]
+
+  xf   := Transducers.drop_while(x :: x < 3)
+
+  three_nums := nums.collect([] xf)
+  # [3, 4, 5]
+  ```
+  "
+  spec: s.message {
+    receiver: Transducers
+    message:  drop_while:
+    input: s.cat('f' s.block { input: s.unknown, output: s.boolean })
+    output: s.cat('transducer' transduceable:.spec)
+  }
+}
+
+transducers\count: .defspec {
+  help:
+  "
+  Create a transducer which appends the number of seen values so far to the tuple.
+
+  ```gab
+  nums := [ 1,2,3 ]
+
+  xf   := Transducers.count |> Transducers.map((x idx) :: [x idx])
+
+  two_nums := nums.collect([] xf)
+  # [ [1, 0] [2, 1] [3, 2] ]
+  ```
+  "
+  spec: s.message {
+    receiver: Transducers
+    message:  count:
+    input: s.cat()
+    output: s.cat('transducer' transduceable:.spec)
+  }
+}
+
+transducers\interpose: .defspec {
+  help:
+  "
+  Create a transducer which inserts a separator between each value it sees.
+
+  ```gab
+  nums := [ 1,2,3 ]
+
+  xf   := Transducers.interpose 'hello!'
+
+  three_nums := nums.collect([] xf)
+  # [ 1 'hello!' 2 'hello!' 3 ]
+  ```
+  "
+  spec: s.message {
+    receiver: Transducers
+    message:  interpose:
+    input: s.cat(s.unknown)
+    output: s.cat('transducer' transduceable:.spec)
+  }
+}

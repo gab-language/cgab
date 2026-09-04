@@ -122,7 +122,7 @@ reduce:.deftransducer(
   { r: nil: acc: nil: })
 
 transduce:.deftransducer(
-  (inner_acc inner_r td) :: transducer:.reduce(inner_acc, td.td\apply inner_r)
+  (inner_acc inner_r td) :: transducer:.reduce(inner_acc, td.td\wrap inner_r)
   { r: nil: acc: nil: })
 
 tap:.deftransducer(
