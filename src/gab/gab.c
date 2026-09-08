@@ -61,9 +61,9 @@ static inline void v_char_spush(v_char *self, s_char slice) {
 
 #define SECTION(x) SWAP(NONE, " " x " ")
 
-struct gab_triple gab;
+static struct gab_triple gab;
 
-mz_zip_archive zip = {0};
+static mz_zip_archive zip = {0};
 
 /*
  *  *----------------*
@@ -255,7 +255,7 @@ union gab_value_pair gab_use_dynlib(struct gab_triple gab, const char *path,
 
   if (lib == nullptr) {
 #ifdef GAB_PLATFORM_UNIX
-    return gab_panicf(gab, "Failed to load module.\n\n@", gab_string(gab, path),
+    return gab_panicf(gab, "Failed to load module:\n\n$\n\n@", gab_string(gab, path),
                       gab_string(gab, dlerror()));
 #elifdef GAB_PLATFORM_WASI
     return gab_panicf(gab, "Failed to load module '$'", gab_string(gab, path));

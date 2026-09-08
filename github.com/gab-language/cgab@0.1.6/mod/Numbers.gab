@@ -14,4 +14,8 @@ is\number: .def false:
   to\n: _ :: self
 }
 
+[Numbers] .defmodule {
+  int\between: (floor, ceil) :: self.float\between(floor, ceil).floor
+}
+
 Numbers

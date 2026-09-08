@@ -80,28 +80,43 @@ mapfilter:.deftransducer(
     ok.td\conditionally(r, acc, vs)
   end)
 
-td\dodeduce: .defcase {
-  next: (r, acc, xs, s) :: (s, next:, r, acc)
+td\testdeduce: .defcase {
+  none: (r, acc, xs, s) :: (s, next:, r, acc)
 
   # Restart the sequence with initial state, call reducer with acc
-  stop:  (r, acc, xs, s) :: ({ r: nil: acc: nil: }, r.reduce\step(acc, xs*))
+  ok:  (r, acc, xs, s) :: ({ r: nil: acc: nil: }, r.reduce\step(acc, xs*))
 }
 
+td\dodeduce: .defcase {
+  #
+  next: (ok, r, acc, xs, s) :: ok.td\testdeduce(r acc xs s)
+
+  # Restart the sequence with initial state, call reducer with acc
+  stop: (ok, r, acc, xs, s) :: (s, next:, r, acc)
+}
+
+# The design here is kinda conflicting.
+# This should not rely on the reducer to decide when the stream ends
+# This is really part of deduce, but also part of other transducers
+# reduce |> drop_until, but it also *restarts* the reduction
+# Every time, so it isn't quite that either
 deduce: .deftransducer(
-  (inner_acc inner_r)
-    :: (outer_r, outer_acc, xs, state)
-      :: do
+  (inner_acc inner_r xf) :: do
+    inner_r := xf.transduce\wrap inner_r
+
+    (outer_r, outer_acc, xs, state) :: do
         # Get the recent reduce and accumulator out of the state
         r := state.r.or inner_r
         acc := state.acc.or inner_acc
 
         # Step these by the xs
-        (cmd, r, acc) := r.reduce\step(acc, xs*) 
+        (cmd, r, ok, acc) := r.reduce\step(acc, xs*) 
 
         # Apply the new inner accumulator to our outer reducer
         # If our command tells us to
-        cmd.td\dodeduce(outer_r, outer_acc, [acc], { r: r acc: acc })
+        cmd.td\dodeduce(ok, outer_r, outer_acc, [acc], { r: r acc: acc })
       end
+    end
   { r: nil: acc: nil: })
 
 reduce:.deftransducer(

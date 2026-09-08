@@ -65,23 +65,16 @@ _http\read_headers := (source) :: do
     .to\binary
 end
 
-[_http\read_chunkheader:] .defmodule {
-  reduce\step: (acc x) :: do
-    acc := acc + x.as\string.unwrap
-    done := acc.has\suffix '\r\n' .and stop: .or next:
-    (done _http\read_chunkheader: acc)  
-  end
-  reduce\done: (acc x) :: do
-    acc
-  end
-}
-
 _http\doread_body: .defcase {
   body\by_chunked: (http conn) :: do
     # TODO: Replace these crashes
     body := conn.join(
       "".to\binary
-      Transducers.deduce("" _http\read_chunkheader:)
+      Transducers.deduce("" (acc bin) :: do
+        acc := acc + bin.as\string.unwrap
+        done := acc.has\suffix '\r\n'
+        option:.make(done acc)  
+      end)
       |> Transducers.map(lenstr :: lenstr.as\integer(16).unwrap)
       |> Transducers.take_until(len :: len == 0)
       |> Transducers.map(len :: do
