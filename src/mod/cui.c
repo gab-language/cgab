@@ -1601,10 +1601,9 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_render) {
     // we are in this function.
     gab_iref(gab, app);
 
-    Clay_Dimensions dim = {
-        .width = gui->win.w,
-        .height = gui->win.h,
-    };
+    int32_t w, h;
+    RGFW_window_fetchSize(&gui->win, &w, &h);
+    Clay_Dimensions dim = {.width = w, .height = h};
 
     sclay_set_layout_dimensions(dim, 1);
 
