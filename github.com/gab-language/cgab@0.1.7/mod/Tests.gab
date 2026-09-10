@@ -22,7 +22,7 @@ Colors := {
 
 Spacer := [ box: { width\grow: 10 } [] ]
 
-how := gui:
+how := hui:
 
 Ui
   .run(how events app)
@@ -38,7 +38,7 @@ xf := Streams.filter((_ m) :: m.is\unittest)
   |> Streams.map((impls m) :: do
       (path*, _) := m
         .to\string
-        .to\stream\split "\" 
+        .to\seq\split "\" 
         .collect []
         *
 

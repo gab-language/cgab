@@ -1073,10 +1073,10 @@ GAB_API enum gab_signal gab_yield(struct gab_triple gab) {
 
 // TODO @cthreads @bug: Avoid thrd_sleep, as our vendored impl is bad.
 GAB_API void gab_busywait(struct gab_triple gab) {
-  // if (gab.eg->wait > 0)
-  //   thrd_sleep(&(const struct timespec){.tv_nsec = gab.eg->wait}, nullptr);
-  // else
-  thrd_yield();
+  if (gab.eg->wait > 0)
+    thrd_sleep(&(const struct timespec){.tv_nsec = gab.eg->wait}, nullptr);
+  else
+    thrd_yield();
 }
 
 GAB_API int32_t gab_njobs(struct gab_triple gab) {
@@ -1289,14 +1289,21 @@ static const char *gab_opcode_names[] = {
 #undef GAB_OPCODE_NAMES_IMPL
 };
 
-GAB_INTERNAL bool __gab_jbstep(struct gab_triple gab, struct gab_job *job) {
+enum __gab_jbstep_k {
+  kGAB_JBSTEP_BAIL = 0,
+  kGAB_JBSTEP_STEP = 1,
+  kGAB_JBSTEP_NONE = 2,
+};
+
+GAB_INTERNAL enum __gab_jbstep_k __gab_jbstep(struct gab_triple gab,
+                                              struct gab_job *job) {
   switch (gab_yield(gab)) {
   case sGAB_COLL:
     gab_gcepochnext(gab);
     gab_sigpropagate(gab);
     break;
   case sGAB_TERM:
-    return false;
+    return kGAB_JBSTEP_BAIL;
   default:
     break;
   }
@@ -1325,7 +1332,7 @@ GAB_INTERNAL bool __gab_jbstep(struct gab_triple gab, struct gab_job *job) {
   // Terminate if requested.
   // If the channel closed, terminate
   if (fiber == gab_cinvalid || fiber == gab_cundefined)
-    return false;
+    return kGAB_JBSTEP_BAIL;
 
   // If we timed out, pull from the global work_channel
   if (fiber == gab_ctimeout)
@@ -1335,7 +1342,7 @@ GAB_INTERNAL bool __gab_jbstep(struct gab_triple gab, struct gab_job *job) {
   // Terminate if requested.
   // If the channel closed, terminate
   if (fiber == gab_cinvalid || fiber == gab_cundefined)
-    return false;
+    return kGAB_JBSTEP_BAIL;
 
   if (fiber != gab_ctimeout) {
     gab_assert(gab_valkind(fiber) == kGAB_FIBER,
@@ -1369,8 +1376,9 @@ GAB_INTERNAL bool __gab_jbstep(struct gab_triple gab, struct gab_job *job) {
     }
   }
 
+  // Logorithmic backoff here?
   if (q_gab_value_is_empty(&job->working_queue))
-    return gab_busywait(gab), true;
+    return gab_busywait(gab), kGAB_JBSTEP_NONE;
 
   // Peek at job to do on the queue.
   fiber = q_gab_value_peek(&job->working_queue);
@@ -1445,12 +1453,13 @@ GAB_INTERNAL bool __gab_jbstep(struct gab_triple gab, struct gab_job *job) {
   case gab_cinvalid:
     gab_assert(gab_fibisdone(popped), "A terminated fiber shall be done");
 
-    return false;
+    return kGAB_JBSTEP_BAIL;
   default:
     gab_unreachable("Unhandled result.status value");
   }
 
-  return true;
+  // We successfuly took a step towards progress
+  return kGAB_JBSTEP_STEP;
 }
 
 GAB_INTERNAL void __gab_jbbail(struct gab_triple gab, struct gab_job *job) {
@@ -1533,6 +1542,28 @@ GAB_API uint64_t gab_egalive(struct gab_eg *eg) {
   return popcountl(sig.mask);
 }
 
+GAB_INTERNAL uint64_t __gab_calcbackoffns(uint32_t ntries) {
+  /*
+   * Workers should back off if they repeatedly don't find fibers to execute.
+   * If this backoff is exponential, then we may end up sleeping one of our worker threads
+   * for a long time - which we *probably* don't want.
+   *
+   * A logorithmic backoff means that our backoff more-or-less approaches some maximum
+   * backoff value.
+   *
+   * The value we are given here is just a linearly increasing number of failed tries - 
+   * so we need to map this into a logorithmic function somehow. To do this, we use the builtin
+   * 'clz'. Basically, this counts the bits that *arent used* to represent the integer we're looking at.
+   * Because we can represent more and more integers as we add more bits, this more-or-less becomes
+   * log-base-2(ntries). However, The number we get from clz decreases as ntries grows (because theres
+   * fewer unused bits). We can fix this by subtracting our log(ntries) from the maximum number of zeroes (31).
+   *
+   * Now we have a logorithmically increasing integer. Just scale that up to the number of nano-seconds we need
+   * by multiplying by some factor.
+   */
+  return 100000 * (31 - __builtin_clz(ntries));
+}
+
 int32_t __gab_jbworker(void *data) {
   struct gab_triple *g = data;
   struct gab_triple gab = *g;
@@ -1549,8 +1580,18 @@ int32_t __gab_jbworker(void *data) {
   gab_fprintf(stderr, "($) SPAWNED\n", gab_number(gab.wkid));
 #endif
 
-  while (__gab_jbstep(gab, job))
-    ;
+  enum __gab_jbstep_k res;
+  // Step the engine. We increment this job's backoff -
+  // then, if we didn't make progress, we keep this incremented backoff.
+  // otherwise, we completely reset it to 0.
+  while ((res = __gab_jbstep(gab, job))) {
+    job->backoff = (job->backoff + 1) * (res == kGAB_JBSTEP_NONE);
+    if (job->backoff) {
+      thrd_sleep(
+          &(const struct timespec){.tv_nsec = __gab_calcbackoffns(job->backoff)},
+          nullptr);
+    }
+  }
 
   __gab_jbbail(gab, job);
 
@@ -2274,6 +2315,7 @@ GAB_INTERNAL void __gab_egqfib(struct gab_triple gab, gab_value fib) {
 #endif
 
   if (qres != gab_cvalid) {
+    // TODO @cgab @bug: Is this a race condition?
     q_gab_value_dyn_push(&gab.eg->jobs[gab.wkid].waiting_queue, fib);
 #if cGAB_LOG_EG
     gab_fprintf(stderr, "($) WAITING QFIB $\n", gab_number(gab.wkid), fib);
@@ -6849,6 +6891,8 @@ GAB_API union gab_value_pair gab_fibawait(struct gab_triple gab, gab_value f) {
   gab_unreachable("Should not break out of above loop");
 }
 
+// TODO @cgab: This never backs off.
+// That is *probably* fine as we don't really want to sleep the main thread.
 GAB_API bool gab_step(struct gab_triple gab) {
   gab_precondition(gab.wkid == 1, "May only step from main thread");
 

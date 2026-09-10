@@ -1515,7 +1515,7 @@ end
         name := (k == mod)
           .and mod
           .else(() :: do
-            (_, rest*) := k.to\string.to\stream\split '\\' .collect [] .*
+            (_, rest*) := k.to\string.to\seq\split '\\' .collect [] .*
 
             rest
               .join('' Streams.interpose('\\'))

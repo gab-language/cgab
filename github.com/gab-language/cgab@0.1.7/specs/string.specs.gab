@@ -25,13 +25,19 @@ string\is\blank: .defspec {
 
 string\split: .defspec {
   help: "
-  Split the receiving string on the given delimiter. Only performs one split.
+  Split the receiving string on the given delimiter. Performs only one split.
+
+  If `sep` isn't found in the string, `head` will contain the whole string, and `tail` will contain the empty string.
+
+  Sending `split` to the empty string returns `none:`.
   "
   spec: s.message {
     receiver: string\spec
     message:  split:
     input:    s.cat('delimiter' s.string)
-    output:   s.cat('head' s.string, 'tail' s.string)
+    output:   s.alt(
+                'some' s.cat('ok' ok: 'head' s.string, 'tail' s.string))
+                'none' s.cat('none' none:))
   }
 }
 
@@ -190,4 +196,11 @@ string\seq\next: .defspec {
   See the seqable protocol for details.
   "
   spec: seqable\seq\next:.spec
+}
+
+string\split\all: .defspec {
+  help:
+  "
+  Collect all splits of string by `sep` into a list.
+  "
 }

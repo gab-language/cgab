@@ -22,6 +22,8 @@ Ranges
     .each spawn_task
 ```
 
+If you're looking for an example of what a gab project looks like, check out [this demo](https;//github.com/gab-language/gwordle).
+
 # Development
 
 ## Project Structure
