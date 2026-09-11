@@ -444,11 +444,6 @@ struct gab_ofiber {
   } as;
 
   /**
-   * The environment after execution finished
-   */
-  gab_value res_env;
-
-  /**
    * Length of data array member
    */
   uint64_t len;
@@ -729,6 +724,9 @@ struct gab_eg {
 
     // GC epoch.
     uint32_t epoch;
+
+    // Backoff used by jb-workers.
+    uint32_t backoff;
 
     // Used by gab_gclock() to prevent collection while locked > 0.
     // Useful when allocating a lot of gab objects at once, and they

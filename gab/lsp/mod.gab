@@ -1,5 +1,0 @@
-lsp\server := 'gab/lsp' .use 'server'
-'gab/lsp:messages'.use
-'gab/lsp:diagnostics'.use
-
-lsp\server.make.run

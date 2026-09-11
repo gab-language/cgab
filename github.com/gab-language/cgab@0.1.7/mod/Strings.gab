@@ -1,0 +1,24 @@
+Strings := 'github.com/gab-language/cgab@0.1.7' .use 'cstrings'
+
+String\Seq\Split := string\seq\split: .defclass (
+  string\seq\split\source:
+  string\seq\split\sep:
+  default:
+  {
+    seq\init: _ :: do
+      (ok head tail) := self.string\seq\split\source.split(self.string\seq\split\sep)
+      (ok tail head)
+    end
+    seq\next: tail :: do
+      (ok head tail) := tail.split(self.string\seq\split\sep)
+      (ok tail head)
+    end
+  })
+
+[Strings.t].defmodule {
+  is\empty:     ()    :: self.len == 0
+  to\seq\split: (sep) :: String\Seq\Split.make(self sep)  
+  split\all:    (sep) :: self.to\seq\split(sep).collect []
+}
+
+Strings

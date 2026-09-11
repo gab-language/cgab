@@ -72,6 +72,6 @@ function configure_target() {
 }
 export -f configure_target
 
-echo $targets | tr ' ' '\n' |  parallel configure_target  || exit 1
+echo $targets | tr ' ' '\n' |  xargs -I % bash -c "configure_target %" || exit 1
 
 echo "Success!"
