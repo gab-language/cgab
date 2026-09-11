@@ -1072,12 +1072,9 @@ GAB_API enum gab_signal gab_yield(struct gab_triple gab) {
 }
 
 // TODO @cthreads @bug: Avoid thrd_sleep, as our vendored impl is bad.
-GAB_API void gab_busywait(struct gab_triple gab) {
-  if (gab.eg->wait > 0)
-    thrd_sleep(&(const struct timespec){.tv_nsec = gab.eg->wait}, nullptr);
-  else
-    thrd_yield();
-}
+// thrd_sleep() (especially on windows) isn't actually as high resolution as we would need.
+// The best thing to do is just to yield.
+GAB_API void gab_busywait(struct gab_triple gab) { thrd_yield(); }
 
 GAB_API int32_t gab_njobs(struct gab_triple gab) {
   struct gab_sig sig = atomic_load(&gab.eg->sig);
@@ -1545,21 +1542,23 @@ GAB_API uint64_t gab_egalive(struct gab_eg *eg) {
 GAB_INTERNAL uint64_t __gab_calcbackoffns(uint32_t ntries) {
   /*
    * Workers should back off if they repeatedly don't find fibers to execute.
-   * If this backoff is exponential, then we may end up sleeping one of our worker threads
-   * for a long time - which we *probably* don't want.
+   * If this backoff is exponential, then we may end up sleeping one of our
+   * worker threads for a long time - which we *probably* don't want.
    *
-   * A logorithmic backoff means that our backoff more-or-less approaches some maximum
-   * backoff value.
+   * A logorithmic backoff means that our backoff more-or-less approaches some
+   * maximum backoff value.
    *
-   * The value we are given here is just a linearly increasing number of failed tries - 
-   * so we need to map this into a logorithmic function somehow. To do this, we use the builtin
-   * 'clz'. Basically, this counts the bits that *arent used* to represent the integer we're looking at.
-   * Because we can represent more and more integers as we add more bits, this more-or-less becomes
-   * log-base-2(ntries). However, The number we get from clz decreases as ntries grows (because theres
-   * fewer unused bits). We can fix this by subtracting our log(ntries) from the maximum number of zeroes (31).
+   * The value we are given here is just a linearly increasing number of failed
+   * tries - so we need to map this into a logorithmic function somehow. To do
+   * this, we use the builtin 'clz'. Basically, this counts the bits that *arent
+   * used* to represent the integer we're looking at. Because we can represent
+   * more and more integers as we add more bits, this more-or-less becomes
+   * log-base-2(ntries). However, The number we get from clz decreases as ntries
+   * grows (because theres fewer unused bits). We can fix this by subtracting
+   * our log(ntries) from the maximum number of zeroes (31).
    *
-   * Now we have a logorithmically increasing integer. Just scale that up to the number of nano-seconds we need
-   * by multiplying by some factor.
+   * Now we have a logorithmically increasing integer. Just scale that up to the
+   * number of nano-seconds we need by multiplying by some factor.
    */
   return 100000 * (31 - __builtin_clz(ntries));
 }
@@ -1584,12 +1583,14 @@ int32_t __gab_jbworker(void *data) {
   // Step the engine. We increment this job's backoff -
   // then, if we didn't make progress, we keep this incremented backoff.
   // otherwise, we completely reset it to 0.
+  // Here, we're okay sleeping instead of yielding because we actually
+  // want close to a millisecond.
   while ((res = __gab_jbstep(gab, job))) {
     job->backoff = (job->backoff + 1) * (res == kGAB_JBSTEP_NONE);
     if (job->backoff) {
-      thrd_sleep(
-          &(const struct timespec){.tv_nsec = __gab_calcbackoffns(job->backoff)},
-          nullptr);
+      thrd_sleep(&(const struct timespec){.tv_nsec = __gab_calcbackoffns(
+                                              job->backoff)},
+                 nullptr);
     }
   }
 
