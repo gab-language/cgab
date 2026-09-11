@@ -1,11 +1,1 @@
-  ch := Channels.make
-
-  Fibers.make () :: do
-    ch <! (dog: red: 'clifford')
-    ch <! (dog: blue: 'bluey')
-    ch.close
-  end
-
-  animals := ch.zip {}
-
-  '$'.printf animals
+:from cgab@0.1.7 import: cui

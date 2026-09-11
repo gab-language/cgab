@@ -1072,8 +1072,8 @@ GAB_API enum gab_signal gab_yield(struct gab_triple gab) {
 }
 
 // TODO @cthreads @bug: Avoid thrd_sleep, as our vendored impl is bad.
-// thrd_sleep() (especially on windows) isn't actually as high resolution as we would need.
-// The best thing to do is just to yield.
+// thrd_sleep() (especially on windows) isn't actually as high resolution as we
+// would need. The best thing to do is just to yield.
 GAB_API void gab_busywait(struct gab_triple gab) { thrd_yield(); }
 
 GAB_API int32_t gab_njobs(struct gab_triple gab) {
@@ -7000,12 +7000,15 @@ GAB_API bool gab_chnmatches(gab_value c, gab_value tk) {
   gab_precondition(gab_valkind(c) >= kGAB_CHANNEL &&
                        gab_valkind(c) <= kGAB_CHANNELCLOSED,
                    "Invalid kind");
+  gab_precondition(gab_valkind(tk) == kGAB_NUMBER,
+                   "Token should be a number, not %u", gab_valkind(tk));
 
-  struct gab_ochannel *channel = GAB_VAL_TO_CHANNEL(c);
-  uint32_t e = atomic_load(&channel->epoch);
   uint32_t tk_e = gab_valtou(tk);
 
   gab_precondition(tk_e != 0, "Invalid token value");
+
+  struct gab_ochannel *channel = GAB_VAL_TO_CHANNEL(c);
+  uint32_t e = atomic_load(&channel->epoch);
 
   return e == tk_e;
 }
@@ -7259,6 +7262,7 @@ GAB_INTERNAL gab_value __gab_bchnput(struct gab_triple gab,
 
   // Wait for a taker.
   gab_value tk = res;
+  gab_assert(gab_valkind(tk) == kGAB_NUMBER, "Token should be a number");
   res = __gab_chnwaitmatches(gab, tk, c, tries, &sofar);
 
   switch (res) {
@@ -13030,6 +13034,10 @@ extern void putcs(char *arg);
     }                                                                          \
   })
 
+GAB_API struct gab_ofiber *getthisfiber(struct gab_triple gab) {
+  return GAB_VAL_TO_FIBER(gab_thisfiber(gab));
+}
+
 #define MICRO_OP_CHANNEL_PUT(channel)                                          \
   ({                                                                           \
     if (!REENTRANT()) {                                                        \
@@ -13068,6 +13076,8 @@ extern void putcs(char *arg);
       /* The put timed-out */                                                  \
       VM_YIELD(gab_ctimeout);                                                  \
     default:                                                                   \
+      gab_assert(gab_valkind(r) == kGAB_NUMBER,                                \
+                 "Expected to yield a number token here");                     \
       /* The put succeeded, we must yield until it completes.*/                \
       VM_YIELD(r);                                                             \
     }                                                                          \
@@ -13475,6 +13485,8 @@ extern void putcs(char *arg);
                                                                                \
     CHECK_SIGNAL();                                                            \
                                                                                \
+    RESET_REENTRANT();                                                         \
+                                                                               \
     if (record == gab_cinvalid)                                                \
       VM_TERM();                                                               \
                                                                                \
@@ -13491,6 +13503,8 @@ extern void putcs(char *arg);
     gab_value record = gab_recordfrom(GAB(), shape, 1, sz, SP() - sz);         \
                                                                                \
     CHECK_SIGNAL();                                                            \
+                                                                               \
+    RESET_REENTRANT();                                                         \
                                                                                \
     if (record == gab_cinvalid)                                                \
       VM_TERM();                                                               \
@@ -13510,6 +13524,8 @@ extern void putcs(char *arg);
                                                                                \
     CHECK_SIGNAL();                                                            \
                                                                                \
+    RESET_REENTRANT();                                                         \
+                                                                               \
     if (shape == gab_cinvalid)                                                 \
       VM_TERM();                                                               \
                                                                                \
@@ -13526,6 +13542,8 @@ extern void putcs(char *arg);
     gab_value list = gab_list(GAB(), 1, sz, SP() - ((n) + sz));                \
                                                                                \
     CHECK_SIGNAL();                                                            \
+                                                                               \
+    RESET_REENTRANT();                                                         \
                                                                                \
     if (list == gab_cinvalid)                                                  \
       VM_TERM();                                                               \
@@ -13544,6 +13562,8 @@ extern void putcs(char *arg);
                                                                                \
     CHECK_SIGNAL();                                                            \
                                                                                \
+    RESET_REENTRANT();                                                         \
+                                                                               \
     if (str == gab_cinvalid)                                                   \
       VM_TERM();                                                               \
                                                                                \
@@ -13560,6 +13580,8 @@ extern void putcs(char *arg);
     gab_value bin = gab_nvbinary(GAB(), sz, SP() - ((n) + sz));                \
                                                                                \
     CHECK_SIGNAL();                                                            \
+                                                                               \
+    RESET_REENTRANT();                                                         \
                                                                                \
     if (bin == gab_cinvalid)                                                   \
       VM_TERM();                                                               \
@@ -13591,6 +13613,8 @@ extern void putcs(char *arg);
                                                                                \
     CHECK_SIGNAL();                                                            \
                                                                                \
+    RESET_REENTRANT();                                                         \
+                                                                               \
     if (rec == gab_cinvalid)                                                   \
       VM_TERM();                                                               \
                                                                                \
@@ -13617,6 +13641,8 @@ extern void putcs(char *arg);
     gab_value rec = gab_list(GAB(), 1, len, ap - len);                         \
                                                                                \
     CHECK_SIGNAL();                                                            \
+                                                                               \
+    RESET_REENTRANT();                                                         \
                                                                                \
     if (rec == gab_cinvalid)                                                   \
       VM_TERM();                                                               \
@@ -13666,6 +13692,8 @@ extern void putcs(char *arg);
                                                                                \
     CHECK_SIGNAL();                                                            \
                                                                                \
+    RESET_REENTRANT();                                                         \
+                                                                               \
     if (rec == gab_cinvalid)                                                   \
       VM_TERM();                                                               \
                                                                                \
@@ -13705,6 +13733,8 @@ extern void putcs(char *arg);
     gab_value rec = gab_record(GAB(), 2, len / 2, ap - len, ap - len + 1);     \
                                                                                \
     CHECK_SIGNAL();                                                            \
+                                                                               \
+    RESET_REENTRANT();                                                         \
                                                                                \
     if (rec == gab_cinvalid)                                                   \
       VM_TERM();                                                               \
@@ -13850,11 +13880,17 @@ extern void putcs(char *arg);
 
 #define MICRO_OP_BINARY_EQ(a, b) (gab_valeq(a, b))
 
+/*
+ * Any opcode that yields *must* call RESET_REENTRANT().
+ */
+
 #define MICRO_OP_BINARY_STR_CONCAT(a, b)                                       \
   ({                                                                           \
     gab_value val_ab = gab_tstrcat(GAB(), a, b);                               \
                                                                                \
     CHECK_SIGNAL();                                                            \
+                                                                               \
+    RESET_REENTRANT();                                                         \
                                                                                \
     if (val_ab == gab_cinvalid)                                                \
       VM_TERM();                                                               \
@@ -13873,6 +13909,8 @@ extern void putcs(char *arg);
     gab_value val_ab = gab_tbincat(GAB(), a, b);                               \
                                                                                \
     CHECK_SIGNAL();                                                            \
+                                                                               \
+    RESET_REENTRANT();                                                         \
                                                                                \
     if (val_ab == gab_cinvalid)                                                \
       VM_TERM();                                                               \

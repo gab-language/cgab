@@ -1125,8 +1125,14 @@ enum gab_kind {
                         ? kGAB_NUMBER                                          \
                         : ((val) >> __GAB_TAGOFFSET) & __GAB_TAGMASK)))
 
+/*
+ * Check if a gab_value represents a number.
+ */
+#define gab_valisn(val) (((val) & __GAB_QNAN) != __GAB_QNAN)
+
 // TODO @cgab @perf: Benchmark __gab_valtod - examine generated code.
 GAB_API_INLINE gab_float __gab_valtod(gab_value value) {
+  gab_verify(gab_valisn(value), "Value is not a number");
   union {
     uint64_t bits;
     gab_float num;
@@ -1159,11 +1165,6 @@ GAB_API_INLINE gab_value __gab_itoval(gab_int value) {
 
   return __gab_dtoval(value);
 }
-
-/*
- * Check if a gab_value represents a number.
- */
-#define gab_valisn(val) (((val) & __GAB_QNAN) != __GAB_QNAN)
 
 /*
  * Check if a gab_value represents a boolean.
@@ -1273,6 +1274,7 @@ GAB_API_INLINE gab_value __gab_itoval(gab_int value) {
  *
  */
 GAB_API_INLINE gab_int __gab_valtoi(gab_value v) {
+  gab_verify(gab_valisn(v), "Value is not a number");
   gab_float num = (__gab_valtod(v));
 
   if (num < -GAB_INTMAX)
@@ -1288,6 +1290,7 @@ GAB_API_INLINE gab_int __gab_valtoi(gab_value v) {
  * The clamping is taken care of for us by __gab_valtoi.
  */
 GAB_API_INLINE gab_uint __gab_valtou(gab_value v) {
+  gab_verify(gab_valisn(v), "Value is not a number");
   return (gab_uint)__gab_valtoi(v);
 }
 
