@@ -141,6 +141,7 @@ struct ui {
   uint64_t n;
   enum gui_kind { kGAB_GUI, kGAB_TUI, kGAB_HUI } k;
   bool ready;
+  uint32_t mouse;
   union {
     struct RGFW_window win;
   };
@@ -216,7 +217,7 @@ bool putevent(struct gab_triple gab, struct ui *gui, const char *type,
 #define RGFW_KEY_CASE(keyname, str, up)                                        \
   case RGFW_key##keyname:                                                      \
     return putevent(gab, gui, "key", up, gab_string(gab, #str),                \
-                    gab_cundefined, gab_cundefined);
+                    gab_number(ev->key.mod), gab_cundefined);
 
 gab_value clayGetTopmostId(struct gab_triple gab) {
   Clay_ElementIdArray arr = Clay_GetPointerOverIds();
@@ -287,8 +288,9 @@ bool clay_RGFW_update(struct gab_triple gab, struct ui *gui, double deltaTime,
   // Non-alphabet keys should respond to pressed-released?
   case RGFW_keyPressed:
   case RGFW_keyReleased:
-    switch (ev->keyChar.value) {
+    switch (ev->key.value) {
       RGFW_KEY_CASE(Enter, enter, ev->type == RGFW_keyPressed ? "down" : "up");
+      RGFW_KEY_CASE(Tab, tab, ev->type == RGFW_keyPressed ? "down" : "up");
       RGFW_KEY_CASE(Escape, escape,
                     ev->type == RGFW_keyPressed ? "down" : "up");
       RGFW_KEY_CASE(BackSpace, backspace,
@@ -299,6 +301,10 @@ bool clay_RGFW_update(struct gab_triple gab, struct ui *gui, double deltaTime,
                     ev->type == RGFW_keyPressed ? "down" : "up");
       RGFW_KEY_CASE(End, end, ev->type == RGFW_keyPressed ? "down" : "up");
       RGFW_KEY_CASE(Home, home, ev->type == RGFW_keyPressed ? "down" : "up");
+      RGFW_KEY_CASE(Up, up, ev->type == RGFW_keyPressed ? "down" : "up");
+      RGFW_KEY_CASE(Down, down, ev->type == RGFW_keyPressed ? "down" : "up");
+      RGFW_KEY_CASE(Left, left, ev->type == RGFW_keyPressed ? "down" : "up");
+      RGFW_KEY_CASE(Right, right, ev->type == RGFW_keyPressed ? "down" : "up");
       RGFW_KEY_CASE(PageUp, pageup,
                     ev->type == RGFW_keyPressed ? "down" : "up");
       RGFW_KEY_CASE(PageDown, pagedown,
@@ -324,11 +330,15 @@ bool clay_RGFW_update(struct gab_triple gab, struct ui *gui, double deltaTime,
     case RGFW_keyEnter:
     case RGFW_keyEscape:
     case RGFW_keySpace:
+    case RGFW_keyTab:
     case RGFW_keyBackSpace:
       return false;
+    case '\r':
+      return putevent(gab, gui, "key", "down", gab_string(gab, "return"),
+                      gab_cundefined, gab_cundefined);
     default: {
       const char event[] = {ev->keyChar.value, '\0'};
-      return putevent(gab, gui, "key", "up", gab_string(gab, event),
+      return putevent(gab, gui, "key", "down", gab_string(gab, event),
                       gab_cundefined, gab_cundefined);
     }
     }
@@ -427,6 +437,11 @@ err:
 }
 
 #endif
+
+// Transparent
+#define DEFAULT_BG_PACKED 0x00000000
+// White
+#define DEFAULT_FG_PACKED 0xFFFFFFFF
 
 Clay_Color packedToClayColor(gab_value vcolor) {
   gab_uint color = gab_valtou(vcolor);
@@ -682,7 +697,7 @@ union gab_value_pair render_box(struct gab_triple gab, struct ui *gui,
     return gab_pktypemismatch(gab, vfg, kGAB_NUMBER);
 
   if (vbg == gab_cundefined)
-    vbg = gab_number(0xffffffff);
+    vbg = gab_number(DEFAULT_BG_PACKED);
 
   if (gab_valkind(vbg) != kGAB_NUMBER)
     return gab_pktypemismatch(gab, vbg, kGAB_NUMBER);
@@ -698,6 +713,10 @@ union gab_value_pair render_box(struct gab_triple gab, struct ui *gui,
 
   gab_value vid = gab_mrecat(gab, props, "id");
   if (vid != gab_cundefined && gab_valkind(vid) != kGAB_MESSAGE)
+    return gab_pktypemismatch(gab, vid, kGAB_MESSAGE);
+
+  gab_value vhoverable = gab_mrecat(gab, props, "hoverable");
+  if (vhoverable != gab_cundefined && gab_valkind(vid) != kGAB_MESSAGE)
     return gab_pktypemismatch(gab, vid, kGAB_MESSAGE);
 
   Clay_LayoutConfig layout = parseLayout(gab, props);
@@ -728,6 +747,11 @@ union gab_value_pair render_box(struct gab_triple gab, struct ui *gui,
                        },
                },
        }) {
+
+    if (Clay_Hovered() && vhoverable == gab_true) {
+       gui->mouse = RGFW_mousePointingHand;
+    }
+
     union gab_value_pair res = render_componentlist(
         gab, gui, children, layout.layoutDirection, layout.childAlignment);
 
@@ -774,7 +798,7 @@ union gab_value_pair render_rect(struct gab_triple gab, struct ui *gui,
 
   gab_value vcolor = gab_mrecat(gab, props, "fg");
   if (vcolor == gab_cundefined)
-    vcolor = gab_number(0xffffffff);
+    vcolor = gab_number(DEFAULT_FG_PACKED);
 
   if (gab_valkind(vcolor) != kGAB_NUMBER)
     return gab_pktypemismatch(gab, vcolor, kGAB_NUMBER);
@@ -940,14 +964,14 @@ union gab_value_pair render_text(struct gab_triple gab, struct ui *gui,
 
   gab_value vfg = gab_mrecat(gab, props, "fg");
   if (vfg == gab_cundefined)
-    vfg = gab_number(0xffffffff);
+    vfg = gab_number(DEFAULT_FG_PACKED);
 
   if (gab_valkind(vfg) != kGAB_NUMBER)
     return gab_pktypemismatch(gab, vfg, kGAB_NUMBER);
 
   gab_value vbg = gab_mrecat(gab, props, "bg");
   if (vbg == gab_cundefined)
-    vbg = gab_number(0xffffffff);
+    vbg = gab_number(DEFAULT_BG_PACKED);
 
   if (gab_valkind(vbg) != kGAB_NUMBER)
     return gab_pktypemismatch(gab, vbg, kGAB_NUMBER);
@@ -1601,6 +1625,9 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_render) {
     // we are in this function.
     gab_iref(gab, app);
 
+    uint32_t mouse = gui->mouse;
+    gui->mouse = RGFW_mouseNormal;
+
     int32_t w, h;
     RGFW_window_getSizeInPixels(&gui->win, &w, &h);
     Clay_Dimensions dim = {.width = w, .height = h};
@@ -1614,6 +1641,9 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_render) {
 
     if (res.status != gab_cundefined)
       goto err;
+
+    if (mouse != gui->mouse)
+      RGFW_window_setMouseStandard(&gui->win, gui->mouse);
 
     // Compute our dt
     struct timestep step = limit_fps(time);
