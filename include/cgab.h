@@ -588,6 +588,7 @@ enum gab_status {
 #define mGAB_AST_NODE_SEND_LHS "gab\\lhs"
 #define mGAB_AST_NODE_SEND_MSG "gab\\msg"
 #define mGAB_AST_NODE_SEND_RHS "gab\\rhs"
+#define mGAB_AST_NODE_UNQUOTED "gab\\unquoted"
 
 /* Utility macro for computing the length of a statically sized c-array */
 #define LEN_CARRAY(a) (sizeof(a) / sizeof(a[0]))
@@ -1612,9 +1613,9 @@ struct gab_create_argt {
    *
    *  This list should be terminated with a null struct.
    * */
-  struct gab_package {
+  struct gab_module {
     const char *package, *module, *alias;
-  } *packages;
+  } *modules;
 };
 
 /**
@@ -2340,7 +2341,7 @@ struct gab_exec_argt {
   /**
    * @brief The values of the arguments to the main block.
    */
-  gab_value *argv;
+  gab_value *vargv;
   /**
    * Optional flags for compilation AND execution.
    */
@@ -2422,7 +2423,7 @@ struct gab_repl_argt {
   /**
    * The values of the arguments to the main block.
    */
-  gab_value *argv;
+  gab_value *vargv;
 };
 
 /**

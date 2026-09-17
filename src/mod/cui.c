@@ -588,6 +588,92 @@ Clay_Sizing parseSizing(struct gab_triple gab, gab_value props,
   return (Clay_Sizing){.width = w, .height = h};
 }
 
+Clay_CornerRadius parseRadius(struct gab_triple gab, gab_value props) {
+  gab_float rbl = 0, rbr = 0, rtl = 0, rtr = 0;
+  gab_value vradius = gab_mrecat(gab, props, "r");
+
+  if (gab_valkind(vradius) == kGAB_NUMBER) {
+    gab_float radius = gab_valtof(vradius);
+    rbl = radius;
+    rbr = radius;
+    rtl = radius;
+    rtr = radius;
+  }
+
+  gab_value vRadiusTopLeft = gab_mrecat(gab, props, "r\\tl");
+  if (gab_valkind(vRadiusTopLeft) == kGAB_NUMBER)
+    rtl = gab_valtof(vRadiusTopLeft);
+
+  gab_value vRadiusTopRight = gab_mrecat(gab, props, "r\\tr");
+  if (gab_valkind(vRadiusTopRight) == kGAB_NUMBER)
+    rtr = gab_valtof(vRadiusTopRight);
+
+  gab_value vRadiusBottomLeft = gab_mrecat(gab, props, "r\\bl");
+  if (gab_valkind(vRadiusBottomLeft) == kGAB_NUMBER)
+    rbl = gab_valtof(vRadiusBottomLeft);
+
+  gab_value vRadiusBottomRight = gab_mrecat(gab, props, "r\\br");
+  if (gab_valkind(vRadiusBottomRight) == kGAB_NUMBER)
+    rbr = gab_valtof(vRadiusBottomRight);
+
+  return (Clay_CornerRadius){
+      .bottomLeft = rbl,
+      .bottomRight = rbr,
+      .topLeft = rtl,
+      .topRight = rtr,
+  };
+}
+
+Clay_BorderElementConfig parseBorder(struct gab_triple gab, gab_value props) {
+  uint16_t bl = 0, br = 0, bt = 0, bb = 0;
+
+  gab_value vborderColor = gab_mrecat(gab, props, "b\\fg");
+
+  gab_value vborderWidth = gab_mrecat(gab, props, "b\\w");
+  if (gab_valkind(vborderWidth) == kGAB_NUMBER) {
+    uint16_t w = gab_valtou(vborderWidth);
+    bl = w;
+    br = w;
+    bt = w;
+    bb = w;
+  }
+
+  gab_value vborderWidthLeft = gab_mrecat(gab, props, "b\\l");
+  if (gab_valkind(vborderWidthLeft) == kGAB_NUMBER) {
+    bl = gab_valtou(vborderWidthLeft);
+  }
+
+  gab_value vborderWidthRight = gab_mrecat(gab, props, "b\\r");
+  if (gab_valkind(vborderWidthRight) == kGAB_NUMBER) {
+    br = gab_valtou(vborderWidthRight);
+  }
+
+  gab_value vborderWidthTop = gab_mrecat(gab, props, "b\\t");
+  if (gab_valkind(vborderWidthTop) == kGAB_NUMBER) {
+    bt = gab_valtou(vborderWidthTop);
+  }
+
+  gab_value vborderWidthBottom = gab_mrecat(gab, props, "b\\b");
+  if (gab_valkind(vborderWidthBottom) == kGAB_NUMBER) {
+    bb = gab_valtou(vborderWidthBottom);
+  }
+
+  gab_value fg = gab_number(DEFAULT_FG_PACKED);
+  if (gab_valkind(vborderColor) == kGAB_NUMBER)
+    fg = vborderColor;
+
+  return (Clay_BorderElementConfig){
+      .color = packedToClayColor(fg),
+      .width =
+          {
+              .top = bt,
+              .bottom = bb,
+              .right = br,
+              .left = bl,
+          },
+  };
+}
+
 Clay_LayoutConfig parseLayout(struct gab_triple gab, gab_value props) {
   gab_value vgap = gab_mrecat(gab, props, "gap");
 
@@ -650,7 +736,8 @@ Clay_TransitionElementConfig parseTransition(struct gab_triple gab,
 [[nodiscard]]
 union gab_value_pair
 render_componentlist(struct gab_triple gab, struct ui *gui, gab_value app,
-                     Clay_LayoutDirection dir, Clay_ChildAlignment align);
+                     Clay_LayoutDirection dir, Clay_ChildAlignment align,
+                     uint16_t gap);
 
 Clay_String str_for_gab_string(gab_value str) {
   size_t len = gab_strlen(str);
@@ -677,21 +764,8 @@ union gab_value_pair render_box(struct gab_triple gab, struct ui *gui,
   gab_value vfg = gab_cundefined;
   gab_value vbg = gab_mrecat(gab, props, "bg");
 
-  gab_value vborderWidth = gab_cundefined;
-  gab_value vborder = gab_mrecat(gab, props, "border");
-
-  if (vborder != gab_cundefined)
-    vfg = gab_mrecat(gab, vborder, "fg"),
-    vborderWidth = gab_mrecat(gab, vborder, "w");
-
   if (vfg == gab_cundefined)
     vfg = gab_number(0);
-
-  if (vborderWidth == gab_cundefined)
-    vborderWidth = gab_number(0);
-
-  if (gab_valkind(vborderWidth) != kGAB_NUMBER)
-    return gab_pktypemismatch(gab, vborderWidth, kGAB_NUMBER);
 
   if (gab_valkind(vfg) != kGAB_NUMBER)
     return gab_pktypemismatch(gab, vfg, kGAB_NUMBER);
@@ -701,15 +775,6 @@ union gab_value_pair render_box(struct gab_triple gab, struct ui *gui,
 
   if (gab_valkind(vbg) != kGAB_NUMBER)
     return gab_pktypemismatch(gab, vbg, kGAB_NUMBER);
-
-  gab_value vradius = gab_mrecat(gab, props, "radius");
-  if (vradius == gab_cundefined)
-    vradius = gab_number(0);
-
-  if (gab_valkind(vradius) != kGAB_NUMBER)
-    return gab_pktypemismatch(gab, vradius, kGAB_NUMBER);
-
-  gab_float cornerRadius = gab_valtof(vradius);
 
   gab_value vid = gab_mrecat(gab, props, "id");
   if (vid != gab_cundefined && gab_valkind(vid) != kGAB_MESSAGE)
@@ -721,39 +786,21 @@ union gab_value_pair render_box(struct gab_triple gab, struct ui *gui,
 
   Clay_LayoutConfig layout = parseLayout(gab, props);
 
-  gab_uint border_w = gab_valtou(vborderWidth);
-
-  CLAY(UI_ID(vid),
-       {
-           .layout = layout,
-           .cornerRadius =
-               {
-                   cornerRadius,
-                   cornerRadius,
-                   cornerRadius,
-                   cornerRadius,
-               },
-           .transition = parseTransition(gab, props),
-           .backgroundColor = packedToClayColor(vbg),
-           .border =
-               {
-                   .color = border_w ? packedToClayColor(vfg) : (Clay_Color){0},
-                   .width =
-                       {
-                           gab_valtou(vborderWidth),
-                           gab_valtou(vborderWidth),
-                           gab_valtou(vborderWidth),
-                           gab_valtou(vborderWidth),
-                       },
-               },
-       }) {
+  CLAY(UI_ID(vid), {
+                       .layout = layout,
+                       .cornerRadius = parseRadius(gab, props),
+                       .transition = parseTransition(gab, props),
+                       .backgroundColor = packedToClayColor(vbg),
+                       .border = parseBorder(gab, props),
+                   }) {
 
     if (Clay_Hovered() && vhoverable == gab_true) {
-       gui->mouse = RGFW_mousePointingHand;
+      gui->mouse = RGFW_mousePointingHand;
     }
 
-    union gab_value_pair res = render_componentlist(
-        gab, gui, children, layout.layoutDirection, layout.childAlignment);
+    union gab_value_pair res =
+        render_componentlist(gab, gui, children, layout.layoutDirection,
+                             layout.childAlignment, layout.childGap);
 
     if (res.status != gab_cundefined)
       return res;
@@ -1004,11 +1051,26 @@ union gab_value_pair render_text(struct gab_triple gab, struct ui *gui,
   else if (valign == gab_message(gab, "center"))
     align = CLAY_TEXT_ALIGN_CENTER;
 
-  CLAY(CLAY_IDI("", gui->n++), {
+  gab_value vid = gab_mrecat(gab, props, "id");
+  if (vid != gab_cundefined && gab_valkind(vid) != kGAB_MESSAGE)
+    return gab_pktypemismatch(gab, vid, kGAB_MESSAGE);
+
+  gab_value vhoverable = gab_mrecat(gab, props, "hoverable");
+  if (vhoverable != gab_cundefined && gab_valkind(vid) != kGAB_MESSAGE)
+    return gab_pktypemismatch(gab, vid, kGAB_MESSAGE);
+
+  CLAY(UI_ID(vid), {
+                                   .border = parseBorder(gab, props),
                                    .layout = parseLayout(gab, props),
                                    .transition = parseTransition(gab, props),
                                    .backgroundColor = packedToClayColor(vbg),
+                                   .cornerRadius = parseRadius(gab, props),
                                }) {
+
+    if (Clay_Hovered() && vhoverable == gab_true) {
+      gui->mouse = RGFW_mousePointingHand;
+    }
+
     CLAY_TEXT(text, CLAY_TEXT_CONFIG({
                         .fontSize = size,
                         .letterSpacing = spacing,
@@ -1087,7 +1149,8 @@ union gab_value_pair render_component(struct gab_triple gab, struct ui *gui,
 union gab_value_pair render_componentlist(struct gab_triple gab, struct ui *gui,
                                           gab_value components,
                                           Clay_LayoutDirection dir,
-                                          Clay_ChildAlignment align) {
+                                          Clay_ChildAlignment align,
+                                          uint16_t gap) {
   if (gab_valkind(components) != kGAB_RECORD)
     return EXPECTED_COMPONENTLIST_ERROR(
         components, "A component-list is a list-type record.");
@@ -1103,6 +1166,7 @@ union gab_value_pair render_componentlist(struct gab_triple gab, struct ui *gui,
                {
                    .layoutDirection = dir,
                    .childAlignment = align,
+                   .childGap = gap,
                    .sizing =
                        {
                            .width = CLAY_SIZING_GROW(1),
@@ -1251,7 +1315,7 @@ GAB_DYNLIB_NATIVE_FN(ui, hui_render) {
 
     /* Try to render, so that we can see errors */
     res = render_componentlist(gab, gui, app, CLAY_TOP_TO_BOTTOM,
-                               (Clay_ChildAlignment){});
+                               (Clay_ChildAlignment){}, 0);
 
     // Don't call end layout if our render failed.
     if (res.status != gab_cundefined)
@@ -1487,7 +1551,7 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_render) {
     Clay_BeginLayout();
 
     res = render_componentlist(gab, gui, app, CLAY_TOP_TO_BOTTOM,
-                               (Clay_ChildAlignment){});
+                               (Clay_ChildAlignment){}, 0);
 
     if (res.status != gab_cundefined)
       goto err;
@@ -1637,7 +1701,7 @@ GAB_DYNLIB_NATIVE_FN(ui, gui_render) {
     Clay_BeginLayout();
 
     res = render_componentlist(gab, gui, app, CLAY_TOP_TO_BOTTOM,
-                               (Clay_ChildAlignment){});
+                               (Clay_ChildAlignment){}, 0);
 
     if (res.status != gab_cundefined)
       goto err;

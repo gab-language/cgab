@@ -1,1 +1,13 @@
-:from cgab@0.1.7 import: cui
+:use ("github.com/gab-language/cgab@0.1.8" as: Mod)
+
+use: .defmacro (l r) :: do
+  (pkg config**) := r*
+  
+  name := config.at as: .unwrap_or \['_']
+
+  \do
+    \name := System.use(\pkg)
+  end
+end
+
+# Mod := System.use "..."

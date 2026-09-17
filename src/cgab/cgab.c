@@ -44,7 +44,699 @@
  */
 
 #include "cgab.h"
-#include "engine.h"
+
+/*
+ * Generic data structure definitions.
+ *
+ * Each of these includes defines the datastructure for the corresponding 'T'
+ * datatype.
+ */
+#define T char
+#include "slice.h"
+
+#define T char
+#include "array.h"
+
+#define T char
+#include "vector.h"
+
+#define T char *
+#define NAME cstr
+#include "slice.h"
+
+#define T uint8_t
+#include "vector.h"
+
+#define T uint32_t
+#include "vector.h"
+
+#define T uint64_t
+#include "vector.h"
+
+#define T s_char
+#include "vector.h"
+
+#define T int8_t
+#include "vector.h"
+
+#define T s_char
+#include "array.h"
+
+#define T a_char *
+#define NAME a_char
+#include "vector.h"
+
+#define T uint64_t
+#include "array.h"
+
+#define K uint64_t
+#define V uint64_t
+#define DEF_V 0
+#define HASH(a) a
+#define EQUAL(a, b) (a == b)
+#define LOAD cGAB_DICT_MAX_LOAD
+#include "dict.h"
+
+#ifndef GAB_COLORS_IMPL
+static const char *ANSI_COLORS[] = {
+    GAB_GREEN, GAB_MAGENTA, GAB_RED, GAB_YELLOW, GAB_BLUE, GAB_CYAN,
+};
+#define GAB_COLORS_IMPL
+#endif
+
+#define GAB_COLORS_LEN (sizeof(ANSI_COLORS) / sizeof(ANSI_COLORS[0]))
+
+enum gab_bcop_kind {
+#define OP_CODE(name) OP_##name,
+#include "bytecode.h"
+#undef OP_CODE
+};
+
+/**
+ * Structure used to actually execute bytecode
+ *
+ * This structure is pretty large.
+ *
+ * Since a lot of fibers are small and short lived, this is overkill.
+ *
+ * It might be a nice optimization to store a small number of frames
+ * on the fiber itself, and then migrate the stack to a larger
+ * one if this small stack overflows.
+ *
+ * TODO @cgab @runtime: Optimize fibers to begin with a small internal stack.
+ * */
+struct gab_vm {
+  uint8_t *ip;
+
+  gab_value *sp, *fp, *kb;
+
+  gab_value sb[cGAB_STACK_MAX];
+};
+
+/**
+ * @brief An immutable sequence of bytes.
+ */
+struct gab_ostring {
+  struct gab_obj header;
+
+  /**
+   * A pre-computed hash of the bytes in 'data'.
+   */
+  uint64_t hash;
+
+  /**
+   * The number of utf8 (thus potentially multi-byte) characters.
+   * -1 is used to denote strings which *are not valid utf8*. These can only
+   *  represent kGAB_BINARY, not kGAB_MESSAGE, kGAB_STRING, or kGAB_MESSAGE.
+   */
+  uint64_t mb_len;
+
+  /**
+   * The number of bytes in 'data'
+   */
+  uint64_t len;
+
+  /**
+   * The data.
+   */
+  char data[];
+};
+
+/**
+ * @brief A wrapper for a native c function.
+ */
+struct gab_onative {
+  struct gab_obj header;
+
+  /**
+   * The underlying native function.
+   */
+  gab_native_f function;
+
+  /**
+   * A name, not often useful.
+   */
+  gab_value name;
+};
+
+/**
+ * @brief A shape defines what keys are in a record
+ *
+ * Shapes and shapenodes form a HAMT data structure.
+ */
+struct gab_oshape {
+  struct gab_obj header;
+
+  uint8_t datalen;
+
+  uint64_t hash, len;
+
+  uint32_t nmask, lmask;
+
+  gab_value data[];
+};
+
+struct gab_oshapenode {
+  struct gab_obj header;
+
+  uint8_t datalen;
+
+  uint64_t _padding[2];
+
+  uint32_t nmask, lmask;
+
+  gab_value data[];
+};
+
+static_assert(offsetof(struct gab_oshape, nmask) ==
+              offsetof(struct gab_oshapenode, nmask));
+static_assert(offsetof(struct gab_oshape, lmask) ==
+              offsetof(struct gab_oshapenode, lmask));
+static_assert(offsetof(struct gab_oshape, data) ==
+              offsetof(struct gab_oshapenode, data));
+static_assert(offsetof(struct gab_oshape, datalen) ==
+              offsetof(struct gab_oshapenode, datalen));
+
+/**
+ * @brief A block - aka a prototype and it's captures.
+ */
+struct gab_oblock {
+  struct gab_obj header;
+
+  /**
+   * The number of captured upvalues.
+   */
+  uint8_t nupvalues;
+
+  /**
+   * The prototype of the block.
+   */
+  gab_value p;
+
+  /**
+   * The captured values.
+   */
+  gab_value upvalues[];
+};
+
+/**
+ * @brief A record node.
+ */
+struct gab_orecnode {
+  struct gab_obj header;
+
+  /**
+   * @brief Length of data member. Each node has a maximum of 32 children, so
+   * 1 byte is plenty.
+   */
+  uint8_t len;
+
+  /**
+   * @brief The children of this node. If this node is a leaf, then this will
+   * hold values. Otherwise, it holds other recs or recnodes.
+   */
+  gab_value data[];
+};
+
+/**
+ * @brief A record, gab's aggregate type. Implemented as a persistent vector,
+ * with a shape for indexing.
+ *
+ * Records are trees of recs and recnodes.
+ *  - The root of the record is guaranteed to be a gab_obj_rec. This is
+ * necessary because it holds the shift and shape.
+ *  - Any branches may be either gab_obj_recnode or gab_obj_rec.
+ *  - The children of leaves are the values of the record itself.
+ *  - A root can *also* be a leaf - this is the case when length <= 32.
+ *
+ * The implementation itself is based off of clojure's persistent vector. This
+ * implementation is simpler than a HAMT. It also benefits from the fact that
+ * hash-collisions are impossible (That is, they are the responsibility of the
+ * shape)
+ *
+ * Benefits:
+ *  - All records with len <= 32 are a *single* allocation.
+ *  - Key -> Index lookup can be cached, so lookup is simple bit masking and
+ * indexing.
+ */
+struct gab_orec {
+  struct gab_obj header;
+
+  /**
+   * @brief length of data member. Nodes have a maximum width of 32 data
+   * members, so 1 byte is plenty.
+   */
+  uint8_t len;
+
+  /**
+   * @brief shift value used to index tree as depth increases.
+   */
+  int32_t shift;
+
+  /**
+   * @brief The shape of this record. This determines the length of the record
+   * as a whole, and the keys which are available.
+   */
+  gab_value shape;
+
+  /**
+   * @brief the children of this node. If this node is a leaf, then this will
+   * hold the record's actual values.
+   */
+  gab_value data[];
+};
+
+/*
+ * @brief A lightweight green-thread / coroutine / fiber.
+ */
+struct gab_ofiber {
+  struct gab_obj header;
+
+  /* Flags copied from the gab-triple when this fiber was created. */
+  uint32_t flags, backoff;
+
+  /* This value is managed by native-c functions that yield back to the
+   * scheduler so that they don't block. It is what notifies said function that
+   * it is re-entering.*/
+  uintptr_t reentrant;
+
+  /*
+   * A simple bump-allocator for use by native-cfunctions.
+   *
+   * It resets when the frame is popped (ie: when the native c-func returns)
+   */
+  v_uint8_t allocator;
+
+  /* When a user creates a fiber, A frame is setup on the stack using these
+   * arrays as the module bytescode and constants.*/
+  uint8_t virtual_frame_bc[4];
+  gab_value virtual_frame_ks[7];
+
+  /*
+   * The vm structure which contains the data for executing bytecode.
+   */
+  struct gab_vm vm;
+
+  /**
+   * Result of execution.
+   *
+   * Embed a union gab_value_pair here, so that it can be atomic.
+   */
+  _Atomic gab_value res_status;
+
+  union {
+    _Atomic(gab_value *) aresult;
+    _Atomic gab_value vresult;
+  } as;
+
+  /**
+   * Length of data array member
+   */
+  uint64_t len;
+
+  /**
+   * Holds the main block, and any arguments passed to it
+   */
+  gab_value data[];
+};
+
+/**
+ * @brief A primitive for sending data between fibers.
+ *
+ * A channel *does not own* these values. They are usually on the c-stack or
+ * gab-stack somewhere, and the thread/fiber blocks until a put/take
+ * completes.
+ */
+struct gab_ochannel {
+  struct gab_obj header;
+
+  /* spinlock */
+  _Atomic uint32_t spinlock;
+  /* epoch */
+  _Atomic uint32_t epoch;
+  /* Number of values held at member *data* */
+  _Atomic uint64_t len;
+  /* Values held */
+  _Atomic(gab_value *) data;
+};
+
+/**
+ * @brief A container object, which holds arbitrary data.
+ *
+ *  - one to do cleanup when the object is destroyed
+ */
+struct gab_obox {
+  struct gab_obj header;
+
+  /**
+   * A callback called when the object is collected by the gc.
+   *
+   * This function should release all non-gab resources owned by the box.
+   */
+  gab_boxdestroy_f do_destroy;
+
+  /**
+   * The type of the box.
+   */
+  gab_value type;
+
+  /**
+   * The number of bytes in 'data'.
+   */
+  uint64_t len;
+
+  /**
+   * The data.
+   */
+  char data[];
+};
+
+/**
+ * @brief The prototype of a block. Encapsulates everything known about a
+ * block at compile time.
+ */
+struct gab_oprototype {
+  struct gab_obj header;
+
+  /**
+   * The number of arguments, captures, slots (stack space) and locals.
+   */
+  uint8_t narguments, nupvalues, nslots, nlocals;
+
+  /**
+   * The source file this prototype is from.
+   */
+  struct gab_src *src;
+
+  /**
+   * The offset in the source's bytecode, and the length.
+   */
+  uint64_t offset, len;
+
+  /**
+   * The shape of the environment of the block
+   */
+  gab_value env;
+
+  /**
+   * Flags providing additional metadata about the prototype.
+   */
+  char data[];
+};
+
+#define NAME strings
+#define K struct gab_ostring *
+#define HASH(a) (a->hash)
+#define EQUAL(a, b) (a == b)
+#define LOAD cGAB_DICT_MAX_LOAD
+#include "dict.h"
+
+#define NAME shapes
+#define K struct gab_oshape *
+#define HASH(a) (a->hash)
+#define EQUAL(a, b) (a == b)
+#define LOAD cGAB_DICT_MAX_LOAD
+#include "dict.h"
+
+#define NAME gab_modules
+#define K uint64_t
+#define V gab_value *
+#define DEF_V nullptr
+#define HASH(a) (a)
+#define EQUAL(a, b) (a == b)
+#include "dict.h"
+
+#define NAME gab_src
+#define K gab_value
+#define V struct gab_src *
+#define DEF_V nullptr
+#define HASH(a) (a)
+#define EQUAL(a, b) (a == b)
+#include "dict.h"
+
+#define T struct gab_obj *
+#define NAME gab_obj
+#include "vector.h"
+
+#define NAME gab_obj
+#define K struct gab_obj *
+#define V uint64_t
+#define HASH(a) ((intptr_t)a)
+#define EQUAL(a, b) (a == b)
+// See do_increment
+#define DEF_V (UINT8_MAX)
+#include "dict.h"
+
+enum {
+  kGAB_BUF_STK = 0,
+  kGAB_BUF_INC = 1,
+  kGAB_BUF_DEC = 2,
+  kGAB_NBUF = 3,
+};
+
+#define GAB_GCNEPOCHS 3
+
+struct gab_gc {
+  d_gab_obj overflow_rc;
+  v_gab_obj dead[GAB_GCNEPOCHS];
+  gab_value msg[GAB_GCNEPOCHS];
+};
+
+typedef enum gab_token {
+#define TOKEN(name) TOKEN##_##name,
+#include "token.h"
+#undef TOKEN
+} gab_token;
+
+#define T gab_token
+#include "vector.h"
+
+struct gab_src {
+  gab_value name;
+
+  a_char *source;
+
+  v_s_char lines;
+
+  v_gab_token tokens;
+
+  v_s_char token_srcs;
+
+  v_uint64_t token_lines;
+
+  v_gab_value constants;
+  v_uint8_t bytecode;
+  v_uint64_t bytecode_toks;
+
+  d_uint64_t node_begin_toks;
+  d_uint64_t node_end_toks;
+
+  uint64_t len;
+  /**
+   * Each OS thread needs its own copy of the bytecode and constants.
+   * Both of these arrays are modified at runtime by the VM (for specializing
+   * and inline cacheing)
+   */
+  struct src_bytecode {
+    uint8_t *bytecode;
+    gab_value *constants;
+  } thread_bytecode[];
+};
+
+/**
+ * @class The 'engine'. Stores the long-lived data
+ * needed for the gab environment.
+ */
+struct gab_eg {
+  uint64_t hash_seed;
+
+  v_gab_value scratch;
+
+  v_gab_value_thrd err;
+
+  gab_value types[kGAB_NKINDS];
+
+  int64_t sizes[kGAB_NKINDS];
+  int64_t counts[kGAB_NKINDS];
+
+  // The arguments to the engine.
+  gab_value args;
+
+  // An atomic struct which tracks the state of
+  // scheduling/aliveness in the workers.
+  // These are swapped/compared as a whole.
+  // Neat, all our state is atomic!
+  _Atomic struct gab_sig {
+    int32_t mask;
+    int8_t schedule;
+    int8_t signal;
+  } sig;
+
+  // Synchronization field for waking the GC
+  // thread to do do work.
+  cnd_t gc_cnd;
+  mtx_t gc_mtx;
+
+  // Resources and roots define where/how packages and modules
+  // are discovered.
+  const char *resroots[cGAB_RESOURCE_MAX];
+  struct gab_resource res[cGAB_RESOURCE_MAX];
+
+  // Garbage Collection state
+  struct gab_gc gc;
+
+  // The global message state.
+  // A gab record which holds all message specializations in the system.
+  _Atomic gab_value messages;
+  // A value incremented whenever the messages record is changed.
+  // Used to check inline caches.
+  _Atomic uint64_t messages_epoch;
+
+  // The global work queue, where jobs push fibers to other jobs.
+  gab_value work_channel;
+
+  // Intern table of shapes.
+  d_shapes shapes;
+
+  // Intern table of strings.
+  d_strings strings;
+
+  // Table of compiled source files.
+  mtx_t sources_mtx;
+  d_gab_src sources;
+
+  // Table of cached module results.
+  mtx_t modules_mtx;
+  d_gab_modules modules;
+
+  // Configured busywait value, and number of jobs.
+  uint32_t wait, len;
+
+  // Data for each job.
+  struct gab_job {
+    // Unique thread identifier.
+    thrd_t td;
+
+    // A work channel specific to this job. Useful for sending work to a
+    // specific job, instead of any available.
+    gab_value work_channel;
+
+    // Local work queue. When work is taken from any work channel
+    // (global or local), it is tracked in this queue. Once a fiber has
+    // begun running in a job, *it may not migrate*. If it yields, it returns
+    // to this queue.
+    q_gab_value working_queue;
+    q_gab_value_dyn waiting_queue;
+
+    // GC epoch.
+    uint32_t epoch;
+
+    // Backoff used by jb-workers.
+    uint32_t backoff;
+
+    // Used by gab_gclock() to prevent collection while locked > 0.
+    // Useful when allocating a lot of gab objects at once, and they
+    // need to be kept alive until you're done.
+    // While locked, gab objects are queued into the jobs lock_keep vector.
+    // When the lock is released, the vector is flushed into the GC algorithm.
+    int32_t locked, nlocked;
+    gab_value lockbuf[GAB_GC_MOD_BUFF_MAX];
+
+    // GC inc/dec ref count tracking buffer.
+    struct gab_gcbuf {
+      uint64_t len;
+      struct gab_obj *data[GAB_GC_MOD_BUFF_MAX];
+    } buffers[kGAB_NBUF][GAB_GCNEPOCHS];
+  } jobs[];
+};
+
+GAB_API void gab_gccreate(struct gab_triple gab);
+
+GAB_API void gab_gcdestroy(struct gab_triple gab);
+
+GAB_API bool gab_gctrigger(struct gab_triple gab);
+
+GAB_API void gab_gcdocollect(struct gab_triple gab);
+
+enum variable_flag {
+  fLOCAL_LOCAL = 1 << 0,
+  fLOCAL_CAPTURED = 1 << 1,
+  fLOCAL_INITIALIZED = 1 << 2,
+  fLOCAL_REST = 1 << 3,
+};
+
+// Allocate/deallocate a gab_object.
+static inline void *gab_egalloc(struct gab_triple gab, struct gab_obj *obj,
+                                uint64_t size) {
+  if (size == 0) {
+    assert(obj);
+
+    free(obj);
+
+    return nullptr;
+  }
+
+  assert(!obj);
+
+  // Use 'calloc' to zero-initialize all the memory.
+  return calloc(1, size);
+}
+
+struct gab_err_argt {
+  enum gab_status status;
+  const char *note_fmt;
+  struct gab_src *src;
+  uint64_t tok;
+  int wkid;
+};
+
+#define T struct gab_err_argt
+#define NAME err
+#define V_THREADSAFE
+#include "vector.h"
+
+/*
+ * @brief Construct a panic.
+ */
+GAB_API gab_value gab_vspanicf(struct gab_triple gab, va_list vastruct,
+                               struct gab_err_argt args);
+
+/**
+ * @brief Print the bytecode to the stream - useful for debugging.
+ *
+ * @param stream The stream to print to
+ * @param proto The prototype to inspect
+ * @return non-zero if an error occured.
+ */
+GAB_API int64_t gab_fmodinspect(FILE *stream, gab_value prototype);
+
+/**
+ * @brief Inspect a gab_value out to stream, recursing depth times.
+ */
+GAB_API int64_t gab_fvalinspect(FILE *stream, gab_value self, int depth);
+
+GAB_INTERNAL uint8_t *proto_srcbegin(struct gab_triple gab,
+                                     struct gab_oprototype *p) {
+  return p->src->thread_bytecode[gab.wkid].bytecode;
+}
+
+GAB_INTERNAL gab_value *proto_ks(struct gab_triple gab,
+                                 struct gab_oprototype *p) {
+  return p->src->thread_bytecode[gab.wkid].constants;
+}
+
+GAB_INTERNAL uint8_t *proto_ip(struct gab_triple gab,
+                               struct gab_oprototype *p) {
+  return proto_srcbegin(gab, p) + p->offset;
+}
+
+cGAB_VM_OPCODE_ATTRIBUTES union gab_value_pair
+__gab_vmeerror(struct gab_triple *__gab, struct gab_vm *__vm, uint8_t *__ip,
+               gab_value *__kb, gab_value *__fb, gab_value *__sp);
+
+cGAB_VM_OPCODE_ATTRIBUTES union gab_value_pair
+__gab_vmok(struct gab_triple *__gab, struct gab_vm *__vm, uint8_t *__ip,
+           gab_value *__kb, gab_value *__fb, gab_value *__sp);
 
 #include <ctype.h>
 #include <stdatomic.h>
@@ -212,6 +904,10 @@ GAB_INTERNAL bool __gab_lexcanstartsym(uint8_t c) {
 
 GAB_INTERNAL bool __gab_lexcancontinuesym(uint8_t c) {
   return __gab_lexcanstartsym(c) || isdigit(c) || c == '\\';
+}
+
+GAB_INTERNAL bool __gab_lexcancontinuemac(uint8_t c) {
+  return __gab_lexcancontinueop(c) || __gab_lexcancontinuesym(c) || c == ':';
 }
 
 GAB_INTERNAL bool __gab_lexcancontinuehex(uint8_t c) {
@@ -452,11 +1148,12 @@ GAB_INTERNAL gab_token __gab_lexother(gab_lx *self) {
   case ':':
     __gab_lexadvance(self);
 
-    if (__gab_lexpeek(self) == ':')
-      return __gab_lexadvance(self), TOKEN_COLONCOLON;
+    if (__gab_lexcancontinuemac(__gab_lexpeek(self))) {
+      while (__gab_lexcancontinuemac(__gab_lexpeek(self)))
+        __gab_lexadvance(self);
 
-    if (__gab_lexpeek(self) == '=')
-      return __gab_lexadvance(self), TOKEN_COLONEQUAL;
+      return TOKEN_MACRO;
+    }
 
     return TOKEN_MESSAGE;
   case '\\':
@@ -465,6 +1162,17 @@ GAB_INTERNAL gab_token __gab_lexother(gab_lx *self) {
     if (__gab_lexpeek(self) == '{') {
       __gab_lexadvance(self);
       return TOKEN_SLBRACK;
+    }
+
+    if (__gab_lexpeek(self) == '(') {
+      __gab_lexadvance(self);
+      return TOKEN_SLPAREN;
+    }
+
+    if (__gab_lexpeek(self) == 'd' && __gab_lexpeeknext(self) == 'o') {
+      __gab_lexadvance(self);
+      __gab_lexadvance(self);
+      return TOKEN_SDO;
     }
 
     __gab_lexadvance(self);
@@ -1394,6 +2102,13 @@ GAB_INTERNAL enum __gab_jbstep_k __gab_jbstep(struct gab_triple gab,
   gab_fprintf(stderr, "($) EXECUTING $\n", gab_number(gab.wkid), fiber);
 #endif
 
+  // TODO @cgab @opt: Fibers should store their own backoff.
+  // When a fiber yields, we should increment its backoff.
+  // We don't want to actually sleep this thread, because
+  // it may have other non-backed-off work to do.
+  // Instead, we maybe send this fiber around through the queue again?
+  // Is it better to maintain a second queue of timers?
+  //
   // Run our fiber.
   union gab_value_pair res = __gab_vmexec(gab, fiber);
 
@@ -1585,14 +2300,11 @@ int32_t __gab_jbworker(void *data) {
   // otherwise, we completely reset it to 0.
   // Here, we're okay sleeping instead of yielding because we actually
   // want close to a millisecond.
-  while ((res = __gab_jbstep(gab, job))) {
-    job->backoff = (job->backoff + 1) * (res == kGAB_JBSTEP_NONE);
-    if (job->backoff) {
+  while ((res = __gab_jbstep(gab, job)))
+    if ((job->backoff = (job->backoff + 1) * (res == kGAB_JBSTEP_NONE)))
       thrd_sleep(&(const struct timespec){.tv_nsec = __gab_calcbackoffns(
                                               job->backoff)},
                  nullptr);
-    }
-  }
 
   __gab_jbbail(gab, job);
 
@@ -1823,7 +2535,7 @@ GAB_API union gab_value_pair gab_create(struct gab_create_argt args,
   gab_gcunlock(gab);
 
   uint64_t len = 0;
-  struct gab_package *cursor = args.packages;
+  struct gab_module *cursor = args.modules;
   while (cursor && cursor->package)
     len++, cursor++;
 
@@ -1839,7 +2551,7 @@ GAB_API union gab_value_pair gab_create(struct gab_create_argt args,
   // Use each module that's asked for, in order.
   // Build up an array of names and values.
   for (int i = 0; i < len; i++) {
-    struct gab_package *pkg = args.packages + i;
+    struct gab_module *pkg = args.modules + i;
 
     union gab_value_pair res = gab_use(gab, (struct gab_use_argt){
                                                 .spackage_name = pkg->package,
@@ -2163,7 +2875,7 @@ GAB_API void gab_repl(struct gab_triple gab, struct gab_repl_argt args) {
         continue;
 
       keys[n] = args.sargv[i];
-      vals[n] = args.argv[i];
+      vals[n] = args.vargv[i];
       n++;
     }
 
@@ -2253,7 +2965,7 @@ GAB_API union gab_value_pair gab_aexec(struct gab_triple gab,
   return gab_arun(gab, (struct gab_run_argt){
                            .main = main.vresult,
                            .len = args.len,
-                           .argv = args.argv,
+                           .argv = args.vargv,
                        });
 }
 
@@ -2576,6 +3288,22 @@ GAB_API int64_t gab_fprintf(FILE *stream, const char *fmt, ...) {
 
     char buf[i];
     if (gab_vsprintf(buf, i, fmt, va) >= 0)
+      return va_end(va), fputs(buf, stream);
+
+    va_end(va);
+  }
+
+  return -1;
+}
+
+GAB_API int64_t gab_fpprintf(FILE *stream, const char *fmt, ...) {
+  va_list va;
+
+  for (uint64_t i = 128;; i <<= 1) {
+    va_start(va, fmt);
+
+    char buf[i];
+    if (gab_vpsprintf(buf, i, "", fmt, va) >= 0)
       return va_end(va), fputs(buf, stream);
 
     va_end(va);
@@ -6897,9 +7625,20 @@ GAB_API union gab_value_pair gab_fibawait(struct gab_triple gab, gab_value f) {
 GAB_API bool gab_step(struct gab_triple gab) {
   gab_precondition(gab.wkid == 1, "May only step from main thread");
 
-  if (!__gab_jbisalive(gab, gab.wkid) ||
-      !__gab_jbstep(gab, gab.eg->jobs + gab.wkid))
+  if (!__gab_jbisalive(gab, gab.wkid))
     return __gab_jbbail(gab, gab.eg->jobs + gab.wkid), true;
+
+  enum __gab_jbstep_k res = __gab_jbstep(gab, gab.eg->jobs + gab.wkid);
+
+  if (res == kGAB_JBSTEP_BAIL)
+    return __gab_jbbail(gab, gab.eg->jobs + gab.wkid), true;
+
+  struct gab_job *job = gab.eg->jobs + gab.wkid;
+
+  if ((job->backoff = (job->backoff + 1) * (res == kGAB_JBSTEP_NONE)))
+    thrd_sleep(
+        &(const struct timespec){.tv_nsec = __gab_calcbackoffns(job->backoff)},
+        nullptr);
 
   return false;
 }
@@ -8457,7 +9196,7 @@ struct bc {
   gab_value err;
 };
 
-enum prec_k { kNONE, kEXP, kBINARY_SEND, kSEND, kBUILTIN, kPRIMARY };
+enum prec_k { kNONE, kEXP, kOPERATOR_SEND, kSYMBOL_SEND, kMACRO };
 
 typedef gab_value (*parse_f)(struct gab_triple gab, struct parser *,
                              gab_value lhs);
@@ -8478,8 +9217,9 @@ GAB_INTERNAL gab_token __gab_prscurrtok(struct parser *parser) {
   return v_gab_token_val_at(&parser->src->tokens, parser->offset);
 }
 
-GAB_INTERNAL bool __gab_prscurrprefix(struct parser *parser) {
-  return __gab_prsrule(__gab_prscurrtok(parser)).prefix != nullptr;
+GAB_INTERNAL bool __gab_prscurrprefix(struct parser *parser, enum prec_k prec) {
+  struct parse_rule rule = __gab_prsrule(__gab_prscurrtok(parser));
+  return rule.prefix && (!rule.infix || prec >= rule.prec);
 }
 
 GAB_INTERNAL gab_token __gab_prsprevtok(struct parser *parser) {
@@ -8497,17 +9237,8 @@ GAB_INTERNAL gab_value __gab_prsprevid(struct gab_triple gab,
   return gab_nstring(gab, s.len, s.data);
 }
 
-GAB_INTERNAL bool __gab_prsisbuiltin(struct gab_triple gab, gab_value msg) {
-  if (gab_valkind(msg) != kGAB_BINARY)
-    return false;
-
-  if (msg == gab_binary(gab, (uint8_t *)mGAB_ASSIGN))
-    return true;
-
-  if (msg == gab_binary(gab, (uint8_t *)mGAB_BLOCK))
-    return true;
-
-  return false;
+GAB_INTERNAL bool __gab_prsismacro(struct gab_triple gab, gab_value msg) {
+  return gab_valkind(msg) == kGAB_BINARY;
 }
 
 /* Encode a unicode codepoint */
@@ -8765,12 +9496,16 @@ GAB_INTERNAL gab_value __gab_nodeval(struct gab_triple gab, gab_value node) {
   return gab_listof(gab, node);
 }
 
+GAB_INTERNAL gab_value __gab_nodeunquoted(struct gab_triple gab,
+                                          gab_value node) {
+  return gab_listof(gab, gab_recordof(gab, gab_message(gab, mGAB_AST_NODE_UNQUOTED), node));
+}
+
 GAB_INTERNAL gab_value __gab_nodeempty(struct gab_triple gab,
                                        struct parser *parser) {
   gab_value empty = gab_listof(gab);
   __gab_nodeinfoput(parser->src, empty, parser->offset, parser->offset);
   return empty;
-  ;
 }
 
 GAB_INTERNAL bool __gab_nodeisempty(gab_value node) {
@@ -8783,8 +9518,8 @@ GAB_INTERNAL bool __gab_nodeismulti(struct gab_triple gab, gab_value node) {
 
   switch (gab_valkind(gab_recshp(node))) {
   case kGAB_SHAPE:
-    return !__gab_prsisbuiltin(gab,
-                               gab_mrecat(gab, node, mGAB_AST_NODE_SEND_MSG));
+    return !__gab_prsismacro(gab,
+                             gab_mrecat(gab, node, mGAB_AST_NODE_SEND_MSG));
   case kGAB_SHAPELIST: {
     uint64_t len = gab_reclen(node);
 
@@ -8993,7 +9728,6 @@ GAB_INTERNAL gab_value __gab_prsexp(struct gab_triple gab,
    * separators. (tuples, lists, and dicts)
    */
   while (prec <= __gab_prsrule(__gab_prscurrtok(parser)).prec) {
-
     if (node == gab_cinvalid)
       return gab_cinvalid;
 
@@ -9029,7 +9763,7 @@ GAB_INTERNAL gab_value __gab_prsexp(struct gab_triple gab,
 GAB_INTERNAL gab_value __gab_oprsexpprec(struct gab_triple gab,
                                          struct parser *parser,
                                          enum prec_k prec) {
-  if (!__gab_prscurrprefix(parser)) {
+  if (!__gab_prscurrprefix(parser, prec)) {
     gab_value empty = __gab_nodeempty(gab, parser);
     return empty;
   }
@@ -9126,6 +9860,131 @@ GAB_INTERNAL gab_value __gab_prslst(struct gab_triple gab,
   return node;
 }
 
+GAB_API gab_value gab_quote(struct gab_triple gab, struct parser *parser,
+                            gab_value node);
+
+GAB_INTERNAL gab_value __gab_qqtrec(struct gab_triple gab,
+                                    struct parser *parser, gab_value node) {
+  switch (gab_valkind(gab_recshp(node))) {
+  case kGAB_SHAPE: {
+    /* SEND */
+    gab_value unquoted_node = gab_mrecat(gab, node, mGAB_AST_NODE_UNQUOTED);
+
+    // If this is an unquoted node, we just forward the unquoted child as it is.
+    if (unquoted_node != gab_cundefined)
+      return unquoted_node;
+
+    gab_value node_lhs =
+        gab_quote(gab, parser, gab_mrecat(gab, node, mGAB_AST_NODE_SEND_LHS));
+    gab_value node_msg = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_MSG);
+    gab_value node_rhs =
+        gab_quote(gab, parser, gab_mrecat(gab, node, mGAB_AST_NODE_SEND_RHS));
+
+    gab_value lhs = __gab_nodeval(gab, gab_message(gab, tGAB_RECORD));
+
+    gab_value msg = gab_message(gab, mGAB_MAKE);
+
+    gab_value rhs = gab_lstcat(
+        gab, gab_listof(gab, gab_message(gab, mGAB_AST_NODE_SEND_LHS)),
+        node_lhs, gab_listof(gab, gab_message(gab, mGAB_AST_NODE_SEND_MSG)),
+        gab_listof(gab, node_msg),
+        gab_listof(gab, gab_message(gab, mGAB_AST_NODE_SEND_RHS)), node_rhs);
+
+    gab_value node = __gab_nodesend(gab, lhs, msg, rhs);
+    return node;
+  }
+  case kGAB_SHAPELIST: {
+    /* TUPLE */
+
+    gab_value lhs = __gab_nodeval(gab, gab_message(gab, tGAB_LIST));
+
+    gab_value msg = gab_message(gab, mGAB_MAKE);
+
+    gab_value result = __gab_nodeempty(gab, parser);
+    gab_iref(gab, result);
+
+    for (uint64_t i = 0; i < gab_reclen(node); i++) {
+      gab_value newresult =
+          gab_lstcat(gab, result, gab_quote(gab, parser, gab_uvrecat(node, i)));
+      gab_iref(gab, newresult);
+      gab_dref(gab, result);
+      result = newresult;
+    }
+
+    gab_value node = __gab_nodesend(gab, lhs, msg, result);
+    return node;
+  }
+  default:
+    gab_unreachable("Invalid kind .");
+  }
+}
+
+GAB_INTERNAL gab_value __gab_qqtbin(struct gab_triple gab,
+                                    struct parser *parser, gab_value node) {
+  return __gab_nodesend(gab, __gab_nodeval(gab, gab_message(gab, tGAB_BINARY)),
+                        gab_message(gab, mGAB_MAKE),
+                        __gab_nodeval(gab, gab_bintostr(node)));
+}
+
+GAB_API gab_value gab_quote(struct gab_triple gab, struct parser *parser,
+                            gab_value node) {
+  switch (gab_valkind(node)) {
+  case kGAB_RECORD:
+    /* These nodes need to be escaped to construct runtime records */
+    return __gab_qqtrec(gab, parser, node);
+    /* These nodes need to be escaped to construct runtime binaries */
+  case kGAB_BINARY:
+    return __gab_qqtbin(gab, parser, node);
+    /* These nodes can pass through as literals */
+  case kGAB_MESSAGE:
+  case kGAB_STRING:
+  case kGAB_NUMBER:
+    return __gab_nodeval(gab, node);
+  default:
+    gab_unreachable("Invalid kind.");
+  }
+};
+
+GAB_INTERNAL gab_value __gab_prsuqt(struct gab_triple gab,
+                                    struct parser *parser, gab_value lhs) {
+  uint64_t begin = parser->offset;
+
+  gab_value node = __gab_prsexpuntil(gab, parser, TOKEN_RPAREN);
+
+  uint64_t end = parser->offset;
+
+  if (node == gab_cinvalid)
+    return gab_cinvalid;
+
+  node = __gab_nodeunquoted(gab, node);
+
+  __gab_nodeinfoput(parser->src, node, begin, end);
+  __gab_nodeinfoput(parser->src, node, begin, end);
+  __gab_nodeinfoput(parser->src, gab_uvrecat(node, 0), begin, end);
+
+  return node;
+}
+
+GAB_INTERNAL gab_value __gab_prsqqt(struct gab_triple gab,
+                                    struct parser *parser, gab_value lhs) {
+  uint64_t begin = parser->offset;
+
+  gab_value node = __gab_prsexpuntil(gab, parser, TOKEN_END);
+
+  node = gab_quote(gab, parser, node);
+
+  uint64_t end = parser->offset;
+
+  if (node == gab_cinvalid)
+    return gab_cinvalid;
+
+  __gab_nodeinfoput(parser->src, node, begin, end);
+  __gab_nodeinfoput(parser->src, node, begin, end);
+  __gab_nodeinfoput(parser->src, gab_uvrecat(node, 0), begin, end);
+
+  return node;
+}
+
 GAB_INTERNAL gab_value __gab_prsshp(struct gab_triple gab,
                                     struct parser *parser, gab_value lhs) {
   uint64_t begin = parser->offset;
@@ -9171,7 +10030,7 @@ GAB_INTERNAL gab_value __gab_prssend(struct gab_triple gab,
 
   gab_value msg = __gab_tfprsprevid(gab, parser);
 
-  gab_value rhs = __gab_oprsexpprec(gab, parser, kSEND + 1);
+  gab_value rhs = __gab_oprsexpprec(gab, parser, kSYMBOL_SEND + 1);
 
   if (rhs == gab_cinvalid)
     return gab_cinvalid;
@@ -9192,7 +10051,7 @@ GAB_INTERNAL gab_value __gab_prssendop(struct gab_triple gab,
 
   gab_value msg = __gab_prsprevid(gab, parser);
 
-  gab_value rhs = __gab_oprsexpprec(gab, parser, kBINARY_SEND + 1);
+  gab_value rhs = __gab_oprsexpprec(gab, parser, kOPERATOR_SEND + 1);
 
   if (rhs == gab_cinvalid)
     return gab_cinvalid;
@@ -9272,13 +10131,13 @@ GAB_INTERNAL gab_value __gab_prssendop(struct gab_triple gab,
  * I need to decide on a specific syntax for blocks though, I don't love :>
  *
  */
-GAB_INTERNAL gab_value __gab_prsbuiltin(struct gab_triple gab,
-                                        struct parser *parser, gab_value lhs) {
+GAB_INTERNAL gab_value __gab_prsmac(struct gab_triple gab,
+                                    struct parser *parser, gab_value lhs) {
   uint64_t begin = parser->offset;
 
   gab_value msg = __gab_prsprevid(gab, parser);
 
-  gab_value rhs = __gab_prsexp(gab, parser, kEXP);
+  gab_value rhs = __gab_oprsexpprec(gab, parser, kEXP);
 
   if (rhs == gab_cinvalid)
     return gab_cinvalid;
@@ -9294,27 +10153,28 @@ GAB_INTERNAL gab_value __gab_prsbuiltin(struct gab_triple gab,
 }
 
 const struct parse_rule parse_rules[] = {
-    {__gab_prsblk, nullptr, kNONE},           // DO
-    {nullptr, nullptr, kNONE},                // END
-    {nullptr, __gab_prsbuiltin, kBUILTIN},    // LAMBDA
-    {nullptr, __gab_prsbuiltin, kBUILTIN},    // IN
-    {__gab_prslst, nullptr, kNONE},           // LBRACE
-    {nullptr, nullptr, kNONE},                // RBRACE
-    {__gab_prsrec, nullptr, kNONE},           // LBRACK
-    {nullptr, nullptr, kNONE},                // RBRACK
-    {__gab_prstup, nullptr, kNONE},           // LPAREN
-    {nullptr, nullptr, kNONE},                // RPAREN
-    {nullptr, __gab_prssend, kSEND},          // SEND
-    {nullptr, __gab_prssendop, kBINARY_SEND}, // OPERATOR
-    {__gab_prssym, nullptr, kNONE},           // SYMBOL
-    {__gab_prsmsg, nullptr, kNONE},           // MESSAGE
-    {__gab_prsstr, nullptr, kNONE},           // STRING
-    {__gab_prsdstr, nullptr, kNONE},          // STRING
-    {__gab_prsnum, nullptr, kNONE},           // NUMBER
-    {__gab_prsshp, nullptr, kNONE},           // SLASH
-    {nullptr, nullptr, kNONE},                // NEWLINE
-    {nullptr, nullptr, kNONE},                // EOF
-    {nullptr, nullptr, kNONE},                // ERROR
+    {__gab_prsblk, nullptr, kNONE},             // DO
+    {nullptr, nullptr, kNONE},                  // END
+    {__gab_prsmac, __gab_prsmac, kMACRO},       // MACRO
+    {__gab_prslst, nullptr, kNONE},             // LBRACE
+    {nullptr, nullptr, kNONE},                  // RBRACE
+    {__gab_prsrec, nullptr, kNONE},             // LBRACK
+    {nullptr, nullptr, kNONE},                  // RBRACK
+    {__gab_prstup, nullptr, kNONE},             // LPAREN
+    {nullptr, nullptr, kNONE},                  // RPAREN
+    {nullptr, __gab_prssend, kSYMBOL_SEND},     // SEND
+    {nullptr, __gab_prssendop, kOPERATOR_SEND}, // OPERATOR
+    {__gab_prssym, nullptr, kNONE},             // SYMBOL
+    {__gab_prsmsg, nullptr, kNONE},             // MESSAGE
+    {__gab_prsstr, nullptr, kNONE},             // STRING
+    {__gab_prsdstr, nullptr, kNONE},            // DOUBLESTRING
+    {__gab_prsnum, nullptr, kNONE},             // NUMBER
+    {__gab_prsshp, nullptr, kNONE},             // SLBRACK
+    {__gab_prsqqt, nullptr, kNONE},             // SDO
+    {__gab_prsuqt, nullptr, kNONE},             // SLPAREN
+    {nullptr, nullptr, 0},                      // NEWLINE
+    {nullptr, nullptr, 0},                      // EOF
+    {nullptr, nullptr, 0},                      // ERROR
 };
 
 GAB_INTERNAL struct parse_rule __gab_prsrule(gab_token k) {
@@ -10574,7 +11434,30 @@ GAB_INTERNAL gab_value __gab_bcasn(struct gab_triple gab, struct bc *bc,
   return env;
 }
 
-GAB_INTERNAL gab_value __gab_bcspc(struct gab_triple gab, struct bc *bc,
+GAB_INTERNAL gab_value __gab_bcuse(struct gab_triple gab, struct bc *bc,
+                                   gab_value node, gab_value env) {
+  gab_value lhs_node = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_LHS);
+
+  gab_assert(lhs_node != gab_cundefined, "Invalid node kind");
+
+  __gab_ibcpush(bc, (struct inst_arg){OP_TUPLE}, node);
+
+  env = __gab_bctup(gab, bc,
+                    __gab_nodeval(gab, gab_message(gab, "gab\\system")), env);
+
+  if (env == gab_cinvalid)
+    return gab_cinvalid;
+
+  env = __gab_bctup(gab, bc, lhs_node, env);
+
+  if (env == gab_cinvalid)
+    return gab_cinvalid;
+
+  __gab_bcsend(gab, bc, gab_message(gab, mGAB_USE), node);
+  return env;
+}
+
+GAB_INTERNAL gab_value __gab_bcmac(struct gab_triple gab, struct bc *bc,
                                    gab_value tuple, gab_value node,
                                    gab_value env) {
   gab_value msg = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_MSG);
@@ -10584,6 +11467,9 @@ GAB_INTERNAL gab_value __gab_bcspc(struct gab_triple gab, struct bc *bc,
 
   if (msg == gab_binary(gab, (uint8_t *)mGAB_BLOCK))
     return __gab_bclmb(gab, bc, node, env);
+
+  if (msg == gab_binary(gab, (uint8_t *)":use"))
+    return __gab_bcuse(gab, bc, node, env);
 
   gab_unreachable("Impossible special form");
   return gab_cinvalid;
@@ -10599,14 +11485,20 @@ GAB_INTERNAL gab_value __gab_bcrec(struct gab_triple gab, struct bc *bc,
   switch (gab_valkind(gab_recshp(node))) {
   case kGAB_SHAPE: {
     // We have a send node!
+    gab_value unquoted_node = gab_mrecat(gab, node, mGAB_AST_NODE_UNQUOTED);
+
+    if (unquoted_node != gab_cundefined)
+      return __gab_bcerror(gab, bc, node, GAB_PANIC,
+                           "Invalid unquote outside of quote block"), gab_cinvalid;
+
     gab_value lhs_node = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_LHS);
     gab_value rhs_node = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_RHS);
     gab_value msg = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_MSG);
 
     gab_assert(lhs_node != gab_cundefined, "Invalid node kind");
 
-    if (__gab_prsisbuiltin(gab, msg))
-      return __gab_bcspc(gab, bc, tuple, node, env);
+    if (__gab_prsismacro(gab, msg))
+      return __gab_bcmac(gab, bc, tuple, node, env);
 
     __gab_ibcpush(bc, (struct inst_arg){OP_TUPLE}, node);
 
@@ -13055,7 +13947,6 @@ GAB_API struct gab_ofiber *getthisfiber(struct gab_triple gab) {
                                                                                \
       RESET_REENTRANT();                                                       \
                                                                                \
-      /* If not, our put is complete and we can move on */                     \
       DROP_N(have + FRAME_SIZE);                                               \
                                                                                \
       PUSH(c);                                                                 \
@@ -13071,13 +13962,26 @@ GAB_API struct gab_ofiber *getthisfiber(struct gab_triple gab) {
                                                                                \
     switch (r) {                                                               \
     case gab_cinvalid:                                                         \
+      /* Termination signal */                                                 \
       VM_TERM();                                                               \
     case gab_ctimeout:                                                         \
       /* The put timed-out */                                                  \
       VM_YIELD(gab_ctimeout);                                                  \
+    case gab_cundefined:                                                       \
+      /* The put failed because the channel is closed.*/                       \
+      RESET_REENTRANT();                                                       \
+                                                                               \
+      DROP_N(have + FRAME_SIZE);                                               \
+                                                                               \
+      PUSH(c);                                                                 \
+                                                                               \
+      SET_HV(below_have + 1);                                                  \
+                                                                               \
+      NEXT();                                                                  \
     default:                                                                   \
       gab_assert(gab_valkind(r) == kGAB_NUMBER,                                \
-                 "Expected to yield a number token here");                     \
+                 "Expected to yield a number token here, not %u",              \
+                 gab_valkind(r));                                              \
       /* The put succeeded, we must yield until it completes.*/                \
       VM_YIELD(r);                                                             \
     }                                                                          \
