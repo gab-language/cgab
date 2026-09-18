@@ -587,6 +587,8 @@ GAB_DYNLIB_NATIVE_FN(system, use) {
                        });
   }
 
+  gab_fprintf(stdout, "SYSTEMUSE: $\n", mod.status);
+
   if (mod.status == gab_ctimeout) {
     gab_assert(gab_valisfib(mod.vresult), "Reentrant shall be fiber");
     return gab_union_ctimeout(mod.vresult);
@@ -595,10 +597,17 @@ GAB_DYNLIB_NATIVE_FN(system, use) {
   if (mod.status != gab_cvalid)
     return mod;
 
-  if (mod.aresult[0] != gab_ok)
-    return mod;
+  gab_fprintf(stdout, "SYSTEMUSE RES: $\n", mod.aresult[0]);
 
-  uint64_t len = gab_varrlen(mod.aresult) - 1;
+  uint64_t len = gab_varrlen(mod.aresult);
+
+  // for (uint64_t i = 0; i < len; i++)
+  //   gab_fpprintf(stdout, "$: $\n", gab_number(i), mod.aresult[i]);
+
+  if (mod.aresult[0] != gab_ok) {
+    gab_fprintf(stdout, "Forwarding $ $ $\n", mod.status, mod.aresult[0], mod.aresult[1]);
+    return mod;
+  }
 
   gab_nvmpush(gab_thisvm(gab), len, mod.aresult);
 

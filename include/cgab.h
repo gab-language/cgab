@@ -1719,6 +1719,7 @@ GAB_API int64_t gab_psprintf(char *dst, uint64_t n, const char *prefix,
  * @return the number of bytes written to the stream.
  */
 GAB_API int64_t gab_fprintf(FILE *stream, const char *fmt, ...);
+GAB_API int64_t gab_fpprintf(FILE *stream, const char *fmt, ...);
 
 /**
  * @brief Format the given string into the given buffer, with varargs. @see

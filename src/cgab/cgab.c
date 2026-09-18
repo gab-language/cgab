@@ -1474,6 +1474,7 @@ GAB_API gab_value *gab_egerrs(struct gab_eg *eg) {
   if (!errs.len)
     return nullptr;
 
+  /* TODO: Standardize when/how this pushes errors. */
   v_gab_value_thrd_push(&errs, gab_nil);
 
   /* Just free the mutex, leave the pointer to be cleaned up by caller */
@@ -2756,7 +2757,21 @@ GAB_INTERNAL bool __gab_replchkmore(struct gab_triple gab,
     return false;
 
   gab_value err = res.vresult;
+  gab_assert(gab_valkind(res.vresult) == kGAB_RECORD, "Error must be a record");
+
+  if (gab_recisl(err)) {
+    gab_assert(gab_reclen(err) > 0,
+               "If a stacktrace, should have at least one element");
+    err = gab_uvrecat(err, 0);
+  }
+
   gab_value status = gab_mrecat(gab, err, "status");
+
+  if (status == gab_cinvalid)
+    return false;
+
+  gab_fpprintf(stderr, "$ => $\n", err, status);
+
   gab_assert(status != gab_cundefined,
              "The error record shall have a status field");
 
@@ -4331,7 +4346,7 @@ GAB_API union gab_value_pair gab_send(struct gab_triple gab,
   if (res.status != gab_cvalid)
     return res;
 
-  gab_dref(gab, fb.vresult);
+  // gab_dref(gab, fb.vresult);
 
   return (union gab_value_pair){
       .status = gab_cvalid,
@@ -9237,7 +9252,18 @@ GAB_INTERNAL gab_value __gab_prsprevid(struct gab_triple gab,
   return gab_nstring(gab, s.len, s.data);
 }
 
-GAB_INTERNAL bool __gab_prsismacro(struct gab_triple gab, gab_value msg) {
+GAB_INTERNAL bool __gab_nodeismacro(struct gab_triple gab, gab_value msg) {
+  return gab_valkind(msg) == kGAB_BINARY;
+}
+
+GAB_INTERNAL bool __gab_nodeisspc(struct gab_triple gab, gab_value msg) {
+  if (msg == gab_binary(gab, (uint8_t *)mGAB_ASSIGN))
+    return true;
+
+  if (msg == gab_binary(gab, (uint8_t *)mGAB_BLOCK))
+    return true;
+
+  return false;
   return gab_valkind(msg) == kGAB_BINARY;
 }
 
@@ -9498,7 +9524,8 @@ GAB_INTERNAL gab_value __gab_nodeval(struct gab_triple gab, gab_value node) {
 
 GAB_INTERNAL gab_value __gab_nodeunquoted(struct gab_triple gab,
                                           gab_value node) {
-  return gab_listof(gab, gab_recordof(gab, gab_message(gab, mGAB_AST_NODE_UNQUOTED), node));
+  return gab_listof(
+      gab, gab_recordof(gab, gab_message(gab, mGAB_AST_NODE_UNQUOTED), node));
 }
 
 GAB_INTERNAL gab_value __gab_nodeempty(struct gab_triple gab,
@@ -9518,8 +9545,8 @@ GAB_INTERNAL bool __gab_nodeismulti(struct gab_triple gab, gab_value node) {
 
   switch (gab_valkind(gab_recshp(node))) {
   case kGAB_SHAPE:
-    return !__gab_prsismacro(gab,
-                             gab_mrecat(gab, node, mGAB_AST_NODE_SEND_MSG));
+    return !__gab_nodeismacro(gab,
+                              gab_mrecat(gab, node, mGAB_AST_NODE_SEND_MSG));
   case kGAB_SHAPELIST: {
     uint64_t len = gab_reclen(node);
 
@@ -9876,7 +9903,8 @@ GAB_INTERNAL gab_value __gab_qqtrec(struct gab_triple gab,
 
     gab_value node_lhs =
         gab_quote(gab, parser, gab_mrecat(gab, node, mGAB_AST_NODE_SEND_LHS));
-    gab_value node_msg = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_MSG);
+    gab_value node_msg =
+        gab_quote(gab, parser, gab_mrecat(gab, node, mGAB_AST_NODE_SEND_MSG));
     gab_value node_rhs =
         gab_quote(gab, parser, gab_mrecat(gab, node, mGAB_AST_NODE_SEND_RHS));
 
@@ -9887,8 +9915,8 @@ GAB_INTERNAL gab_value __gab_qqtrec(struct gab_triple gab,
     gab_value rhs = gab_lstcat(
         gab, gab_listof(gab, gab_message(gab, mGAB_AST_NODE_SEND_LHS)),
         node_lhs, gab_listof(gab, gab_message(gab, mGAB_AST_NODE_SEND_MSG)),
-        gab_listof(gab, node_msg),
-        gab_listof(gab, gab_message(gab, mGAB_AST_NODE_SEND_RHS)), node_rhs);
+        node_msg, gab_listof(gab, gab_message(gab, mGAB_AST_NODE_SEND_RHS)),
+        node_rhs);
 
     gab_value node = __gab_nodesend(gab, lhs, msg, rhs);
     return node;
@@ -11489,7 +11517,8 @@ GAB_INTERNAL gab_value __gab_bcrec(struct gab_triple gab, struct bc *bc,
 
     if (unquoted_node != gab_cundefined)
       return __gab_bcerror(gab, bc, node, GAB_PANIC,
-                           "Invalid unquote outside of quote block"), gab_cinvalid;
+                           "Invalid unquote outside of quote block"),
+             gab_cinvalid;
 
     gab_value lhs_node = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_LHS);
     gab_value rhs_node = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_RHS);
@@ -11497,7 +11526,7 @@ GAB_INTERNAL gab_value __gab_bcrec(struct gab_triple gab, struct bc *bc,
 
     gab_assert(lhs_node != gab_cundefined, "Invalid node kind");
 
-    if (__gab_prsismacro(gab, msg))
+    if (__gab_nodeismacro(gab, msg))
       return __gab_bcmac(gab, bc, tuple, node, env);
 
     __gab_ibcpush(bc, (struct inst_arg){OP_TUPLE}, node);
@@ -11610,6 +11639,102 @@ GAB_INTERNAL void __gab_envupvdata(gab_value env, uint8_t len, char *data) {
     gab_assert(nth_upvalue < len, "Should have space for this upvalue");
 
     data[nth_upvalue] = (idx << 1) | is_local;
+  }
+}
+
+union gab_value_pair expand_value(struct gab_triple gab, gab_value tuple,
+                                  size_t n, gab_value env);
+
+union gab_value_pair expand_tuple(struct gab_triple gab, gab_value node,
+                                  gab_value env) {
+  // Map the tuple, expanding each element.
+  size_t len = gab_reclen(node);
+
+  gab_value tuple = gab_erecord(gab);
+
+  for (size_t i = 0; i < len; i++) {
+    union gab_value_pair res = expand_value(gab, node, i, env);
+
+    if (res.status == gab_cinvalid)
+      return res;
+
+    env = res.data[0];
+    tuple = gab_lstpush(gab, tuple, res.data[1]);
+  }
+
+  return (union gab_value_pair){{env, tuple}};
+};
+
+union gab_value_pair expand_record(struct gab_triple gab, gab_value tuple,
+                                   gab_value node, gab_value env) {
+  switch (gab_valkind(gab_recshp(node))) {
+  case kGAB_SHAPE: {
+    // We have a send node!
+    // We can actually try to expand a macro.
+    gab_value lhs_node = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_LHS);
+    gab_value rhs_node = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_RHS);
+    gab_value msg = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_MSG);
+
+    if (!__gab_nodeismacro(gab, msg))
+      return (union gab_value_pair){{env, node}};
+
+    if (__gab_nodeisspc(gab, msg))
+      return (union gab_value_pair){{env, node}};
+
+    // Send gab\expand to the macro!
+    // Pass the left, right, and env values.
+    union gab_value_pair res =
+        gab_send(gab, (struct gab_send_argt){
+                          .receiver = gab_strtomsg(gab_bintostr(msg)),
+                          .message = gab_message(gab, "gab\\expand"),
+                          .len = 3,
+                          .argv = (gab_value[]){lhs_node, rhs_node, env},
+                      });
+
+    if (res.status != gab_cvalid)
+      return (union gab_value_pair){{gab_cinvalid, res.vresult}};
+
+    if (res.aresult[0] != gab_ok)
+      return (union gab_value_pair){{gab_cinvalid, res.aresult[1]}};
+
+    gab_assert(gab_varrlen(res.aresult) >= 2,
+               "Macro should return at least a new node and optionally an environment, not %u.",
+               gab_varrlen(res.aresult));
+
+    node = __gab_nodeval(gab, res.aresult[1]);
+
+    // gab_assert(!gab_recisl(node), "Should not return a tuple");
+    gab_fpprintf(stdout, "MACRO EXPAND: $\n", node);
+
+    // env = res.aresult[2];
+
+    return (union gab_value_pair){{env, node}};
+  }
+  case kGAB_SHAPELIST:
+    return expand_tuple(gab, node, env);
+  default:
+    gab_unreachable("INVALID SHAPE KIND");
+  }
+}
+
+union gab_value_pair expand_value(struct gab_triple gab, gab_value tuple,
+                                  size_t n, gab_value env) {
+  gab_value node = gab_uvrecat(tuple, n);
+
+  switch (gab_valkind(node)) {
+    // do no macro expanding
+  case kGAB_NUMBER:
+  case kGAB_STRING:
+  case kGAB_MESSAGE:
+  case kGAB_BINARY:
+    return (union gab_value_pair){{env, node}};
+
+    // may macro expand
+  case kGAB_RECORD:
+    return expand_record(gab, tuple, node, env);
+
+  default:
+    gab_unreachable("Expanding unexpected ast value");
   }
 }
 
@@ -11784,15 +11909,21 @@ GAB_API union gab_value_pair gab_build(struct gab_triple gab,
   gab_value env = gab_listof(
       gab, gab_recordof(gab, gab_binary(gab, (uint8_t *)"self"), gab_nil));
 
-  if (ast.status == gab_cinvalid)
-    return gab_gcunlock(gab), ast;
+  // TODO @bug: Repeatedly expand until we get no new expansions.
+  union gab_value_pair res = expand_tuple(gab, ast.vresult, env);
 
-  union gab_value_pair res = gab_compile(gab, (struct gab_compile_argt){
-                                                  .ast = ast.vresult,
-                                                  .env = env,
-                                                  .mod = mod,
-                                                  .bindings = bindings,
-                                              });
+  if (res.status == gab_cinvalid)
+    return gab_gcunlock(gab), res;
+
+  gab_value expanded_env = res.data[0];
+  gab_value expanded_ast = res.data[1];
+
+  res = gab_compile(gab, (struct gab_compile_argt){
+                             .ast = expanded_ast,
+                             .env = expanded_env,
+                             .mod = mod,
+                             .bindings = bindings,
+                         });
 
   gab_assert(res.vresult != gab_cundefined, "Shall have vresult in all cases");
 
@@ -13147,8 +13278,6 @@ __gab_vmgivenerror(struct gab_triple gab, union gab_value_pair given) {
              "(%i) Terminating fiber %p res shall be uninitialized.", gab.wkid,
              GAB_VAL_TO_FIBER(fiber));
 
-  struct gab_vm *vm = gab_thisvm(gab);
-
   atomic_store(&GAB_VAL_TO_FIBER(fiber)->res_status, given.status);
   atomic_store(&GAB_VAL_TO_FIBER(fiber)->as.vresult, given.vresult);
 
@@ -13810,7 +13939,7 @@ extern void putcs(char *arg);
     RESET_BUMP();                                                              \
                                                                                \
     if (__gab_unlikely(res.status == gab_cvalid))                              \
-      return res;                                                              \
+      VM_GIVEN(res);                                                              \
                                                                                \
     gab_assert(SP() >= before, "Fewer than zero values returned from native"); \
     uint64_t have = SP() - before;                                             \
