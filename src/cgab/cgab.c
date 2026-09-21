@@ -502,13 +502,14 @@ struct gab_gc {
   gab_value msg[GAB_GCNEPOCHS];
 };
 
-typedef enum gab_token {
+enum gab_token {
 #define TOKEN(name) TOKEN##_##name,
 #include "token.h"
 #undef TOKEN
-} gab_token;
+};
 
-#define T gab_token
+#define T enum gab_token
+#define NAME gab_token
 #include "vector.h"
 
 struct gab_src {
@@ -998,14 +999,14 @@ GAB_INTERNAL int __gab_lexpeek(gab_lx *self) { return *self->cursor; }
 
 GAB_INTERNAL int __gab_lexpeeknext(gab_lx *self) { return *(self->cursor + 1); }
 
-GAB_INTERNAL gab_token __gab_lexerror(gab_lx *self, enum gab_status s) {
+GAB_INTERNAL enum gab_token __gab_lexerror(gab_lx *self, enum gab_status s) {
   self->status = s;
   return TOKEN_ERROR;
 }
 
 typedef struct keyword {
   const char *literal;
-  gab_token token;
+  enum gab_token token;
 } keyword;
 
 const keyword keywords[] = {
@@ -1020,7 +1021,7 @@ const keyword keywords[] = {
     },
 };
 
-GAB_INTERNAL gab_token __gab_lexstr(gab_lx *self) {
+GAB_INTERNAL enum gab_token __gab_lexstr(gab_lx *self) {
   uint8_t start = __gab_lexpeek(self);
   uint8_t stop = start == '"' ? '"' : '\'';
 
@@ -1040,7 +1041,7 @@ GAB_INTERNAL gab_token __gab_lexstr(gab_lx *self) {
   return start == '"' ? TOKEN_DOUBLESTRING : TOKEN_SINGLESTRING;
 }
 
-GAB_INTERNAL gab_token __gab_lexop(gab_lx *self) {
+GAB_INTERNAL enum gab_token __gab_lexop(gab_lx *self) {
   while (__gab_lexcancontinueop(__gab_lexpeek(self)))
     __gab_lexadvance(self);
 
@@ -1050,7 +1051,7 @@ GAB_INTERNAL gab_token __gab_lexop(gab_lx *self) {
   return TOKEN_OPERATOR;
 }
 
-GAB_INTERNAL gab_token __gab_lexsym(gab_lx *self) {
+GAB_INTERNAL enum gab_token __gab_lexsym(gab_lx *self) {
   while (__gab_lexcancontinuesym(__gab_lexpeek(self)))
     __gab_lexadvance(self);
 
@@ -1068,7 +1069,7 @@ GAB_INTERNAL gab_token __gab_lexsym(gab_lx *self) {
   return TOKEN_SYMBOL;
 }
 
-GAB_INTERNAL gab_token __gab_lexint(gab_lx *self) {
+GAB_INTERNAL enum gab_token __gab_lexint(gab_lx *self) {
   while (isdigit(__gab_lexpeek(self)))
     __gab_lexadvance(self);
 
@@ -1079,7 +1080,7 @@ GAB_INTERNAL bool __gab_lexisexp(char c) {
   return isdigit(c) || c == '+' || c == '-';
 }
 
-GAB_INTERNAL gab_token __gab_lexdec(gab_lx *self) {
+GAB_INTERNAL enum gab_token __gab_lexdec(gab_lx *self) {
   if (__gab_lexint(self) == TOKEN_ERROR)
     return TOKEN_ERROR;
 
@@ -1090,7 +1091,7 @@ GAB_INTERNAL gab_token __gab_lexdec(gab_lx *self) {
   return TOKEN_NUMBER;
 }
 
-GAB_INTERNAL gab_token __gab_lexhex(gab_lx *self) {
+GAB_INTERNAL enum gab_token __gab_lexhex(gab_lx *self) {
   while (__gab_lexcancontinuehex(__gab_lexpeek(self)))
     __gab_lexadvance(self);
 
@@ -1101,7 +1102,7 @@ GAB_INTERNAL gab_token __gab_lexhex(gab_lx *self) {
   return TOKEN_NUMBER;
 }
 
-GAB_INTERNAL gab_token __gab_lexnum(gab_lx *self) {
+GAB_INTERNAL enum gab_token __gab_lexnum(gab_lx *self) {
   if (__gab_lexpeek(self) == '0' && __gab_lexpeeknext(self) == 'x')
     return __gab_lexadvance(self), __gab_lexadvance(self), __gab_lexhex(self);
 
@@ -1119,7 +1120,7 @@ GAB_INTERNAL gab_token __gab_lexnum(gab_lx *self) {
   return TOKEN_NUMBER;
 }
 
-GAB_INTERNAL gab_token __gab_lexother(gab_lx *self) {
+GAB_INTERNAL enum gab_token __gab_lexother(gab_lx *self) {
   switch (__gab_lexpeek(self)) {
   case ';':
     __gab_lexadvance(self);
@@ -1225,7 +1226,7 @@ GAB_INTERNAL void __gab_lexskipcmt(gab_lx *self) {
   }
 }
 
-GAB_INTERNAL gab_token __gab_lexnext(gab_lx *self) {
+GAB_INTERNAL enum gab_token __gab_lexnext(gab_lx *self) {
 
   while (isblank(__gab_lexpeek(self)) ||
          __gab_lexiscomment(__gab_lexpeek(self))) {
@@ -1243,7 +1244,7 @@ GAB_INTERNAL gab_token __gab_lexnext(gab_lx *self) {
                  self->source->source->len,
              "Shall not have run out of data");
 
-  gab_token tok;
+  enum gab_token tok;
   __gab_lextokbeg(self);
 
   if (__gab_lexpeek(self) == '\0' || __gab_lexpeek(self) == EOF) {
@@ -1384,7 +1385,7 @@ GAB_INTERNAL struct gab_src *__gab_source(struct gab_triple gab, gab_value name,
   __gab_lexcreate(&lex, src);
 
   for (;;) {
-    gab_token t = __gab_lexnext(&lex);
+    enum gab_token t = __gab_lexnext(&lex);
 
     if (t == TOKEN_EOF)
       break;
@@ -2953,6 +2954,8 @@ GAB_API union gab_value_pair gab_aexec(struct gab_triple gab,
                                                  .len = args.len,
                                                  .argv = args.sargv,
                                              });
+  if (main.status != gab_cvalid)
+    return main;
 
   if (gab.flags & fGAB_BUILD_CHECK)
     return main;
@@ -9195,7 +9198,7 @@ struct bc {
   gab_value err;
 };
 
-enum prec_k { kNONE, kEXP, kOPERATOR_SEND, kSYMBOL_SEND, kMACRO };
+enum __gab_preck : uint8_t { kNONE, kEXP, kOPERATOR_SEND, kSYMBOL_SEND, kMACRO = 255 };
 
 typedef gab_value (*parse_f)(struct gab_triple gab, struct parser *,
                              gab_value lhs);
@@ -9203,25 +9206,25 @@ typedef gab_value (*parse_f)(struct gab_triple gab, struct parser *,
 struct parse_rule {
   parse_f prefix;
   parse_f infix;
-  enum prec_k prec;
+  enum __gab_preck prec;
 };
 
-GAB_INTERNAL struct parse_rule __gab_prsrule(gab_token k);
+GAB_INTERNAL struct parse_rule __gab_prsrule(enum gab_token k);
 
 /*static uint64_t prev_line(struct parser *parser) {*/
 /*  return v_uint64_t_val_at(&parser->src->token_lines, parser->offset - 1);*/
 /*}*/
 
-GAB_INTERNAL gab_token __gab_prscurrtok(struct parser *parser) {
+GAB_INTERNAL enum gab_token __gab_prscurrtok(struct parser *parser) {
   return v_gab_token_val_at(&parser->src->tokens, parser->offset);
 }
 
-GAB_INTERNAL bool __gab_prscurrprefix(struct parser *parser, enum prec_k prec) {
+GAB_INTERNAL bool __gab_prscurrprefix(struct parser *parser, enum __gab_preck prec) {
   struct parse_rule rule = __gab_prsrule(__gab_prscurrtok(parser));
   return rule.prefix && (!rule.infix || prec >= rule.prec);
 }
 
-GAB_INTERNAL gab_token __gab_prsprevtok(struct parser *parser) {
+GAB_INTERNAL enum gab_token __gab_prsprevtok(struct parser *parser) {
   return v_gab_token_val_at(&parser->src->tokens, parser->offset - 1);
 }
 
@@ -9410,7 +9413,7 @@ GAB_INTERNAL gab_value __gab_tprsprevid(struct gab_triple gab,
   return gab_nstring(gab, s.len, s.data);
 }
 
-GAB_INTERNAL bool __gab_prstokmatch(struct parser *parser, gab_token tok) {
+GAB_INTERNAL bool __gab_prstokmatch(struct parser *parser, enum gab_token tok) {
   return v_gab_token_val_at(&parser->src->tokens, parser->offset) == tok;
 }
 
@@ -9460,7 +9463,7 @@ GAB_INTERNAL int64_t __gab_prstokeat(struct gab_triple gab,
 /* Match a token against a list of tokens and eat if matched */
 GAB_INTERNAL int64_t __gab_nprstokmatcheat(struct gab_triple gab,
                                            struct parser *parser, uint64_t len,
-                                           gab_token tok[len]) {
+                                           enum gab_token tok[len]) {
   for (uint64_t i = 0; i < len; i++)
     if (__gab_prstokmatch(parser, tok[i]))
       return (tok[i] == TOKEN_EOF) ? 1 : __gab_prstokeat(gab, parser);
@@ -9470,13 +9473,13 @@ GAB_INTERNAL int64_t __gab_nprstokmatcheat(struct gab_triple gab,
 
 #define __gab_prstokmatcheat(gab, parser, ...)                                 \
   ({                                                                           \
-    gab_token toks[] = {__VA_ARGS__};                                          \
-    __gab_nprstokmatcheat(gab, parser, sizeof(toks) / sizeof(gab_token),       \
+    enum gab_token toks[] = {__VA_ARGS__};                                          \
+    __gab_nprstokmatcheat(gab, parser, sizeof(toks) / sizeof(enum gab_token),       \
                           toks);                                               \
   })
 
 GAB_INTERNAL gab_value __gab_prsexp(struct gab_triple gab,
-                                    struct parser *parser, enum prec_k prec);
+                                    struct parser *parser, enum __gab_preck prec);
 
 GAB_INTERNAL void __gab_prsnewlines(struct gab_triple gab,
                                     struct parser *parser) {
@@ -9503,13 +9506,17 @@ GAB_INTERNAL gab_value __gab_nodeinfosteal(struct gab_src *src, gab_value from,
 }
 
 GAB_INTERNAL gab_value __gab_nodeval(struct gab_triple gab, gab_value node) {
-  return gab_listof(gab, node);
+  gab_value n = gab_listof(gab, node);
+  gab_assert(n != gab_cinvalid, "Shall not fail to create node");
+  return n;
 }
 
 GAB_INTERNAL gab_value __gab_nodeunquoted(struct gab_triple gab,
                                           gab_value node) {
-  return gab_listof(
+  gab_value n = gab_listof(
       gab, gab_recordof(gab, gab_message(gab, mGAB_AST_NODE_UNQUOTED), node));
+  gab_assert(n != gab_cinvalid, "Shall not fail to create node");
+  return n;
 }
 
 GAB_INTERNAL gab_value __gab_nodeempty(struct gab_triple gab,
@@ -9611,7 +9618,13 @@ GAB_INTERNAL gab_value __gab_nodesend(struct gab_triple gab, gab_value lhs,
       rhs,
   };
 
-  return __gab_nodeval(gab, gab_mrecord(gab, 1, 3, keys, vals));
+  gab_value n = gab_mrecord(gab, 1, 3, keys, vals);
+  gab_assert(n != gab_cinvalid, "Shall not fail to produce node");
+
+  n = __gab_nodeval(gab, n);
+  gab_assert(n != gab_cinvalid, "Shall not fail to produce node");
+
+  return n;
 }
 
 /* Parses a list of tuples into a single expression value */
@@ -9701,7 +9714,7 @@ GAB_INTERNAL gab_value __gab_prsexpuntil(struct gab_triple gab,
 }
 
 GAB_INTERNAL gab_value __gab_prsexp(struct gab_triple gab,
-                                    struct parser *parser, enum prec_k prec) {
+                                    struct parser *parser, enum __gab_preck prec) {
   if (!__gab_prstokeat(gab, parser))
     return gab_cinvalid;
 
@@ -9773,7 +9786,7 @@ GAB_INTERNAL gab_value __gab_prsexp(struct gab_triple gab,
 /* OPTIONALLY parse an expression with a given precedence */
 GAB_INTERNAL gab_value __gab_oprsexpprec(struct gab_triple gab,
                                          struct parser *parser,
-                                         enum prec_k prec) {
+                                         enum __gab_preck prec) {
   if (!__gab_prscurrprefix(parser, prec)) {
     gab_value empty = __gab_nodeempty(gab, parser);
     return empty;
@@ -9895,12 +9908,15 @@ GAB_INTERNAL gab_value __gab_qqtrec(struct gab_triple gab,
     gab_value lhs = __gab_nodeval(gab, gab_message(gab, tGAB_RECORD));
 
     gab_value msg = gab_message(gab, mGAB_MAKE);
+    gab_assert(msg != gab_cinvalid, "Shall not fail to create message");
 
     gab_value rhs = gab_lstcat(
         gab, gab_listof(gab, gab_message(gab, mGAB_AST_NODE_SEND_LHS)),
         node_lhs, gab_listof(gab, gab_message(gab, mGAB_AST_NODE_SEND_MSG)),
         node_msg, gab_listof(gab, gab_message(gab, mGAB_AST_NODE_SEND_RHS)),
         node_rhs);
+
+    gab_assert(rhs != gab_cinvalid, "Shall not fail to create node");
 
     gab_value node = __gab_nodesend(gab, lhs, msg, rhs);
     return node;
@@ -9918,12 +9934,14 @@ GAB_INTERNAL gab_value __gab_qqtrec(struct gab_triple gab,
     for (uint64_t i = 0; i < gab_reclen(node); i++) {
       gab_value newresult =
           gab_lstcat(gab, result, gab_quote(gab, parser, gab_uvrecat(node, i)));
+      gab_assert(newresult != gab_cinvalid, "Shall not fail to create node");
       gab_iref(gab, newresult);
       gab_dref(gab, result);
       result = newresult;
     }
 
     gab_value node = __gab_nodesend(gab, lhs, msg, result);
+    gab_assert(node != gab_cinvalid, "Shall not fail to create node");
     return node;
   }
   default:
@@ -10189,7 +10207,7 @@ const struct parse_rule parse_rules[] = {
     {nullptr, nullptr, 0},                      // ERROR
 };
 
-GAB_INTERNAL struct parse_rule __gab_prsrule(gab_token k) {
+GAB_INTERNAL struct parse_rule __gab_prsrule(enum gab_token k) {
   return parse_rules[k];
 }
 
@@ -11626,31 +11644,44 @@ GAB_INTERNAL void __gab_envupvdata(gab_value env, uint8_t len, char *data) {
   }
 }
 
-union gab_value_pair expand_value(struct gab_triple gab, gab_value tuple,
-                                  size_t n, gab_value env);
+union gab_value_pair __gab_bcexpvalue(struct gab_triple gab, gab_value tuple,
+                                      size_t n, gab_value env);
 
-union gab_value_pair expand_tuple(struct gab_triple gab, gab_value node,
-                                  gab_value env) {
+union gab_value_pair __gab_bcexptup(struct gab_triple gab, gab_value node,
+                                    gab_value env) {
   // Map the tuple, expanding each element.
   size_t len = gab_reclen(node);
 
-  gab_value tuple = gab_erecord(gab);
+  gab_value result = gab_erecord(gab);
+  gab_iref(gab, result);
 
   for (size_t i = 0; i < len; i++) {
-    union gab_value_pair res = expand_value(gab, node, i, env);
+    union gab_value_pair res = __gab_bcexpvalue(gab, node, i, env);
 
     if (res.status == gab_cinvalid)
       return res;
 
-    env = res.data[0];
-    tuple = gab_lstpush(gab, tuple, res.data[1]);
+    gab_value newenv = res.data[0];
+    gab_value newresult = gab_lstpush(gab, result, res.data[1]);
+
+    gab_iref(gab, newresult);
+    gab_iref(gab, newenv);
+
+    gab_dref(gab, result);
+    gab_dref(gab, env);
+
+    result = newresult;
+    env = newenv;
   }
 
-  return (union gab_value_pair){{env, tuple}};
+  gab_assert(env != gab_cinvalid, "Shall not produce invalid env");
+  gab_assert(result != gab_cinvalid, "Shall not produce invalid result");
+
+  return (union gab_value_pair){{env, result}};
 };
 
-union gab_value_pair expand_record(struct gab_triple gab, gab_value tuple,
-                                   gab_value node, gab_value env) {
+union gab_value_pair __gab_bcexprec(struct gab_triple gab, gab_value tuple,
+                                    gab_value node, gab_value env) {
   switch (gab_valkind(gab_recshp(node))) {
   case kGAB_SHAPE: {
     // We have a send node!
@@ -11659,6 +11690,7 @@ union gab_value_pair expand_record(struct gab_triple gab, gab_value tuple,
     gab_value rhs_node = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_RHS);
     gab_value msg = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_MSG);
 
+    // TODO @bug: Actually expand the lhs and rhs
     if (!__gab_nodeismacro(gab, msg))
       return (union gab_value_pair){{env, node}};
 
@@ -11693,17 +11725,20 @@ union gab_value_pair expand_record(struct gab_triple gab, gab_value tuple,
 
     // env = res.aresult[2];
 
+    gab_assert(env != gab_cinvalid, "Shall not produce invalid env");
+    gab_assert(node != gab_cinvalid, "Shall not produce invalid result");
+
     return (union gab_value_pair){{env, node}};
   }
   case kGAB_SHAPELIST:
-    return expand_tuple(gab, node, env);
+    return __gab_bcexptup(gab, node, env);
   default:
     gab_unreachable("INVALID SHAPE KIND");
   }
 }
 
-union gab_value_pair expand_value(struct gab_triple gab, gab_value tuple,
-                                  size_t n, gab_value env) {
+union gab_value_pair __gab_bcexpvalue(struct gab_triple gab, gab_value tuple,
+                                      size_t n, gab_value env) {
   gab_value node = gab_uvrecat(tuple, n);
 
   switch (gab_valkind(node)) {
@@ -11716,7 +11751,7 @@ union gab_value_pair expand_value(struct gab_triple gab, gab_value tuple,
 
     // may macro expand
   case kGAB_RECORD:
-    return expand_record(gab, tuple, node, env);
+    return __gab_bcexprec(gab, tuple, node, env);
 
   default:
     gab_unreachable("Expanding unexpected ast value");
@@ -11895,13 +11930,20 @@ GAB_API union gab_value_pair gab_build(struct gab_triple gab,
       gab, gab_recordof(gab, gab_binary(gab, (uint8_t *)"self"), gab_nil));
 
   // TODO @bug: Repeatedly expand until we get no new expansions.
-  union gab_value_pair res = expand_tuple(gab, ast.vresult, env);
+  union gab_value_pair res = __gab_bcexptup(gab, ast.vresult, env);
 
   if (res.status == gab_cinvalid)
     return gab_gcunlock(gab), res;
 
-  gab_value expanded_env = res.data[0];
-  gab_value expanded_ast = res.data[1];
+  gab_value expanded_env = res.status;
+  gab_value expanded_ast = res.vresult;
+
+  gab_precondition(gab_valkind(expanded_ast) == kGAB_RECORD,
+                   "AST SHOULD BE RECORD");
+  gab_precondition(gab_valkind(expanded_env) == kGAB_RECORD,
+                   "ENV SHOULD BE RECORD");
+  gab_precondition(gab_valkind(bindings) == kGAB_RECORD,
+                   "BINDINGS SHOULD BE RECORD");
 
   res = gab_compile(gab, (struct gab_compile_argt){
                              .ast = expanded_ast,

@@ -214,13 +214,15 @@ static MunitResult test_exec_source(const MunitParameter params[], void *data) {
     struct exec_test testcase = exec_test_cases[i];
 
     union gab_value_pair result = gab_exec(gab, testcase.in);
+    gab_fprintf(stderr, "---\n$\n----\nCHECK $ VS $\n",
+                gab_string(gab, testcase.in.source), result.status,
+                testcase.result[0]);
     munit_assert_uint64(result.status, ==, testcase.result[0]);
 
     if (testcase.result[0] == gab_cvalid)
       for (uint64_t j = 1; j < LEN_CARRAY(testcase.result); j++)
         if (testcase.result[j])
-          munit_assert_uint64(result.aresult[j - 1], ==,
-                              testcase.result[j]);
+          munit_assert_uint64(result.aresult[j - 1], ==, testcase.result[j]);
   }
 
   return MUNIT_OK;
