@@ -1,9 +1,37 @@
 (gab\expand: Strings.make(":use").to\message) .def (l r) :: do
   (pkg config**) := r*
   
-  name := config.at as: .unwrap_or ("_".to\binary)
+  name := config.at as: .unwrap_or("_").to\binary
 
   \do
     \(name) := System.use(\(pkg))
   end
 end
+
+#
+# LISP MACROS
+#
+# quote returns unevaluated data representation of code
+# (quote (+ 1 2))
+# -> (+ 1 2)
+#
+# eval takes unevaluated data repr, evaluates
+# (eval '(+ 1 2))
+# -> 3
+#
+# fn takes binding list, body, compiles to callable thing that takes arguments
+# (fn (x) (+ x 2))
+# -> <some function representation>
+#
+# GAB MACROS
+#
+# quote code -> data with \do end
+# \do 1 + 2 end
+# -> [{ lhs: [1] msg: +: rhs: [2] }]
+#
+# eval data -> data with gab\eval
+# [{ lhs: [1] msg: +: rhs: [2] }] .gab\eval
+# -> 3
+#
+# (x) :: x + 2
+# -> <some function representation>

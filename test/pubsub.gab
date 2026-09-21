@@ -59,23 +59,23 @@ t: .def (Broker, Channels.t)
 
 Broker
 
-broker := Broker.make
-
-news_reader  := Channels.make
-sport_reader := Channels.make
-all_reader   := Channels.make
-
-broker.broker\subscribe(news:  news_reader)
-broker.broker\subscribe(sport: sport_reader)
-broker.broker\subscribe(news:  all_reader)
-broker.broker\subscribe(sport: all_reader)
-
-broker.broker\publish(news:  'Gab 1.0 released')
-broker.broker\publish(sport: 'Final score: 3-1')
-broker.broker\publish(news:  'New example published')
-
-news_reader  >! .unwrap.println   # :: Gab 1.0 released
-all_reader   >! .unwrap.println   # :: Gab 1.0 released  (or 3-1, delivery order not guaranteed)
-sport_reader >! .unwrap.println   # :: Final score: 3-1
-all_reader   >! .unwrap.println
-news_reader  >! .unwrap.println 
+#broker := Broker.make
+#
+#news_reader  := Channels.make
+#sport_reader := Channels.make
+#all_reader   := Channels.make
+#
+#broker.broker\subscribe(news:  news_reader)
+#broker.broker\subscribe(sport: sport_reader)
+#broker.broker\subscribe(news:  all_reader)
+#broker.broker\subscribe(sport: all_reader)
+#
+#broker.broker\publish(news:  'Gab 1.0 released')
+#broker.broker\publish(sport: 'Final score: 3-1')
+#broker.broker\publish(news:  'New example published')
+#
+#news_reader  >! .unwrap.println   # :: Gab 1.0 released
+#all_reader   >! .unwrap.println   # :: Gab 1.0 released  (or 3-1, delivery order not guaranteed)
+#sport_reader >! .unwrap.println   # :: Final score: 3-1
+#all_reader   >! .unwrap.println
+#news_reader  >! .unwrap.println 

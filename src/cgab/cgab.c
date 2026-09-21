@@ -1484,6 +1484,11 @@ GAB_API gab_value *gab_egerrs(struct gab_eg *eg) {
   gab_assert(
       errs.data != nullptr,
       "The array of errors returned shall not be null when errs.len > 0");
+
+  for (uint64_t i = 0; i < errs.len - 1; i++)
+    gab_verify(gab_valkind(errs.data[i]) == kGAB_RECORD,
+               "All errors should be a record.");
+
   return errs.data;
 };
 
@@ -2149,16 +2154,8 @@ GAB_INTERNAL enum __gab_jbstep_k __gab_jbstep(struct gab_triple gab,
 
     // We panicked. Crash the system.
     if (res.aresult[0] != gab_ok) {
-      gab_value err = res.aresult[1];
-      if (err != gab_cinvalid) {
-        gab_iref(gab, err);
-        gab_egkeep(gab.eg, err);
-
-        v_gab_value_thrd_push(&gab.eg->err, err);
-
-        if (gab.flags & fGAB_SIGTERM_ON_ERR)
-          gab_sigterm(gab);
-      }
+      if (gab.flags & fGAB_SIGTERM_ON_ERR)
+        gab_sigterm(gab);
     }
     break;
 
@@ -2221,13 +2218,6 @@ bail:
                gab_opcode_names[*gab_fibvm(fiber)->ip]);
 
     gab_assert(gab_fibisdone(fiber), "A terminated fiber shall be done");
-
-    // gab_value err = gab_fibstacktrace(gab, fiber);
-    //
-    // gab_iref(gab, err);
-    // gab_egkeep(gab.eg, err);
-    //
-    // v_gab_value_thrd_push(&gab.eg->err, err);
 
     // Truly pop off the fiber now.
     gab_value popped = q_gab_value_pop(&job->working_queue);
@@ -2740,6 +2730,9 @@ GAB_INTERNAL bool __gab_replchkres(struct gab_triple gab,
   }
 
   if (res.status != gab_cvalid) {
+    gab_assert(gab_valkind(res.vresult) == kGAB_RECORD,
+               "An error value shall be a record");
+
     const char *errstr = gab_errtocs(gab, res.vresult);
 
     if (errstr)
@@ -2960,19 +2953,6 @@ GAB_API union gab_value_pair gab_aexec(struct gab_triple gab,
                                                  .len = args.len,
                                                  .argv = args.sargv,
                                              });
-
-  if (main.status != gab_cvalid) {
-    // When execing, publish a build-error as an error.
-    gab_iref(gab, main.vresult);
-    gab_egkeep(gab.eg, main.vresult);
-
-    v_gab_value_thrd_push(&gab.eg->err, main.vresult);
-
-    if (gab.flags & fGAB_SIGTERM_ON_ERR)
-      gab_sigterm(gab);
-
-    return main;
-  }
 
   if (gab.flags & fGAB_BUILD_CHECK)
     return main;
@@ -3832,6 +3812,10 @@ GAB_API gab_value gab_vspanicf(struct gab_triple gab, va_list va,
 
   gab_assert(gab_reclen(rec) == 11,
              "Error record shall be constructed correctly");
+
+  gab_iref(gab, rec);
+  gab_egkeep(gab.eg, rec);
+  v_gab_value_thrd_push(&gab.eg->err, rec);
 
   gab_gcunlock(gab);
 
@@ -11698,13 +11682,14 @@ union gab_value_pair expand_record(struct gab_triple gab, gab_value tuple,
       return (union gab_value_pair){{gab_cinvalid, res.aresult[1]}};
 
     gab_assert(gab_varrlen(res.aresult) >= 2,
-               "Macro should return at least a new node and optionally an environment, not %u.",
+               "Macro should return at least a new node and optionally an "
+               "environment, not %u.",
                gab_varrlen(res.aresult));
 
     node = __gab_nodeval(gab, res.aresult[1]);
 
     // gab_assert(!gab_recisl(node), "Should not return a tuple");
-    gab_fpprintf(stdout, "MACRO EXPAND: $\n", node);
+    // gab_fpprintf(stdout, "MACRO EXPAND: $\n", node);
 
     // env = res.aresult[2];
 
@@ -13390,16 +13375,6 @@ GAB_API union gab_value_pair gab_vpanicf(struct gab_triple gab, const char *fmt,
                                      .wkid = gab.wkid,
                                  });
 
-    if (err != gab_cinvalid) {
-      gab_iref(gab, err);
-      gab_egkeep(gab.eg, err);
-
-      v_gab_value_thrd_push(&gab.eg->err, err);
-
-      if (gab.flags & fGAB_SIGTERM_ON_ERR)
-        gab_sigterm(gab);
-    }
-
     gab_value res[] = {gab_err, err, gab_cinvalid};
     a_gab_value *results =
         a_gab_value_create(res, sizeof(res) / sizeof(gab_value));
@@ -13939,7 +13914,7 @@ extern void putcs(char *arg);
     RESET_BUMP();                                                              \
                                                                                \
     if (__gab_unlikely(res.status == gab_cvalid))                              \
-      VM_GIVEN(res);                                                              \
+      VM_GIVEN(res);                                                           \
                                                                                \
     gab_assert(SP() >= before, "Fewer than zero values returned from native"); \
     uint64_t have = SP() - before;                                             \
