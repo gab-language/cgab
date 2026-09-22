@@ -2293,13 +2293,15 @@ int32_t __gab_jbworker(void *data) {
   // Here, we're okay sleeping instead of yielding because we actually
   // want close to a millisecond.
   while ((res = __gab_jbstep(gab, job)))
-    ;
-    // if ((job->backoff = (job->backoff + 1) * (res == kGAB_JBSTEP_NONE)))
-    //   thrd_sleep(&(const struct timespec){.tv_nsec = __gab_calcbackoffns(
-    //                                           job->backoff)},
-    //              nullptr);
+    if ((job->backoff = (job->backoff + 1) * (res == kGAB_JBSTEP_NONE)))
+      thrd_yield();
 
-    __gab_jbbail(gab, job);
+  // if ((job->backoff = (job->backoff + 1) * (res == kGAB_JBSTEP_NONE)))
+  //   thrd_sleep(&(const struct timespec){.tv_nsec = __gab_calcbackoffns(
+  //                                           job->backoff)},
+  //              nullptr);
+
+  __gab_jbbail(gab, job);
 
 #if cGAB_LOG_EG
   fprintf(stderr, "(%i) CLOSING\n", gab.wkid);
@@ -7635,6 +7637,9 @@ GAB_API bool gab_step(struct gab_triple gab) {
     return __gab_jbbail(gab, gab.eg->jobs + gab.wkid), true;
 
   struct gab_job *job = gab.eg->jobs + gab.wkid;
+
+  if ((job->backoff = (job->backoff + 1) * (res == kGAB_JBSTEP_NONE)))
+    thrd_yield();
 
   // if ((job->backoff = (job->backoff + 1) * (res == kGAB_JBSTEP_NONE)))
   //   thrd_sleep(
