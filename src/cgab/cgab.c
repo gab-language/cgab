@@ -2293,10 +2293,10 @@ int32_t __gab_jbworker(void *data) {
   // Here, we're okay sleeping instead of yielding because we actually
   // want close to a millisecond.
   while ((res = __gab_jbstep(gab, job)))
-    if ((job->backoff = (job->backoff + 1) * (res == kGAB_JBSTEP_NONE)))
-      thrd_sleep(&(const struct timespec){.tv_nsec = __gab_calcbackoffns(
-                                              job->backoff)},
-                 nullptr);
+    // if ((job->backoff = (job->backoff + 1) * (res == kGAB_JBSTEP_NONE)))
+    //   thrd_sleep(&(const struct timespec){.tv_nsec = __gab_calcbackoffns(
+    //                                           job->backoff)},
+    //              nullptr);
 
   __gab_jbbail(gab, job);
 
@@ -7635,10 +7635,10 @@ GAB_API bool gab_step(struct gab_triple gab) {
 
   struct gab_job *job = gab.eg->jobs + gab.wkid;
 
-  if ((job->backoff = (job->backoff + 1) * (res == kGAB_JBSTEP_NONE)))
-    thrd_sleep(
-        &(const struct timespec){.tv_nsec = __gab_calcbackoffns(job->backoff)},
-        nullptr);
+  // if ((job->backoff = (job->backoff + 1) * (res == kGAB_JBSTEP_NONE)))
+  //   thrd_sleep(
+  //       &(const struct timespec){.tv_nsec = __gab_calcbackoffns(job->backoff)},
+  //       nullptr);
 
   return false;
 }
@@ -7995,9 +7995,6 @@ GAB_INTERNAL gab_value __gab_bchnput(struct gab_triple gab,
   case gab_cundefined:
     return res;
   }
-  // TODO @cgab @bug: What if *before we start waiting*, someone takes, and some
-  // one puts? Then we accidentally wait for a put which isn't ours, and may
-  // timeout?
 
   // Wait for a taker.
   gab_value tk = res;

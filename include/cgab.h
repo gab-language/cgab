@@ -699,7 +699,6 @@ static inline void __gab_assert_fail(const char *prelude, const char *expr,
   "|                                                                       |\n" \
   "*-----------------------------------------------------------------------*\n"
 // clang-format on
-
 #define gab_assert(expr, format, ...)                                          \
   ((expr) ? (void)(0)                                                          \
           : __gab_assert_fail(GAB_ASSERT_DEFAULT_PRELUDE, #expr, __FILE__,     \
