@@ -2764,8 +2764,6 @@ GAB_INTERNAL bool __gab_replchkmore(struct gab_triple gab,
   if (status == gab_cinvalid)
     return false;
 
-  gab_fpprintf(stderr, "$ => $\n", err, status);
-
   gab_assert(status != gab_cundefined,
              "The error record shall have a status field");
 
@@ -9198,7 +9196,13 @@ struct bc {
   gab_value err;
 };
 
-enum __gab_preck : uint8_t { kNONE, kEXP, kOPERATOR_SEND, kSYMBOL_SEND, kMACRO = 255 };
+enum __gab_preck : uint8_t {
+  kNONE,
+  kEXP,
+  kOPERATOR_SEND,
+  kSYMBOL_SEND,
+  kMACRO = 255
+};
 
 typedef gab_value (*parse_f)(struct gab_triple gab, struct parser *,
                              gab_value lhs);
@@ -9219,7 +9223,8 @@ GAB_INTERNAL enum gab_token __gab_prscurrtok(struct parser *parser) {
   return v_gab_token_val_at(&parser->src->tokens, parser->offset);
 }
 
-GAB_INTERNAL bool __gab_prscurrprefix(struct parser *parser, enum __gab_preck prec) {
+GAB_INTERNAL bool __gab_prscurrprefix(struct parser *parser,
+                                      enum __gab_preck prec) {
   struct parse_rule rule = __gab_prsrule(__gab_prscurrtok(parser));
   return rule.prefix && (!rule.infix || prec >= rule.prec);
 }
@@ -9473,13 +9478,14 @@ GAB_INTERNAL int64_t __gab_nprstokmatcheat(struct gab_triple gab,
 
 #define __gab_prstokmatcheat(gab, parser, ...)                                 \
   ({                                                                           \
-    enum gab_token toks[] = {__VA_ARGS__};                                          \
-    __gab_nprstokmatcheat(gab, parser, sizeof(toks) / sizeof(enum gab_token),       \
+    enum gab_token toks[] = {__VA_ARGS__};                                     \
+    __gab_nprstokmatcheat(gab, parser, sizeof(toks) / sizeof(enum gab_token),  \
                           toks);                                               \
   })
 
 GAB_INTERNAL gab_value __gab_prsexp(struct gab_triple gab,
-                                    struct parser *parser, enum __gab_preck prec);
+                                    struct parser *parser,
+                                    enum __gab_preck prec);
 
 GAB_INTERNAL void __gab_prsnewlines(struct gab_triple gab,
                                     struct parser *parser) {
@@ -9617,6 +9623,9 @@ GAB_INTERNAL gab_value __gab_nodesend(struct gab_triple gab, gab_value lhs,
       msg,
       rhs,
   };
+  gab_assert(lhs != gab_cinvalid, "Shall not fail to produce node");
+  gab_assert(msg != gab_cinvalid, "Shall not fail to produce node");
+  gab_assert(rhs != gab_cinvalid, "Shall not fail to produce node");
 
   gab_value n = gab_mrecord(gab, 1, 3, keys, vals);
   gab_assert(n != gab_cinvalid, "Shall not fail to produce node");
@@ -9714,7 +9723,8 @@ GAB_INTERNAL gab_value __gab_prsexpuntil(struct gab_triple gab,
 }
 
 GAB_INTERNAL gab_value __gab_prsexp(struct gab_triple gab,
-                                    struct parser *parser, enum __gab_preck prec) {
+                                    struct parser *parser,
+                                    enum __gab_preck prec) {
   if (!__gab_prstokeat(gab, parser))
     return gab_cinvalid;
 
@@ -10172,7 +10182,8 @@ GAB_INTERNAL gab_value __gab_prsmac(struct gab_triple gab,
   if (rhs == gab_cinvalid)
     return gab_cinvalid;
 
-  gab_value node = __gab_nodesend(gab, lhs, gab_strtobin(msg), rhs);
+  gab_value node = __gab_nodesend(
+      gab, lhs == gab_cinvalid ? gab_listof(gab) : lhs, gab_strtobin(msg), rhs);
 
   uint64_t end = parser->offset;
 
@@ -11415,18 +11426,21 @@ GAB_INTERNAL gab_value __gab_bcenvunpack(struct gab_triple gab, struct bc *bc,
 
 GAB_INTERNAL gab_value __gab_bclmb(struct gab_triple gab, struct bc *bc,
                                    gab_value node, gab_value env) {
-  gab_value LHS = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_LHS);
-  gab_value RHS = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_RHS);
+  gab_value lhs = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_LHS);
+  gab_value rhs = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_RHS);
+
+  if (!gab_reclen(rhs))
+    return __gab_bcerror(gab, bc, node, GAB_PANIC, "Invalid body"), gab_cinvalid;
 
   gab_value lst = gab_listof(gab, gab_binary(gab, (uint8_t *)"self"));
 
   env = gab_lstpush(gab, env, gab_erecord(gab));
 
-  gab_value bindings = gab_lstcat(gab, lst, LHS);
-  __gab_nodeinfosteal(bc->src, LHS, bindings);
+  gab_value bindings = gab_lstcat(gab, lst, lhs);
+  __gab_nodeinfosteal(bc->src, lhs, bindings);
 
   union gab_value_pair pair = gab_compile(gab, (struct gab_compile_argt){
-                                                   .ast = RHS,
+                                                   .ast = rhs,
                                                    .env = env,
                                                    .bindings = bindings,
                                                    .mod = bc->src->name,
@@ -11440,50 +11454,33 @@ GAB_INTERNAL gab_value __gab_bclmb(struct gab_triple gab, struct bc *bc,
 
   env = gab_recpop(gab, gab_prtenv(prt), nullptr, nullptr);
 
-  __gab_obcpush(bc, OP_BLOCK, RHS);
-  __gab_sbcpush(bc, __gab_bcaddk(gab, bc, prt), RHS);
+  __gab_obcpush(bc, OP_BLOCK, rhs);
+  __gab_sbcpush(bc, __gab_bcaddk(gab, bc, prt), rhs);
 
   return env;
 }
 
 GAB_INTERNAL gab_value __gab_bcasn(struct gab_triple gab, struct bc *bc,
                                    gab_value node, gab_value env) {
-  gab_value lhs_node = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_LHS);
-  gab_value rhs_node = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_RHS);
+  gab_value lhs = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_LHS);
+  gab_value rhs = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_RHS);
 
-  env = __gab_bctup(gab, bc, rhs_node, env);
+  if (!gab_reclen(lhs))
+    return __gab_bcerror(gab, bc, node, GAB_PANIC, "Invalid binding"), gab_cinvalid;
 
-  if (env == gab_cinvalid)
-    return gab_cinvalid;
+  if (!gab_reclen(rhs))
+    return __gab_bcerror(gab, bc, node, GAB_PANIC, "Invalid body"), gab_cinvalid;
 
-  env = __gab_bcenvunpack(gab, bc, lhs_node, env, rhs_node);
-
-  if (env == gab_cinvalid)
-    return gab_cinvalid;
-
-  return env;
-}
-
-GAB_INTERNAL gab_value __gab_bcuse(struct gab_triple gab, struct bc *bc,
-                                   gab_value node, gab_value env) {
-  gab_value lhs_node = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_LHS);
-
-  gab_assert(lhs_node != gab_cundefined, "Invalid node kind");
-
-  __gab_ibcpush(bc, (struct inst_arg){OP_TUPLE}, node);
-
-  env = __gab_bctup(gab, bc,
-                    __gab_nodeval(gab, gab_message(gab, "gab\\system")), env);
+  env = __gab_bctup(gab, bc, rhs, env);
 
   if (env == gab_cinvalid)
     return gab_cinvalid;
 
-  env = __gab_bctup(gab, bc, lhs_node, env);
+  env = __gab_bcenvunpack(gab, bc, lhs, env, rhs);
 
   if (env == gab_cinvalid)
     return gab_cinvalid;
 
-  __gab_bcsend(gab, bc, gab_message(gab, mGAB_USE), node);
   return env;
 }
 
@@ -11498,11 +11495,7 @@ GAB_INTERNAL gab_value __gab_bcmac(struct gab_triple gab, struct bc *bc,
   if (msg == gab_binary(gab, (uint8_t *)mGAB_BLOCK))
     return __gab_bclmb(gab, bc, node, env);
 
-  if (msg == gab_binary(gab, (uint8_t *)":use"))
-    return __gab_bcuse(gab, bc, node, env);
-
-  gab_unreachable("Impossible special form");
-  return gab_cinvalid;
+  return __gab_bcerror(gab, bc, node, GAB_PANIC, "Invalid macro"), gab_cinvalid;
 };
 
 GAB_INTERNAL gab_value __gab_bcrec(struct gab_triple gab, struct bc *bc,
