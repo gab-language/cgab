@@ -2293,12 +2293,13 @@ int32_t __gab_jbworker(void *data) {
   // Here, we're okay sleeping instead of yielding because we actually
   // want close to a millisecond.
   while ((res = __gab_jbstep(gab, job)))
+    ;
     // if ((job->backoff = (job->backoff + 1) * (res == kGAB_JBSTEP_NONE)))
     //   thrd_sleep(&(const struct timespec){.tv_nsec = __gab_calcbackoffns(
     //                                           job->backoff)},
     //              nullptr);
 
-  __gab_jbbail(gab, job);
+    __gab_jbbail(gab, job);
 
 #if cGAB_LOG_EG
   fprintf(stderr, "(%i) CLOSING\n", gab.wkid);
@@ -7637,8 +7638,8 @@ GAB_API bool gab_step(struct gab_triple gab) {
 
   // if ((job->backoff = (job->backoff + 1) * (res == kGAB_JBSTEP_NONE)))
   //   thrd_sleep(
-  //       &(const struct timespec){.tv_nsec = __gab_calcbackoffns(job->backoff)},
-  //       nullptr);
+  //       &(const struct timespec){.tv_nsec =
+  //       __gab_calcbackoffns(job->backoff)}, nullptr);
 
   return false;
 }
@@ -11427,7 +11428,8 @@ GAB_INTERNAL gab_value __gab_bclmb(struct gab_triple gab, struct bc *bc,
   gab_value rhs = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_RHS);
 
   if (!gab_reclen(rhs))
-    return __gab_bcerror(gab, bc, node, GAB_PANIC, "Invalid body"), gab_cinvalid;
+    return __gab_bcerror(gab, bc, node, GAB_PANIC, "Invalid body"),
+           gab_cinvalid;
 
   gab_value lst = gab_listof(gab, gab_binary(gab, (uint8_t *)"self"));
 
@@ -11463,10 +11465,12 @@ GAB_INTERNAL gab_value __gab_bcasn(struct gab_triple gab, struct bc *bc,
   gab_value rhs = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_RHS);
 
   if (!gab_reclen(lhs))
-    return __gab_bcerror(gab, bc, node, GAB_PANIC, "Invalid binding"), gab_cinvalid;
+    return __gab_bcerror(gab, bc, node, GAB_PANIC, "Invalid binding"),
+           gab_cinvalid;
 
   if (!gab_reclen(rhs))
-    return __gab_bcerror(gab, bc, node, GAB_PANIC, "Invalid body"), gab_cinvalid;
+    return __gab_bcerror(gab, bc, node, GAB_PANIC, "Invalid body"),
+           gab_cinvalid;
 
   env = __gab_bctup(gab, bc, rhs, env);
 
