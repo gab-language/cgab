@@ -1,0 +1,7 @@
+Binaries := gab\binary:
+
+[Binaries.t] .defmodule {
+  to\binary: () :: self
+}
+
+Binaries

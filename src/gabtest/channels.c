@@ -127,6 +127,10 @@ test_channel_stress_concurrent_putters(const MunitParameter params[],
         done++;
         // If a fiber is done, check that it didn't error.
         union gab_value_pair res = gab_fibawait(gab, fibers[f]);
+
+        munit_assert_uint64(res.status, !=, gab_cinvalid);
+        munit_assert_uint64(res.vresult, !=, 0);
+
         munit_assert_uint64(res.status, ==, gab_cvalid);
         munit_assert_uint64(res.aresult[0], ==, gab_ok);
       }
