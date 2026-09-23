@@ -11427,14 +11427,14 @@ GAB_INTERNAL gab_value __gab_bcenvunpack(struct gab_triple gab, struct bc *bc,
   return v_gab_value_destroy(&targets), env;
 }
 
+// TODO @cgab @nit: I would love to implement bclmb and bcasn *as macros*.
+// I'm not really sure how possible this is, seeing as they both need
+// to emit some special bytecode. I dont know how I can get it done.
+
 GAB_INTERNAL gab_value __gab_bclmb(struct gab_triple gab, struct bc *bc,
                                    gab_value node, gab_value env) {
   gab_value lhs = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_LHS);
   gab_value rhs = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_RHS);
-
-  if (!gab_reclen(rhs))
-    return __gab_bcerror(gab, bc, node, GAB_PANIC, "Invalid body"),
-           gab_cinvalid;
 
   gab_value lst = gab_listof(gab, gab_binary(gab, (uint8_t *)"self"));
 
@@ -11470,11 +11470,13 @@ GAB_INTERNAL gab_value __gab_bcasn(struct gab_triple gab, struct bc *bc,
   gab_value rhs = gab_mrecat(gab, node, mGAB_AST_NODE_SEND_RHS);
 
   if (!gab_reclen(lhs))
-    return __gab_bcerror(gab, bc, node, GAB_PANIC, "Invalid binding"),
+    return __gab_bcerror(gab, bc, lhs, GAB_MALFORMED_BINDING,
+                         FMT_MALFORMED_BINDING),
            gab_cinvalid;
 
   if (!gab_reclen(rhs))
-    return __gab_bcerror(gab, bc, node, GAB_PANIC, "Invalid body"),
+    return __gab_bcerror(gab, bc, rhs, GAB_MISSING_INITIALIZER,
+                         "The right side of `:=` may not be empty."),
            gab_cinvalid;
 
   env = __gab_bctup(gab, bc, rhs, env);
