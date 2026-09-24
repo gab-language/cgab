@@ -1,7 +1,7 @@
 Io := 'github.com/gab-language/cgab@0.1.7'.use 'cio'
 
-eprintln:.def () :: Io.stderr.stream\send('$\n'.sprintf(self).to\binary)
-println:.def () :: Io.stdout.stream\send('$\n'.sprintf(self).to\binary)
+eprintln:.def () :: Io.stderr.stream\send('$\n'.psprintf(self).to\binary)
+println:.def () :: Io.stdout.stream\send('$\n'.psprintf(self).to\binary)
 
 printf:.def(
   Strings.t

@@ -785,7 +785,7 @@ static inline void __gab_assert_fail(const char *prelude, const char *expr,
  * Luckily, windows has a simple lock we can statically initialize here
  * which does the trick.
  *
- * If mingw/binutils etc got their stuff together and we didn't have to 
+ * If mingw/binutils etc got their stuff together and we didn't have to
  * manually unprotect/protect the IAT table for delay loading to work,
  * then this wouldn't even be an issue in the first place.
  */
@@ -1542,6 +1542,11 @@ enum gab_flags {
    * When any fiber panics, send SIGTERM to the engine.
    */
   fGAB_SIGTERM_ON_ERR = 1 << 5,
+
+  /*
+   * 
+   */
+  fGAB_WITHOLD_ERR = 1 << 6,
 };
 
 /**
@@ -1613,7 +1618,7 @@ struct gab_create_argt {
    *  This list should be terminated with a null struct.
    * */
   struct gab_module {
-    const char *package, *module, *alias;
+    const char *package, *module;
   } *modules;
 };
 
@@ -2074,19 +2079,6 @@ GAB_API gab_value *gab_segmodput(struct gab_eg *eg, const char *name,
  */
 struct gab_parse_argt {
   /**
-   * The name of the module, defaults to "__main__"
-   */
-  const char *name;
-  /**
-   * The number of bytes in source to consider as source code.
-   * If 0, strlen(source) is used.
-   */
-  uint64_t source_len;
-  /**
-   * The source code to compile.
-   */
-  const char *source;
-  /**
    * The number of arguments expected by the main block.
    */
   uint64_t len;
@@ -2119,6 +2111,7 @@ struct gab_parse_argt {
  * @returns a pair of values describing the outcome of the parse.
  */
 GAB_API union gab_value_pair gab_parse(struct gab_triple gab,
+                                       struct gab_src *src,
                                        struct gab_parse_argt args);
 
 /**
@@ -2128,7 +2121,7 @@ GAB_API union gab_value_pair gab_parse(struct gab_triple gab,
  * @see enum gab_flags.
  */
 struct gab_compile_argt {
-  gab_value ast, env, bindings, mod;
+  gab_value ast, env, bindings;
   /**
    * Optional flags for compilation.
    */
@@ -2150,6 +2143,7 @@ struct gab_compile_argt {
  * @returns a pair of values describin the outcome of compilation.
  */
 GAB_API union gab_value_pair gab_compile(struct gab_triple gab,
+                                         struct gab_src *src,
                                          struct gab_compile_argt args);
 
 /**
@@ -2174,6 +2168,7 @@ GAB_API union gab_value_pair gab_compile(struct gab_triple gab,
  * @returns a pair of values describing the outcome of the build.
  */
 GAB_API union gab_value_pair gab_build(struct gab_triple gab,
+                                       struct gab_src *src,
                                        struct gab_parse_argt args);
 
 /**
@@ -2678,6 +2673,11 @@ GAB_API void gab_gclock(struct gab_triple gab);
  * @param gc The gc to unlock
  */
 GAB_API void gab_gcunlock(struct gab_triple gab);
+
+GAB_API struct gab_src *gab_source(struct gab_triple gab, gab_value name,
+                                   uint64_t len, const char *source);
+
+GAB_API void gab_srccomplete(struct gab_triple gab, struct gab_src *self);
 
 /**
  * @brief Get the name of a source file - aka the fully qualified path.

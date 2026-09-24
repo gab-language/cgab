@@ -1,4 +1,4 @@
-Blocks := gab\block:
+Blocks := 'github.com/gab-language/cgab@0.1.7' .use 'cblocks'
 
 is\block: .def false:
 is\block: .def (Blocks.t, true:)

@@ -489,6 +489,7 @@ union gab_value_pair gab_use_source(struct gab_triple gab, const char *path,
       gab_exec(gab, (struct gab_exec_argt){
                         .name = path,
                         .source = (const char *)src->data,
+                        .source_len = src->len,
                         .flags = gab.flags,
                         .len = len,
                         .sargv = sargs,
@@ -694,8 +695,7 @@ gab_value build_process_module(struct gab_triple gab, uint64_t nargs,
               gab_message(gab, "use"),
               SystemModule,
               gab_snative(gab, "ues", gab_mod_system_use),
-          },
-          );
+          }, );
 
   free((void *)tmp);
 
@@ -714,15 +714,12 @@ void init_args(union gab_value_pair res, struct gab_module *modules,
              _nargs - 1, nmodules);
 
   for (int i = 0; i < _nargs; i++)
-    _sargs[i] = modules[i].alias    ? modules[i].alias
-                : modules[i].module ? modules[i].module
-                                    : modules[i].package;
+    _sargs[i] = modules[i].module ? modules[i].module : modules[i].package;
   _sargs[_nargs - 1] = "System";
 
   memcpy(_vargs, res.aresult + 1, (_nargs - 1) * sizeof(gab_value));
   _vargs[_nargs - 1] = build_process_module(gab, nargs, args);
 }
-
 
 // clang-format off
 const char *welcome_message =
@@ -798,6 +795,7 @@ int run_string(const char *string, uint64_t flags, uint32_t wait, uint64_t jobs,
   union gab_value_pair run_res = gab_exec(gab, (struct gab_exec_argt){
                                                    .name = MAIN_MODULE,
                                                    .source = (char *)src.data,
+                                                   .source_len = src.len,
                                                    .flags = flags,
                                                    .len = _nargs,
                                                    .sargv = _sargs,

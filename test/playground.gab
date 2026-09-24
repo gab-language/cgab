@@ -24,3 +24,5 @@
 #
 # (x) :: x + 2
 # -> <some function representation>
+
+Blocks.make(\[a b c] \[do a + b, c end])
