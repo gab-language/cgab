@@ -141,10 +141,21 @@ doreduce: .defcase {
   end
 }
 
+to\reducer: .defcase {
+  Blocks.t
+  () :: self
+
+  Messages.t
+  () :: self.to\block
+}
+
 defseq: .def do
   _ :: [self] .defmodule {
     reduce: (acc, r, td) :: do
+      r := r.to\reducer
+
       (ok, seq\v, xs*) := self.seq\init
+
       ok.doreduce(self, seq\v, acc, td.transduce\wrap r, xs)
     end,
     each: f :: do

@@ -28,6 +28,8 @@ deftransducer: .def (
 
       transduce\step: (r acc xs s) :: self.transducer.transduce\step(r acc xs s)
 
+      to\reducer: () :: self
+
       reduce\step: (acc, xs*) :: do
         (s, cmd, c, acc) := self.transduce\step(self.continuation, acc, xs, self.state)
 

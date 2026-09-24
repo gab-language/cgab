@@ -25,4 +25,9 @@
 # (x) :: x + 2
 # -> <some function representation>
 
-Blocks.make(\[a b c] \[do a + b, c end])
+plus := +: .to\block .unwrap
+
+plus.(1 1).println
+plus.('hello' 'world').println
+plus.(['hello'] [1]).println
+plus.(['hello'] 1).println

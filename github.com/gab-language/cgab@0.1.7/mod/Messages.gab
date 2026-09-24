@@ -1,5 +1,12 @@
 Messages := 'github.com/gab-language/cgab@0.1.7'.use 'cmessages'
 
+(to\block: Messages.t) .def () :: do
+# Blocks can't really work here unfortunately.
+  gab\block:
+    .make(\[args*], [{ gab\lhs: \[args*], gab\msg: self, gab\rhs: [] }])
+    .unwrap
+end
+
 to\class_cxtor: .defcase {
   default:
   () :: (t) :: (args*) :: t.make(args*)
