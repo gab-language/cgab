@@ -6,12 +6,11 @@ extern struct gab_triple gab;
 static MunitResult test_parse_and_compile(const MunitParameter params[],
                                           void *data) {
   const char *module = "test_valid";
-  struct gab_parse_argt valid_args = {
-      .source = "1 + 1",
-      .name = module,
-  };
+  const char *source = "1 + 1";
 
-  union gab_value_pair parsed_valid = gab_parse(gab, valid_args);
+  struct gab_src* src = gab_source(gab, gab_string(gab, module), strlen(source), source);
+
+  union gab_value_pair parsed_valid = gab_parse(gab, src, (struct gab_parse_argt){});
 
   munit_assert_uint64(parsed_valid.status, ==, gab_cvalid);
 
@@ -19,17 +18,20 @@ static MunitResult test_parse_and_compile(const MunitParameter params[],
       .ast = parsed_valid.vresult,
       .bindings = gab_erecord(gab),
       .env = gab_listof(gab, gab_erecord(gab)),
-      .mod = gab_string(gab, module),
   };
-  union gab_value_pair compiled = gab_compile(gab, comp_args);
+  union gab_value_pair compiled = gab_compile(gab, src, comp_args);
+
+  gab_srccomplete(gab, src);
 
   munit_assert_uint64(compiled.status, ==, gab_cvalid);
   munit_assert_uint64(gab_valkind(compiled.vresult), ==, kGAB_PROTOTYPE);
 
-  struct gab_parse_argt invalid_args = {.source = "? bad_syntax := ",
-                                        .name = "test_invalid"};
+  module = "test_invalid";
+  source = "? bad_syntax := ";
+  src = gab_source(gab, gab_string(gab, module), strlen(source), source);
 
-  union gab_value_pair parsed_invalid = gab_parse(gab, invalid_args);
+  union gab_value_pair parsed_invalid = gab_parse(gab, src, (struct gab_parse_argt){});
+
   munit_assert_uint64(parsed_invalid.status, ==, gab_cinvalid);
   munit_assert_uint64(gab_valkind(parsed_invalid.vresult), ==, kGAB_RECORD);
 
@@ -214,9 +216,11 @@ static MunitResult test_exec_source(const MunitParameter params[], void *data) {
     struct exec_test testcase = exec_test_cases[i];
 
     union gab_value_pair result = gab_exec(gab, testcase.in);
+
     gab_fprintf(stderr, "---\n$\n----\nCHECK $ VS $\n",
                 gab_string(gab, testcase.in.source), result.status,
                 testcase.result[0]);
+
     munit_assert_uint64(result.status, ==, testcase.result[0]);
 
     if (testcase.result[0] == gab_cvalid)
@@ -230,13 +234,17 @@ static MunitResult test_exec_source(const MunitParameter params[], void *data) {
 
 static MunitResult test_run_block(const MunitParameter params[], void *data) {
 
-  struct gab_parse_argt build_args = {
-      .source = "x * 2",
-      .name = "test_build",
+  const char* module =  "test_build";
+  const char* source =  "x * 2";
+
+  struct gab_src* src = gab_source(gab, gab_string(gab, module), strlen(source), source);
+
+  union gab_value_pair built = gab_build(gab, src, (struct gab_parse_argt){
       .argv = (const char *[]){"x"},
       .len = 1,
-  };
-  union gab_value_pair built = gab_build(gab, build_args);
+  });
+
+  gab_srccomplete(gab, src);
 
   munit_assert_uint64(built.status, ==, gab_cvalid);
 

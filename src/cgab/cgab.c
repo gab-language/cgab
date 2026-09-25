@@ -2978,6 +2978,9 @@ GAB_API union gab_value_pair gab_aexec(struct gab_triple gab,
                                        struct gab_exec_argt args) {
   gab.flags |= args.flags;
 
+  if (!args.source_len && args.source)
+    args.source_len = strlen(args.source);
+
   struct gab_src *src =
       gab_source(gab, gab_string(gab, args.name), args.source_len, args.source);
 
@@ -10299,15 +10302,6 @@ GAB_API union gab_value_pair gab_parse(struct gab_triple gab,
                                        struct gab_src *src,
                                        struct gab_parse_argt args) {
   gab.flags |= args.flags;
-
-  // args.name = args.name ? args.name : "__main__";
-
-  // gab_value name = gab_string(gab, args.name);
-
-  // struct gab_src *src =
-  //     __gab_source(gab, name, (char *)args.source,
-  //                  args.source_len ? args.source_len : strlen(args.source) +
-  //                  1);
 
   struct parser parser = {.src = src, .err = gab_cundefined};
 
