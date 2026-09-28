@@ -88,7 +88,7 @@ BINARY_FLAGS 	= -rdynamic -Wl,--no-gc-sections $(GAB_LINK_DEPS) $(GAB_BINARYFLAG
 #
 # A custom delay-load hook handles resolving gab's symbols in native modules.
 ifneq (,$(GAB_ISWINDOWS))
-CMOD_LINK_DEPS   = -lgab/gab
+CMOD_LINK_DEPS   = -L$(BUILD_PREFIX)/gab -lgab
 else
 CMOD_LINK_DEPS   =
 endif
