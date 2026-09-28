@@ -45,7 +45,7 @@ BUILD_PREFIX 	 	= build-$(GAB_TARGETS)
 INCLUDE_PREFIX 	= include 
 VENDOR_PREFIX   = vendor
 
-GAB_VERSION_TAG = 0.1.6
+GAB_VERSION_TAG = 0.1.7
 
 GAB_ISWINDOWS   = $(findstring windows,$(GAB_TARGETS))
 
@@ -88,7 +88,7 @@ BINARY_FLAGS 	= -rdynamic -Wl,--no-gc-sections $(GAB_LINK_DEPS) $(GAB_BINARYFLAG
 #
 # A custom delay-load hook handles resolving gab's symbols in native modules.
 ifneq (,$(GAB_ISWINDOWS))
-CMOD_LINK_DEPS   = -lgab/gab
+CMOD_LINK_DEPS   = -L$(BUILD_PREFIX)/gab -lgab
 else
 CMOD_LINK_DEPS   =
 endif

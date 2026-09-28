@@ -1,0 +1,48 @@
+(gab\expand: Strings.make(":use").to\message) .def (l r) :: do
+  (pkg config**) := r*
+  
+  name := config.at as: .unwrap_or("_").to\binary
+
+  \do
+    \(name) := System.use(\(pkg))
+  end
+end
+
+# TODO: Implement these instead of methods on messages
+System.deft(t m b m2 b2)
+System.defm(m t b t2 b2)
+
+# with this, macros don't really seem necessary.
+# Hypothetical use syntax
+:use ('github.com/gab-language/cgab@0.1.7:cui' as: Ui)
+:use ('github.com/gab-language/cgab@0.1.7:Atoms' as: Atoms)
+:use ('github.com/gab-language/cgab@0.1.7:Transducers' as: Streams)
+
+Ui      := use.'github.com/gab-language/cgab@0.1.7:cui'
+Atoms   := use.'github.com/gab-language/cgab@0.1.7:Atoms'
+Streams := use.'github.com/gab-language/cgab@0.1.7:Transducers'
+
+Ui      := use! 'github.com/gab-language/cgab@0.1.7:cui'
+Atoms   := use! 'github.com/gab-language/cgab@0.1.7:Atoms'
+Streams := use! 'github.com/gab-language/cgab@0.1.7:Transducers'
+
+(Ui, Atoms, Streams) := use! ('github.com/gab-language/cgab@0.1.7' 'cui' 'Atoms' 'Transducers')
+  
+(Ui, Atoms, Streams) := System.use ('github.com/gab-language/cgab@0.1.7' : 'cui' 'Atoms' 'Transducers')
+
+# Hypothetical def syntaxes
+System.defm(is\unittest: Messages.t, () :: self.to\string.has\suffix "\test")
+
+def!(is\unittest: Messages.t, () :: self.to\string.has\suffix "\test")
+
+(is\unittest Messages.t) :def () :: self.to\string.has\suffix "\test"
+
+Messages.t .def (is\unittest: () :: self.to\string.has\suffix "\test")
+
+(is\unittest: Messages.t) .def () :: do
+
+end
+
+is\unittest:.def(
+  Messages.t
+  () :: self.to\string.has\suffix "\test")

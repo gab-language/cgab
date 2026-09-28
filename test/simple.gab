@@ -1,6 +1,6 @@
-Http := 'github.com/gab-language/cgab@0.1.6' .use 'Http'
-'github.com/gab-language/cgab@0.1.6' .use 'Json'
-'github.com/gab-language/cgab@0.1.6' .use 'czstd'
+Http := 'github.com/gab-language/cgab@0.1.7' .use 'Http'
+'github.com/gab-language/cgab@0.1.7' .use 'Json'
+'github.com/gab-language/cgab@0.1.7' .use 'czstd'
 
 res := Http.get(
     'api.restful-api.dev'

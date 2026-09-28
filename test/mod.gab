@@ -354,6 +354,31 @@ blocks\empty_varargs\test: .def (t :: do
   varfunc.(onetwo.())
 end)
 
+blocks\make_simple\test: .def (t :: do
+  (ok, b) := Blocks.make(\[] \[2])
+  
+  t.expect(ok ==: ok:)
+  t.expect(b.() ==: 2)
+
+  (ok, b) := Blocks.make(\[] \[a])
+
+  t.expect(ok ==: err:)
+end)
+
+blocks\make_varargs\test: .def (t :: do
+  (ok, b) := Blocks.make(\[args*], \[args])
+
+  t.expect(ok ==: ok:)
+
+  args := b.(1 2 3 4 5)
+
+  t.expect(args.at 0 .unwrap ==: 1)
+  t.expect(args.at 1 .unwrap ==: 2)
+  t.expect(args.at 2 .unwrap ==: 3)
+  t.expect(args.at 3 .unwrap ==: 4)
+  t.expect(args.at 4 .unwrap ==: 5)
+end)
+
 Point := { x: nil:, y: nil: }?
 
 records\have_properties\test: .def (t :: do
@@ -668,7 +693,7 @@ channels\handle_multiple_values\test: .def t :: do
   t.expect(three ==: 3)
 end
 
-'github.com/gab-language/cgab@0.1.6' .use 'Json'
+'github.com/gab-language/cgab@0.1.7' .use 'Json'
 
 json\parse_simple\test: .def t :: do
   (ok, js) := '{ "hello": 1 }'.as\json
@@ -688,7 +713,7 @@ json\serialize_simple\test: .def t :: do
   t.expect(js ==: '{"hello":1,"world":2}')
 end
 
-'github.com/gab-language/cgab@0.1.6' .use 'Xml'
+'github.com/gab-language/cgab@0.1.7' .use 'Xml'
 
 xml\parse_simple\test: .def t :: do
   (ok, xml) := '<hello type="number" small="true">"before"<tag>3</tag><tag2/>"after"</hello>'.as\xml
@@ -735,4 +760,4 @@ end
 #  t.expect(ok ==: ok:)
 #end
 
-'github.com/gab-language/cgab@0.1.6' .use 'Tests'
+'github.com/gab-language/cgab@0.1.7' .use 'Tests'

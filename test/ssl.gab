@@ -1,4 +1,4 @@
-'github.com/gab-language/cgab@0.1.6'.use'chttp'
+'github.com/gab-language/cgab@0.1.7'.use'chttp'
 Socket := Io.Sockets
 
 cert := Io.Files.make("MyCertificate.crt" "r").unwrap
@@ -34,7 +34,7 @@ server_fiber := Fibers.make () :: do
 
     'Accepted client: $\n'.sprintf(client).println
 
-    req := client.transduce(
+    req := client.reduce(
       nil:
       (x y) :: y
       # Concatenate the stream of bytes together

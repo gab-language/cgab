@@ -259,7 +259,7 @@ GAB_API_INLINE char *gab_osprefix_install(const char *v) {
   return str.data;
 }
 
-GAB_API_INLINE int gab_nosproc(char *cmd, size_t nargs, const char *args[]) {
+GAB_API_INLINE int gab_nosproc(const char *cmd, size_t nargs, const char *args[]) {
   pid_t pid = fork();
 
   if (pid < 0)
@@ -451,7 +451,7 @@ GAB_API_INLINE bool gab_osfisready(FILE *f) {
   return result == WAIT_OBJECT_0;
 }
 
-GAB_API_INLINE int gab_nosproc(char *cmd, size_t nargs, char *args[]) {
+GAB_API_INLINE int gab_nosproc(const char *cmd, size_t nargs, char *args[]) {
   STARTUPINFO si;
   PROCESS_INFORMATION pi;
 
@@ -508,7 +508,7 @@ GAB_API_INLINE const char *gab_osprefix(const char *v) { return ""; }
 
 #define gab_ossignal(sig, handler) signal(sig, handler)
 
-GAB_API_INLINE int gab_nosproc(char *cmd, size_t nargs, char *args[]) {
+GAB_API_INLINE int gab_nosproc(const char *cmd, size_t nargs, char *args[]) {
   return 1;
 }
 

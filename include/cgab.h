@@ -499,7 +499,7 @@ enum gab_status {
 /* VERSION */
 #define GAB_VERSION_MAJOR "0"
 #define GAB_VERSION_MINOR "1"
-#define GAB_VERSION_PATCH "6"
+#define GAB_VERSION_PATCH "7"
 #define GAB_VERSION_TAG                                                        \
   GAB_VERSION_MAJOR "." GAB_VERSION_MINOR "." GAB_VERSION_PATCH
 
@@ -588,6 +588,7 @@ enum gab_status {
 #define mGAB_AST_NODE_SEND_LHS "gab\\lhs"
 #define mGAB_AST_NODE_SEND_MSG "gab\\msg"
 #define mGAB_AST_NODE_SEND_RHS "gab\\rhs"
+#define mGAB_AST_NODE_UNQUOTED "gab\\unquoted"
 
 /* Utility macro for computing the length of a statically sized c-array */
 #define LEN_CARRAY(a) (sizeof(a) / sizeof(a[0]))
@@ -698,7 +699,6 @@ static inline void __gab_assert_fail(const char *prelude, const char *expr,
   "|                                                                       |\n" \
   "*-----------------------------------------------------------------------*\n"
 // clang-format on
-
 #define gab_assert(expr, format, ...)                                          \
   ((expr) ? (void)(0)                                                          \
           : __gab_assert_fail(GAB_ASSERT_DEFAULT_PRELUDE, #expr, __FILE__,     \
@@ -785,7 +785,7 @@ static inline void __gab_assert_fail(const char *prelude, const char *expr,
  * Luckily, windows has a simple lock we can statically initialize here
  * which does the trick.
  *
- * If mingw/binutils etc got their stuff together and we didn't have to 
+ * If mingw/binutils etc got their stuff together and we didn't have to
  * manually unprotect/protect the IAT table for delay loading to work,
  * then this wouldn't even be an issue in the first place.
  */
@@ -1125,8 +1125,14 @@ enum gab_kind {
                         ? kGAB_NUMBER                                          \
                         : ((val) >> __GAB_TAGOFFSET) & __GAB_TAGMASK)))
 
+/*
+ * Check if a gab_value represents a number.
+ */
+#define gab_valisn(val) (((val) & __GAB_QNAN) != __GAB_QNAN)
+
 // TODO @cgab @perf: Benchmark __gab_valtod - examine generated code.
 GAB_API_INLINE gab_float __gab_valtod(gab_value value) {
+  gab_verify(gab_valisn(value), "Value is not a number");
   union {
     uint64_t bits;
     gab_float num;
@@ -1159,11 +1165,6 @@ GAB_API_INLINE gab_value __gab_itoval(gab_int value) {
 
   return __gab_dtoval(value);
 }
-
-/*
- * Check if a gab_value represents a number.
- */
-#define gab_valisn(val) (((val) & __GAB_QNAN) != __GAB_QNAN)
 
 /*
  * Check if a gab_value represents a boolean.
@@ -1273,6 +1274,7 @@ GAB_API_INLINE gab_value __gab_itoval(gab_int value) {
  *
  */
 GAB_API_INLINE gab_int __gab_valtoi(gab_value v) {
+  gab_verify(gab_valisn(v), "Value is not a number");
   gab_float num = (__gab_valtod(v));
 
   if (num < -GAB_INTMAX)
@@ -1288,6 +1290,7 @@ GAB_API_INLINE gab_int __gab_valtoi(gab_value v) {
  * The clamping is taken care of for us by __gab_valtoi.
  */
 GAB_API_INLINE gab_uint __gab_valtou(gab_value v) {
+  gab_verify(gab_valisn(v), "Value is not a number");
   return (gab_uint)__gab_valtoi(v);
 }
 
@@ -1539,6 +1542,11 @@ enum gab_flags {
    * When any fiber panics, send SIGTERM to the engine.
    */
   fGAB_SIGTERM_ON_ERR = 1 << 5,
+
+  /*
+   * 
+   */
+  fGAB_WITHOLD_ERR = 1 << 6,
 };
 
 /**
@@ -1609,9 +1617,9 @@ struct gab_create_argt {
    *
    *  This list should be terminated with a null struct.
    * */
-  struct gab_package {
-    const char *package, *module, *alias;
-  } *packages;
+  struct gab_module {
+    const char *package, *module;
+  } *modules;
 };
 
 /**
@@ -1715,6 +1723,7 @@ GAB_API int64_t gab_psprintf(char *dst, uint64_t n, const char *prefix,
  * @return the number of bytes written to the stream.
  */
 GAB_API int64_t gab_fprintf(FILE *stream, const char *fmt, ...);
+GAB_API int64_t gab_fpprintf(FILE *stream, const char *fmt, ...);
 
 /**
  * @brief Format the given string into the given buffer, with varargs. @see
@@ -2070,19 +2079,6 @@ GAB_API gab_value *gab_segmodput(struct gab_eg *eg, const char *name,
  */
 struct gab_parse_argt {
   /**
-   * The name of the module, defaults to "__main__"
-   */
-  const char *name;
-  /**
-   * The number of bytes in source to consider as source code.
-   * If 0, strlen(source) is used.
-   */
-  uint64_t source_len;
-  /**
-   * The source code to compile.
-   */
-  const char *source;
-  /**
    * The number of arguments expected by the main block.
    */
   uint64_t len;
@@ -2115,6 +2111,7 @@ struct gab_parse_argt {
  * @returns a pair of values describing the outcome of the parse.
  */
 GAB_API union gab_value_pair gab_parse(struct gab_triple gab,
+                                       struct gab_src *src,
                                        struct gab_parse_argt args);
 
 /**
@@ -2124,7 +2121,7 @@ GAB_API union gab_value_pair gab_parse(struct gab_triple gab,
  * @see enum gab_flags.
  */
 struct gab_compile_argt {
-  gab_value ast, env, bindings, mod;
+  gab_value ast, env, bindings;
   /**
    * Optional flags for compilation.
    */
@@ -2146,6 +2143,7 @@ struct gab_compile_argt {
  * @returns a pair of values describin the outcome of compilation.
  */
 GAB_API union gab_value_pair gab_compile(struct gab_triple gab,
+                                         struct gab_src *src,
                                          struct gab_compile_argt args);
 
 /**
@@ -2170,6 +2168,7 @@ GAB_API union gab_value_pair gab_compile(struct gab_triple gab,
  * @returns a pair of values describing the outcome of the build.
  */
 GAB_API union gab_value_pair gab_build(struct gab_triple gab,
+                                       struct gab_src *src,
                                        struct gab_parse_argt args);
 
 /**
@@ -2337,7 +2336,7 @@ struct gab_exec_argt {
   /**
    * @brief The values of the arguments to the main block.
    */
-  gab_value *argv;
+  gab_value *vargv;
   /**
    * Optional flags for compilation AND execution.
    */
@@ -2419,7 +2418,7 @@ struct gab_repl_argt {
   /**
    * The values of the arguments to the main block.
    */
-  gab_value *argv;
+  gab_value *vargv;
 };
 
 /**
@@ -2674,6 +2673,11 @@ GAB_API void gab_gclock(struct gab_triple gab);
  * @param gc The gc to unlock
  */
 GAB_API void gab_gcunlock(struct gab_triple gab);
+
+GAB_API struct gab_src *gab_source(struct gab_triple gab, gab_value name,
+                                   uint64_t len, const char *source);
+
+GAB_API void gab_srccomplete(struct gab_triple gab, struct gab_src *self);
 
 /**
  * @brief Get the name of a source file - aka the fully qualified path.
@@ -3172,8 +3176,6 @@ GAB_API gab_value gab_record(struct gab_triple gab, uint64_t stride,
  * @param shape The shape that the record should have.
  * @param stride The stride between the values in vals
  * @param vals The vals
- * @param km A key-mask produced by @see gab_shape, for skipping repeat
- * values.
  * @return The new record
  */
 GAB_API gab_value gab_recordfrom(struct gab_triple gab, gab_value shape,
@@ -3564,15 +3566,6 @@ GAB_API union gab_value_pair gab_fibawait(struct gab_triple gab,
  */
 GAB_API union gab_value_pair gab_tfibawait(struct gab_triple gab,
                                            gab_value fiber, uint64_t tries);
-
-/*
- * @brief Block the caller until the fiber is completed.
- *
- * @param gab   The engine
- * @param fiber The fiber
- * @return The fiber's environment upon completion.
- */
-GAB_API gab_value gab_fibawaite(struct gab_triple gab, gab_value fiber);
 
 /*
  * @brief Return a value comprising the stacktrace of the fiber.
