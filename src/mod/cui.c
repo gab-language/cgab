@@ -235,8 +235,6 @@ gab_value clayGetTopmostId(struct gab_triple gab) {
   return gab_cundefined;
 }
 
-// TODO @ui @qol: Switch to distinct key\up key\down events.
-
 bool clay_RGFW_update(struct gab_triple gab, struct ui *gui, double deltaTime,
                       RGFW_event *ev) {
   switch (ev->type) {
@@ -338,7 +336,7 @@ bool clay_RGFW_update(struct gab_triple gab, struct ui *gui, double deltaTime,
                       gab_cundefined, gab_cundefined);
     default: {
       const char event[] = {ev->keyChar.value, '\0'};
-      return putevent(gab, gui, "key", "down", gab_string(gab, event),
+      return putevent(gab, gui, "key", "up", gab_string(gab, event),
                       gab_cundefined, gab_cundefined);
     }
     }

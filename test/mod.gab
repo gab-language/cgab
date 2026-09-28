@@ -354,6 +354,31 @@ blocks\empty_varargs\test: .def (t :: do
   varfunc.(onetwo.())
 end)
 
+blocks\make_simple\test: .def (t :: do
+  (ok, b) := Blocks.make(\[] \[2])
+  
+  t.expect(ok ==: ok:)
+  t.expect(b.() ==: 2)
+
+  (ok, b) := Blocks.make(\[] \[a])
+
+  t.expect(ok ==: err:)
+end)
+
+blocks\make_varargs\test: .def (t :: do
+  (ok, b) := Blocks.make(\[args*], \[args])
+
+  t.expect(ok ==: ok:)
+
+  args := b.(1 2 3 4 5)
+
+  t.expect(args.at 0 .unwrap ==: 1)
+  t.expect(args.at 1 .unwrap ==: 2)
+  t.expect(args.at 2 .unwrap ==: 3)
+  t.expect(args.at 3 .unwrap ==: 4)
+  t.expect(args.at 4 .unwrap ==: 5)
+end)
+
 Point := { x: nil:, y: nil: }?
 
 records\have_properties\test: .def (t :: do
