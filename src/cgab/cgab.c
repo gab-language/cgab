@@ -1598,6 +1598,11 @@ struct primitive msg_primitives[] = {
         .primitive = gab_primitive(OP_SEND_PRIMITIVE_FIBER),
     },
     {
+        .name = mGAB_MAKE "\\linked",
+        .message = tGAB_FIBER,
+        .primitive = gab_primitive(OP_SEND_PRIMITIVE_FIBER_LINKED),
+    },
+    {
         .name = mGAB_MAKE,
         .message = tGAB_RECORD,
         .primitive = gab_primitive(OP_SEND_PRIMITIVE_RECORD),
@@ -7379,8 +7384,7 @@ GAB_API gab_value gab_shpwith(struct gab_triple gab, gab_value shape,
   }
 }
 
-GAB_INTERNAL bool __gab_fibxchg(gab_value fiber,
-                                enum gab_kind new_kind) {
+GAB_INTERNAL bool __gab_fibxchg(gab_value fiber, enum gab_kind new_kind) {
   gab_assert(gab_valisfib(fiber), "Invalid kind");
 
   uint8_t old_kind = kGAB_FIBER;
@@ -7438,7 +7442,8 @@ GAB_API gab_value gab_fiber(struct gab_triple gab, struct gab_fiber_argt args) {
   }
 
   if (args.parent) {
-    gab_precondition(gab_valisfib(args.parent), "Expected fiber parent to be a fiber");
+    gab_precondition(gab_valisfib(args.parent),
+                     "Expected fiber parent to be a fiber");
     self->parent = args.parent;
   } else {
     self->parent = gab_cundefined;
@@ -13096,7 +13101,7 @@ __gab_vmgivenerror(struct gab_triple gab, union gab_value_pair given) {
               gab_number(gab.wkid), __gab_obj(fiber));
 #endif
 
-  if (!__gab_fibxchg(fiber,  kGAB_FIBER_ERR))
+  if (!__gab_fibxchg(fiber, kGAB_FIBER_ERR))
     return __gab_fibresult(fiber);
 
   return __gab_fibresult(fiber);
@@ -13123,7 +13128,7 @@ GAB_INTERNAL union gab_value_pair __gab_vvmerror(struct gab_triple gab,
               __gab_obj(fiber));
 #endif
 
-  if (!__gab_fibxchg(fiber,  kGAB_FIBER_ERR))
+  if (!__gab_fibxchg(fiber, kGAB_FIBER_ERR))
     return __gab_fibresult(fiber);
 
   return __gab_fibresult(fiber);
@@ -13391,7 +13396,7 @@ cGAB_VM_OPCODE_ATTRIBUTES union gab_value_pair __gab_vmeerror(OP_HANDLER_ARGS) {
 cGAB_VM_OPCODE_ATTRIBUTES union gab_value_pair __gab_vmok(OP_HANDLER_ARGS) {
   gab_value fiber = gab_thisfiber(GAB());
 
-  if (!__gab_fibxchg(fiber,  kGAB_FIBER_OK))
+  if (!__gab_fibxchg(fiber, kGAB_FIBER_OK))
     return __gab_fibresult(fiber);
 
   /* Reset the stack before returning */
@@ -13844,7 +13849,7 @@ GAB_API struct gab_ofiber *getthisfiber(struct gab_triple gab) {
     }                                                                          \
   })
 
-#define MICRO_OP_FIBER(receiver, message, nargs)                               \
+#define MICRO_OP_FIBER(receiver, message, nargs, link)                         \
   ({                                                                           \
     STORE_SP();                                                                \
                                                                                \
@@ -13852,13 +13857,15 @@ GAB_API struct gab_ofiber *getthisfiber(struct gab_triple gab) {
                                                                                \
     uint64_t argc = nargs;                                                     \
                                                                                \
-    gab_value fb = gab_fiber(GAB(), (struct gab_fiber_argt){                   \
-                                        .receiver = receiver,                  \
-                                        .message = message,                    \
-                                        .flags = GAB().flags,                  \
-                                        .argv = SP() - argc,                   \
-                                        .argc = argc,                          \
-                                    });                                        \
+    gab_value fb = gab_fiber(                                                  \
+        GAB(), (struct gab_fiber_argt){                                        \
+                   .parent = link ? gab_thisfiber(GAB()) : gab_cundefined,     \
+                   .receiver = receiver,                                       \
+                   .message = message,                                         \
+                   .flags = GAB().flags,                                       \
+                   .argv = SP() - argc,                                        \
+                   .argc = argc,                                               \
+               });                                                             \
                                                                                \
     bool spawned = __gab_jbspawn(GAB(), fb);                                   \
                                                                                \
@@ -15881,7 +15888,32 @@ CASE_CODE(SEND_PRIMITIVE_FIBER) {
 
   PANIC_GUARD_KIND(message, kGAB_MESSAGE);
 
-  MICRO_OP_FIBER(receiver, message, have - 3);
+  MICRO_OP_FIBER(receiver, message, have - 3, false);
+
+  NEXT();
+}
+
+CASE_CODE(SEND_PRIMITIVE_FIBER_LINKED) {
+  gab_value *ks = READ_SENDCONSTANTS;
+
+  uint64_t have = HV();
+  uint64_t below_have = BELOW_HV();
+
+  SEND_GUARD_CACHED_RECEIVER_TYPE(PEEK_N(have));
+
+  // TODO @cgab @bug: Breaks when yielding.
+  NILPAD_GUARD_ARGS_GTE(3);
+
+  gab_value receiver = PEEK_N(have - 1);
+
+  gab_value message = PEEK_N(have - 2);
+
+  if (message == gab_nil)
+    message = gab_message(GAB(), mGAB_CALL);
+
+  PANIC_GUARD_KIND(message, kGAB_MESSAGE);
+
+  MICRO_OP_FIBER(receiver, message, have - 3, true);
 
   NEXT();
 }

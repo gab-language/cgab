@@ -300,7 +300,9 @@ enum gab_cui_mod rgfw_mod_to_gab(RGFW_keymod mod) {
 }
 
 #if HAS_TERMBOX
-enum gab_cui_mod tb_mod_to_gab(int mod) { return mod & ~TB_MOD_MOTION; };
+gab_value tb_mod_to_gab(uint8_t mod) {
+  return gab_number(mod & ~(TB_MOD_MOTION | TB_MOD_SHIFT));
+};
 #endif
 
 bool clay_RGFW_update(struct gab_triple gab, struct ui *gui, double deltaTime,
@@ -413,13 +415,13 @@ bool clay_RGFW_update(struct gab_triple gab, struct ui *gui, double deltaTime,
   case TB_KEY_##k: {                                                           \
     char ev[3] = {e->key};                                                     \
     return putevent(gab, gui, "key", "char", gab_string(gab, ev),              \
-                    gab_number(e->mod & ~kGAB_CUI_MOD_CTRL), gab_cundefined);  \
+                    tb_mod_to_gab(e->mod), gab_cundefined);                    \
   }
 
 #define TERMBOX_KEY_CASE(key, str)                                             \
   case TB_KEY_##key:                                                           \
     return putevent(gab, gui, "key", "char", gab_string(gab, #str),            \
-                    gab_number(e->mod & ~kGAB_CUI_MOD_CTRL), gab_cundefined);
+                    tb_mod_to_gab(e->mod), gab_cundefined);
 
 bool clay_termbox_update(struct gab_triple gab, struct ui *gui,
                          struct tb_event *e, double deltaTime) {
@@ -431,13 +433,13 @@ bool clay_termbox_update(struct gab_triple gab, struct ui *gui,
       char ev[5] = {0};
       memcpy(ev, &e->ch, 4);
       return putevent(gab, gui, "key", "char", gab_string(gab, ev),
-                      gab_number(e->mod), gab_cundefined);
+                      tb_mod_to_gab(e->mod), gab_cundefined);
     }
     switch (e->key) {
     case TB_KEY_BACKSPACE2: {
       char ev[3] = {TB_KEY_BACKSPACE};
       return putevent(gab, gui, "key", "char", gab_string(gab, ev),
-                      gab_number(e->mod & ~kGAB_CUI_MOD_CTRL), gab_cundefined);
+                      tb_mod_to_gab(e->mod), gab_cundefined);
     }
       TERMBOX_CHAR_CASE(BACKSPACE);
       TERMBOX_CHAR_CASE(ENTER);
@@ -698,6 +700,17 @@ Clay_CornerRadius parseRadius(struct gab_triple gab, gab_value props) {
   };
 }
 
+Clay_ClipElementConfig parseClip(struct gab_triple gab, gab_value props) {
+  gab_value vclipx = gab_mrecat(gab, props, "clip\\x");
+  gab_value vclipy = gab_mrecat(gab, props, "clip\\y");
+  bool clipx = vclipx == gab_message(gab, "none");
+  bool clipy = vclipy == gab_message(gab, "none");
+  return (Clay_ClipElementConfig){
+      .horizontal = clipx,
+      .vertical = clipy,
+  };
+}
+
 Clay_BorderElementConfig parseBorder(struct gab_triple gab, gab_value props) {
   uint16_t bl = 0, br = 0, bt = 0, bb = 0;
 
@@ -866,6 +879,7 @@ union gab_value_pair render_box(struct gab_triple gab, struct ui *gui,
                        .transition = parseTransition(gab, props),
                        .backgroundColor = packedToClayColor(vbg),
                        .border = parseBorder(gab, props),
+                       .clip = parseClip(gab, props),
                    }) {
 
     if (Clay_Hovered() && vhoverable == gab_true) {
@@ -931,6 +945,7 @@ union gab_value_pair render_rect(struct gab_triple gab, struct ui *gui,
   CLAY(UI_ID(vid), {
                        .backgroundColor = packedToClayColor(vcolor),
                        .layout = parseLayout(gab, props),
+                       .clip = parseClip(gab, props),
                        .floating =
                            {
                                .attachTo = CLAY_ATTACH_TO_ROOT,
@@ -1137,6 +1152,7 @@ union gab_value_pair render_text(struct gab_triple gab, struct ui *gui,
   CLAY(UI_ID(vid), {
                        .border = parseBorder(gab, props),
                        .layout = parseLayout(gab, props),
+                       .clip = parseClip(gab, props),
                        .transition = parseTransition(gab, props),
                        .backgroundColor = packedToClayColor(vbg),
                        .cornerRadius = parseRadius(gab, props),
@@ -1147,6 +1163,7 @@ union gab_value_pair render_text(struct gab_triple gab, struct ui *gui,
     }
 
     CLAY_TEXT(text, CLAY_TEXT_CONFIG({
+                        .wrapMode = CLAY_TEXT_WRAP_NEWLINES,
                         .fontSize = size,
                         .letterSpacing = spacing,
                         .lineHeight = height,

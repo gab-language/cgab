@@ -4,22 +4,31 @@ Ui      := 'github.com/gab-language/cgab@0.1.7' .use 'Ui'
 
 Colors := {
   cl: 0x00000000
-  fg: 0xff162227
-  bg: 0xffffffff
-  shadow: 0xffe8e9ed
-  pallete\2nd: 0xffd3dbe4
-  pallete\3rd: 0xff466267
-  bg\hl: 0xffc6c8d1
+  shadow: 0xff000000
+  primary: 0xff636883
+  primary\light: 0xffb6b9c8
+  primary\dark: 0xff373a49
+  primary\fg: 0xffffffff
+  primary\bg: 0xff000000
+  secondary\fg: 0xffb4b4b4
+  border: 0xff1d1e26
+  active: 0xff585c74
+  hover: 0xff6e7391
 }
 
 how := tui:
 
 repl\char\dispatch: .defcase {
-  ('\b'.to\message) model :: model.put(repl\input: model.repl\input.pop.unwrap_or '')
-  ('\t'.to\message) model :: model.put(repl\input: model.repl\input + '  ')
+  ('\b'.to\message) (model, data) :: model.put(repl\input: model.repl\input.pop.unwrap_or '')
+  ('\t'.to\message) (model, data) :: model.put(repl\input: model.repl\input + '  ')
   # How does windows do here when pressing enter?
-  ('\r'.to\message) model :: model.put(repl\input: model.repl\input + '\n')
-  ('\n'.to\message) model :: model.put(repl\input: model.repl\input + '\n')
+  ('\r'.to\message) (model, data) :: do
+    alt := data.at 1 .unwrap & 1
+    (alt > 0)
+      .then(() :: model.repl\eval)
+      .else(() :: model.put(repl\input: model.repl\input + '\n'))
+  end
+  ('\n'.to\message) (model, data) :: model.put(repl\input: model.repl\input + '\n')
 }
 
 repl\char\dispatch: .def (model) :: do
@@ -30,16 +39,55 @@ repl\event\dispatch: .defcase {
   tick: (model type data) :: model
   mouse: (model type data) :: model
   key:  (model type data) :: do
-    data := data.at 0 .unwrap
-    key := data.to\message
+    key := data.at 0.unwrap.to\message
 
-    [type data.to\binary].eprintln
+#[type, data].eprintln
 
     (type == char:)
       .then(() :: key.repl\char\dispatch(model data))
       .or model
   end
 }
+
+gab_text := '  ________   ___\n / ___/ _ | / _ )\n/ (_ / __ |/ _  |\n\\___/_/ |_/____/\n';
+
+text_or_placeholder := (text) :: do
+  (text.len > 0) .and text .or "Write a gab expression here. Press alt+enter to run your code."
+end
+
+Cells := repl\cell:.defclass(
+  cell\text:
+  cell\ast:
+  cell\block:
+  cell\result:
+  (t input) :: do
+    (ok, ast) := input.as\gab
+    (ok, block) := ok.then(() :: Blocks.make(\[] ast))
+
+    result := ok.then(() :: do 
+        ch := Channels.make
+
+        Fibers.make\linked(() :: ch <! block.())
+
+
+        [ch >!]
+      end)
+
+    t.make(input, ast, block, result)
+  end
+  {
+    cell\view: () :: do
+      [
+        box:
+        { w\g: 1 bg: Colors.primary, b\fg: Colors.border, b\l: 9, p\x: 27 p\y: 21 clip\x: none:}
+        [
+          [text: { bg: Colors.cl, fg: Colors.primary\fg } self.cell\text]
+          [text: { bg: Colors.cl, fg: Colors.primary\fg } '$\n'.sprintf(self.cell\ast)]
+          [text: { bg: Colors.cl, fg: Colors.primary\fg } '$\n'.sprintf(self.cell\result)]
+        ]
+      ]
+    end
+  })
 
 module.defclass(
   repl\history:
@@ -49,9 +97,57 @@ module.defclass(
     repl\controller: (event type data) :: do
       event.repl\event\dispatch(self type data)
     end,
-    repl\view: (event type data) :: do
+    repl\has_input: () :: self.repl\input.len > 0
+    repl\eval: () :: do
+      input := self.repl\input
+
+      self
+        .put_via_by(repl\history: h :: h.cons (Cells.make input))
+        .put(repl\input: "")
+    end,
+    repl\view\history: () :: do
+      self.repl\history.map(cell\view:.to\block)
+    end
+    repl\view: () :: do
       [
-        [text: { bg: Colors.bg } self.repl\input]
+        [
+          box:
+          { w\r: 100 h\r: 100 layout: horizontal: p\x: 18 p\y: 21 }
+          [
+            [
+              box:
+              { w\r: 80 h\g: 1 bg: Colors.primary\bg, layout: horizontal: align\x: center: p\x: 18 p\y: 21}
+              [
+                [
+                  box:
+                  { h\g: 1 w\g: 1 gap: 21}
+                  [
+                    [
+                      box:
+                      { h\g: 1 w\g: 1 gap: 21 align\x: center: }
+                      self.repl\view\history
+                    ]
+                    [
+                      box:
+                      { w\g: 1 bg: Colors.primary, b\fg: Colors.border, b\l: 9, p\x: 27 p\y: 21 }
+                      [
+                        [text: { bg: Colors.cl, fg: self.repl\has_input.and(Colors.primary\fg).or(Colors.secondary\fg) } text_or_placeholder.(self.repl\input)]
+                      ]
+                    ]
+                  ]
+                ]
+              ]
+            ]
+            [
+              box:
+              { w\r: 20 h\g: 1 bg: Colors.primary\bg, p\x: 18 p\y: 21 align\x: center: }
+              [
+                [text: { fg: Colors.primary\light } gab_text]
+                [text: { fg: Colors.primary\light } "Welcome to the Gab REPL"]
+              ]
+            ]
+          ]
+        ]
       ]
     end
   })
@@ -69,7 +165,7 @@ events
     |> Transducers.reduce(
       module.make([] ""),
       (model, event, type, data*) :: model.repl\controller(event type data))
-    |> Transducers.map(app :: [[text: {} "EVENT: $".sprintf(app)]])
+    |> Transducers.map(model :: model.repl\view)
   )
 
 app.close

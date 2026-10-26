@@ -1238,19 +1238,19 @@ spec\explain:.def(
   'message')
 
 spec\message\input_fits:.def(
-  'gab\\record'
+  Records.t
   () :: self.input.spec\fits(self.in*))
 
 spec\message\output_fits:.def(
-  'gab\\record'
+  Records.t
   () :: self.output.spec\fits(self.out*))
 
 spec\message\receiver_fits:.def(
-  'gab\\record'
+  Records.t
   () :: self.receiver.spec\fits(self.rec*))
 
 spec\message\semantics_fits:.def(
-  'gab\\record'
+  Records.t
   () :: self
     .semantics
     .spec\semantics_fits(self.in, self.out))
@@ -1270,7 +1270,7 @@ end
 
 spec\message\define:.defcase {
   nil: general_message\predicate
-  "gab\record" () :: do
+  Records.t, () :: do
     args := self
     pred := Strings.make('predicate:message:' args).to\message
 
