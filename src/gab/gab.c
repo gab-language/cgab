@@ -892,27 +892,32 @@ bool add_package(mz_zip_archive *zip_o, const char **roots,
   if (!(*mod) || !(*mod)->path)
     return false;
 
-  /*
-   * Detect if the module we've found is already a bundle.
-   * If it is, flatten it into this bundle.
-   */
-  mz_zip_archive zip_r = {0};
-  if (mz_zip_reader_init_file(&zip_r, (*mod)->path, 0)) {
-    uint64_t files = mz_zip_reader_get_num_files(&zip_r);
+  for (const struct gab_module_res *m = *mod; m; m = m->next) {
+    /*
+     * Detect if the module we've found is already a bundle.
+     * If it is, flatten it into this bundle.
+     */
+    mz_zip_archive zip_r = {0};
+    if (mz_zip_reader_init_file(&zip_r, m->path, 0)) {
+      uint64_t files = mz_zip_reader_get_num_files(&zip_r);
 
-    if (files) {
-      for (uint64_t i = 0; i < files; i++)
-        if (!mz_zip_writer_add_from_zip_reader(zip_o, &zip_r, i))
-          return false; // TODO @cgab @cli: Log this err
+      if (files) {
+        for (uint64_t i = 0; i < files; i++)
+          if (!mz_zip_writer_add_from_zip_reader(zip_o, &zip_r, i))
+            return false; // TODO @cgab @cli: Log this err
 
-      return true;
+        return true;
+      }
     }
+
+    // TODO @cli @qol: Allow the user to configure the SPEED/COMPRESSION
+    // tradeoff here.
+    if (!mz_zip_writer_add_file(zip_o, m->package_path, m->path, nullptr, 0,
+                                MZ_BEST_SPEED))
+      return false;
   }
 
-  // TODO @cli @qol: Allow the user to configure the SPEED/COMPRESSION tradeoff
-  // here.
-  return mz_zip_writer_add_file(zip_o, (*mod)->package_path, (*mod)->path,
-                                nullptr, 0, MZ_BEST_SPEED);
+  return true;
 }
 
 struct step {
