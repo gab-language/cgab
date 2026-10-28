@@ -65,12 +65,9 @@ Cells := repl\cell:.defclass(
     (ok, block) := ok.then(() :: Blocks.make(\[] ast))
 
     result := ok.then(() :: do 
-        ch := Channels.make
+        (fiber, monitor) := Fibers.make\linked(block)
 
-        Fibers.make\linked(() :: ch <! block.())
-
-
-        [ch >!]
+        [monitor >!]
       end)
 
     t.make(input, ast, block, result)

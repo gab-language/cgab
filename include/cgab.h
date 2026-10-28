@@ -459,6 +459,10 @@
  */
 #define GAB_SEND_CACHE_SIZE 3
 
+#define GAB_RETURN_SIZE 1
+
+#define GAB_PACK_SIZE 3
+
 /*
  * Useful definitions for reading values from the bytecode cache.
  */
@@ -1458,14 +1462,6 @@ struct gab_obj {
 #include "cthreads.h"
 #endif
 
-/*
- * Threadsafe generic vector for gab_values.
- */
-#define T gab_value
-#define NAME gab_value_thrd
-#define V_THREADSAFE
-#include "vector.h"
-
 struct gab_gc;
 struct gab_vm;
 struct gab_eg;
@@ -1818,17 +1814,6 @@ GAB_API uint64_t gab_egkeep(struct gab_eg *eg, gab_value value);
 GAB_API uint64_t gab_negkeep(struct gab_eg *eg, uint64_t len, gab_value *argv);
 
 /**
- * @brief As Gab code runs, errors encountered by fibers accumulate
- * in the engine. It is up to the user to choose *when* to drain
- * said errors and handle/present to a user.
- *
- * The errors are in a sentinel-terminated array of gab\records.
- * It is the callers responsibility to free the pointer.
- * The array ends in gab_nil:.
- */
-GAB_API gab_value *gab_egerrs(struct gab_eg *eg);
-
-/**
  * @brief A convenient structure for returning results from c-code.
  */
 union gab_value_pair {
@@ -2170,7 +2155,7 @@ struct gab_run_argt {
   /**
    * The main block to run.
    */
-  gab_value main;
+  gab_value main, link, monitor;
   /**
    * The number of arguments passed to the main block.
    */
@@ -2244,7 +2229,7 @@ struct gab_send_argt {
   /**
    * The message and receiver
    */
-  gab_value message, receiver;
+  gab_value link, monitor, message, receiver;
   /**
    * The number of arguments passed to the send.
    */
@@ -2303,25 +2288,12 @@ GAB_API union gab_value_pair gab_send(struct gab_triple gab,
 GAB_API union gab_value_pair gab_asend(struct gab_triple gab,
                                        struct gab_send_argt args);
 
-/*
- * @brief Send a message to a receiving value.
- *
- * Performs this send in a new fiber. Synchronously runs said fiber *on this
- * thread immediately*.
- *
- * Because this performs the send synchronously, the actual return values of the
- * send are known.
- *
- * TODO @cgab @bug: Repeatedly exec the fiber until it no longer yields.
- */
-GAB_API union gab_value_pair gab_ssend(struct gab_triple gab,
-                                       struct gab_send_argt args);
-
 /**
  * @class gab_exec_argt
  * @brief Arguments and options for executing a source string.
  */
 struct gab_exec_argt {
+  gab_value link, monitor;
   /**
    * The name of the module - defaults to "gab\main".
    */
@@ -3557,7 +3529,7 @@ GAB_API_INLINE gab_value gab_lstat(gab_value lst, uint64_t n) {
 struct gab_fiber_argt {
   uint64_t argc;
 
-  gab_value parent, receiver, message, *argv;
+  gab_value link, monitor, receiver, message, *argv;
 
   uint32_t flags;
 };
@@ -3587,6 +3559,11 @@ GAB_API gab_value gab_fiber(struct gab_triple gab, struct gab_fiber_argt args);
  */
 GAB_API struct gab_vm *gab_fibvm(gab_value fiber);
 
+/*
+ * Return the channel monitoring the fiber.
+ */
+GAB_API gab_value gab_fibmonitor(gab_value fiber);
+
 /**
  * @brief Block the caller until this fiber is completed.
  *
@@ -3615,7 +3592,7 @@ GAB_API union gab_value_pair gab_tfibawait(struct gab_triple gab,
  */
 GAB_API bool gab_fibkill(gab_value fiber);
 
-GAB_API gab_value gab_fibparent(gab_value fiber);
+GAB_API gab_value gab_fiblink(gab_value fiber);
 
 /*
  * @brief Allocate 'n' bytes using the fiber's bump allocator.
@@ -3689,7 +3666,7 @@ GAB_API void gab_fibclear(gab_value fiber);
  */
 GAB_API_INLINE bool gab_fibisrunning(gab_value fiber) {
   gab_precondition(gab_valisfib(fiber), "Should be fiber");
-  return gab_valkind(fiber) == kGAB_FIBER;
+  return atomic_load(&gab_valtoo(fiber)->kind) == kGAB_FIBER;
 }
 
 /*
@@ -3700,7 +3677,7 @@ GAB_API_INLINE bool gab_fibisrunning(gab_value fiber) {
  */
 GAB_API_INLINE bool gab_fibisdone(gab_value fiber) {
   gab_precondition(gab_valisfib(fiber), "Should be fiber");
-  return gab_valkind(fiber) > kGAB_FIBER;
+  return atomic_load(&gab_valtoo(fiber)->kind) > kGAB_FIBER;
 }
 
 /*

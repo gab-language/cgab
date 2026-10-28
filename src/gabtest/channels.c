@@ -93,12 +93,18 @@ test_channel_stress_concurrent_putters(const MunitParameter params[],
   gab_value ch = gab_channel(gab);
   const uint64_t num_fibers = 5000;
   gab_value fibers[num_fibers];
+  gab_value monitors[num_fibers];
   gab_value msg_put = gab_message(gab, mGAB_CHNPUT);
+
+  for (uint64_t i = 0; i < num_fibers; i++) {
+    monitors[i] = gab_channel(gab);
+  }
 
   // 1. Queue up thousands of concurrent putters.
   for (uint64_t i = 0; i < num_fibers; i++) {
     union gab_value_pair put_res =
         gab_asend(gab, (struct gab_send_argt){
+                           .monitor = monitors[i],
                            .message = msg_put,
                            .receiver = ch,
                            .argv = (gab_value[]){gab_number(1)},
@@ -134,6 +140,16 @@ test_channel_stress_concurrent_putters(const MunitParameter params[],
     munit_assert_uint64(done, <=, total_received);
   }
 
+  // Using each monitor, we can see that each fiber returns ok: and the channel.
+  for (uint64_t i = 0; i < num_fibers; i++) {
+    gab_value results[4];
+    gab_value status = gab_nchntake(gab, monitors[i], 4, results);
+    munit_assert_uint64(status, ==, gab_number(3));
+    munit_assert_uint64(results[0], ==, gab_ok);
+    munit_assert_uint64(results[1], ==, fibers[i]);
+    munit_assert_uint64(results[2], ==, ch);
+  }
+
   munit_assert_uint64(total_received, ==, num_fibers);
   munit_assert_true(gab_chnisempty(ch));
 
@@ -145,7 +161,12 @@ static MunitResult test_channel_concurrent_takers(const MunitParameter params[],
   gab_value ch = gab_channel(gab);
   const uint64_t num_fibers = 5000;
   gab_value fibers[num_fibers];
+  gab_value monitors[num_fibers];
   gab_value msg_take = gab_message(gab, mGAB_CHNTAKE);
+
+  for (uint64_t i = 0; i < num_fibers; i++) {
+    monitors[i] = gab_channel(gab);
+  }
 
   for (uint64_t i = 0; i < num_fibers; i++) {
     // NOTE: Pin the send to a *different thread*.
@@ -153,6 +174,7 @@ static MunitResult test_channel_concurrent_takers(const MunitParameter params[],
     // this can sometimes deadlock.
     // As a workaround, disallow the wkid 1 from pulling this job.
     union gab_value_pair take_res = gab_asend(gab, (struct gab_send_argt){
+                                                       .monitor = monitors[i],
                                                        .message = msg_take,
                                                        .receiver = ch,
                                                        .argv = NULL,
@@ -174,6 +196,20 @@ static MunitResult test_channel_concurrent_takers(const MunitParameter params[],
         // Verify the taker finished without trapping an error
         union gab_value_pair res = gab_fibawait(gab, fibers[f]);
         munit_assert_uint64(res.status, ==, gab_ok);
+
+        if (gab_chnisclosed(monitors[f]))
+          continue;
+
+        gab_value results[32];
+        gab_value status = gab_nchntake(gab, monitors[f], 4, results);
+
+        munit_assert_uint64(status, ==, gab_number(4));
+        munit_assert_uint64(results[0], ==, gab_ok);
+        munit_assert_uint64(results[1], ==, fibers[f]);
+        munit_assert_uint64(results[2], ==, gab_ok);
+        munit_assert_uint64(results[3], ==, gab_number(1));
+
+        gab_chnclose(monitors[f]);
       }
     }
     munit_assert_uint64(done, <=, total_sent);

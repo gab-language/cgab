@@ -59,6 +59,7 @@ static inline void v_char_spush(v_char *self, s_char slice) {
 #define SECTION(x) SWAP(NONE, " " x " ")
 
 static struct gab_triple gab;
+static gab_value monitor;
 
 static uint8_t _nargs;
 static gab_value _vargs[255];
@@ -193,21 +194,31 @@ void pop_and_printerr(struct gab_triple gab) {
       continue;
     }
 
-  gab_value *errors = gab_egerrs(gab.eg);
+  gab_value results[32];
+  gab_value nres =
+      gab_nchntake(gab, monitor, sizeof(results) / sizeof(gab_value), results);
 
-  if (!errors)
-    return;
-
-  for (gab_value *err = errors; *err != gab_nil; err++) {
-    assert(gab_valkind(*err) == kGAB_RECORD);
-    const char *errstr = gab_errtocs(gab, *err);
+    const char *errstr = gab_errtocs(gab, results[2]);
     assert(errstr != nullptr);
 
     if (errstr)
       fputs(errstr, stderr);
-  };
 
-  free(errors);
+  // gab_value *errors = gab_egerrs(gab.eg);
+  //
+  // if (!errors)
+  //   return;
+  //
+  // for (gab_value *err = errors; *err != gab_nil; err++) {
+  //   assert(gab_valkind(*err) == kGAB_RECORD);
+  //   const char *errstr = gab_errtocs(gab, *err);
+  //   assert(errstr != nullptr);
+  //
+  //   if (errstr)
+  //     fputs(errstr, stderr);
+  // };
+  //
+  // free(errors);
 }
 
 bool check_and_printerr(union gab_value_pair *res) {
@@ -223,9 +234,9 @@ bool check_and_printerr(union gab_value_pair *res) {
 
     while (!gab_step(gab))
       gab_busywait(gab);
-  }
 
-  pop_and_printerr(gab);
+    pop_and_printerr(gab);
+  }
 
   return res->status == gab_ok;
 }
@@ -391,9 +402,9 @@ union gab_value_pair gab_use_zip_data(struct gab_triple gab, const char *path,
     return gab_panicf(gab, "Failed to load module: $", gab_string(gab, estr));
   }
 
-  // gab_value *data = gab_valarray(gab_ok, gab_nbinary(gab, sz, (uint8_t *)src));
-  // gab_niref(gab, 1, gab_varrlen(data), data);
-  // gab_negkeep(gab.eg, gab_varrlen(data), data);
+  // gab_value *data = gab_valarray(gab_ok, gab_nbinary(gab, sz, (uint8_t
+  // *)src)); gab_niref(gab, 1, gab_varrlen(data), data); gab_negkeep(gab.eg,
+  // gab_varrlen(data), data);
 
   // TODO @cgab @qol: fns for constructing these for convenience/users
   union gab_value_pair result = {
@@ -448,7 +459,8 @@ union gab_value_pair gab_use_data(struct gab_triple gab, const char *path,
   a_char *src = gab_osread(path);
 
   // gab_value *data = gab_valarray(
-  //     gab_ok, gab_nbinary(gab, src->len, (uint8_t *)src->data), gab_cinvalid);
+  //     gab_ok, gab_nbinary(gab, src->len, (uint8_t *)src->data),
+  //     gab_cinvalid);
   // gab_niref(gab, 1, gab_varrlen(data), data);
   // gab_negkeep(gab.eg, gab_varrlen(data), data);
 
@@ -694,7 +706,8 @@ void init_args(union gab_value_pair res, struct gab_module *modules,
   _sargs[_nargs - 1] = "System";
 
   for (int i = 0; i < _nargs; i++)
-    _vargs[i] = gab_message(gab, modules[i].module ? modules[i].module : modules[i].package);
+    _vargs[i] = gab_message(gab, modules[i].module ? modules[i].module
+                                                   : modules[i].package);
   _vargs[_nargs - 1] = gab_message(gab, "System");
 }
 
@@ -722,6 +735,9 @@ int run_string(const char *string, uint64_t flags, uint32_t wait, uint64_t jobs,
       },
       &gab);
 
+  monitor = gab_channel(gab);
+  gab_iref(gab, monitor);
+
   if (!check_and_printerr(&res))
     return gab_destroy(gab), 0;
 
@@ -731,6 +747,7 @@ int run_string(const char *string, uint64_t flags, uint32_t wait, uint64_t jobs,
   s_char src = s_char_create(string, strlen(string) + 1);
 
   union gab_value_pair run_res = gab_exec(gab, (struct gab_exec_argt){
+                                                   .monitor = monitor,
                                                    .name = MAIN_MODULE,
                                                    .source = (char *)src.data,
                                                    .source_len = src.len,
@@ -862,7 +879,7 @@ bool add_package(mz_zip_archive *zip_o, const char **roots,
 
   *mod = gab_mresolve(roots, resources, cstr_package, nullptr);
 
-  if (!(*mod) ||!(*mod)->path)
+  if (!(*mod) || !(*mod)->path)
     return false;
 
   /*
@@ -884,8 +901,8 @@ bool add_package(mz_zip_archive *zip_o, const char **roots,
 
   // TODO @cli @qol: Allow the user to configure the SPEED/COMPRESSION tradeoff
   // here.
-  return mz_zip_writer_add_file(zip_o, (*mod)->package_path, (*mod)->path, nullptr, 0,
-                                MZ_BEST_SPEED);
+  return mz_zip_writer_add_file(zip_o, (*mod)->package_path, (*mod)->path,
+                                nullptr, 0, MZ_BEST_SPEED);
 }
 
 struct step {
@@ -915,7 +932,7 @@ struct step {
       const char **roots;
       const struct gab_resource *resources;
       s_char package;
-      struct gab_module_res* mod_out;
+      struct gab_module_res *mod_out;
     } archive_add_package;
 
     struct {
@@ -1208,7 +1225,8 @@ void elogstep(struct step *step, int i, int res) {
   case kSTEP_ARCHIVE_OPEN:
     return clierror("Failed to open '%s'.\n", step->as.archive_open.path);
   case kSTEP_ARCHIVE_ADD_PACKAGE:
-    if (!step->as.archive_add_package.mod_out || !step->as.archive_add_package.mod_out->path)
+    if (!step->as.archive_add_package.mod_out ||
+        !step->as.archive_add_package.mod_out->path)
       return clierror("Failed to resolve module '%.*s'.\n",
                       step->as.archive_add_package.package.len,
                       step->as.archive_add_package.package.data);
