@@ -21,7 +21,7 @@ Colors := {
 
 Spacer := [ box: { width\grow: 10 } [] ]
 
-how := tui:
+how := hui:
 
 Ui
   .run(how events app)

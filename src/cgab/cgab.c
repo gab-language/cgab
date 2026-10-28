@@ -4839,12 +4839,7 @@ GAB_INTERNAL int64_t __gab_svalinspect(char **dest, uint64_t *n, gab_value self,
   case kGAB_FIBER_KILLED:
   case kGAB_FIBER_TERMINATED: {
     struct gab_ofiber *fiber = GAB_VAL_TO_FIBER(self);
-
-    return __gab_snprintf_through(dest, n, "<" tGAB_FIBER " %p ", fiber) +
-           __gab_svalinspect(dest, n, fiber->data[0], 0) +
-           __gab_snprintf_through(dest, n, " ") +
-           __gab_svalinspect(dest, n, fiber->data[1], 0) +
-           __gab_snprintf_through(dest, n, ">");
+    return __gab_snprintf_through(dest, n, "<" tGAB_FIBER " %p>", fiber);
   }
   case kGAB_RECORD: {
     if (gab_valkind(gab_recshp(self)) == kGAB_SHAPELIST)

@@ -198,27 +198,13 @@ void pop_and_printerr(struct gab_triple gab) {
   gab_value nres =
       gab_nchntake(gab, monitor, sizeof(results) / sizeof(gab_value), results);
 
-    const char *errstr = gab_errtocs(gab, results[2]);
-    assert(errstr != nullptr);
+  assert(gab_valkind(nres) == kGAB_NUMBER);
 
-    if (errstr)
-      fputs(errstr, stderr);
+  const char *errstr = gab_errtocs(gab, results[2]);
+  assert(errstr != nullptr);
 
-  // gab_value *errors = gab_egerrs(gab.eg);
-  //
-  // if (!errors)
-  //   return;
-  //
-  // for (gab_value *err = errors; *err != gab_nil; err++) {
-  //   assert(gab_valkind(*err) == kGAB_RECORD);
-  //   const char *errstr = gab_errtocs(gab, *err);
-  //   assert(errstr != nullptr);
-  //
-  //   if (errstr)
-  //     fputs(errstr, stderr);
-  // };
-  //
-  // free(errors);
+  if (errstr)
+    fputs(errstr, stderr);
 }
 
 bool check_and_printerr(union gab_value_pair *res) {
@@ -228,6 +214,7 @@ bool check_and_printerr(union gab_value_pair *res) {
   if (!gab.eg)
     return false;
 
+  /* Runtime error */
   if (res->status == gab_err) {
     // Signal shutdown
     gab_sigterm(gab);
@@ -236,6 +223,34 @@ bool check_and_printerr(union gab_value_pair *res) {
       gab_busywait(gab);
 
     pop_and_printerr(gab);
+  }
+
+  /* Buildtime error */
+  if (res->status == gab_cinvalid) {
+    // Signal shutdown
+    gab_sigterm(gab);
+
+    while (!gab_step(gab))
+      gab_busywait(gab);
+
+    while (gab_signaling(gab))
+      switch (gab_yield(gab)) {
+      case sGAB_TERM:
+        gab_sigpropagate(gab);
+        break;
+      case sGAB_COLL:
+        gab_gcepochnext(gab);
+        gab_sigpropagate(gab);
+        break;
+      default:
+        continue;
+      }
+
+    const char *errstr = gab_errtocs(gab, res->vresult);
+    assert(errstr != nullptr);
+
+    if (errstr)
+      fputs(errstr, stderr);
   }
 
   return res->status == gab_ok;
@@ -308,9 +323,6 @@ union gab_value_pair gab_use_dynlib(struct gab_triple gab, const char *path,
 #endif
 
   union gab_value_pair res = mod(gab, len, sargs, vargs);
-
-  // At this point, mod should have reported any errors.
-  /*gab.flags |= fGAB_ERR_QUIET;*/
 
   return res;
 }
@@ -402,10 +414,6 @@ union gab_value_pair gab_use_zip_data(struct gab_triple gab, const char *path,
     return gab_panicf(gab, "Failed to load module: $", gab_string(gab, estr));
   }
 
-  // gab_value *data = gab_valarray(gab_ok, gab_nbinary(gab, sz, (uint8_t
-  // *)src)); gab_niref(gab, 1, gab_varrlen(data), data); gab_negkeep(gab.eg,
-  // gab_varrlen(data), data);
-
   // TODO @cgab @qol: fns for constructing these for convenience/users
   union gab_value_pair result = {
       .status = gab_cvalid,
@@ -440,6 +448,7 @@ union gab_value_pair gab_use_zip_source(struct gab_triple gab, const char *path,
   }
 
   union gab_value_pair fiber = gab_exec(gab, (struct gab_exec_argt){
+                                                 .monitor = monitor,
                                                  .name = path,
                                                  .source_len = sz,
                                                  .source = (const char *)src,
@@ -485,6 +494,7 @@ union gab_value_pair gab_use_source(struct gab_triple gab, const char *path,
 
   union gab_value_pair fiber =
       gab_exec(gab, (struct gab_exec_argt){
+                        .monitor = monitor,
                         .name = path,
                         .source = (const char *)src->data,
                         .source_len = src->len,
@@ -709,6 +719,9 @@ void init_args(union gab_value_pair res, struct gab_module *modules,
     _vargs[i] = gab_message(gab, modules[i].module ? modules[i].module
                                                    : modules[i].package);
   _vargs[_nargs - 1] = gab_message(gab, "System");
+
+  monitor = gab_channel(gab);
+  gab_iref(gab, monitor);
 }
 
 // clang-format off
@@ -734,9 +747,6 @@ int run_string(const char *string, uint64_t flags, uint32_t wait, uint64_t jobs,
           .flags = flags,
       },
       &gab);
-
-  monitor = gab_channel(gab);
-  gab_iref(gab, monitor);
 
   if (!check_and_printerr(&res))
     return gab_destroy(gab), 0;
