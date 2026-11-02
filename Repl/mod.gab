@@ -107,6 +107,10 @@ Cells := repl\cell:.defclass(
     t.make(input, ok, result .or block .or ast)
   end
   {
+    cell\result: () :: do
+      results := self.at(cell\result:).unwrap
+      self.cell\ok.then(() :: results.at(0).unwrap).or(results)
+    end
     cell\view: (idx) :: do
       border_color := self.cell\ok .and (Colors.g) .or (Colors.r)
       [
@@ -131,7 +135,7 @@ Cells := repl\cell:.defclass(
             box:
             { p\x: 27 p\y: 21 w\g: 1 b\fg: border_color, b\l: 9 clip\x: none: id: Strings.make("repl\history\result" idx).to\message, layout: horizontal: }
             [
-              [text: { fg: Colors.primary\fg } self.cell\result.join("" Transducers.map(v :: v.to\string) |> Transducers.interpose ', ') ]
+              [text: { fg: Colors.primary\fg } "$".sprintf(self.cell\result) ]
             ]
           ]
         ]
@@ -159,13 +163,36 @@ module.defclass(
       self
         .put_via_by(repl\history: h :: h.cons Cell)
         .put(repl\input: "")
-        .when(Cell.cell\ok, put_via: repl\env: key Cell.cell\result .at 0 .unwrap)
+        .when(Cell.cell\ok, put_via: repl\env: key Cell.cell\result)
     end,
     repl\view\env\item: (key val) :: do
       [
-        text:
-        { bg: Colors.cl, fg: Colors.primary\fg }
-        "$: $".sprintf(key.as\string.unwrap, val)
+        box:
+        {
+          w\g: 1
+          layout: horizontal:
+        }
+        [
+          [
+            text:
+            {
+              bg: Colors.primary\bg, fg: Colors.g
+            }
+            '\u[f4c3] '
+          ]
+          [
+            text:
+            {
+              bg: Colors.primary\bg, fg: Colors.primary\light
+            }
+            key.as\string.unwrap
+          ]
+          [
+            text:
+            { w\g: 1 bg: Colors.primary\bg, fg: Colors.primary\dark }
+            val.to\string
+          ]
+        ]
       ]
     end
     repl\view\env: () :: do
@@ -223,7 +250,10 @@ module.defclass(
                   {
                     w\g: 1 h\g: 1 bg: Colors.primary\bg
                   }
-                  self.repl\view\env                  
+                  [
+                    [text: { fg: Colors.primary\dark } "Environment"]
+                    self.repl\view\env*
+                  ]
                 ]
               ]
             ]

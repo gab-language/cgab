@@ -1186,16 +1186,6 @@ union gab_value_pair render_text(struct gab_triple gab, struct ui *gui,
 
   gab_uint height = gab_valtou(vheight);
 
-  gab_value valign = gab_mrecat(gab, props, "align");
-  Clay_TextAlignment align = CLAY_TEXT_ALIGN_LEFT;
-
-  if (valign == gab_message(gab, "left"))
-    align = CLAY_TEXT_ALIGN_LEFT;
-  else if (valign == gab_message(gab, "right"))
-    align = CLAY_TEXT_ALIGN_RIGHT;
-  else if (valign == gab_message(gab, "center"))
-    align = CLAY_TEXT_ALIGN_CENTER;
-
   gab_value vid = gab_mrecat(gab, props, "id");
   if (vid != gab_cundefined && gab_valkind(vid) != kGAB_MESSAGE)
     return gab_pktypemismatch(gab, vid, kGAB_MESSAGE);
@@ -1224,7 +1214,6 @@ union gab_value_pair render_text(struct gab_triple gab, struct ui *gui,
                         .letterSpacing = spacing,
                         .lineHeight = height,
                         .textColor = packedToClayColor(vfg),
-                        .textAlignment = align,
                     }));
   };
 

@@ -1512,6 +1512,8 @@ typedef union gab_value_pair (*gab_native_f)(struct gab_triple, uint64_t argc,
 typedef void (*gab_boxdestroy_f)(struct gab_triple gab, uint64_t len,
                                  char *data);
 
+typedef void (*gab_inithook_f)(struct gab_triple gab);
+
 #ifdef GAB_PLATFORM_WIN
 typedef union gab_value_pair(WINAPI *gab_dynlibmain_f)(struct gab_triple gab,
                                                        uint64_t argc,
@@ -1582,6 +1584,8 @@ struct gab_create_argt {
    * when the engine needs to *spin*.
    */
   uint32_t flags, jobs, wait;
+
+  gab_inithook_f init_hook;
   /*
    * A list of resources. At each root, these
    * will be tested (in reverse order), until
