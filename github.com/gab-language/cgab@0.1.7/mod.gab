@@ -43,6 +43,7 @@ to\condition: .defcase {
     :: self.to\block.(args*)
 
   true: true:
+  ok: true:
 
   nil: false:
   false: false:
@@ -59,7 +60,7 @@ to\condition: .def true:
   when: (cond, f, args*)
     :: cond
       .to\condition(self)
-      .dowhen(f self args)
+      .dowhen(f.to\block, self args)
 }
 
 cond\check: .defcase {

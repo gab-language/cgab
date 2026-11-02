@@ -147,7 +147,7 @@ struct ui {
   };
 };
 
-#define MAX_MS_PER_FRAME 15
+#define MAX_MS_PER_FRAME 0
 #define CHNTAKE_WAITTIME 0
 
 struct timestep {
@@ -341,7 +341,7 @@ bool clay_RGFW_update(struct gab_triple gab, struct ui *gui, double deltaTime,
     return false;
   }
   case RGFW_mouseScroll: {
-    Clay_UpdateScrollContainers(false, (Clay_Vector2){0, ev->delta.y},
+    Clay_UpdateScrollContainers(true, (Clay_Vector2){ev->delta.x, ev->delta.y},
                                 deltaTime);
     return false;
   }
@@ -402,7 +402,7 @@ bool clay_RGFW_update(struct gab_triple gab, struct ui *gui, double deltaTime,
     char event[5] = {0};
     memcpy(event, &ev->keyChar.value, 4);
     return putevent(gab, gui, "key", "char", gab_string(gab, event),
-                    gab_number(ev->key.mod), gab_cundefined);
+                    gab_number(0), gab_cundefined);
   }
   default:
     return false;
@@ -495,13 +495,15 @@ bool clay_termbox_update(struct gab_triple gab, struct ui *gui,
       return putevent(gab, gui, "mouse", "down", gab_message(gab, "left"),
                       clayGetTopmostId(gab), gab_cundefined);
     case TB_KEY_MOUSE_WHEEL_UP:
-      Clay_UpdateScrollContainers(false, (Clay_Vector2){0, e->y}, deltaTime);
-      return putevent(gab, gui, "mouse", "scroll\\up", gab_number(e->y),
-                      gab_cundefined, gab_cundefined);
+      Clay_UpdateScrollContainers(
+          true, (Clay_Vector2){0, 0.5 * Clay_Termbox_Cell_Height()}, deltaTime);
+      return false;
+
     case TB_KEY_MOUSE_WHEEL_DOWN:
-      Clay_UpdateScrollContainers(false, (Clay_Vector2){0, e->y}, deltaTime);
-      return putevent(gab, gui, "mouse", "scroll\\down", gab_number(e->y),
-                      gab_cundefined, gab_cundefined);
+      Clay_UpdateScrollContainers(
+          true, (Clay_Vector2){0, -0.5 * Clay_Termbox_Cell_Height()}, deltaTime);
+      return false;
+
     default:
       goto err;
     }
@@ -664,6 +666,52 @@ Clay_Sizing parseSizing(struct gab_triple gab, gab_value props,
   return (Clay_Sizing){.width = w, .height = h};
 }
 
+Clay_FloatingAttachPointType parseAttachTo(struct gab_triple gab, gab_value m) {
+  if (m == gab_message(gab, "t\\l"))
+    return CLAY_ATTACH_POINT_LEFT_TOP;
+  if (m == gab_message(gab, "t\\r"))
+    return CLAY_ATTACH_POINT_RIGHT_TOP;
+  if (m == gab_message(gab, "t\\c"))
+    return CLAY_ATTACH_POINT_CENTER_TOP;
+  if (m == gab_message(gab, "c\\l"))
+    return CLAY_ATTACH_POINT_LEFT_CENTER;
+  if (m == gab_message(gab, "c\\r"))
+    return CLAY_ATTACH_POINT_RIGHT_CENTER;
+  if (m == gab_message(gab, "c\\c"))
+    return CLAY_ATTACH_POINT_CENTER_CENTER;
+  if (m == gab_message(gab, "b\\l"))
+    return CLAY_ATTACH_POINT_LEFT_BOTTOM;
+  if (m == gab_message(gab, "b\\r"))
+    return CLAY_ATTACH_POINT_RIGHT_BOTTOM;
+  if (m == gab_message(gab, "b\\c"))
+    return CLAY_ATTACH_POINT_CENTER_BOTTOM;
+  return 0;
+}
+
+Clay_FloatingElementConfig parseFloating(struct gab_triple gab,
+                                         gab_value props) {
+  Clay_FloatingElementConfig floating = {};
+
+  gab_value vfloat_attachPointElem = gab_mrecat(gab, props, "f\\pin");
+  gab_value vfloat_attachPointParent = gab_mrecat(gab, props, "f\\to");
+
+  gab_value vfloat_attachTo = gab_mrecat(gab, props, "f\\on");
+
+  if (vfloat_attachPointElem != gab_cundefined)
+    floating.attachPoints.element = parseAttachTo(gab, vfloat_attachPointElem);
+
+  if (vfloat_attachPointParent != gab_cundefined)
+    floating.attachPoints.parent = parseAttachTo(gab, vfloat_attachPointParent);
+
+  if (vfloat_attachTo == gab_message(gab, "parent"))
+    floating.attachTo = CLAY_ATTACH_TO_PARENT;
+
+  if (vfloat_attachTo == gab_message(gab, "root"))
+    floating.attachTo = CLAY_ATTACH_TO_ROOT;
+
+  return floating;
+}
+
 Clay_CornerRadius parseRadius(struct gab_triple gab, gab_value props) {
   gab_float rbl = 0, rbr = 0, rtl = 0, rtr = 0;
   gab_value vradius = gab_mrecat(gab, props, "r");
@@ -703,11 +751,18 @@ Clay_CornerRadius parseRadius(struct gab_triple gab, gab_value props) {
 Clay_ClipElementConfig parseClip(struct gab_triple gab, gab_value props) {
   gab_value vclipx = gab_mrecat(gab, props, "clip\\x");
   gab_value vclipy = gab_mrecat(gab, props, "clip\\y");
-  bool clipx = vclipx == gab_message(gab, "none");
-  bool clipy = vclipy == gab_message(gab, "none");
+  bool clipx = vclipx == gab_message(gab, "scroll");
+  bool clipy = vclipy == gab_message(gab, "scroll");
+
+  // Clay_Vector2 offset = Clay_GetScrollOffset();
+  // if (clipx || clipy)
+  //   fprintf(stderr, "CLIP %u, %b,%b by %f,%f\n", Clay_GetOpenElementId(), clipx, clipy, offset.x, offset.y);
+
   return (Clay_ClipElementConfig){
       .horizontal = clipx,
       .vertical = clipy,
+      .childOffset =
+          (clipx || clipy) ? Clay_GetScrollOffset() : (Clay_Vector2){},
   };
 }
 
@@ -875,6 +930,7 @@ union gab_value_pair render_box(struct gab_triple gab, struct ui *gui,
 
   CLAY(UI_ID(vid), {
                        .layout = layout,
+                       .floating = parseFloating(gab, props),
                        .cornerRadius = parseRadius(gab, props),
                        .transition = parseTransition(gab, props),
                        .backgroundColor = packedToClayColor(vbg),
@@ -1497,7 +1553,7 @@ GAB_DYNLIB_NATIVE_FN(ui, tui_event) {
       goto put_event;
 
     case TB_OK:
-      if (clay_termbox_update(gab, gui, &e, 10))
+      if (clay_termbox_update(gab, gui, &e, 1))
         goto fin;
 
     put_event:

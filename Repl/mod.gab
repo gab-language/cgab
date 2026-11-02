@@ -1,5 +1,30 @@
 Ui      := 'github.com/gab-language/cgab@0.1.7' .use 'Ui'
 
+alphabet := [
+  'alpha'
+  'beta'
+  'gamma'
+  'delta'
+  'epsilon'
+  'zeta'
+  'eta'
+  'theta'
+  'iota'
+  'kappa'
+  'lambda'
+  'mu'
+  'nu'
+  'xi'
+  'omicron'
+  'pi'
+  'rho'
+  'sigma'
+  'upsilon'
+  'phi'
+  'psi'
+  'omega'
+]
+
 (events, app) := (Channels.make, Channels.make)
 
 Colors := {
@@ -14,6 +39,8 @@ Colors := {
   border: 0xff1d1e26
   active: 0xff585c74
   hover: 0xff6e7391
+  g: 0xffb5d99c
+  r: 0xffe65f5c
 }
 
 how := tui:
@@ -57,30 +84,56 @@ end
 
 Cells := repl\cell:.defclass(
   cell\text:
-  cell\ast:
-  cell\block:
+  cell\ok:
   cell\result:
-  (t input) :: do
+  (t input env) :: do
     (ok, ast) := input.as\gab
-    (ok, block) := ok.then(() :: Blocks.make(\[] ast))
 
-    result := ok.then(() :: do 
-        (fiber, monitor) := Fibers.make\linked(block)
+    (keys, vals) := (env.keys, env.vals)
 
-        [monitor >!]
+    (ok, block) := ok.then(() :: Blocks.make(keys ast))
+
+    # This should happen non-blockingly
+    (ok, result) := ok.then(() :: do 
+        monitor := Channels.make
+
+        (fiber) := Fibers.make(block, :, monitor, vals*)
+
+        (ok fiber args*) := monitor >! .unwrap
+
+        (ok args)
       end)
 
-    t.make(input, ast, block, result)
+    t.make(input, ok, result .or block .or ast)
   end
   {
-    cell\view: () :: do
+    cell\view: (idx) :: do
+      border_color := self.cell\ok .and (Colors.g) .or (Colors.r)
       [
         box:
-        { w\g: 1 bg: Colors.primary, b\fg: Colors.border, b\l: 9, p\x: 27 p\y: 21 clip\x: none:}
+        { w\g: 1 bg: Colors.cl, }
         [
-          [text: { bg: Colors.cl, fg: Colors.primary\fg } self.cell\text]
-          [text: { bg: Colors.cl, fg: Colors.primary\fg } '$\n'.sprintf(self.cell\ast)]
-          [text: { bg: Colors.cl, fg: Colors.primary\fg } '$\n'.sprintf(self.cell\result)]
+          [
+            box:
+            { w\g: 1 align\x: right: id: Strings.make("repl\history\header" idx).to\message}
+            [
+              [text: { fg: Colors.primary\fg, p\x: 9 } Strings.make("CELL " idx)]
+            ]
+          ]
+          [
+            box:
+            { w\g: 1 b\fg: Colors.primary\dark, b\l: 9 clip\x: none: align\x: right: id: Strings.make("repl\history\text" idx).to\message}
+            [
+              [text: { w\g: 1 fg: Colors.secondary\fg, p\x: 27 p\y: 21 } self.cell\text]
+            ]
+          ]
+          [
+            box:
+            { p\x: 27 p\y: 21 w\g: 1 b\fg: border_color, b\l: 9 clip\x: none: id: Strings.make("repl\history\result" idx).to\message, layout: horizontal: }
+            [
+              [text: { fg: Colors.primary\fg } self.cell\result.join("" Transducers.map(v :: v.to\string) |> Transducers.interpose ', ') ]
+            ]
+          ]
         ]
       ]
     end
@@ -89,6 +142,7 @@ Cells := repl\cell:.defclass(
 module.defclass(
   repl\history:
   repl\input:
+  repl\env:
   default:
   {
     repl\controller: (event type data) :: do
@@ -98,49 +152,79 @@ module.defclass(
     repl\eval: () :: do
       input := self.repl\input
 
+      key := alphabet.at(self.repl\history.len).unwrap.to\binary
+
+      Cell := Cells.make(input self.repl\env)
+  
       self
-        .put_via_by(repl\history: h :: h.cons (Cells.make input))
+        .put_via_by(repl\history: h :: h.cons Cell)
         .put(repl\input: "")
+        .when(Cell.cell\ok, put_via: repl\env: key Cell.cell\result .at 0 .unwrap)
     end,
+    repl\view\env\item: (key val) :: do
+      [
+        text:
+        { bg: Colors.cl, fg: Colors.primary\fg }
+        "$: $".sprintf(key.as\string.unwrap, val)
+      ]
+    end
+    repl\view\env: () :: do
+      app := self
+      self.repl\env.map((val key) :: app.repl\view\env\item(key val))
+    end
     repl\view\history: () :: do
-      self.repl\history.map(cell\view:.to\block)
+      self.repl\history.map((cell idx) :: cell.cell\view idx)
     end
     repl\view: () :: do
       [
         [
           box:
-          { w\r: 100 h\r: 100 layout: horizontal: p\x: 18 p\y: 21 }
+          { w\r: 80 bg: Colors.primary, b\fg: Colors.border, b\l: 9 p\x: 18 p\y: 21 id: repl\input: layout: horizontal: gap: 9 f\pin: b\c: f\to: b\c: f\on: root:}
+          [
+            [text: { bg: Colors.cl, fg: Colors.primary\fg } ">"]
+            [text: { bg: Colors.cl, fg: self.repl\has_input.and(Colors.primary\fg).or(Colors.secondary\fg) } text_or_placeholder.(self.repl\input)]
+          ]
+        ]
+        [
+          box:
+          { w\g: 1 h\g: 1 layout: horizontal: bg: Colors.primary\bg }
           [
             [
               box:
-              { w\r: 80 h\g: 1 bg: Colors.primary\bg, layout: horizontal: align\x: center: p\x: 18 p\y: 21}
+              { w\r: 80 h\r: 100 layout: horizontal: align\x: center: }
               [
                 [
                   box:
-                  { h\g: 1 w\g: 1 gap: 21}
+                  { h\r: 100 w\g: 1}
                   [
                     [
                       box:
-                      { h\g: 1 w\g: 1 gap: 21 align\x: center: }
-                      self.repl\view\history
+                      { p\x: 9 bg: Colors.primary\dark}
+                      [[text: {fg: Colors.secondary\fg} "HISTORY"]]
                     ]
                     [
                       box:
-                      { w\g: 1 bg: Colors.primary, b\fg: Colors.border, b\l: 9, p\x: 27 p\y: 21 }
-                      [
-                        [text: { bg: Colors.cl, fg: self.repl\has_input.and(Colors.primary\fg).or(Colors.secondary\fg) } text_or_placeholder.(self.repl\input)]
-                      ]
+                      { h\g: 1 w\g: 1 gap: 21 align\x: center: bg: Colors.primary\bg, clip\y: scroll: id: scroll\history:}
+                      self.repl\view\history
                     ]
+                    
                   ]
                 ]
               ]
             ]
             [
               box:
-              { w\r: 20 h\g: 1 bg: Colors.primary\bg, p\x: 18 p\y: 21 align\x: center: }
+              { w\r: 20 h\g: 1 align\x: center: gap: 21 id: repl\modules:}
               [
                 [text: { fg: Colors.primary\light } gab_text]
                 [text: { fg: Colors.primary\light } "Welcome to the Gab REPL"]
+                [
+                  box:
+                  {
+                    w\g: 1 h\g: 1 bg: Colors.primary\bg
+                  }
+                  self.repl\view\env                  
+                ]
               ]
             ]
           ]
@@ -160,7 +244,7 @@ events
       (e == key:) & ((key == "escape"))
     end)
     |> Transducers.reduce(
-      module.make([] ""),
+      module.make([] "" {}),
       (model, event, type, data*) :: model.repl\controller(event type data))
     |> Transducers.map(model :: model.repl\view)
   )

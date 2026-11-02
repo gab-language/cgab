@@ -180,7 +180,7 @@ void print_err(struct gab_triple gab, gab_value err) {
   fprintf(stderr, "%s\n", str);
 }
 
-void pop_and_printerr(struct gab_triple gab) {
+void pop_and_printerr(struct gab_triple gab, gab_value fib) {
   while (gab_signaling(gab))
     switch (gab_yield(gab)) {
     case sGAB_TERM:
@@ -194,17 +194,27 @@ void pop_and_printerr(struct gab_triple gab) {
       continue;
     }
 
-  gab_value results[32];
-  gab_value nres =
-      gab_nchntake(gab, monitor, sizeof(results) / sizeof(gab_value), results);
+  for (;;) {
+    gab_value results[32];
+    gab_value nres = gab_nchntake(gab, monitor,
+                                  sizeof(results) / sizeof(gab_value), results);
+    if (nres == gab_cinvalid)
+      return;
 
-  assert(gab_valkind(nres) == kGAB_NUMBER);
+    if (gab_valkind(nres) != kGAB_NUMBER)
+      continue;
 
-  const char *errstr = gab_errtocs(gab, results[2]);
-  assert(errstr != nullptr);
+    assert(gab_valkind(nres) == kGAB_NUMBER);
 
-  if (errstr)
-    fputs(errstr, stderr);
+    if (results[1] == fib) {
+      const char *errstr = gab_errtocs(gab, results[2]);
+      assert(errstr != nullptr);
+
+      if (errstr)
+        fputs(errstr, stderr);
+      break;
+    }
+  }
 }
 
 bool check_and_printerr(union gab_value_pair *res) {
@@ -222,7 +232,7 @@ bool check_and_printerr(union gab_value_pair *res) {
     while (!gab_step(gab))
       gab_busywait(gab);
 
-    pop_and_printerr(gab);
+    pop_and_printerr(gab, res->vresult);
   }
 
   /* Buildtime error */

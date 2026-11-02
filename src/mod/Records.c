@@ -23,6 +23,7 @@
  */
 
 #include "cgab.h"
+#include <stdint.h>
 
 #define MIN(a, b) (a < b ? a : b)
 #define MAX(a, b) (a > b ? a : b)
@@ -221,18 +222,20 @@ GAB_DYNLIB_NATIVE_FN(rec, keys) {
 
   gab_value shp = gab_recshp(rec);
 
-  gab_value len = gab_shplen(shp);
+  uint64_t len = gab_shplen(shp);
+
+  if (len == 0) {
+    gab_vmpush(gab_thisvm(gab), gab_erecord(gab));
+    return gab_union_cvalid(gab_nil);
+  }
 
   gab_value keys[len];
-
 
   for (uint64_t i = 0; i < gab_shplen(shp); i++) {
     keys[i] = gab_ushpat(shp, i);
   }
 
-  gab_value list = gab_list(gab, 1, len, keys);
-
-  gab_vmpush(gab_thisvm(gab), list);
+  gab_vmpush(gab_thisvm(gab), gab_list(gab, 1, len, keys));
 
   return gab_union_cvalid(gab_nil);
 }
@@ -243,16 +246,20 @@ GAB_DYNLIB_NATIVE_FN(rec, vals) {
   if (gab_valkind(rec) != kGAB_RECORD)
     return gab_pktypemismatch(gab, rec, kGAB_RECORD);
 
-  uint64_t nvals = gab_reclen(rec);
+  uint64_t len = gab_reclen(rec);
 
-  gab_value vals[nvals];
-  for (uint64_t i = 0; i < nvals; i++) {
+  if (len == 0) {
+    gab_vmpush(gab_thisvm(gab), gab_erecord(gab));
+    return gab_union_cvalid(gab_nil);
+  }
+
+  gab_value vals[len];
+
+  for (uint64_t i = 0; i < len; i++) {
     vals[i] = gab_uvrecat(rec, i);
   }
 
-  gab_value keys = gab_list(gab, 1, nvals, vals);
-
-  gab_vmpush(gab_thisvm(gab), keys);
+  gab_vmpush(gab_thisvm(gab), gab_list(gab, 1, len, vals));
 
   return gab_union_cvalid(gab_nil);
 }

@@ -13717,7 +13717,8 @@ GAB_API struct gab_ofiber *getthisfiber(struct gab_triple gab) {
     }                                                                          \
   })
 
-#define MICRO_OP_FIBER(receiver, message, nargs, dolink)                       \
+// TODO: Properly accept a monitor channel here.
+#define MICRO_OP_FIBER(receiver, message, mnitor, lnk, nargs)                  \
   ({                                                                           \
     STORE_SP();                                                                \
                                                                                \
@@ -13725,16 +13726,15 @@ GAB_API struct gab_ofiber *getthisfiber(struct gab_triple gab) {
                                                                                \
     uint64_t argc = nargs;                                                     \
                                                                                \
-    gab_value fb = gab_fiber(                                                  \
-        GAB(), (struct gab_fiber_argt){                                        \
-                   .link = dolink ? gab_thisfiber(GAB()) : gab_cundefined,     \
-                   .monitor = dolink ? gab_channel(GAB()) : gab_cundefined,    \
-                   .receiver = receiver,                                       \
-                   .message = message,                                         \
-                   .flags = GAB().flags,                                       \
-                   .argv = SP() - argc,                                        \
-                   .argc = argc,                                               \
-               });                                                             \
+    gab_value fb = gab_fiber(GAB(), (struct gab_fiber_argt){                   \
+                                        .link = lnk,                           \
+                                        .monitor = mnitor,                     \
+                                        .receiver = receiver,                  \
+                                        .message = message,                    \
+                                        .flags = GAB().flags,                  \
+                                        .argv = SP() - argc,                   \
+                                        .argc = argc,                          \
+                                    });                                        \
                                                                                \
     bool spawned = __gab_jbspawn(GAB(), fb);                                   \
                                                                                \
@@ -13744,10 +13744,7 @@ GAB_API struct gab_ofiber *getthisfiber(struct gab_triple gab) {
     DROP_N(have + FRAME_SIZE);                                                 \
     PUSH(fb);                                                                  \
                                                                                \
-    if (dolink)                                                                \
-      PUSH(gab_fibmonitor(fb));                                                \
-                                                                               \
-    SET_HV(below_have + 1 + dolink);                                           \
+    SET_HV(below_have + 1);                                                    \
                                                                                \
     NEXT();                                                                    \
   })
@@ -14034,11 +14031,20 @@ GAB_API struct gab_ofiber *getthisfiber(struct gab_triple gab) {
              gab_valtype(GAB(), value), gab_type(GAB(), kGAB_NUMBER));         \
   }
 
+#define PANIC_GUARD_ISCHN_OR_UNDEF(value)                                      \
+  if (__gab_unlikely(!(value == gab_cundefined || gab_valischn(value)))) {     \
+    STORE_MICRO_OP_VM_PANIC_FRAME(have);                                       \
+    VM_PANIC(GAB_SEND_CACHE_SIZE, GAB_TYPE_MISMATCH, FMT_TYPEMISMATCH,         \
+             ks[GAB_SEND_KMESSAGE], ks[GAB_SEND_KSPEC], value,                 \
+             gab_valtype(GAB(), value), gab_type(GAB(), kGAB_CHANNEL));        \
+  }
+
 #define PANIC_GUARD_ISS(value) PANIC_GUARD_KIND(value, kGAB_STRING)
 
 #define SEND_GUARD_ISS(value) SEND_GUARD_KIND(value, kGAB_STRING)
 
 #define PANIC_GUARD_ISBIN(value) PANIC_GUARD_KIND(value, kGAB_BINARY)
+
 #define SEND_GUARD_ISBIN(value) SEND_GUARD_KIND(value, kGAB_BINARY)
 
 #define SEND_GUARD(clause, reason)                                             \
@@ -14054,10 +14060,7 @@ GAB_API struct gab_ofiber *getthisfiber(struct gab_triple gab) {
  * SEND guard which checks that the
  * world is as we expect, and the receiver is a channel.
  * */
-#define SEND_GUARD_ISCHN(r)                                                    \
-  SEND_GUARD(gab_valkind(r) >= kGAB_CHANNEL &&                                 \
-                 gab_valkind(r) <= kGAB_CHANNELCLOSED,                         \
-             "Not Channel")
+#define SEND_GUARD_ISCHN(r) SEND_GUARD(gab_valischn(r), "Not Channel")
 
 /*
  * SEND guard which checks that the world
@@ -15851,19 +15854,25 @@ CASE_CODE(SEND_PRIMITIVE_FIBER) {
 
   SEND_GUARD_CACHED_RECEIVER_TYPE(PEEK_N(have));
 
-  // TODO @cgab @bug: Breaks when yielding.
-  NILPAD_GUARD_ARGS_GTE(3);
+  NILPAD_GUARD_ARGS_GTE(4);
 
   gab_value receiver = PEEK_N(have - 1);
 
   gab_value message = PEEK_N(have - 2);
+
+  gab_value monitor = PEEK_N(have - 3);
 
   if (message == gab_nil)
     message = gab_message(GAB(), mGAB_CALL);
 
   PANIC_GUARD_KIND(message, kGAB_MESSAGE);
 
-  MICRO_OP_FIBER(receiver, message, have - 3, false);
+  if (monitor == gab_nil)
+    monitor = gab_cundefined;
+
+  PANIC_GUARD_ISCHN_OR_UNDEF(monitor);
+
+  MICRO_OP_FIBER(receiver, message, monitor, gab_cundefined, have - 4);
 
   NEXT();
 }
@@ -15876,7 +15885,6 @@ CASE_CODE(SEND_PRIMITIVE_FIBER_LINKED) {
 
   SEND_GUARD_CACHED_RECEIVER_TYPE(PEEK_N(have));
 
-  // TODO @cgab @bug: Breaks when yielding.
   NILPAD_GUARD_ARGS_GTE(3);
 
   gab_value receiver = PEEK_N(have - 1);
@@ -15888,7 +15896,7 @@ CASE_CODE(SEND_PRIMITIVE_FIBER_LINKED) {
 
   PANIC_GUARD_KIND(message, kGAB_MESSAGE);
 
-  MICRO_OP_FIBER(receiver, message, have - 3, true);
+  MICRO_OP_FIBER(receiver, message, gab_fibmonitor(FIBER()), FIBER(), have - 3);
 
   NEXT();
 }
