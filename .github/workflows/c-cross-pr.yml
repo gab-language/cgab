@@ -317,10 +317,10 @@ jobs:
         run: ${{ matrix.cmd }}
 
       - name: Run Smallest Hello World
-        run: ${{ matrix.cmd }} exec "'hello world!'"
+        run: ${{ matrix.cmd }} exec "'hello world'"
 
       - name: Run Hello World
-        run: ${{ matrix.cmd }} exec "'hello world!' .println"
+        run: ${{ matrix.cmd }} exec "'hello world' .println"
 
       - name: Run tests
         run: ${{ matrix.cmd }} run test

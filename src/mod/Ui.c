@@ -1036,11 +1036,10 @@ const struct ui_image *image_cache_read(struct gab_triple gab, struct ui *gui,
 
     insert.as.gui.img = sg_make_image(&(struct sg_image_desc){
         .type = SG_IMAGETYPE_2D,
-        .usage.immutable = true,
         .width = insert.as.gui.width,
         .height = insert.as.gui.height,
         .pixel_format = SG_PIXELFORMAT_RGBA8,
-        .data.mip_levels[0] =
+        .data =
             {
                 .ptr = insert.as.gui.pixels,
                 .size = (insert.as.gui.width * insert.as.gui.height *
