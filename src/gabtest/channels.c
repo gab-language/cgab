@@ -136,6 +136,8 @@ test_channel_stress_concurrent_putters(const MunitParameter params[],
 
         // If the monitor for this fiber is open,
         // Then we can pull the value off it.
+        // Close it when we're done, so we don't block on the
+        // same monitor twice.
         if (!gab_chnisclosed(monitors[f])) {
           gab_value results[4];
           gab_value status = gab_nchntake(gab, monitors[f], 4, results);
