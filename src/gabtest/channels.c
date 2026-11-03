@@ -133,21 +133,23 @@ test_channel_stress_concurrent_putters(const MunitParameter params[],
         union gab_value_pair res = gab_fibawait(gab, fibers[f]);
 
         munit_assert_uint64(res.status, ==, gab_ok);
+
+        // If the monitor for this fiber is open,
+        // Then we can pull the value off it.
+        if (!gab_chnisclosed(monitors[f])) {
+          gab_value results[4];
+          gab_value status = gab_nchntake(gab, monitors[f], 4, results);
+          munit_assert_uint64(status, ==, gab_number(3));
+          munit_assert_uint64(results[0], ==, gab_ok);
+          munit_assert_uint64(results[1], ==, fibers[f]);
+          munit_assert_uint64(results[2], ==, ch);
+          gab_chnclose(monitors[f]);
+        }
       }
     }
 
     // If more fibers are done than values we've receied so far, we have a bug!
     munit_assert_uint64(done, <=, total_received);
-  }
-
-  // Using each monitor, we can see that each fiber returns ok: and the channel.
-  for (uint64_t i = 0; i < num_fibers; i++) {
-    gab_value results[4];
-    gab_value status = gab_nchntake(gab, monitors[i], 4, results);
-    munit_assert_uint64(status, ==, gab_number(3));
-    munit_assert_uint64(results[0], ==, gab_ok);
-    munit_assert_uint64(results[1], ==, fibers[i]);
-    munit_assert_uint64(results[2], ==, ch);
   }
 
   munit_assert_uint64(total_received, ==, num_fibers);
