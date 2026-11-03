@@ -14759,6 +14759,7 @@ GAB_API struct gab_ofiber *getthisfiber(struct gab_triple gab) {
     NEXT();                                                                    \
   }
 
+// This can't use VM_TERM because that returns to OP_MONITOR
 #define MICRO_OP_MONITOR()                                                     \
   gab_assert(gab_fibisdone(FIBER()),                                           \
              "Fiber %p must be done if entering monitor on worker %i",         \
@@ -14822,7 +14823,64 @@ GAB_API struct gab_ofiber *getthisfiber(struct gab_triple gab) {
  * Op code fibers use when putting a value on their monitor
  * before exiting err:
  */
-CASE_CODE(MONITOR) { MICRO_OP_MONITOR(); }
+CASE_CODE(MONITOR) {
+  gab_assert(gab_fibisdone(FIBER()),
+             "Fiber %p must be done if entering monitor on worker %i",
+             gab_valtoo(FIBER()), GAB().wkid);
+  gab_value channel = GAB_VAL_TO_FIBER(FIBER())->monitor;
+
+  gab_assert(!__gab_fibiskilled(FIBER()), "NOT HANDLED");
+  if (!gab_valischn(channel))
+    return __gab_fibresult(FIBER());
+
+  if (gab_sigwaiting(GAB()))
+    switch (gab_yield(GAB())) {
+    case sGAB_COLL:
+      STORE_SP();
+      gab_gcepochnext(GAB());
+      gab_sigpropagate(GAB());
+      break;
+    case sGAB_TERM:
+      STORE_SP();
+      return __gab_fibresult(FIBER());
+    default:
+      break;
+    }
+
+  if (REENTRANT() && REENTRANT() != gab_ctimeout) {
+    if (!gab_chnisclosed(channel) && gab_chnmatches(channel, REENTRANT()))
+      VM_YIELD(REENTRANT(), 1);
+
+    RESET_REENTRANT();
+    /* Reset the stack before returning */
+    VM()->sp = VM()->sb;
+
+    return __gab_fibresult(FIBER());
+  }
+
+  int64_t have = HV();
+
+  gab_value r = gab_untchnput(GAB(), channel, have, SP() - (have));
+
+  switch (r) {
+  case gab_cinvalid:
+    /* Termination signal */
+    STORE_SP();
+    return __gab_fibresult(FIBER());
+  case gab_ctimeout:
+    /* The put timed-out */
+    VM_YIELD(gab_ctimeout, 1);
+  case gab_cundefined:
+    /* The put failed because the channel is closed.*/
+    RESET_REENTRANT();
+    return __gab_fibresult(FIBER());
+  default:
+    gab_assert(gab_valkind(r) == kGAB_NUMBER,
+               "Expected to yield a number token here, not %u", gab_valkind(r));
+    /* The put succeeded, we must yield until it completes.*/
+    VM_YIELD(r, 1);
+  }
+}
 
 // TODO @cgab @vm @perf: Handle undefined and record case
 CASE_CODE(MATCHTAILSEND_BLOCK) {

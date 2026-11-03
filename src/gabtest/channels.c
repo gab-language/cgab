@@ -138,15 +138,16 @@ test_channel_stress_concurrent_putters(const MunitParameter params[],
         // Then we can pull the value off it.
         // Close it when we're done, so we don't block on the
         // same monitor twice.
-        if (!gab_chnisclosed(monitors[f])) {
-          gab_value results[4];
-          gab_value status = gab_nchntake(gab, monitors[f], 4, results);
-          munit_assert_uint64(status, ==, gab_number(3));
-          munit_assert_uint64(results[0], ==, gab_ok);
-          munit_assert_uint64(results[1], ==, fibers[f]);
-          munit_assert_uint64(results[2], ==, ch);
-          gab_chnclose(monitors[f]);
-        }
+        if (gab_chnisclosed(monitors[f]))
+          continue;
+
+        gab_value results[4];
+        gab_value status = gab_nchntake(gab, monitors[f], 4, results);
+        munit_assert_uint64(status, ==, gab_number(3));
+        munit_assert_uint64(results[0], ==, gab_ok);
+        munit_assert_uint64(results[1], ==, fibers[f]);
+        munit_assert_uint64(results[2], ==, ch);
+        gab_chnclose(monitors[f]);
       }
     }
 
@@ -156,6 +157,10 @@ test_channel_stress_concurrent_putters(const MunitParameter params[],
 
   munit_assert_uint64(total_received, ==, num_fibers);
   munit_assert_true(gab_chnisempty(ch));
+
+  // Assert that all of our monitors have received a value and closed.
+  for (uint64_t i = 0; i < num_fibers; i++)
+    munit_assert_true(gab_chnisclosed(monitors[i]));
 
   return MUNIT_OK;
 }
@@ -192,6 +197,10 @@ static MunitResult test_channel_concurrent_takers(const MunitParameter params[],
 
   uint64_t total_sent = 0;
   for (uint64_t i = 0; i < num_fibers; i++) {
+    gab_value res = gab_chnput(gab, ch, gab_number(1));
+    munit_assert_uint64(res, ==, gab_cvalid);
+    total_sent++;
+
     // If more fibers are done than values we've sent so far, we have a bug
     int64_t done = 0;
     for (uint64_t f = 0; f < num_fibers; f++) {
@@ -218,10 +227,6 @@ static MunitResult test_channel_concurrent_takers(const MunitParameter params[],
     }
     munit_assert_uint64(done, <=, total_sent);
 
-    gab_value res = gab_chnput(gab, ch, gab_number(1));
-    munit_assert_uint64(res, ==, gab_cvalid);
-
-    total_sent++;
   }
 
   munit_assert_uint64(total_sent, ==, num_fibers);

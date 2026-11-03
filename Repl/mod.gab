@@ -166,17 +166,20 @@ module.defclass(
         .when(Cell.cell\ok, put_via: repl\env: key Cell.cell\result)
     end,
     repl\view\env\item: (key val) :: do
+      id := Strings.make(key val).to\message
       [
         box:
         {
           w\g: 1
           layout: horizontal:
+          id: id
         }
         [
           [
             text:
             {
               bg: Colors.primary\bg, fg: Colors.g
+              id: Strings.make(id "icon").to\message
             }
             '\u[f4c3] '
           ]
@@ -184,13 +187,19 @@ module.defclass(
             text:
             {
               bg: Colors.primary\bg, fg: Colors.primary\light
+              id: Strings.make(id "key").to\message
             }
             key.as\string.unwrap
           ]
+          [box: { w\g: 1 Strings.make(id "space")} []]
           [
             text:
-            { w\g: 1 bg: Colors.primary\bg, fg: Colors.primary\dark }
-            val.to\string
+            {
+              bg: Colors.primary\bg
+              fg: Colors.primary\dark
+              id: Strings.make(id "val").to\message
+            }
+            "$".sprintf val
           ]
         ]
       ]
@@ -243,15 +252,16 @@ module.defclass(
               box:
               { w\r: 20 h\g: 1 align\x: center: gap: 21 id: repl\modules:}
               [
-                [text: { fg: Colors.primary\light } gab_text]
-                [text: { fg: Colors.primary\light } "Welcome to the Gab REPL"]
+                [text: { fg: Colors.primary\light, id: repl\title: } gab_text]
+                [text: { fg: Colors.primary\light, id: repl\subtitle: } "Welcome to the Gab REPL"]
                 [
                   box:
                   {
-                    w\g: 1 h\g: 1 bg: Colors.primary\bg
+                    w\g: 1 h\g: 1 bg: Colors.primary\bg,
+                    id: repl\env:
                   }
                   [
-                    [text: { fg: Colors.primary\dark } "Environment"]
+                    [text: { fg: Colors.primary\dark id: repl\env\title: } "Environment"]
                     self.repl\view\env*
                   ]
                 ]
@@ -267,6 +277,19 @@ Ui
   .run(how events app)
   .unwrap
 
+default_environment := {
+  "Shapes".to\binary, Shapes
+  "Messages".to\binary, Messages
+  "Binaries".to\binary, Binaries
+  "Numbers".to\binary, Numbers
+  "Blocks".to\binary, Blocks
+  "Records".to\binary, Records
+  "Fibers".to\binary, Fibers
+  "Channels".to\binary, Channels
+  "Ranges".to\binary, Ranges
+  "Transducers".to\binary, Transducers
+}
+
 events
   .pipe(
     app,
@@ -274,7 +297,7 @@ events
       (e == key:) & ((key == "escape"))
     end)
     |> Transducers.reduce(
-      module.make([] "" {}),
+      module.make([] "" default_environment),
       (model, event, type, data*) :: model.repl\controller(event type data))
     |> Transducers.map(model :: model.repl\view)
   )
