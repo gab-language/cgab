@@ -188,7 +188,8 @@ void print_err(struct gab_triple gab, gab_value err) {
   fprintf(stderr, "%s\n", str);
 }
 
-gab_value handle_result(struct gab_triple gab, d_result *cache, gab_value fib, gab_value *results) {
+gab_value handle_result(struct gab_triple gab, d_result *cache, gab_value fib,
+                        gab_value *results) {
   if (fib != results[1])
     return fib;
 
@@ -225,10 +226,10 @@ void pop_and_printerr(struct gab_triple gab, gab_value fib) {
     // gab_fprintf(stdout, "$\n", nres);
 
     if (gab_step(gab))
-      return;
+      return d_result_destroy(&res_cache);
 
     if (nres == gab_cinvalid || nres == gab_cundefined)
-      return;
+      return d_result_destroy(&res_cache);
 
     if (nres == gab_ctimeout)
       continue;
@@ -256,9 +257,10 @@ void pop_and_printerr(struct gab_triple gab, gab_value fib) {
 
       if (next != gab_cvalid)
         fib = next;
-
     }
   }
+
+  return d_result_destroy(&res_cache);
 }
 
 bool check_and_printerr(union gab_value_pair *res) {
