@@ -2054,6 +2054,8 @@ enum __gab_jbstep_k {
   kGAB_JBSTEP_NONE = 2,
 };
 
+GAB_INTERNAL uint8_t __gab_fibop(gab_value fiber);
+
 GAB_INTERNAL enum __gab_jbstep_k __gab_jbstep(struct gab_triple gab,
                                               struct gab_job *job) {
   switch (gab_yield(gab)) {
@@ -2134,11 +2136,6 @@ GAB_INTERNAL enum __gab_jbstep_k __gab_jbstep(struct gab_triple gab,
   // TODO @cgab @bug: Check if the fiber has been killed?
 
   gab_assert(
-      gab_valkind(fiber) == kGAB_FIBER,
-      "(%i) Fibers in the queue shall only have type kGAB_FIBER, not %d (%p).",
-      gab.wkid, gab_valkind(fiber), gab_valtoo(fiber));
-
-  gab_assert(
       q_gab_value_peek(&job->working_queue) == fiber,
       "(%i) The fiber about to be run shall be at the front of the queue.",
       gab.wkid);
@@ -2166,8 +2163,8 @@ GAB_INTERNAL enum __gab_jbstep_k __gab_jbstep(struct gab_triple gab,
               res.status);
 
   if (res.status == gab_ctimeout) {
-    fprintf(stderr, "(%i) TIMED OUT FROM %s\n", gab.wkid,
-            gab_opcode_names[*GAB_VAL_TO_FIBER(fiber)->vm.ip]);
+    fprintf(stdout, "(%i) TIMED OUT FROM %s\n", gab.wkid,
+            gab_opcode_names[__gab_fibop(popped)]);
   }
 #endif
 
@@ -2178,12 +2175,6 @@ GAB_INTERNAL enum __gab_jbstep_k __gab_jbstep(struct gab_triple gab,
 
   switch (res.status) {
   case gab_ctimeout:
-    gab_assert(!gab_fibisdone(popped), "A timedout fiber shall not be done");
-
-    gab_assert(gab_valkind(fiber) == kGAB_FIBER,
-               "Fibers in the queue shall only have type kGAB_FIBER, not %d.",
-               gab_valkind(fiber));
-
     // We did not complete the work. Push back onto our queue.
     if (!q_gab_value_push(&job->working_queue, fiber))
       gab_unreachable(
@@ -2239,10 +2230,6 @@ bail:
 
     gab_assert(gab_sigwaiting(gab), "While bailing, there shall be a sGAB_TERM "
                                     "signal waiting for this worker");
-
-    gab_assert(gab_valkind(fiber) == kGAB_FIBER,
-               "Fibers in the queue should only have type kGAB_FIBER, not %d",
-               gab_valkind(fiber));
 
     // Run each queued fiber. Since there is a TERM signal waiting on this
     // worker, each fiber will terminate itself here, in one instruction.
@@ -7335,6 +7322,20 @@ GAB_API gab_value gab_shpwith(struct gab_triple gab, gab_value shape,
 
     return shp;
   }
+}
+
+GAB_INTERNAL uint8_t __gab_fibop(gab_value fiber) {
+  gab_assert(gab_valisfib(fiber), "Invalid kind");
+
+  struct gab_ofiber *f = GAB_VAL_TO_FIBER(fiber);
+
+  return *f->vm.ip;
+}
+
+GAB_INTERNAL bool __gab_fibiskilled(gab_value fiber) {
+  gab_assert(gab_valisfib(fiber), "Invalid kind");
+  return atomic_load(&GAB_VAL_TO_FIBER(fiber)->header.kind) ==
+         kGAB_FIBER_KILLED;
 }
 
 GAB_INTERNAL bool __gab_fibxchg(gab_value fiber, enum gab_kind new_kind) {
@@ -12955,7 +12956,7 @@ GAB_INTERNAL union gab_value_pair __gab_vmyield(struct gab_triple gab,
   struct gab_ofiber *fiber = GAB_VAL_TO_FIBER(f);
 
   fiber->reentrant = value;
-  return __gab_fibresult(f);
+  return (union gab_value_pair){{gab_ctimeout, f}};
 }
 
 GAB_INTERNAL gab_value __gab_panicstk(struct gab_triple gab, struct gab_vm *vm,
@@ -14764,12 +14765,23 @@ GAB_API struct gab_ofiber *getthisfiber(struct gab_triple gab) {
              gab_valtoo(FIBER()), GAB().wkid);                                 \
   gab_value channel = GAB_VAL_TO_FIBER(FIBER())->monitor;                      \
                                                                                \
+  gab_assert(!__gab_fibiskilled(FIBER()), "NOT HANDLED");                      \
   if (!gab_valischn(channel))                                                  \
     return __gab_fibresult(FIBER());                                           \
                                                                                \
-  CHECK_SIGNAL(1);                                                             \
-                                                                               \
-  int64_t have = HV();                                                         \
+  if (gab_sigwaiting(GAB()))                                                   \
+    switch (gab_yield(GAB())) {                                                \
+    case sGAB_COLL:                                                            \
+      STORE_SP();                                                              \
+      gab_gcepochnext(GAB());                                                  \
+      gab_sigpropagate(GAB());                                                 \
+      break;                                                                   \
+    case sGAB_TERM:                                                            \
+      STORE_SP();                                                              \
+      return __gab_fibresult(FIBER());                                         \
+    default:                                                                   \
+      break;                                                                   \
+    }                                                                          \
                                                                                \
   if (REENTRANT() && REENTRANT() != gab_ctimeout) {                            \
     if (!gab_chnisclosed(channel) && gab_chnmatches(channel, REENTRANT()))     \
@@ -14782,20 +14794,21 @@ GAB_API struct gab_ofiber *getthisfiber(struct gab_triple gab) {
     return __gab_fibresult(FIBER());                                           \
   }                                                                            \
                                                                                \
-  /* All values *but* the channel are put into the channel. */                 \
+  int64_t have = HV();                                                         \
+                                                                               \
   gab_value r = gab_untchnput(GAB(), channel, have, SP() - (have));            \
                                                                                \
   switch (r) {                                                                 \
   case gab_cinvalid:                                                           \
     /* Termination signal */                                                   \
-    VM_TERM(1);                                                                \
+    STORE_SP();                                                                \
+    return __gab_fibresult(FIBER());                                           \
   case gab_ctimeout:                                                           \
     /* The put timed-out */                                                    \
     VM_YIELD(gab_ctimeout, 1);                                                 \
   case gab_cundefined:                                                         \
     /* The put failed because the channel is closed.*/                         \
     RESET_REENTRANT();                                                         \
-                                                                               \
     return __gab_fibresult(FIBER());                                           \
   default:                                                                     \
     gab_assert(gab_valkind(r) == kGAB_NUMBER,                                  \

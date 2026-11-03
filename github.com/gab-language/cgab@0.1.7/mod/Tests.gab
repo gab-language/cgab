@@ -21,7 +21,7 @@ Colors := {
 
 Spacer := [ box: { width\grow: 10 } [] ]
 
-how := hui:
+how := gui:
 
 Ui
   .run(how events app)
@@ -497,5 +497,5 @@ events
     |> Transducers.map(app :: app.app\view)
   )
 
-app.close
-events.close
+#app.close
+#events.close

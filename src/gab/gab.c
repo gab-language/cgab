@@ -28,6 +28,14 @@
 #define NAME cstr
 #include "vector.h"
 
+#define K gab_value
+#define V gab_value *
+#define NAME result
+#define HASH(k) (k)
+#define EQUAL(a, b) (a == b)
+#define DEF_V (nullptr)
+#include "dict.h"
+
 /* Append a c-string to a slice of chars */
 static inline s_char s_char_cstr(const char *str) {
   return (s_char){.data = str, .len = strlen(str)};
@@ -180,59 +188,96 @@ void print_err(struct gab_triple gab, gab_value err) {
   fprintf(stderr, "%s\n", str);
 }
 
-void pop_and_printerr(struct gab_triple gab, gab_value fib) {
-  while (gab_signaling(gab))
-    switch (gab_yield(gab)) {
-    case sGAB_TERM:
-      gab_sigpropagate(gab);
-      break;
-    case sGAB_COLL:
-      gab_gcepochnext(gab);
-      gab_sigpropagate(gab);
-      break;
-    default:
-      continue;
+gab_value handle_result(struct gab_triple gab, d_result *cache, gab_value fib, gab_value *results) {
+  if (fib != results[1])
+    return fib;
+
+  if (gab_valkind(results[2]) == kGAB_RECORD) {
+
+    const char *errstr = gab_errtocs(gab, results[2]);
+    gab_assert(errstr != nullptr, "Should allocate error string");
+    fputs(errstr, stderr);
+
+    return gab_cvalid;
+  } else if (gab_valisfib(results[2])) {
+    fib = results[2];
+
+    if (d_result_exists(cache, fib)) {
+      gab_value *child_res = d_result_read(cache, fib);
+      return handle_result(gab, cache, fib, child_res);
+    } else {
+      return fib;
     }
+  } else {
+    gab_unreachable("Unhandled type in result");
+  }
+}
+
+void pop_and_printerr(struct gab_triple gab, gab_value fib) {
+  d_result res_cache;
+  d_result_create(&res_cache, 8);
 
   for (;;) {
     gab_value results[32];
-    gab_value nres = gab_nchntake(gab, _monitor,
-                                  sizeof(results) / sizeof(gab_value), results);
-    if (nres == gab_cinvalid)
+    gab_value nres = gab_ntchntake(
+        gab, _monitor, sizeof(results) / sizeof(gab_value), results);
+
+    // gab_fprintf(stdout, "$\n", nres);
+
+    if (gab_step(gab))
       return;
 
-    if (gab_valkind(nres) != kGAB_NUMBER)
+    if (nres == gab_cinvalid || nres == gab_cundefined)
+      return;
+
+    if (nres == gab_ctimeout)
       continue;
 
     assert(gab_valkind(nres) == kGAB_NUMBER);
 
-    if (results[1] == fib) {
-      const char *errstr = gab_errtocs(gab, results[2]);
-      assert(errstr != nullptr);
+    // TODO:
+    // Collect monitored errors into a data structure.
+    // When we find the fiber which we are waiting for,
+    // we check if the error is itself, or within a subfiber.
+    // We can wait for the subfiber to come through on the channel
+    // if we find one.
 
-      if (errstr)
-        fputs(errstr, stderr);
-      break;
+    if (results[0] == gab_err) {
+      gab_value *mem = calloc(gab_valtou(nres), sizeof(gab_value));
+      memcpy(mem, results, sizeof(gab_value) * gab_valtou(nres));
+      gab_niref(gab, 1, gab_valtou(nres), mem);
+
+      d_result_insert(&res_cache, results[1], mem);
+
+      gab_value next = handle_result(gab, &res_cache, fib, results);
+
+      if (results[1] == fib && next == gab_cvalid)
+        break;
+
+      if (next != gab_cvalid)
+        fib = next;
+
     }
   }
 }
 
 bool check_and_printerr(union gab_value_pair *res) {
-  if (res->status == gab_ctimeout)
+  if (res->status == gab_ctimeout) {
     *res = gab_fibawait(_gab, res->vresult);
+  }
 
   if (!_gab.eg)
     return false;
 
   /* Runtime error */
   if (res->status == gab_err) {
+    pop_and_printerr(_gab, res->vresult);
+
     // Signal shutdown
     gab_sigterm(_gab);
 
     while (!gab_step(_gab))
       gab_busywait(_gab);
-
-    pop_and_printerr(_gab, res->vresult);
   }
 
   /* Buildtime error */
@@ -416,7 +461,8 @@ union gab_value_pair gab_use_zip_data(struct gab_triple gab, const char *path,
   };
 
   size_t sz;
-  void *src = mz_zip_reader_extract_file_to_heap(&_zip, stat.m_filename, &sz, 0);
+  void *src =
+      mz_zip_reader_extract_file_to_heap(&_zip, stat.m_filename, &sz, 0);
 
   if (!src) {
     mz_zip_error e = mz_zip_get_last_error(&_zip);
@@ -449,7 +495,8 @@ union gab_value_pair gab_use_zip_source(struct gab_triple gab, const char *path,
   };
 
   size_t sz;
-  void *src = mz_zip_reader_extract_file_to_heap(&_zip, stat.m_filename, &sz, 0);
+  void *src =
+      mz_zip_reader_extract_file_to_heap(&_zip, stat.m_filename, &sz, 0);
 
   if (!src) {
     mz_zip_error e = mz_zip_get_last_error(&_zip);
@@ -727,9 +774,8 @@ void init_args(union gab_value_pair res, struct gab_module *modules,
 
   for (int i = 0; i < _nargs; i++)
     _vargs[i] = gab_message(_gab, modules[i].module ? modules[i].module
-                                                   : modules[i].package);
+                                                    : modules[i].package);
   _vargs[_nargs - 1] = gab_message(_gab, "System");
-
 }
 
 void inithook(struct gab_triple gab) {
@@ -770,15 +816,15 @@ int run_string(const char *string, uint64_t flags, uint32_t wait, uint64_t jobs,
   s_char src = s_char_create(string, strlen(string) + 1);
 
   union gab_value_pair run_res = gab_exec(_gab, (struct gab_exec_argt){
-                                                   .monitor = _monitor,
-                                                   .name = MAIN_MODULE,
-                                                   .source = (char *)src.data,
-                                                   .source_len = src.len,
-                                                   .flags = flags,
-                                                   .len = _nargs,
-                                                   .sargv = _sargs,
-                                                   .vargv = _vargs,
-                                               });
+                                                    .monitor = _monitor,
+                                                    .name = MAIN_MODULE,
+                                                    .source = (char *)src.data,
+                                                    .source_len = src.len,
+                                                    .flags = flags,
+                                                    .len = _nargs,
+                                                    .sargv = _sargs,
+                                                    .vargv = _vargs,
+                                                });
 
   if (!check_and_printerr(&run_res))
     return gab_destroy(_gab), 1;
@@ -835,11 +881,11 @@ int run_bundle(const char *mod, uint64_t argc, const char **argv) {
 
   union gab_value_pair run_res =
       gab_use(_gab, (struct gab_use_argt){
-                       .vpackage_name = gab_nstring(_gab, modlen, mod),
-                       .len = _nargs,
-                       .sargv = _sargs,
-                       .argv = _vargs,
-                   });
+                        .vpackage_name = gab_nstring(_gab, modlen, mod),
+                        .len = _nargs,
+                        .sargv = _sargs,
+                        .argv = _vargs,
+                    });
 
   if (!check_and_printerr(&run_res))
     return gab_destroy(_gab), 1;
@@ -872,12 +918,12 @@ int run_file(const char *package, uint64_t flags, uint32_t wait, uint64_t jobs,
   init_args(res, modules, nmodules);
 
   union gab_value_pair run_res = gab_use(_gab, (struct gab_use_argt){
-                                                  .flags = flags,
-                                                  .spackage_name = package,
-                                                  .len = _nargs,
-                                                  .sargv = _sargs,
-                                                  .argv = _vargs,
-                                              });
+                                                   .flags = flags,
+                                                   .spackage_name = package,
+                                                   .len = _nargs,
+                                                   .sargv = _sargs,
+                                                   .argv = _vargs,
+                                               });
 
   // TODO @cgab: Fix leak
   // a_gab_value_destroy(res.aresult);
@@ -1401,7 +1447,6 @@ enum cliflag : uint64_t {
   FLAG_DUMP_AST = (uint64_t)fGAB_AST_DUMP,
   FLAG_DUMP_BC = (uint64_t)fGAB_BUILD_DUMP,
   FLAG_STRUCT_ERR = (uint64_t)fGAB_ERR_STRUCTURED,
-  FLAG_SIGTERM_ON_ERR = (uint64_t)fGAB_SIGTERM_ON_ERR,
   FLAG_BUILD_TARGET = (uint64_t)1 << 32,
   FLAG_STEP_AUTOCONFIRM = (uint64_t)1 << 33,
   FLAG_STEP_VERBOSE = (uint64_t)1 << 34,
@@ -2890,7 +2935,7 @@ bool check_valid_zip() {
 
   mz_zip_zero_struct(&_zip);
 
-  assert(&zip);
+  assert(&_zip);
   assert(path);
   if (!mz_zip_reader_init_file(&_zip, path, 0)) {
     // TODO @cgab @cli: Report this error somehow
