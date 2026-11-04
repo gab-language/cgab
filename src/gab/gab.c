@@ -810,7 +810,7 @@ int run_string(const char *string, uint64_t flags, uint32_t wait, uint64_t jobs,
       &_gab);
 
   if (!check_and_printerr(&res))
-    return gab_destroy(_gab), 0;
+    return gab_destroy(_gab), 1;
 
   init_args(res, modules, nmodules);
 
@@ -827,6 +827,8 @@ int run_string(const char *string, uint64_t flags, uint32_t wait, uint64_t jobs,
                                                     .sargv = _sargs,
                                                     .vargv = _vargs,
                                                 });
+
+  gab_fprintf(stdout, "$\n", run_res.status);
 
   if (!check_and_printerr(&run_res))
     return gab_destroy(_gab), 1;
