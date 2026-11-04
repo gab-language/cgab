@@ -809,6 +809,8 @@ int run_string(const char *string, uint64_t flags, uint32_t wait, uint64_t jobs,
       },
       &_gab);
 
+  gab_fprintf(stdout, "$\n", res.status);
+
   if (!check_and_printerr(&res))
     return gab_destroy(_gab), 1;
 
