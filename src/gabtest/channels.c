@@ -232,6 +232,10 @@ static MunitResult test_channel_concurrent_takers(const MunitParameter params[],
   munit_assert_uint64(total_sent, ==, num_fibers);
   munit_assert_true(gab_chnisempty(ch));
 
+  // Assert that all of our monitors have received a value and closed.
+  for (uint64_t i = 0; i < num_fibers; i++)
+    munit_assert_true(gab_chnisclosed(monitors[i]));
+
   return MUNIT_OK;
 }
 
