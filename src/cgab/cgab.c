@@ -2583,6 +2583,8 @@ GAB_API union gab_value_pair gab_create(struct gab_create_argt args,
                                                 .sargv = sargs,
                                                 .argv = vargs,
                                             });
+    gab_fprintf(stdout, "USE $: $\n", gab_string(gab, pkg->module ? pkg->module : pkg->package), res.status);
+
     if (res.status == gab_ctimeout)
       res = gab_fibawait(gab, res.vresult);
 
