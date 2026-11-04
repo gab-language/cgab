@@ -125,6 +125,7 @@ test_channel_stress_concurrent_putters(const MunitParameter params[],
     munit_assert_uint64(val, ==, gab_number(1));
     total_received++;
 
+  dorecv:
     int64_t done = 0;
     for (uint64_t f = 0; f < num_fibers; f++) {
       if (gab_fibisdone(fibers[f])) {
@@ -151,8 +152,12 @@ test_channel_stress_concurrent_putters(const MunitParameter params[],
       }
     }
 
+    // We missed the finished fiber, try again.
+    if (done < total_received)
+      goto dorecv;
+
     // If more fibers are done than values we've receied so far, we have a bug!
-    munit_assert_uint64(done, <=, total_received);
+    munit_assert_uint64(done, ==, total_received);
   }
 
   munit_assert_uint64(total_received, ==, num_fibers);
@@ -226,7 +231,6 @@ static MunitResult test_channel_concurrent_takers(const MunitParameter params[],
       }
     }
     munit_assert_uint64(done, <=, total_sent);
-
   }
 
   munit_assert_uint64(total_sent, ==, num_fibers);
