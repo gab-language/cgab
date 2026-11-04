@@ -797,6 +797,8 @@ int run_string(const char *string, uint64_t flags, uint32_t wait, uint64_t jobs,
                const char **args) {
   gab_ossignal(SIGINT, propagate_term);
 
+  fprintf(stderr, "RUNNING STRING: [%s]\n", string);
+
   union gab_value_pair res = gab_create(
       (struct gab_create_argt){
           .wait = wait,
@@ -809,7 +811,7 @@ int run_string(const char *string, uint64_t flags, uint32_t wait, uint64_t jobs,
       },
       &_gab);
 
-  gab_fprintf(stdout, "$\n", res.status);
+  gab_fprintf(stdout, "CREATE $\n", res.status);
 
   if (!check_and_printerr(&res))
     return gab_destroy(_gab), 1;
@@ -830,7 +832,7 @@ int run_string(const char *string, uint64_t flags, uint32_t wait, uint64_t jobs,
                                                     .vargv = _vargs,
                                                 });
 
-  gab_fprintf(stdout, "$\n", run_res.status);
+  gab_fprintf(stdout, "CREATE $\n", run_res.status);
 
   if (!check_and_printerr(&run_res))
     return gab_destroy(_gab), 1;
