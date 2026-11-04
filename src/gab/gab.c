@@ -782,6 +782,7 @@ void init_args(union gab_value_pair res, struct gab_module *modules,
 
 void inithook(struct gab_triple gab) {
   _monitor = gab_iref(gab, gab_channel(gab));
+  fprintf(stderr, "INITHOOK\n");
 }
 
 // clang-format off
@@ -832,7 +833,7 @@ int run_string(const char *string, uint64_t flags, uint32_t wait, uint64_t jobs,
                                                     .vargv = _vargs,
                                                 });
 
-  gab_fprintf(stdout, "CREATE $\n", run_res.status);
+  gab_fprintf(stdout, "RUN $\n", run_res.status);
 
   if (!check_and_printerr(&run_res))
     return gab_destroy(_gab), 1;
@@ -933,14 +934,9 @@ int run_file(const char *package, uint64_t flags, uint32_t wait, uint64_t jobs,
                                                    .argv = _vargs,
                                                });
 
-  // TODO @cgab: Fix leak
-  // a_gab_value_destroy(res.aresult);
-
   if (!check_and_printerr(&run_res))
     return gab_destroy(_gab), 1;
 
-  // TODO @cgab: Fix leak
-  // a_gab_value_destroy(run_res.aresult);
   return gab_destroy(_gab), 0;
 }
 

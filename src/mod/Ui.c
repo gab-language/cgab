@@ -501,7 +501,8 @@ bool clay_termbox_update(struct gab_triple gab, struct ui *gui,
 
     case TB_KEY_MOUSE_WHEEL_DOWN:
       Clay_UpdateScrollContainers(
-          true, (Clay_Vector2){0, -0.5 * Clay_Termbox_Cell_Height()}, deltaTime);
+          true, (Clay_Vector2){0, -0.5 * Clay_Termbox_Cell_Height()},
+          deltaTime);
       return false;
 
     default:
@@ -756,7 +757,8 @@ Clay_ClipElementConfig parseClip(struct gab_triple gab, gab_value props) {
 
   // Clay_Vector2 offset = Clay_GetScrollOffset();
   // if (clipx || clipy)
-  //   fprintf(stderr, "CLIP %u, %b,%b by %f,%f\n", Clay_GetOpenElementId(), clipx, clipy, offset.x, offset.y);
+  //   fprintf(stderr, "CLIP %u, %b,%b by %f,%f\n", Clay_GetOpenElementId(),
+  //   clipx, clipy, offset.x, offset.y);
 
   return (Clay_ClipElementConfig){
       .horizontal = clipx,
@@ -2059,9 +2061,12 @@ GAB_DYNLIB_NATIVE_FN(ui, run) {
   gui->appch = appch;
   gui->evch = evch;
 
+  // TODO: Crashes in one of three fibers can cause problems here.
+
   // TODO @ui: It might be better to *combine* these two.
   union gab_value_pair res = gab_asend(
       gab, (struct gab_send_argt){
+               .link = gab_thisfiber(gab),
                .message = gab_message(gab, mGAB_CALL),
                .receiver = gab_snative(gab, render_rec_name, render_rec_target),
                .len = 1,
@@ -2075,6 +2080,7 @@ GAB_DYNLIB_NATIVE_FN(ui, run) {
 
   res = gab_asend(
       gab, (struct gab_send_argt){
+               .link = gab_thisfiber(gab),
                .message = gab_message(gab, mGAB_CALL),
                .receiver = gab_snative(gab, event_rec_name, event_rec_target),
                .len = 1,
