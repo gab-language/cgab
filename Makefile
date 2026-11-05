@@ -132,6 +132,7 @@ all: log build-dir gab cmodules cxxmodules
 
 log:
 	$(ZIG) version
+	$(DLLTOOL) --version
 
 -include $(CGAB_OBJ:.o=.d) $(GAB_OBJ:.o=.d) $(CMOD_SHARED:$(GAB_DYNLIB_FILEENDING)=.d)
 
