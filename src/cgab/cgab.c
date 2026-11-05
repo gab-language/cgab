@@ -2558,7 +2558,7 @@ GAB_API union gab_value_pair gab_create(struct gab_create_argt args,
   if (args.init_hook)
     args.init_hook(gab);
 
-  fprintf(stdout, "INITHOOK CALLED\n");
+  fprintf(stderr, "INITHOOK CALLED\n");
 
   uint64_t len = 0;
   struct gab_module *cursor = args.modules;
@@ -2568,7 +2568,7 @@ GAB_API union gab_value_pair gab_create(struct gab_create_argt args,
   gab_precondition(len < cGAB_DEFAULTMODULES_MAX,
                    "Cannot have more than %u modules", cGAB_DEFAULTMODULES_MAX);
 
-  fprintf(stdout, "OPENING %lu MODULES\n", len);
+  fprintf(stderr, "OPENING %lu MODULES\n", len);
 
   uint64_t nargs = 0;
 
@@ -2580,7 +2580,7 @@ GAB_API union gab_value_pair gab_create(struct gab_create_argt args,
   for (int i = 0; i < len; i++) {
     struct gab_module *pkg = args.modules + i;
 
-    fprintf(stdout, "USING %s:%s\n", pkg->package, pkg->module ? pkg->module : "mod.gab");
+    fprintf(stderr, "USING %s:%s\n", pkg->package, pkg->module ? pkg->module : "mod.gab");
     union gab_value_pair res = gab_use(gab, (struct gab_use_argt){
                                                 .spackage_name = pkg->package,
                                                 .smodule_name = pkg->module,
@@ -2588,7 +2588,7 @@ GAB_API union gab_value_pair gab_create(struct gab_create_argt args,
                                                 .sargv = sargs,
                                                 .argv = vargs,
                                             });
-    gab_fprintf(stdout, "USE $: $\n", gab_string(gab, pkg->module ? pkg->module : pkg->package), res.status);
+    gab_fprintf(stderr, "USE $: $\n", gab_string(gab, pkg->module ? pkg->module : pkg->package), res.status);
 
     if (res.status == gab_ctimeout)
       res = gab_fibawait(gab, res.vresult);
