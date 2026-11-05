@@ -2558,6 +2558,8 @@ GAB_API union gab_value_pair gab_create(struct gab_create_argt args,
   if (args.init_hook)
     args.init_hook(gab);
 
+  fprintf(stdout, "INITHOOK CALLED\n");
+
   uint64_t len = 0;
   struct gab_module *cursor = args.modules;
   while (cursor && cursor->package)
@@ -2565,6 +2567,8 @@ GAB_API union gab_value_pair gab_create(struct gab_create_argt args,
 
   gab_precondition(len < cGAB_DEFAULTMODULES_MAX,
                    "Cannot have more than %u modules", cGAB_DEFAULTMODULES_MAX);
+
+  fprintf(stdout, "OPENING %lu MODULES\n", len);
 
   uint64_t nargs = 0;
 
