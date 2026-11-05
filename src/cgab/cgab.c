@@ -2576,6 +2576,7 @@ GAB_API union gab_value_pair gab_create(struct gab_create_argt args,
   for (int i = 0; i < len; i++) {
     struct gab_module *pkg = args.modules + i;
 
+    fprintf(stdout, "USING %s:%s\n", pkg->package, pkg->module ? pkg->module : "mod.gab");
     union gab_value_pair res = gab_use(gab, (struct gab_use_argt){
                                                 .spackage_name = pkg->package,
                                                 .smodule_name = pkg->module,
