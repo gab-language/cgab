@@ -866,6 +866,8 @@ int run_bundle(const char *mod, uint64_t argc, const char **argv) {
   if (dash && dash - mod < modlen)
     modlen = dash - mod;
 
+  char* module = strndup(mod, modlen);
+
   struct gab_module *modules = default_modules;
 
   union gab_value_pair res = gab_create(
@@ -890,11 +892,13 @@ int run_bundle(const char *mod, uint64_t argc, const char **argv) {
 
   union gab_value_pair run_res =
       gab_use(_gab, (struct gab_use_argt){
-                        .spackage_name = mod,
+                        .spackage_name = module,
                         .len = _nargs,
                         .sargv = _sargs,
                         .argv = _vargs,
                     });
+
+  free(module);
 
   if (!check_and_printerr(&run_res))
     return gab_destroy(_gab), 1;
