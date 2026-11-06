@@ -1980,20 +1980,12 @@ struct gab_use_argt {
    * The name of the package to search for, as a c-string.
    */
   const char *spackage_name;
-  /**
-   * The name of the package to search for, as a gab-value.
-   */
-  gab_value vpackage_name;
   /* Only one of spackage_name and vpackage_name is required. */
 
   /**
    * The name of the module to search for, as a c-string.
    */
   const char *smodule_name;
-  /**
-   * The name of the module to search for, as a gab-value.
-   */
-  gab_value vmodule_name;
 
   /**
    * @brief The number of arguments to the main block.

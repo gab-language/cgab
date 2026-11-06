@@ -2558,8 +2558,6 @@ GAB_API union gab_value_pair gab_create(struct gab_create_argt args,
   if (args.init_hook)
     args.init_hook(gab);
 
-  fprintf(stderr, "INITHOOK CALLED\n");
-
   uint64_t len = 0;
   struct gab_module *cursor = args.modules;
   while (cursor && cursor->package)
@@ -2567,8 +2565,6 @@ GAB_API union gab_value_pair gab_create(struct gab_create_argt args,
 
   gab_precondition(len < cGAB_DEFAULTMODULES_MAX,
                    "Cannot have more than %u modules", cGAB_DEFAULTMODULES_MAX);
-
-  fprintf(stderr, "OPENING %lu MODULES\n", len);
 
   uint64_t nargs = 0;
 
@@ -2580,7 +2576,6 @@ GAB_API union gab_value_pair gab_create(struct gab_create_argt args,
   for (int i = 0; i < len; i++) {
     struct gab_module *pkg = args.modules + i;
 
-    fprintf(stderr, "USING %s:%s\n", pkg->package, pkg->module ? pkg->module : "mod.gab");
     union gab_value_pair res = gab_use(gab, (struct gab_use_argt){
                                                 .spackage_name = pkg->package,
                                                 .smodule_name = pkg->module,
@@ -2588,7 +2583,6 @@ GAB_API union gab_value_pair gab_create(struct gab_create_argt args,
                                                 .sargv = sargs,
                                                 .argv = vargs,
                                             });
-    gab_fprintf(stderr, "USE $: $\n", gab_string(gab, pkg->module ? pkg->module : pkg->package), res.status);
 
     if (res.status == gab_ctimeout)
       res = gab_fibawait(gab, res.vresult);
@@ -3990,23 +3984,15 @@ GAB_API union gab_value_pair gab_use(struct gab_triple gab,
   gab.flags |= args.flags;
 
   const char *package = args.spackage_name;
-  if (args.vpackage_name) {
-    package = gab_strdata(&args.vpackage_name);
-  }
-
   const char *module = args.smodule_name;
-  if (args.vmodule_name) {
-    module = gab_strdata(&args.vmodule_name);
-  }
 
   if (gab_valkind(args.env) == kGAB_RECORD) {
     args.len = gab_reclen(args.env);
   }
 
-  args.len++;
-  const char *env_sargv[args.len];
-  gab_value env_vsargv[args.len];
-  gab_value env_vargv[args.len];
+  const char *env_sargv[args.len + 1];
+  gab_value env_vsargv[args.len + 1];
+  gab_value env_vargv[args.len + 1];
 
   gab_value mmod = gab_message(gab, module ? module : package);
 
@@ -4015,7 +4001,7 @@ GAB_API union gab_value_pair gab_use(struct gab_triple gab,
   env_vargv[0] = mmod;
 
   if (gab_valkind(args.env) == kGAB_RECORD) {
-    for (uint64_t i = 0; i < args.len - 1; i++) {
+    for (uint64_t i = 0; i < args.len; i++) {
       uint64_t index = i + 1;
       env_vsargv[index] = gab_ukrecat(args.env, i);
 
@@ -4027,20 +4013,16 @@ GAB_API union gab_value_pair gab_use(struct gab_triple gab,
       env_vargv[index] = gab_uvrecat(args.env, i);
     }
 
-    args.sargv = env_sargv;
-    args.argv = env_vargv;
   } else {
     memcpy(env_sargv + 1, args.sargv, args.len * sizeof(args.sargv[0]));
     memcpy(env_vargv + 1, args.argv, args.len * sizeof(args.argv[0]));
-    args.sargv = env_sargv;
-    args.argv = env_vargv;
   }
 
   struct gab_module_res *mod = gab_resolve(gab, package, module);
 
   if (!mod)
     return module
-               ? gab_panicf(gab, "Package @:@ could not be found",
+               ? gab_panicf(gab, "Module (@) @:@ could not be found", mmod,
                             gab_string(gab, package), gab_string(gab, module))
                : gab_panicf(gab, "Package @ could not be found",
                             gab_string(gab, package));
@@ -4054,7 +4036,7 @@ GAB_API union gab_value_pair gab_use(struct gab_triple gab,
       continue;
 
     union gab_value_pair result = curr->resource->loader(
-        gab, curr->path, args.len, args.sargv, args.argv);
+        gab, curr->path, args.len + 1, env_sargv, env_vargv);
 
     if (result.status != gab_ok)
       return result;
@@ -13897,14 +13879,15 @@ GAB_API struct gab_ofiber *getthisfiber(struct gab_triple gab) {
       if (module)                                                              \
         PANIC_GUARD_KIND(module, kGAB_STRING);                                 \
                                                                                \
-      mod = gab_use(GAB(), (struct gab_use_argt){                              \
-                               .flags = should_reload ? fGAB_USE_RELOAD : 0,   \
-                               .vpackage_name = r,                             \
-                               .vmodule_name = module,                         \
-                               .sargv = EG()->sdefault_modules,                \
-                               .argv = EG()->vdefault_modules,                 \
-                               .len = EG()->ndefault_modules,                  \
-                           });                                                 \
+      mod = gab_use(                                                           \
+          GAB(), (struct gab_use_argt){                                        \
+                     .flags = should_reload ? fGAB_USE_RELOAD : 0,             \
+                     .spackage_name = gab_strdata(&r),                         \
+                     .smodule_name = module ? gab_strdata(&module) : nullptr,  \
+                     .sargv = EG()->sdefault_modules,                          \
+                     .argv = EG()->vdefault_modules,                           \
+                     .len = EG()->ndefault_modules,                            \
+                 });                                                           \
     }                                                                          \
                                                                                \
     if (mod.status == gab_ctimeout) {                                          \

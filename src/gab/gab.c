@@ -218,6 +218,13 @@ void pop_and_printerr(struct gab_triple gab, gab_value fib) {
   d_result res_cache;
   d_result_create(&res_cache, 8);
 
+  if (gab_valkind(fib) == kGAB_RECORD) {
+    const char *errstr = gab_errtocs(gab, fib);
+    gab_assert(errstr != nullptr, "Should allocate error string");
+    fputs(errstr, stderr);
+    return;
+  }
+
   for (;;) {
     gab_value results[32];
     gab_value nres = gab_ntchntake(
@@ -648,7 +655,7 @@ GAB_DYNLIB_NATIVE_FN(system, use) {
       return gab_pktypemismatch(gab, package, kGAB_STRING);
 
     mod = gab_use(gab, (struct gab_use_argt){
-                           .vpackage_name = package,
+                           .spackage_name = gab_strdata(&package),
                            .len = _nargs,
                            .argv = _vargs,
                            .sargv = _sargs,
@@ -782,7 +789,6 @@ void init_args(union gab_value_pair res, struct gab_module *modules,
 
 void inithook(struct gab_triple gab) {
   _monitor = gab_iref(gab, gab_channel(gab));
-  fprintf(stderr, "INITHOOK\n");
 }
 
 // clang-format off
@@ -798,8 +804,6 @@ int run_string(const char *string, uint64_t flags, uint32_t wait, uint64_t jobs,
                const char **args) {
   gab_ossignal(SIGINT, propagate_term);
 
-  fprintf(stderr, "RUNNING STRING: [%s]\n", string);
-
   union gab_value_pair res = gab_create(
       (struct gab_create_argt){
           .wait = wait,
@@ -811,8 +815,6 @@ int run_string(const char *string, uint64_t flags, uint32_t wait, uint64_t jobs,
           .init_hook = inithook,
       },
       &_gab);
-
-  gab_fprintf(stdout, "CREATE $\n", res.status);
 
   if (!check_and_printerr(&res))
     return gab_destroy(_gab), 1;
@@ -832,8 +834,6 @@ int run_string(const char *string, uint64_t flags, uint32_t wait, uint64_t jobs,
                                                     .sargv = _sargs,
                                                     .vargv = _vargs,
                                                 });
-
-  gab_fprintf(stdout, "RUN $\n", run_res.status);
 
   if (!check_and_printerr(&run_res))
     return gab_destroy(_gab), 1;
@@ -890,7 +890,7 @@ int run_bundle(const char *mod, uint64_t argc, const char **argv) {
 
   union gab_value_pair run_res =
       gab_use(_gab, (struct gab_use_argt){
-                        .vpackage_name = gab_nstring(_gab, modlen, mod),
+                        .spackage_name = mod,
                         .len = _nargs,
                         .sargv = _sargs,
                         .argv = _vargs,
