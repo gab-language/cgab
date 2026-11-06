@@ -547,7 +547,8 @@ GAB_DYNLIB_NATIVE_FN(fmt, panicf) {
 
     gab_value e = gab_string(gab, buf);
     free(buf);
-    return gab_panicf(gab, "$", e);
+    union gab_value_pair res = gab_panicf(gab, "$", e);
+    return res;
   }
 }
 

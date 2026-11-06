@@ -201,6 +201,7 @@ gab_value handle_result(struct gab_triple gab, d_result *cache, gab_value fib,
 
     return gab_cvalid;
   } else if (gab_valisfib(results[2])) {
+    gab_assert(fib != results[2], "New fiber can't be old fiber");
     fib = results[2];
 
     if (d_result_exists(cache, fib)) {
@@ -226,11 +227,9 @@ void pop_and_printerr(struct gab_triple gab, gab_value fib) {
   }
 
   for (;;) {
-    gab_value results[32];
+    gab_value results[32] = {};
     gab_value nres = gab_ntchntake(
         gab, _monitor, sizeof(results) / sizeof(gab_value), results);
-
-    // gab_fprintf(stdout, "$\n", nres);
 
     if (gab_step(gab))
       return d_result_destroy(&res_cache);
@@ -262,8 +261,10 @@ void pop_and_printerr(struct gab_triple gab, gab_value fib) {
       if (results[1] == fib && next == gab_cvalid)
         break;
 
-      if (next != gab_cvalid)
+      if (next != gab_cvalid) {
+        gab_assert(fib != next, "Next fiber can't be previous fiber");
         fib = next;
+      }
     }
   }
 

@@ -12948,30 +12948,26 @@ GAB_INTERNAL union gab_value_pair __gab_vmyield(struct gab_triple gab,
   return (union gab_value_pair){{gab_ctimeout, f}};
 }
 
+GAB_INTERNAL gab_value __gab_vpanicstk(struct gab_triple gab, struct gab_vm *vm,
+                                       gab_value *f, uint8_t *ip, int s,
+                                       const char *fmt, va_list va) {
+  struct gab_err_argt frame =
+      __gab_vmbuilderr(gab, __gab_vmframeblk(f), ip, s, fmt);
+
+  gab_value err = gab_vspanicf(gab, va, __gab_obj(f), frame);
+  return err;
+}
+
 GAB_INTERNAL gab_value __gab_panicstk(struct gab_triple gab, struct gab_vm *vm,
                                       gab_value *f, uint8_t *ip, int s,
                                       const char *fmt, ...) {
   va_list va;
   va_start(va, fmt);
-  /* Publish all panicked frames */
 
-  struct gab_err_argt frame =
-      __gab_vmbuilderr(gab, __gab_vmframeblk(f), ip, s, fmt);
-
-  gab_value err = gab_vspanicf(gab, va, __gab_obj(f), frame);
-
-  ip = __gab_vmframeip(f);
-  f = __gab_vmframeparent(f);
-
-  while (f && __gab_vmframeparent(f) > vm->sb) {
-    frame = __gab_vmbuilderr(gab, __gab_vmframeblk(f), ip, GAB_NONE, "");
-    gab_vspanicf(gab, va, __gab_obj(f), frame);
-
-    ip = __gab_vmframeip(f);
-    f = __gab_vmframeparent(f);
-  }
+  gab_value err = __gab_vpanicstk(gab, vm, f, ip, s, fmt, va);
 
   va_end(va);
+
   return err;
 }
 
@@ -13013,7 +13009,7 @@ GAB_INTERNAL union gab_value_pair __gab_vvmerror(struct gab_triple gab,
   gab_value *f = vm->fp;
   uint8_t *ip = vm->ip;
 
-  __gab_panicstk(gab, vm, f, ip, s, fmt, va);
+  gab_value err = __gab_vpanicstk(gab, vm, f, ip, s, fmt, va);
 
 #if cGAB_LOG_EG
   gab_fprintf(stderr, "($) VVMERR finished fiber $.\n", gab_number(gab.wkid),
@@ -13023,7 +13019,7 @@ GAB_INTERNAL union gab_value_pair __gab_vvmerror(struct gab_triple gab,
   if (!__gab_fibxchg(fiber, kGAB_FIBER_ERR))
     return __gab_fibresult(fiber);
 
-  return __gab_fibresult(fiber);
+  return (union gab_value_pair){{gab_err, err}};
 }
 
 GAB_INTERNAL union gab_value_pair __gab_vmterm(struct gab_triple gab,
@@ -13534,7 +13530,7 @@ extern void putcs(char *arg);
                                                                                \
     RESET_BUMP();                                                              \
                                                                                \
-    if (__gab_unlikely(res.status == gab_cvalid))                              \
+    if (__gab_unlikely(res.status == gab_err))                                 \
       VM_GIVEN(GAB_SEND_CACHE_SIZE, res.vresult);                              \
                                                                                \
     gab_assert(SP() >= before, "Fewer than zero values returned from native"); \
@@ -13964,8 +13960,6 @@ GAB_API struct gab_ofiber *getthisfiber(struct gab_triple gab) {
 #define VM_GIVEN(dist, err)                                                    \
   ({                                                                           \
     STORE();                                                                   \
-    if (!__gab_fibxchg(FIBER(), kGAB_FIBER_ERR))                               \
-      return __gab_fibresult(FIBER());                                         \
                                                                                \
     PUSH(gab_err);                                                             \
     PUSH(FIBER());                                                             \
@@ -13981,6 +13975,8 @@ GAB_API struct gab_ofiber *getthisfiber(struct gab_triple gab) {
 #define VM_PANIC(dist, status, ...)                                            \
   ({                                                                           \
     STORE();                                                                   \
+    if (!__gab_fibxchg(FIBER(), kGAB_FIBER_ERR))                               \
+      return __gab_fibresult(FIBER());                                         \
     gab_value err =                                                            \
         __gab_panicstk(GAB(), VM(), VM()->fp, VM()->ip, status, __VA_ARGS__);  \
     VM_GIVEN(dist, err);                                                       \

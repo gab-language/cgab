@@ -2062,6 +2062,7 @@ GAB_DYNLIB_NATIVE_FN(ui, run) {
   gui->evch = evch;
 
   // TODO: Crashes in one of three fibers can cause problems here.
+  // The fact that links are one-way can cause this to break down.
 
   // TODO @ui: It might be better to *combine* these two.
   union gab_value_pair res = gab_asend(
