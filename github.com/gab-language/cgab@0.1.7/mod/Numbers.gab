@@ -1,0 +1,17 @@
+is\number:.def(module.t, true:)
+is\number: .def false:
+
+[module.t] .defmodule {
+  ->: to :: (to, self) .to\range
+  ++: _ :: self + 1
+  --: _ :: self - 1
+  is\even: _ :: self .% 2 .== 0
+  is\odd: _ :: self .is\even .!
+  is\pos: _ :: self > 0
+  is\neg: _ :: self < 0
+  to\n: _ :: self
+}
+
+[module] .defmodule {
+  int\between: (floor, ceil) :: self.float\between(floor, ceil).floor
+}

@@ -1,0 +1,306 @@
+Ui      := 'github.com/gab-language/cgab@0.1.7' .use 'Ui'
+
+alphabet := [
+  'alpha'
+  'beta'
+  'gamma'
+  'delta'
+  'epsilon'
+  'zeta'
+  'eta'
+  'theta'
+  'iota'
+  'kappa'
+  'lambda'
+  'mu'
+  'nu'
+  'xi'
+  'omicron'
+  'pi'
+  'rho'
+  'sigma'
+  'upsilon'
+  'phi'
+  'psi'
+  'omega'
+]
+
+(events, app) := (Channels.make, Channels.make)
+
+Colors := {
+  cl: 0x00000000
+  shadow: 0xff000000
+  primary: 0xff636883
+  primary\light: 0xffb6b9c8
+  primary\dark: 0xff373a49
+  primary\fg: 0xffffffff
+  primary\bg: 0xff000000
+  secondary\fg: 0xffb4b4b4
+  border: 0xff1d1e26
+  active: 0xff585c74
+  hover: 0xff6e7391
+  g: 0xffb5d99c
+  r: 0xffe65f5c
+}
+
+how := tui:
+
+repl\char\dispatch: .defcase {
+  ('\b'.to\message) (model, data) :: model.put(repl\input: model.repl\input.pop.unwrap_or '')
+  ('\t'.to\message) (model, data) :: model.put(repl\input: model.repl\input + '  ')
+  # How does windows do here when pressing enter?
+  ('\r'.to\message) (model, data) :: do
+    alt := data.at 1 .unwrap & 1
+    (alt > 0)
+      .then(() :: model.repl\eval)
+      .else(() :: model.put(repl\input: model.repl\input + '\n'))
+  end
+  ('\n'.to\message) (model, data) :: model.put(repl\input: model.repl\input + '\n')
+}
+
+repl\char\dispatch: .def (model) :: do
+  model.put(repl\input: model.repl\input + self.to\string)
+end
+
+repl\event\dispatch: .defcase {
+  tick: (model type data) :: model
+  mouse: (model type data) :: model
+  key:  (model type data) :: do
+    key := data.at 0.unwrap.to\message
+
+#[type, data].eprintln
+
+    (type == char:)
+      .then(() :: key.repl\char\dispatch(model data))
+      .or model
+  end
+}
+
+gab_text := '  ________   ___\n / ___/ _ | / _ )\n/ (_ / __ |/ _  |\n\\___/_/ |_/____/\n';
+
+text_or_placeholder := (text) :: do
+  (text.len > 0) .and text .or "Write a gab expression here. Press alt+enter to run your code."
+end
+
+Cells := repl\cell:.defclass(
+  cell\text:
+  cell\ok:
+  cell\result:
+  (t input env) :: do
+    (ok, ast) := input.as\gab
+
+    (keys, vals) := (env.keys, env.vals)
+
+    (ok, block) := ok.then(() :: Blocks.make(keys ast))
+
+    # This should happen non-blockingly
+    (ok, result) := ok.then(() :: do 
+        monitor := Channels.make
+
+        (fiber) := Fibers.make(block, :, monitor, vals*)
+
+        (ok fiber args*) := monitor >! .unwrap
+
+        (ok args)
+      end)
+
+    t.make(input, ok, result .or block .or ast)
+  end
+  {
+    cell\result: () :: do
+      results := self.at(cell\result:).unwrap
+      self.cell\ok.then(() :: results.at(0).unwrap).or(results)
+    end
+    cell\view: (idx) :: do
+      border_color := self.cell\ok .and (Colors.g) .or (Colors.r)
+      [
+        box:
+        { w\g: 1 bg: Colors.cl, }
+        [
+          [
+            box:
+            { w\g: 1 align\x: right: id: Strings.make("repl\history\header" idx).to\message}
+            [
+              [text: { fg: Colors.primary\fg, p\x: 9 } Strings.make("CELL " idx)]
+            ]
+          ]
+          [
+            box:
+            { w\g: 1 b\fg: Colors.primary\dark, b\l: 9 clip\x: none: align\x: right: id: Strings.make("repl\history\text" idx).to\message}
+            [
+              [text: { w\g: 1 fg: Colors.secondary\fg, p\x: 27 p\y: 21 } self.cell\text]
+            ]
+          ]
+          [
+            box:
+            { p\x: 27 p\y: 21 w\g: 1 b\fg: border_color, b\l: 9 clip\x: none: id: Strings.make("repl\history\result" idx).to\message, layout: horizontal: }
+            [
+              [text: { fg: Colors.primary\fg } "$".sprintf(self.cell\result) ]
+            ]
+          ]
+        ]
+      ]
+    end
+  })
+
+module.defclass(
+  repl\history:
+  repl\input:
+  repl\env:
+  default:
+  {
+    repl\controller: (event type data) :: do
+      event.repl\event\dispatch(self type data)
+    end,
+    repl\has_input: () :: self.repl\input.len > 0
+    repl\eval: () :: do
+      input := self.repl\input
+
+      key := alphabet.at(self.repl\history.len).unwrap.to\binary
+
+      Cell := Cells.make(input self.repl\env)
+  
+      self
+        .put_via_by(repl\history: h :: h.cons Cell)
+        .put(repl\input: "")
+        .when(Cell.cell\ok, put_via: repl\env: key Cell.cell\result)
+    end,
+    repl\view\env\item: (key val) :: do
+      id := Strings.make(key val).to\message
+      [
+        box:
+        {
+          w\g: 1
+          layout: horizontal:
+          id: id
+        }
+        [
+          [
+            text:
+            {
+              bg: Colors.primary\bg, fg: Colors.g
+              id: Strings.make(id "icon").to\message
+            }
+            '\u[f4c3] '
+          ]
+          [
+            text:
+            {
+              bg: Colors.primary\bg, fg: Colors.primary\light
+              id: Strings.make(id "key").to\message
+            }
+            key.as\string.unwrap
+          ]
+          [box: { w\g: 1 Strings.make(id "space")} []]
+          [
+            text:
+            {
+              bg: Colors.primary\bg
+              fg: Colors.primary\dark
+              id: Strings.make(id "val").to\message
+            }
+            "$".sprintf val
+          ]
+        ]
+      ]
+    end
+    repl\view\env: () :: do
+      app := self
+      self.repl\env.map((val key) :: app.repl\view\env\item(key val))
+    end
+    repl\view\history: () :: do
+      self.repl\history.map((cell idx) :: cell.cell\view idx)
+    end
+    repl\view: () :: do
+      [
+        [
+          box:
+          { w\r: 80 bg: Colors.primary, b\fg: Colors.border, b\l: 9 p\x: 18 p\y: 21 id: repl\input: layout: horizontal: gap: 9 f\pin: b\c: f\to: b\c: f\on: root:}
+          [
+            [text: { bg: Colors.cl, fg: Colors.primary\fg } ">"]
+            [text: { bg: Colors.cl, fg: self.repl\has_input.and(Colors.primary\fg).or(Colors.secondary\fg) } text_or_placeholder.(self.repl\input)]
+          ]
+        ]
+        [
+          box:
+          { w\g: 1 h\g: 1 layout: horizontal: bg: Colors.primary\bg }
+          [
+            [
+              box:
+              { w\r: 80 h\r: 100 layout: horizontal: align\x: center: }
+              [
+                [
+                  box:
+                  { h\r: 100 w\g: 1}
+                  [
+                    [
+                      box:
+                      { p\x: 9 bg: Colors.primary\dark}
+                      [[text: {fg: Colors.secondary\fg} "HISTORY"]]
+                    ]
+                    [
+                      box:
+                      { h\g: 1 w\g: 1 gap: 21 align\x: center: bg: Colors.primary\bg, clip\y: scroll: id: scroll\history:}
+                      self.repl\view\history
+                    ]
+                    
+                  ]
+                ]
+              ]
+            ]
+            [
+              box:
+              { w\r: 20 h\g: 1 align\x: center: gap: 21 id: repl\modules:}
+              [
+                [text: { fg: Colors.primary\light, id: repl\title: } gab_text]
+                [text: { fg: Colors.primary\light, id: repl\subtitle: } "Welcome to the Gab REPL"]
+                [
+                  box:
+                  {
+                    w\g: 1 h\g: 1 bg: Colors.primary\bg,
+                    id: repl\env:
+                  }
+                  [
+                    [text: { fg: Colors.primary\dark id: repl\env\title: } "Environment"]
+                    self.repl\view\env*
+                  ]
+                ]
+              ]
+            ]
+          ]
+        ]
+      ]
+    end
+  })
+
+Ui
+  .run(how events app)
+  .unwrap
+
+default_environment := {
+  "Shapes".to\binary, Shapes
+  "Messages".to\binary, Messages
+  "Binaries".to\binary, Binaries
+  "Numbers".to\binary, Numbers
+  "Blocks".to\binary, Blocks
+  "Records".to\binary, Records
+  "Fibers".to\binary, Fibers
+  "Channels".to\binary, Channels
+  "Ranges".to\binary, Ranges
+  "Transducers".to\binary, Transducers
+}
+
+events
+  .pipe(
+    app,
+    Transducers.take_until((e t key) :: do
+      (e == key:) & ((key == "escape"))
+    end)
+    |> Transducers.reduce(
+      module.make([] "" default_environment),
+      (model, event, type, data*) :: model.repl\controller(event type data))
+    |> Transducers.map(model :: model.repl\view)
+  )
+
+app.close
+events.close

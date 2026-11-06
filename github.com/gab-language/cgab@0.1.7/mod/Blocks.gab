@@ -1,0 +1,22 @@
+to\block: .def (module.t, () :: self)
+
+is\block: .def false:
+is\block: .def (module.t, true:)
+
+|>: .def (
+  module.t,
+  (second) :: do
+    first := self
+    (args*) :: second.(first.(args*))
+  end)
+
+[module.t] .defmodule {
+# Implement the reducer protocol for blocks
+  reduce\step: (acc, xs*) :: do
+    (next:, self, self.(acc, xs*))
+  end
+  reduce\done: acc :: acc
+
+# Implement the transducer protocol for blocks.
+  transduce\step: (r acc xs s) :: self.(r acc xs s)
+}

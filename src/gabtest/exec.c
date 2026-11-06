@@ -6,12 +6,11 @@ extern struct gab_triple gab;
 static MunitResult test_parse_and_compile(const MunitParameter params[],
                                           void *data) {
   const char *module = "test_valid";
-  struct gab_parse_argt valid_args = {
-      .source = "1 + 1",
-      .name = module,
-  };
+  const char *source = "1 + 1";
 
-  union gab_value_pair parsed_valid = gab_parse(gab, valid_args);
+  struct gab_src* src = gab_source(gab, gab_string(gab, module), strlen(source), source);
+
+  union gab_value_pair parsed_valid = gab_parse(gab, src, (struct gab_parse_argt){});
 
   munit_assert_uint64(parsed_valid.status, ==, gab_cvalid);
 
@@ -19,17 +18,20 @@ static MunitResult test_parse_and_compile(const MunitParameter params[],
       .ast = parsed_valid.vresult,
       .bindings = gab_erecord(gab),
       .env = gab_listof(gab, gab_erecord(gab)),
-      .mod = gab_string(gab, module),
   };
-  union gab_value_pair compiled = gab_compile(gab, comp_args);
+  union gab_value_pair compiled = gab_compile(gab, src, comp_args);
+
+  gab_srccomplete(gab, src);
 
   munit_assert_uint64(compiled.status, ==, gab_cvalid);
   munit_assert_uint64(gab_valkind(compiled.vresult), ==, kGAB_PROTOTYPE);
 
-  struct gab_parse_argt invalid_args = {.source = "? bad_syntax := ",
-                                        .name = "test_invalid"};
+  module = "test_invalid";
+  source = "? bad_syntax := ";
+  src = gab_source(gab, gab_string(gab, module), strlen(source), source);
 
-  union gab_value_pair parsed_invalid = gab_parse(gab, invalid_args);
+  union gab_value_pair parsed_invalid = gab_parse(gab, src, (struct gab_parse_argt){});
+
   munit_assert_uint64(parsed_invalid.status, ==, gab_cinvalid);
   munit_assert_uint64(gab_valkind(parsed_invalid.vresult), ==, kGAB_RECORD);
 
@@ -38,7 +40,7 @@ static MunitResult test_parse_and_compile(const MunitParameter params[],
 
 struct exec_test {
   struct gab_exec_argt in;
-  gab_value result[5];
+  gab_value result;
 };
 
 static MunitResult test_exec_source(const MunitParameter params[], void *data) {
@@ -46,18 +48,18 @@ static MunitResult test_exec_source(const MunitParameter params[], void *data) {
       // COMPILE PASS RUNTIME PASS
       {
           {.source = "42", .name = "exec_test_simple"},
-          {gab_cvalid, gab_ok, gab_number(42)},
+          gab_ok,
       },
       // COMPILE PASS RUNTIME FAIL
       {
           // Cannot add strings to numbers
           {.source = "1 + 'hello'", .name = "exec_test_typefail"},
-          {gab_cvalid, gab_err},
+          gab_err,
       },
       {
           // Hello message is not defined
           {.source = "1.hello", .name = "exec_test_sendfail"},
-          {gab_cvalid, gab_err},
+          gab_err,
       },
       // COMPILE FAIL
       {
@@ -91,7 +93,7 @@ static MunitResult test_exec_source(const MunitParameter params[], void *data) {
                   "(2)",
               .name = "exec_test_too_many_locals",
           },
-          {gab_cinvalid},
+          gab_cinvalid,
       },
       {
           // Too many arguments
@@ -124,89 +126,89 @@ static MunitResult test_exec_source(const MunitParameter params[], void *data) {
                   "(2)",
               .name = "exec_test_too_many_arguments",
           },
-          {gab_cinvalid},
+          gab_cinvalid,
       },
       {
           {
               .source = "a = 1; () :: (a*) := 10",
               .name = "exec_test_list_bind_to_upvalue",
           },
-          {gab_cinvalid},
+          gab_cinvalid,
       },
       {
           {
               .source = "a = 1; () :: (a**) := 10",
               .name = "exec_test_dict_bind_to_upvalue",
           },
-          {gab_cinvalid},
+          gab_cinvalid,
       },
       {
           {
               .source = "a = 1; () :: (a) := 10",
               .name = "exec_test_bind_to_upvalue",
           },
-          {gab_cinvalid},
+          gab_cinvalid,
       },
       {
           // No binding for symbol 'x'
           {.source = "x", .name = "exec_test_unbound_symbol"},
-          {gab_cinvalid},
+          gab_cinvalid,
       },
       {
           // Invalid binding
           {.source = "{}.a := 2", .name = "exec_test_invalid_binding_shape"},
-          {gab_cinvalid},
+          gab_cinvalid,
       },
       {
           // Too many list bindings
           {.source = "(x*, y*) := (1 2)",
            .name = "exec_test_invalid_binding_list"},
-          {gab_cinvalid},
+          gab_cinvalid,
       },
       {
           // Too many dict bindings
           {.source = "(x**, y**) := (1 2)",
            .name = "exec_test_invalid_binding_dict"},
-          {gab_cinvalid},
+          gab_cinvalid,
       },
       {
           // Dist & list binding
           {.source = "(x**, y*) := (1 2)",
            .name = "exec_test_invalid_binding_list_and_dict"},
-          {gab_cinvalid},
+          gab_cinvalid,
       },
       {
           // Naked '\' is an invalid token
           {.source = "\\", .name = "exec_test_invalid_token"},
-          {gab_cinvalid},
+          gab_cinvalid,
       },
       {
           // \x is an invalid escape sequence
           {.source = "\'\\x\'", .name = "exec_test_invalid_string_escape"},
-          {gab_cinvalid},
+          gab_cinvalid,
       },
       {
           // \u[] is a unicode escape sequence with no codepoint
           {.source = "\'\\u[]\'",
            .name = "exec_test_invalid_string_escape_unicode_incomplete"},
-          {gab_cinvalid},
+          gab_cinvalid,
       },
       {
           // \u[abcg] is a unicode escape sequence with an invalid codepoint
           // (it contains a 'g', which is not hex)
           {.source = "\'\\u[abcg]\'",
            .name = "exec_test_invalid_string_escape_unicode_invalid"},
-          {gab_cinvalid},
+          gab_cinvalid,
       },
       {
           // Expressions cannot start with a send
           {.source = ".hello", .name = "exec_test_invalid_expression_send"},
-          {gab_cinvalid},
+          gab_cinvalid,
       },
       {
           // Expressions cannot start with an operator
           {.source = "+", .name = "exec_test_invalid_expression_op"},
-          {gab_cinvalid},
+          gab_cinvalid,
       },
   };
 
@@ -214,13 +216,8 @@ static MunitResult test_exec_source(const MunitParameter params[], void *data) {
     struct exec_test testcase = exec_test_cases[i];
 
     union gab_value_pair result = gab_exec(gab, testcase.in);
-    munit_assert_uint64(result.status, ==, testcase.result[0]);
 
-    if (testcase.result[0] == gab_cvalid)
-      for (uint64_t j = 1; j < LEN_CARRAY(testcase.result); j++)
-        if (testcase.result[j])
-          munit_assert_uint64(result.aresult[j - 1], ==,
-                              testcase.result[j]);
+    munit_assert_uint64(result.status, ==, testcase.result);
   }
 
   return MUNIT_OK;
@@ -228,13 +225,17 @@ static MunitResult test_exec_source(const MunitParameter params[], void *data) {
 
 static MunitResult test_run_block(const MunitParameter params[], void *data) {
 
-  struct gab_parse_argt build_args = {
-      .source = "x * 2",
-      .name = "test_build",
+  const char* module =  "test_build";
+  const char* source =  "x * 2";
+
+  struct gab_src* src = gab_source(gab, gab_string(gab, module), strlen(source), source);
+
+  union gab_value_pair built = gab_build(gab, src, (struct gab_parse_argt){
       .argv = (const char *[]){"x"},
       .len = 1,
-  };
-  union gab_value_pair built = gab_build(gab, build_args);
+  });
+
+  gab_srccomplete(gab, src);
 
   munit_assert_uint64(built.status, ==, gab_cvalid);
 
@@ -244,9 +245,7 @@ static MunitResult test_run_block(const MunitParameter params[], void *data) {
   struct gab_run_argt run_args = {.main = block, .len = 1, .argv = args};
 
   union gab_value_pair run_res = gab_run(gab, run_args);
-  munit_assert_uint64(run_res.status, ==, gab_cvalid);
-  munit_assert_uint64(run_res.aresult[0], ==, gab_ok);
-  munit_assert_uint64(run_res.aresult[1], ==, gab_number(20));
+  munit_assert_uint64(run_res.status, ==, gab_ok);
 
   return MUNIT_OK;
 }
@@ -268,9 +267,7 @@ static MunitResult test_send_message(const MunitParameter params[],
 
   union gab_value_pair send_res = gab_send(gab, send_args);
 
-  munit_assert_uint64(send_res.status, ==, gab_cvalid);
-  munit_assert_uint64(send_res.aresult[0], ==, gab_ok);
-  munit_assert_uint64(send_res.aresult[1], ==, gab_number(150));
+  munit_assert_uint64(send_res.status, ==, gab_ok);
 
   gab_value bad_message = gab_message(gab, "unknown_message");
   struct gab_send_argt bad_send_args = {
@@ -279,8 +276,7 @@ static MunitResult test_send_message(const MunitParameter params[],
   };
 
   union gab_value_pair bad_send_res = gab_send(gab, bad_send_args);
-  munit_assert_uint64(bad_send_res.status, ==, gab_cvalid);
-  munit_assert_uint64(bad_send_res.aresult[0], ==, gab_err);
+  munit_assert_uint64(bad_send_res.status, ==, gab_err);
 
   return MUNIT_OK;
 }

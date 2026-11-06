@@ -345,6 +345,10 @@
 #define cGAB_RESOURCE_MAX 64
 #endif
 
+#ifndef cGAB_DEFAULTMODULES_MAX
+#define cGAB_DEFAULTMODULES_MAX 128
+#endif
+
 /*
  * The cutoff at which point cgab binaries will no longer print their bytes.
  */
@@ -455,6 +459,10 @@
  */
 #define GAB_SEND_CACHE_SIZE 3
 
+#define GAB_RETURN_SIZE 1
+
+#define GAB_PACK_SIZE 3
+
 /*
  * Useful definitions for reading values from the bytecode cache.
  */
@@ -499,7 +507,7 @@ enum gab_status {
 /* VERSION */
 #define GAB_VERSION_MAJOR "0"
 #define GAB_VERSION_MINOR "1"
-#define GAB_VERSION_PATCH "6"
+#define GAB_VERSION_PATCH "7"
 #define GAB_VERSION_TAG                                                        \
   GAB_VERSION_MAJOR "." GAB_VERSION_MINOR "." GAB_VERSION_PATCH
 
@@ -542,20 +550,20 @@ enum gab_status {
 /*
  * Type string constants for builtin types.
  */
-#define tGAB_STRING "gab\\string"
-#define tGAB_BINARY "gab\\binary"
-#define tGAB_MESSAGE "gab\\message"
-#define tGAB_PRIMITIVE "gab\\primitive"
-#define tGAB_NUMBER "gab\\number"
-#define tGAB_NATIVE "gab\\native"
-#define tGAB_PROTOTYPE "gab\\prototype"
-#define tGAB_BLOCK "gab\\block"
-#define tGAB_RECORD "gab\\record"
-#define tGAB_LIST "gab\\list"
-#define tGAB_SHAPE "gab\\shape"
-#define tGAB_BOX "gab\\box"
-#define tGAB_FIBER "gab\\fiber"
-#define tGAB_CHANNEL "gab\\channel"
+#define tGAB_STRING "Strings"
+#define tGAB_BINARY "Binaries"
+#define tGAB_MESSAGE "Messagees"
+#define tGAB_PRIMITIVE "Primitives"
+#define tGAB_NUMBER "Numbers"
+#define tGAB_NATIVE "Natives"
+#define tGAB_PROTOTYPE "Prototypes"
+#define tGAB_BLOCK "Blocks"
+#define tGAB_RECORD "Records"
+#define tGAB_LIST "Lists"
+#define tGAB_SHAPE "Shapes"
+#define tGAB_BOX "Boxs"
+#define tGAB_FIBER "Fibers"
+#define tGAB_CHANNEL "Channels"
 
 /*
  * Corresponding names for the builtin type modules.
@@ -588,6 +596,7 @@ enum gab_status {
 #define mGAB_AST_NODE_SEND_LHS "gab\\lhs"
 #define mGAB_AST_NODE_SEND_MSG "gab\\msg"
 #define mGAB_AST_NODE_SEND_RHS "gab\\rhs"
+#define mGAB_AST_NODE_UNQUOTED "gab\\unquoted"
 
 /* Utility macro for computing the length of a statically sized c-array */
 #define LEN_CARRAY(a) (sizeof(a) / sizeof(a[0]))
@@ -698,7 +707,6 @@ static inline void __gab_assert_fail(const char *prelude, const char *expr,
   "|                                                                       |\n" \
   "*-----------------------------------------------------------------------*\n"
 // clang-format on
-
 #define gab_assert(expr, format, ...)                                          \
   ((expr) ? (void)(0)                                                          \
           : __gab_assert_fail(GAB_ASSERT_DEFAULT_PRELUDE, #expr, __FILE__,     \
@@ -785,7 +793,7 @@ static inline void __gab_assert_fail(const char *prelude, const char *expr,
  * Luckily, windows has a simple lock we can statically initialize here
  * which does the trick.
  *
- * If mingw/binutils etc got their stuff together and we didn't have to 
+ * If mingw/binutils etc got their stuff together and we didn't have to
  * manually unprotect/protect the IAT table for delay loading to work,
  * then this wouldn't even be an issue in the first place.
  */
@@ -897,10 +905,13 @@ PfnDliHook __pfnDliFailureHook2 = gab_delayload;
 #ifdef GAB_PLATFORM_WIN
 #define GAB_DYNLIB_MAIN_FN                                                     \
   __declspec(dllexport) GAB_PROMISE_CLINKAGE union gab_value_pair gab_lib(     \
-      struct gab_triple gab)
+      struct gab_triple gab, uint64_t argc, const char *args[argc],            \
+      gab_value argv[argc])
 #else
 #define GAB_DYNLIB_MAIN_FN                                                     \
-  GAB_PROMISE_CLINKAGE union gab_value_pair gab_lib(struct gab_triple gab)
+  GAB_PROMISE_CLINKAGE union gab_value_pair gab_lib(                           \
+      struct gab_triple gab, uint64_t argc, const char *args[argc],            \
+      gab_value argv[argc])
 #endif
 
 /*
@@ -1087,7 +1098,7 @@ typedef unsigned _BitInt(GAB_INTWIDTH) gab_uint;
 
 typedef double gab_float;
 
-enum gab_kind {
+enum gab_kind : uint8_t {
   kGAB_STRING = 0, // MUST_STAY_ZERO
   kGAB_BINARY = 1,
   kGAB_MESSAGE = 2,
@@ -1103,8 +1114,10 @@ enum gab_kind {
   kGAB_SHAPELIST,
   kGAB_SHAPENODE,
   kGAB_FIBER,
-  kGAB_FIBERDONE,
-  kGAB_FIBERRUNNING,
+  kGAB_FIBER_OK,
+  kGAB_FIBER_ERR,
+  kGAB_FIBER_KILLED,
+  kGAB_FIBER_TERMINATED,
   kGAB_CHANNEL,
   kGAB_CHANNELCLOSED,
   kGAB_NKINDS,
@@ -1125,8 +1138,14 @@ enum gab_kind {
                         ? kGAB_NUMBER                                          \
                         : ((val) >> __GAB_TAGOFFSET) & __GAB_TAGMASK)))
 
+/*
+ * Check if a gab_value represents a number.
+ */
+#define gab_valisn(val) (((val) & __GAB_QNAN) != __GAB_QNAN)
+
 // TODO @cgab @perf: Benchmark __gab_valtod - examine generated code.
 GAB_API_INLINE gab_float __gab_valtod(gab_value value) {
+  gab_verify(gab_valisn(value), "Value is not a number");
   union {
     uint64_t bits;
     gab_float num;
@@ -1159,11 +1178,6 @@ GAB_API_INLINE gab_value __gab_itoval(gab_int value) {
 
   return __gab_dtoval(value);
 }
-
-/*
- * Check if a gab_value represents a number.
- */
-#define gab_valisn(val) (((val) & __GAB_QNAN) != __GAB_QNAN)
 
 /*
  * Check if a gab_value represents a boolean.
@@ -1273,6 +1287,7 @@ GAB_API_INLINE gab_value __gab_itoval(gab_int value) {
  *
  */
 GAB_API_INLINE gab_int __gab_valtoi(gab_value v) {
+  gab_verify(gab_valisn(v), "Value is not a number");
   gab_float num = (__gab_valtod(v));
 
   if (num < -GAB_INTMAX)
@@ -1288,6 +1303,7 @@ GAB_API_INLINE gab_int __gab_valtoi(gab_value v) {
  * The clamping is taken care of for us by __gab_valtoi.
  */
 GAB_API_INLINE gab_uint __gab_valtou(gab_value v) {
+  gab_verify(gab_valisn(v), "Value is not a number");
   return (gab_uint)__gab_valtoi(v);
 }
 
@@ -1413,7 +1429,7 @@ struct gab_obj {
    * Some objects do modify this field - Fibers notably change their
    * running/done state here.
    */
-  uint8_t kind;
+  _Atomic uint8_t kind;
 };
 
 /*
@@ -1445,14 +1461,6 @@ struct gab_obj {
 #else
 #include "cthreads.h"
 #endif
-
-/*
- * Threadsafe generic vector for gab_values.
- */
-#define T gab_value
-#define NAME gab_value_thrd
-#define V_THREADSAFE
-#include "vector.h"
 
 struct gab_gc;
 struct gab_vm;
@@ -1504,6 +1512,20 @@ typedef union gab_value_pair (*gab_native_f)(struct gab_triple, uint64_t argc,
 typedef void (*gab_boxdestroy_f)(struct gab_triple gab, uint64_t len,
                                  char *data);
 
+typedef void (*gab_inithook_f)(struct gab_triple gab);
+
+#ifdef GAB_PLATFORM_WIN
+typedef union gab_value_pair(WINAPI *gab_dynlibmain_f)(struct gab_triple gab,
+                                                       uint64_t argc,
+                                                       const char *args[argc],
+                                                       gab_value argv[argc]);
+#else
+typedef union gab_value_pair (*gab_dynlibmain_f)(struct gab_triple gab,
+                                                 uint64_t argc,
+                                                 const char *args[argc],
+                                                 gab_value argv[argc]);
+#endif
+
 /*
  * @enum cgab Flags
  *
@@ -1539,6 +1561,11 @@ enum gab_flags {
    * When any fiber panics, send SIGTERM to the engine.
    */
   fGAB_SIGTERM_ON_ERR = 1 << 5,
+
+  /*
+   *
+   */
+  fGAB_WITHOLD_ERR = 1 << 6,
 };
 
 /**
@@ -1557,6 +1584,8 @@ struct gab_create_argt {
    * when the engine needs to *spin*.
    */
   uint32_t flags, jobs, wait;
+
+  gab_inithook_f init_hook;
   /*
    * A list of resources. At each root, these
    * will be tested (in reverse order), until
@@ -1609,9 +1638,9 @@ struct gab_create_argt {
    *
    *  This list should be terminated with a null struct.
    * */
-  struct gab_package {
-    const char *package, *module, *alias;
-  } *packages;
+  struct gab_module {
+    const char *package, *module;
+  } *modules;
 };
 
 /**
@@ -1628,6 +1657,7 @@ struct gab_module_res {
   char *path;
   const char *root_path, *package_path, *module_path;
   const struct gab_resource *resource;
+  const struct gab_module_res *next;
 };
 
 /**
@@ -1635,13 +1665,12 @@ struct gab_module_res {
  * The prefix and suffix that matched are written to prefix and suffix, if
  * provided.
  */
-GAB_API struct gab_module_res
+GAB_API struct gab_module_res *
 gab_resolve(struct gab_triple gab, const char *package, const char *module);
 
-GAB_API struct gab_module_res gab_mresolve(const char **roots,
-                                           const struct gab_resource *resources,
-                                           const char *package,
-                                           const char *module);
+GAB_API struct gab_module_res *
+gab_mresolve(const char **roots, const struct gab_resource *resources,
+             const char *package, const char *module);
 
 /**
  * @brief Free the memory owned by this triple.
@@ -1715,6 +1744,7 @@ GAB_API int64_t gab_psprintf(char *dst, uint64_t n, const char *prefix,
  * @return the number of bytes written to the stream.
  */
 GAB_API int64_t gab_fprintf(FILE *stream, const char *fmt, ...);
+GAB_API int64_t gab_fpprintf(FILE *stream, const char *fmt, ...);
 
 /**
  * @brief Format the given string into the given buffer, with varargs. @see
@@ -1788,17 +1818,6 @@ GAB_API uint64_t gab_egkeep(struct gab_eg *eg, gab_value value);
 GAB_API uint64_t gab_negkeep(struct gab_eg *eg, uint64_t len, gab_value *argv);
 
 /**
- * @brief As Gab code runs, errors encountered by fibers accumulate
- * in the engine. It is up to the user to choose *when* to drain
- * said errors and handle/present to a user.
- *
- * The errors are in a sentinel-terminated array of gab\records.
- * It is the callers responsibility to free the pointer.
- * The array ends in gab_nil:.
- */
-GAB_API gab_value *gab_egerrs(struct gab_eg *eg);
-
-/**
  * @brief A convenient structure for returning results from c-code.
  */
 union gab_value_pair {
@@ -1811,38 +1830,11 @@ union gab_value_pair {
     union {
       /* A single result value. */
       gab_value vresult;
-      /* An array of result values. */
-      gab_value *aresult;
       /* An opaque bit blob. */
       uintptr_t bresult;
     };
   };
 };
-
-/*
- * Takes care of adding the gab_cinvalid terminator for you!
- */
-#define gab_valarray(...)                                                      \
-  ({                                                                           \
-    gab_value data[] = {__VA_ARGS__ __VA_OPT__(, ) gab_cinvalid};              \
-    gab_nvalarray(sizeof(data) / sizeof(gab_value), data);                     \
-  })
-
-/*
- * @brief Allocate an array of gab values, for use
- * in a gab_value_pair.
- */
-GAB_API gab_value *gab_nvalarray(uint64_t len, gab_value data[len]);
-
-/*
- * @brief Get the length of an allocated gab_value array.
- */
-GAB_API_INLINE uint64_t gab_varrlen(gab_value *data) {
-  uint64_t vlen = 0;
-  for (gab_value *d = data; *d != gab_cinvalid; d++)
-    vlen++;
-  return vlen;
-}
 
 /**
  * @class gab_egimpl_rest
@@ -1988,20 +1980,12 @@ struct gab_use_argt {
    * The name of the package to search for, as a c-string.
    */
   const char *spackage_name;
-  /**
-   * The name of the package to search for, as a gab-value.
-   */
-  gab_value vpackage_name;
   /* Only one of spackage_name and vpackage_name is required. */
 
   /**
    * The name of the module to search for, as a c-string.
    */
   const char *smodule_name;
-  /**
-   * The name of the module to search for, as a gab-value.
-   */
-  gab_value vmodule_name;
 
   /**
    * @brief The number of arguments to the main block.
@@ -2031,10 +2015,6 @@ struct gab_use_argt {
  * @param gab The triple
  * @param args The arguments.
  * @return A gab value pair:
- *  If status == gab_cvalid, then aresult contains the result of running the
- * module. The aresult array itself contains the result of a module execution,
- * which *may have failed*. Check the first element of the array for `gab_ok` to
- * determine if the module executed successfully.
  */
 GAB_API union gab_value_pair gab_use(struct gab_triple gab,
                                      struct gab_use_argt args);
@@ -2046,7 +2026,7 @@ GAB_API union gab_value_pair gab_use(struct gab_triple gab,
  * @param name The name of the import.
  * @returns The module's results if it exists, nullptr otherwise.
  */
-GAB_API gab_value *gab_segmodat(struct gab_eg *eg, const char *name);
+GAB_API gab_value gab_segmodat(struct gab_eg *eg, const char *name);
 
 /**
  * @brief Put a module into the engine's import table.
@@ -2059,8 +2039,8 @@ GAB_API gab_value *gab_segmodat(struct gab_eg *eg, const char *name);
  * @param values The values returned by the module.
  * @returns The module if it was added, nullptr otherwise.
  */
-GAB_API gab_value *gab_segmodput(struct gab_eg *eg, const char *name,
-                                 gab_value *module);
+GAB_API gab_value gab_segmodput(struct gab_eg *eg, const char *name,
+                                gab_value module);
 
 /**
  * @class gab_parse_argt
@@ -2069,19 +2049,6 @@ GAB_API gab_value *gab_segmodput(struct gab_eg *eg, const char *name,
  * @see enum gab_flags.
  */
 struct gab_parse_argt {
-  /**
-   * The name of the module, defaults to "__main__"
-   */
-  const char *name;
-  /**
-   * The number of bytes in source to consider as source code.
-   * If 0, strlen(source) is used.
-   */
-  uint64_t source_len;
-  /**
-   * The source code to compile.
-   */
-  const char *source;
   /**
    * The number of arguments expected by the main block.
    */
@@ -2115,6 +2082,7 @@ struct gab_parse_argt {
  * @returns a pair of values describing the outcome of the parse.
  */
 GAB_API union gab_value_pair gab_parse(struct gab_triple gab,
+                                       struct gab_src *src,
                                        struct gab_parse_argt args);
 
 /**
@@ -2124,7 +2092,7 @@ GAB_API union gab_value_pair gab_parse(struct gab_triple gab,
  * @see enum gab_flags.
  */
 struct gab_compile_argt {
-  gab_value ast, env, bindings, mod;
+  gab_value ast, env, bindings;
   /**
    * Optional flags for compilation.
    */
@@ -2146,6 +2114,7 @@ struct gab_compile_argt {
  * @returns a pair of values describin the outcome of compilation.
  */
 GAB_API union gab_value_pair gab_compile(struct gab_triple gab,
+                                         struct gab_src *src,
                                          struct gab_compile_argt args);
 
 /**
@@ -2170,6 +2139,7 @@ GAB_API union gab_value_pair gab_compile(struct gab_triple gab,
  * @returns a pair of values describing the outcome of the build.
  */
 GAB_API union gab_value_pair gab_build(struct gab_triple gab,
+                                       struct gab_src *src,
                                        struct gab_parse_argt args);
 
 /**
@@ -2181,7 +2151,7 @@ struct gab_run_argt {
   /**
    * The main block to run.
    */
-  gab_value main;
+  gab_value main, link, monitor;
   /**
    * The number of arguments passed to the main block.
    */
@@ -2203,7 +2173,6 @@ struct gab_run_argt {
  *
  * If run is without c-api level error
  *  - status:  gab_cvalid
- *  - aresult: a heap-allocated result returned
  *  - NOTE: The *gab* code may return an error. The heap-allocated result
  *    will begin with either the message gab_ok or gab_err to indicate result.
  * Else, the pair result will be:
@@ -2244,6 +2213,9 @@ GAB_API union gab_value_pair gab_arun(struct gab_triple gab,
 GAB_API union gab_value_pair gab_tarun(struct gab_triple gab, uint64_t tries,
                                        struct gab_run_argt args);
 
+GAB_API union gab_value_pair gab_srun(struct gab_triple gab,
+                                      struct gab_run_argt args);
+
 /**
  * @class gab_send_argt
  * @brief Arguments and options for running a block.
@@ -2253,7 +2225,7 @@ struct gab_send_argt {
   /**
    * The message and receiver
    */
-  gab_value message, receiver;
+  gab_value link, monitor, message, receiver;
   /**
    * The number of arguments passed to the send.
    */
@@ -2281,15 +2253,16 @@ struct gab_send_argt {
  *
  * If send is without c-api level error
  *  - status:  gab_cvalid
- *  - aresult: a heap-allocated result returned
- *  - NOTE: The *gab* code may return an error. The heap-allocated result
- *    will begin with either the message gab_ok or gab_err to indicate result.
+ *  - vresult: gab_cvalid
  * Else, the pair result will be:
  *  On yield (ie, a fiber queue or channel timeout)
  *     - status: gab_ctimeout
  *  On terminate (ie, a run is cancelled with sGAB_TERM)
  *     - status: gab_cinvalid
  *     - vresult: gab_record representing error (location *where* terminated)
+ *
+ * Since this send happens asynchronously, the return values of the send are not
+ * known.
  *
  * @param gab The engine
  * @param args The arguments
@@ -2304,6 +2277,9 @@ GAB_API union gab_value_pair gab_send(struct gab_triple gab,
  * Performs this send in a new fiber, but will not block until the fiber is
  * done running. Because fibers are queued over a channel however, this will
  * block until the queued fiber is taken.
+ *
+ * Since this send happens asynchronously, the return values of the send are not
+ * known.
  */
 GAB_API union gab_value_pair gab_asend(struct gab_triple gab,
                                        struct gab_send_argt args);
@@ -2313,6 +2289,7 @@ GAB_API union gab_value_pair gab_asend(struct gab_triple gab,
  * @brief Arguments and options for executing a source string.
  */
 struct gab_exec_argt {
+  gab_value link, monitor;
   /**
    * The name of the module - defaults to "gab\main".
    */
@@ -2337,7 +2314,7 @@ struct gab_exec_argt {
   /**
    * @brief The values of the arguments to the main block.
    */
-  gab_value *argv;
+  gab_value *vargv;
   /**
    * Optional flags for compilation AND execution.
    */
@@ -2370,6 +2347,9 @@ GAB_API union gab_value_pair gab_exec(struct gab_triple gab,
  * @return A heap-allocated slice of values returned by the block.
  */
 GAB_API union gab_value_pair gab_aexec(struct gab_triple gab,
+                                       struct gab_exec_argt args);
+
+GAB_API union gab_value_pair gab_sexec(struct gab_triple gab,
                                        struct gab_exec_argt args);
 
 /**
@@ -2419,7 +2399,7 @@ struct gab_repl_argt {
   /**
    * The values of the arguments to the main block.
    */
-  gab_value *argv;
+  gab_value *vargv;
 };
 
 /**
@@ -2675,6 +2655,11 @@ GAB_API void gab_gclock(struct gab_triple gab);
  */
 GAB_API void gab_gcunlock(struct gab_triple gab);
 
+GAB_API struct gab_src *gab_source(struct gab_triple gab, gab_value name,
+                                   uint64_t len, const char *source);
+
+GAB_API void gab_srccomplete(struct gab_triple gab, struct gab_src *self);
+
 /**
  * @brief Get the name of a source file - aka the fully qualified path.
  *
@@ -2724,7 +2709,7 @@ GAB_API_INLINE bool gab_valischn(gab_value value) {
 
 GAB_API_INLINE bool gab_valisfib(gab_value value) {
   enum gab_kind k = gab_valkind(value);
-  return k == kGAB_FIBER | k == kGAB_FIBERDONE | k == kGAB_FIBERRUNNING;
+  return k >= kGAB_FIBER && k <= kGAB_FIBER_TERMINATED;
 };
 
 /**
@@ -3172,8 +3157,6 @@ GAB_API gab_value gab_record(struct gab_triple gab, uint64_t stride,
  * @param shape The shape that the record should have.
  * @param stride The stride between the values in vals
  * @param vals The vals
- * @param km A key-mask produced by @see gab_shape, for skipping repeat
- * values.
  * @return The new record
  */
 GAB_API gab_value gab_recordfrom(struct gab_triple gab, gab_value shape,
@@ -3513,10 +3496,36 @@ GAB_API_INLINE gab_value gab_lstat(gab_value lst, uint64_t n) {
 
 #define GAB_VAL_TO_FIBER(value) ((struct gab_ofiber *)gab_valtoo(value))
 
+/*
+ * TODO @cgab @feat: Handle linking fibers together somehow
+ *
+ * Links are established *mostly* such that fibers which crash
+ * can propagate crashes to other linked fibers.
+ *
+ * How can propagation work?
+ *
+ * Right now, we have a SIGTERM which sends to each *worker*, not really each
+ * process.
+ *
+ * We kinda need a fundamental way to have one process link to many others.
+ *
+ * What if we just had a parent link - and if you crash, you kill your parent.
+ *
+ * Then when the main parent crashes, we'll still term the whole program.
+ *
+ * Sending a kill signal, we only have 16 bits of room - everything else is
+ * accounted for.
+ *
+ * If we assigned each fiber a 16-bit id, that would leave us with very few
+ * availablie pids.
+ *
+ * Including any state *outside* of the signal struct is out of the question.
+ */
+
 struct gab_fiber_argt {
   uint64_t argc;
 
-  gab_value receiver, message, *argv;
+  gab_value link, monitor, receiver, message, *argv;
 
   uint32_t flags;
 };
@@ -3528,6 +3537,9 @@ struct gab_fiber_argt {
  * this? It exposes surface area to the user which may complicate the runtime
  * and implementation. Neither go nor the BEAM allow users to do this sort of
  * thing - it makes me hesitant.
+ *
+ * I think maybe I should differentiate *making* a fiber from *scheduling* a
+ * fiber.
  *
  * @param gab The engine
  * @param receiver The receiver to send message to
@@ -3542,6 +3554,11 @@ GAB_API gab_value gab_fiber(struct gab_triple gab, struct gab_fiber_argt args);
  * @brief Get a pointer to the vm within the fiber.
  */
 GAB_API struct gab_vm *gab_fibvm(gab_value fiber);
+
+/*
+ * Return the channel monitoring the fiber.
+ */
+GAB_API gab_value gab_fibmonitor(gab_value fiber);
 
 /**
  * @brief Block the caller until this fiber is completed.
@@ -3566,22 +3583,12 @@ GAB_API union gab_value_pair gab_tfibawait(struct gab_triple gab,
                                            gab_value fiber, uint64_t tries);
 
 /*
- * @brief Block the caller until the fiber is completed.
- *
- * @param gab   The engine
- * @param fiber The fiber
- * @return The fiber's environment upon completion.
+ * @brief Kill the given fiber. Termination is not *immediate*, but will
+ * interrupt the fiber.
  */
-GAB_API gab_value gab_fibawaite(struct gab_triple gab, gab_value fiber);
+GAB_API bool gab_fibkill(gab_value fiber);
 
-/*
- * @brief Return a value comprising the stacktrace of the fiber.
- *
- * @param gab   The engine
- * @param fiber The fiber
- * @return The stacktrace
- */
-GAB_API gab_value gab_fibstacktrace(struct gab_triple gab, gab_value fiber);
+GAB_API gab_value gab_fiblink(gab_value fiber);
 
 /*
  * @brief Allocate 'n' bytes using the fiber's bump allocator.
@@ -3654,7 +3661,8 @@ GAB_API void gab_fibclear(gab_value fiber);
  * @return bool
  */
 GAB_API_INLINE bool gab_fibisrunning(gab_value fiber) {
-  return gab_valkind(fiber) == kGAB_FIBERRUNNING;
+  gab_precondition(gab_valisfib(fiber), "Should be fiber");
+  return atomic_load(&gab_valtoo(fiber)->kind) == kGAB_FIBER;
 }
 
 /*
@@ -3664,7 +3672,8 @@ GAB_API_INLINE bool gab_fibisrunning(gab_value fiber) {
  * @return bool
  */
 GAB_API_INLINE bool gab_fibisdone(gab_value fiber) {
-  return gab_valkind(fiber) == kGAB_FIBERDONE;
+  gab_precondition(gab_valisfib(fiber), "Should be fiber");
+  return atomic_load(&gab_valtoo(fiber)->kind) > kGAB_FIBER;
 }
 
 /*
@@ -3702,6 +3711,8 @@ GAB_API gab_value gab_channel(struct gab_triple gab);
 /**
  * @brief Put a value on the given channel.
  *
+ * This function is *blocking*.
+ *
  * @param gab The engine
  * @param channel The channel
  * @param value The value to put
@@ -3712,6 +3723,16 @@ GAB_API gab_value gab_chnput(struct gab_triple gab, gab_value channel,
 GAB_API gab_value gab_tchnput(struct gab_triple gab, gab_value channel,
                               gab_value value, uint64_t tries);
 
+/**
+ * @brief Put a tuple of (len) values on the given channel.
+ *
+ * This function is *blocking*.
+ *
+ * @param gab The engine
+ * @param channel The channel
+ * @param len The number of values
+ * @param value The array of values to put
+ */
 GAB_API gab_value gab_nchnput(struct gab_triple gab, gab_value channel,
                               uint64_t len, gab_value *value);
 
@@ -3720,14 +3741,14 @@ GAB_API gab_value gab_ntchnput(struct gab_triple gab, gab_value channel,
 
 /*
  * This is an unsafe version of channel put.
- * It is unsafe because it is *not atomic*. It will block for up to tries tries,
- * and try to put the slice of values in the channel.
- * It *will not* block until a taker arrives.
- * It *will not* atomically **undo** the put if a taker never arrives.
- * Because of this, it may mutate the channel (leave it with values inside).
+ * It is unsafe because it is *not atomic* in the way that puts usually are on
+ * channels.
+ *
+ * This function doesn't synchronize in the same way that the safe versions do.
+ *
  */
 GAB_API gab_value gab_untchnput(struct gab_triple gab, gab_value channel,
-                                uint64_t len, gab_value *value, uint64_t tries);
+                                uint64_t len, gab_value *value);
 
 /**
  * @brief Take a value from the given channel. This will block the caller
@@ -3742,11 +3763,10 @@ GAB_API gab_value gab_chntake(struct gab_triple gab, gab_value channel);
 GAB_API gab_value gab_nchntake(struct gab_triple gab, gab_value channel,
                                uint64_t len, gab_value *data);
 
-GAB_API gab_value gab_tchntake(struct gab_triple gab, gab_value channel,
-                               uint64_t tries);
+GAB_API gab_value gab_tchntake(struct gab_triple gab, gab_value channel);
 
 GAB_API gab_value gab_ntchntake(struct gab_triple gab, gab_value channel,
-                                uint64_t len, gab_value *data, uint64_t tries);
+                                uint64_t len, gab_value *data);
 
 /**
  * @brief Close the given channel. A closed channel cannot receive new values.

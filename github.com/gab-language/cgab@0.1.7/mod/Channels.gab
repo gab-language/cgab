@@ -1,0 +1,11 @@
+[module.t] .defmodule {
+  seq\init: _ :: do
+    (ok, xs*) := self >!
+    (ok, nil:, xs*)
+  end
+  seq\next: _ :: do
+    (ok, xs*) := self >!
+    (ok, nil:, xs*)
+  end
+  is\open: _ :: self.is\closed!
+}

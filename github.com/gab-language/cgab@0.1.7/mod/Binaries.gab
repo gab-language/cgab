@@ -1,0 +1,3 @@
+[module.t] .defmodule {
+  to\binary: () :: self
+}

@@ -17,17 +17,21 @@ ifeq ($(UNAME_OS), Darwin)
 GAB_DYNLIB_FILENDING ?=.dylib
 GAB_CCFLAGS          ?= -Os -DcGAB_THREADS_NATIVE -DNDEBUG -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -D_GNU_SOURCE=1 -DGAB_PLATFORM_UNIX -DGAB_PLATFORM_MACOS
 GAB_TARGETS          ?= $(UNAME_ARCH)-macos-none
-cui_FLAGS            ?= -isystem vendor/xcode-frameworks/include -L vendor/xcode-frameworks/lib -F vendor/xcode-frameworks/Frameworks -framework Cocoa
-cio_FLAGS            ?= -lbearssl
-cxml_FLAGS					 ?= -lyxml
+Ui_FLAGS             ?= -isystem vendor/xcode-frameworks/include -L vendor/xcode-frameworks/lib -F vendor/xcode-frameworks/Frameworks -framework Cocoa
+Io_FLAGS             ?= -lbearssl
+Xml_FLAGS					   ?= -lyxml
+Http_FLAGS					 ?= -lllhttp
+Strings_FLAGS        ?= -lgrapheme
 else
 # Assume building on linux
 GAB_DYNLIB_FILENDING ?=.so
 GAB_CCFLAGS          ?= -Os -DcGAB_THREADS_NATIVE -DNDEBUG -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -D_GNU_SOURCE=1 -DGAB_PLATFORM_UNIX -DGAB_PLATFORM_LINUX
 GAB_TARGETS          ?= $(UNAME_ARCH)-linux-gnu
-cui_FLAGS            ?= -isystem vendor/x11-headers
-cio_FLAGS            ?= -lbearssl
-cxml_FLAGS					 ?= -lyxml
+Ui_FLAGS             ?= -isystem vendor/x11-headers
+Io_FLAGS             ?= -lbearssl
+Xml_FLAGS					   ?= -lyxml
+Http_FLAGS					 ?= -lllhttp
+Strings_FLAGS        ?= -lgrapheme
 endif
 
 # Actual commands used by the rest of the makefile.
@@ -45,11 +49,11 @@ BUILD_PREFIX 	 	= build-$(GAB_TARGETS)
 INCLUDE_PREFIX 	= include 
 VENDOR_PREFIX   = vendor
 
-GAB_VERSION_TAG = 0.1.6
+GAB_VERSION_TAG = 0.1.7
 
 GAB_ISWINDOWS   = $(findstring windows,$(GAB_TARGETS))
 
-INCLUDE		= -I$(INCLUDE_PREFIX) -I$(BUILD_PREFIX) -isystem$(VENDOR_PREFIX) -L$(BUILD_PREFIX)
+INCLUDE		= -I$(INCLUDE_PREFIX) -I$(BUILD_PREFIX) -isystem $(VENDOR_PREFIX) -L$(BUILD_PREFIX)
 
 CFLAGS = -std=c23 \
 				 -fPIC \
@@ -88,7 +92,7 @@ BINARY_FLAGS 	= -rdynamic -Wl,--no-gc-sections $(GAB_LINK_DEPS) $(GAB_BINARYFLAG
 #
 # A custom delay-load hook handles resolving gab's symbols in native modules.
 ifneq (,$(GAB_ISWINDOWS))
-CMOD_LINK_DEPS   = -lgab/gab
+CMOD_LINK_DEPS   = -L$(BUILD_PREFIX)/gab -lgab
 else
 CMOD_LINK_DEPS   =
 endif
@@ -124,7 +128,11 @@ CMOD_SHARED = $(CMOD_SRC:src/mod/%.c=$(BUILD_PREFIX)/mod/%.cgab-$(GAB_VERSION_TA
 CXXMOD_SRC 	 = $(wildcard src/mod/*.cc)
 CXXMOD_SHARED = $(CXXMOD_SRC:src/mod/%.cc=$(BUILD_PREFIX)/mod/%.cgab-$(GAB_VERSION_TAG)-$(GAB_TARGETS)$(GAB_DYNLIB_FILEENDING))
 
-all: build-dir gab cmodules cxxmodules
+all: log build-dir gab cmodules cxxmodules
+
+log:
+	$(ZIG) version
+	$(DLLTOOL) --version
 
 -include $(CGAB_OBJ:.o=.d) $(GAB_OBJ:.o=.d) $(CMOD_SHARED:$(GAB_DYNLIB_FILEENDING)=.d)
 

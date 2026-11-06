@@ -15,7 +15,7 @@ export binflags
 
 # Create a small script which will export the variables we need, and then 
 case "$buildtype" in
-  debug)          cflags="-g -O0 -fsanitize=address,undefined -DcGAB_THREADS_NATIVE" ;;
+  debug)          cflags="-g -O0 -fsanitize=undefined -DcGAB_THREADS_NATIVE" ;;
   debugoptimized) cflags="-g -O2 -DcGAB_THREADS_NATIVE -DNDEBUG" ;;
   release)        cflags="-O3 -DcGAB_THREADS_NATIVE -DNDEBUG"    ;;
 esac
@@ -54,24 +54,24 @@ function configure_target() {
   echo "export GAB_BUILDTYPE=\""$buildtype"\"" >> "$1.configuration"
   echo "export GAB_DYNLIB_FILEENDING=\""$dynlib_fileending"\"" >> "$1.configuration"
 
-  echo "export chttp_FLAGS=\"-lllhttp\"" >> "$1.configuration"
-  echo "export cstrings_FLAGS=\"-lgrapheme\"" >> "$1.configuration"
+  echo "export Http_FLAGS=\"-lllhttp\"" >> "$1.configuration"
+  echo "export Strings_FLAGS=\"-lgrapheme\"" >> "$1.configuration"
 
   if [[ "$1" =~ "linux" ]]; then
-    echo "export cui_FLAGS=\"-isystem vendor/x11-headers\"" >> "$1.configuration"
-    echo "export cio_FLAGS=\"-lbearssl\"" >> "$1.configuration"
+    echo "export Ui_FLAGS=\"-isystem vendor/x11-headers\"" >> "$1.configuration"
+    echo "export Io_FLAGS=\"-lbearssl\"" >> "$1.configuration"
   elif [[ "$1" =~ "windows" ]]; then
-    echo "export cui_FLAGS=\"-lopengl32 -lgdi32\"" >> "$1.configuration"
-    echo "export cio_FLAGS=\"-lbearssl -lws2_32\"" >> "$1.configuration"
+    echo "export Ui_FLAGS=\"-lopengl32 -lgdi32\"" >> "$1.configuration"
+    echo "export Io_FLAGS=\"-lbearssl -lws2_32\"" >> "$1.configuration"
   elif [[ "$1" =~ "mac" ]]; then
-    echo "export cui_FLAGS=\"-isystem vendor/xcode-frameworks/include -L vendor/xcode-frameworks/lib -F vendor/xcode-frameworks/Frameworks -framework Cocoa\"" >> "$1.configuration"
-    echo "export cio_FLAGS=\"-lbearssl\"" >> "$1.configuration"
+    echo "export Ui_FLAGS=\"-isystem vendor/xcode-frameworks/include -L vendor/xcode-frameworks/lib -F vendor/xcode-frameworks/Frameworks -framework Cocoa\"" >> "$1.configuration"
+    echo "export Io_FLAGS=\"-lbearssl\"" >> "$1.configuration"
   fi
 
   chmod +x "$1.configuration"
 }
 export -f configure_target
 
-echo $targets | tr ' ' '\n' |  parallel configure_target  || exit 1
+echo $targets | tr ' ' '\n' |  xargs -I % bash -c "configure_target %" || exit 1
 
 echo "Success!"

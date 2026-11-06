@@ -1,0 +1,293 @@
+/**
+ *  MIT License
+ *
+ *  Copyright (c) 2023-2026 Teddy Randby
+ *
+ *  Permission is hereby granted, free of charge, to any person obtaining a copy
+ *  of this software and associated documentation files (the "Software"), to
+ * deal in the Software without restriction, including without limitation the
+ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+ * sell copies of the Software, and to permit persons to whom the Software is
+ *  furnished to do so, subject to the following conditions:
+ *
+ *  The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ *  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ *  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ *  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ *  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ *  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+ * IN THE SOFTWARE.
+ */
+
+#include "cgab.h"
+#include <stdint.h>
+
+GAB_DYNLIB_NATIVE_FN(shp, at) {
+  gab_value shp = gab_arg(0);
+  gab_value key = gab_arg(1);
+
+  if (!gab_valisshp(shp))
+    return gab_pktypemismatch(gab, shp, kGAB_SHAPE);
+
+  if (!gab_valisn(key))
+    return gab_pktypemismatch(gab, shp, kGAB_NUMBER);
+
+  gab_uint idx = gab_valtou(key);
+
+  gab_value val = gab_shpat(shp, idx);
+
+  if (val == gab_cundefined)
+    gab_vmpush(gab_thisvm(gab), gab_none);
+  else
+    gab_vmpush(gab_thisvm(gab), gab_ok, val);
+
+  return gab_union_cvalid(gab_nil);
+}
+
+#define MIN(a, b) (a < b ? a : b)
+#define MAX(a, b) (a > b ? a : b)
+#define CLAMP(a, b) (MAX(0, MIN(a, b)))
+
+GAB_DYNLIB_NATIVE_FN(shp, slice) {
+  gab_value shp = gab_arg(0);
+  uint64_t len = gab_shplen(argv[0]);
+  uint64_t start = 0, end = len;
+
+  switch (argc) {
+  case 2: {
+    if (gab_valkind(argv[1]) != kGAB_NUMBER) {
+      return gab_panicf(gab, "&:slice expects a number as the second argument");
+    }
+
+    gab_uint a = gab_valtou(argv[1]);
+    end = MIN(a, len);
+    break;
+  }
+
+  case 3:
+    if (gab_valkind(argv[1]) == kGAB_NUMBER) {
+      start = MIN(gab_valtou(argv[1]), len);
+    } else if (argv[1] == gab_nil) {
+      return gab_panicf(gab, "&:slice expects a number as the second argument");
+    }
+
+    if (gab_valkind(argv[2]) == kGAB_NUMBER) {
+      end = MIN(gab_valtou(argv[2]), len);
+    } else if (argv[2] == gab_nil) {
+      return gab_panicf(gab, "&:slice expects a number as the third argument");
+    }
+    break;
+
+  default:
+    return gab_panicf(gab, "&:slice expects 2 or 3 arguments");
+  }
+
+  if (start > end) {
+    return gab_panicf(gab, "&:slice expects the start to be before the end");
+  }
+
+  uint64_t size = end - start;
+
+  if (size == 0) {
+    gab_vmpush(gab_thisvm(gab), gab_listof(gab));
+    return gab_union_cvalid(gab_nil);
+  }
+
+  gab_value vs[size];
+  for (uint64_t i = 0; i < size; i++) {
+    vs[i] = gab_ushpat(shp, start + i);
+  }
+
+  gab_vmpush(gab_thisvm(gab), gab_list(gab, 1, size, vs));
+
+  return gab_union_cvalid(gab_nil);
+}
+
+GAB_DYNLIB_NATIVE_FN(shp, cat) {
+  gab_value shp = gab_arg(0);
+
+  if (gab_valkind(shp) != kGAB_SHAPE)
+    return gab_pktypemismatch(gab, shp, kGAB_SHAPE);
+
+  gab_value oth = gab_arg(1);
+
+  if (gab_valkind(oth) != kGAB_SHAPE)
+    return gab_pktypemismatch(gab, oth, kGAB_SHAPE);
+
+  gab_value res = gab_lstcat(gab, shp, oth);
+
+  gab_vmpush(gab_thisvm(gab), res);
+  return gab_union_cvalid(gab_nil);
+}
+
+GAB_DYNLIB_NATIVE_FN(shp, is_empty) {
+  gab_value shp = gab_arg(0);
+
+  if (gab_valkind(shp) != kGAB_SHAPE)
+    return gab_pktypemismatch(gab, shp, kGAB_SHAPE);
+
+  uint64_t len = gab_shplen(shp);
+
+  gab_vmpush(gab_thisvm(gab), gab_bool(len == 0));
+  return gab_union_cvalid(gab_nil);
+}
+
+GAB_DYNLIB_NATIVE_FN(shp, is_list) {
+  gab_value shp = gab_arg(0);
+
+  if (gab_valkind(shp) != kGAB_SHAPE)
+    return gab_pktypemismatch(gab, shp, kGAB_SHAPE);
+
+  gab_vmpush(gab_thisvm(gab), gab_bool(gab_shpisl(shp)));
+
+  return gab_union_cvalid(gab_nil);
+}
+
+GAB_DYNLIB_NATIVE_FN(shp, len) {
+  gab_value shp = gab_arg(0);
+
+  if (gab_valkind(shp) != kGAB_SHAPE)
+    return gab_pktypemismatch(gab, shp, kGAB_SHAPE);
+
+  gab_vmpush(gab_thisvm(gab), gab_number(gab_shplen(shp)));
+
+  return gab_union_cvalid(gab_nil);
+}
+
+GAB_DYNLIB_NATIVE_FN(shp, seq_init) {
+  gab_value shp = gab_arg(0);
+
+  if (gab_valkind(shp) != kGAB_SHAPE)
+    return gab_pktypemismatch(gab, shp, kGAB_SHAPE);
+
+  uint64_t len = gab_shplen(shp);
+
+  if (len == 0) {
+    gab_vmpush(gab_thisvm(gab), gab_none);
+    return gab_union_cvalid(gab_nil);
+  }
+
+  gab_value key = gab_number(0);
+  gab_value val = gab_ushpat(shp, 0);
+
+  gab_vmpush(gab_thisvm(gab), gab_ok, key, val, key);
+  return gab_union_cvalid(gab_nil);
+}
+
+GAB_DYNLIB_NATIVE_FN(shp, seq_next) {
+  gab_value shp = gab_arg(0);
+  gab_value old_key = gab_arg(1);
+
+  if (gab_valkind(shp) != kGAB_SHAPE)
+    return gab_pktypemismatch(gab, shp, kGAB_SHAPE);
+
+  if (!gab_valisn(old_key))
+    return gab_pktypemismatch(gab, old_key, kGAB_NUMBER);
+
+  uint64_t len = gab_shplen(shp);
+
+  if (len == 0)
+    goto fin;
+
+  gab_uint i = gab_valtou(old_key);
+
+  if (i == -1 || i + 1 == len)
+    goto fin;
+
+  gab_value key = gab_number(i + 1);
+  gab_value val = gab_ushpat(shp, i + 1);
+
+  gab_vmpush(gab_thisvm(gab), gab_ok, key, val, key);
+  return gab_union_cvalid(gab_nil);
+
+fin:
+  gab_vmpush(gab_thisvm(gab), gab_none);
+  return gab_union_cvalid(gab_nil);
+}
+
+GAB_DYNLIB_NATIVE_FN(shp, from_list) {
+  gab_value list = gab_arg(1);
+
+  if (gab_valkind(list) != kGAB_RECORD)
+    return gab_pktypemismatch(gab, list, kGAB_RECORD);
+
+  if (gab_valkind(gab_recshp(list)) != kGAB_SHAPELIST)
+    return gab_panicf(gab, "Should be a list, not @", gab_recshp(list));
+
+  uint64_t len = gab_reclen(list);
+  gab_value *keys = malloc(len * sizeof(gab_value));
+  for (uint64_t i = 0; i < len; i++) {
+    keys[i] = gab_uvrecat(list, i);
+  }
+
+  gab_value shp = gab_shape(gab, 1, len, keys);
+  gab_push(gab, shp);
+  free(keys);
+
+  return gab_union_cvalid(gab_nil);
+};
+
+GAB_DYNLIB_MAIN_FN {
+  gab_value mod = gab_arg(0);
+  gab_value t = gab_msgtostr(mod);
+
+  gab_def(gab,
+          {
+              gab_message(gab, "t"),
+              gab_strtomsg(t),
+              t,
+          },
+          {
+              gab_message(gab, "from"),
+              gab_strtomsg(t),
+              gab_snative(gab, "from", gab_mod_shp_from_list),
+          },
+          {
+              gab_message(gab, "slice"),
+              t,
+              gab_snative(gab, "slice", gab_mod_shp_slice),
+          },
+          {
+              gab_message(gab, "+"),
+              t,
+              gab_snative(gab, "+", gab_mod_shp_cat),
+          },
+          {
+              gab_message(gab, "is\\empty"),
+              t,
+              gab_snative(gab, "is\\empty", gab_mod_shp_is_empty),
+          },
+          {
+              gab_message(gab, "is\\list"),
+              t,
+              gab_snative(gab, "is\\list", gab_mod_shp_is_list),
+          },
+          {
+              gab_message(gab, "at"),
+              t,
+              gab_snative(gab, "at", gab_mod_shp_at),
+          },
+          {
+              gab_message(gab, "len"),
+              t,
+              gab_snative(gab, "len", gab_mod_shp_len),
+          },
+          {
+              gab_message(gab, "seq\\next"),
+              t,
+              gab_snative(gab, "seq\\next", gab_mod_shp_seq_next),
+          },
+          {
+              gab_message(gab, "seq\\init"),
+              t,
+              gab_snative(gab, "seq\\init", gab_mod_shp_seq_init),
+          });
+
+  return (union gab_value_pair){
+      .status = gab_ok,
+      .vresult = mod,
+  };
+}

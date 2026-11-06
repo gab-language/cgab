@@ -10,6 +10,9 @@
 #define CONCAT(a, b) CONCAT_(a, b)
 #define CONCAT_(a, b) a##b
 
+#define __TOSTRING(x) #x
+#define __STR(x) __TOSTRING(x)
+
 #ifndef NAME
 #define TYPENAME CONCAT(v_, T)
 #else
@@ -25,10 +28,15 @@
   ((type *)realloc(loc, sizeof(type) * (new_count)))
 
 #ifdef V_THREADSAFE
+#if __has_include("threads.h")
+#include "threads.h"
 #define INIT_LOCK(self) (mtx_init(&self->mtx, mtx_plain))
 #define DESTROY_LOCK(self) (mtx_destroy(&self->mtx))
-#define AQUIRE_LOCK(self) (mtx_lock(&self->mtx))
-#define RELEASE_LOCK(self) (mtx_unlock(&self->mtx))
+#define AQUIRE_LOCK(self) ({ mtx_lock(&self->mtx); })
+#define RELEASE_LOCK(self) ({ mtx_unlock(&self->mtx); })
+#else
+#error V_THREADSAFE set without threads.h
+#endif
 #else
 #define INIT_LOCK(self)
 #define DESTROY_LOCK(self)
@@ -39,7 +47,8 @@
 typedef struct TYPENAME TYPENAME;
 struct TYPENAME {
   T *data;
-  uint64_t len, cap;
+  size_t len;
+  size_t cap;
 #ifdef V_THREADSAFE
   mtx_t mtx;
 #endif
@@ -48,7 +57,7 @@ struct TYPENAME {
 LINKAGE void METHOD(create)(TYPENAME *self, uint64_t cap) {
   self->cap = cap;
   self->len = 0;
-  self->data = (T*) malloc(sizeof(T) * cap);
+  self->data = malloc(sizeof(T) * cap);
   INIT_LOCK(self);
 }
 
@@ -57,7 +66,7 @@ LINKAGE void METHOD(copy)(TYPENAME *self, TYPENAME *other) {
 
   self->cap = other->cap;
   self->len = other->len;
-  self->data = (T*)malloc(sizeof(T) * other->cap);
+  self->data = malloc(sizeof(T) * other->cap);
   memcpy(self->data, other->data, other->len * sizeof(T));
   INIT_LOCK(other);
 
@@ -89,7 +98,7 @@ LINKAGE void METHOD(destroy)(TYPENAME *self) {
   DESTROY_LOCK(self);
 }
 
-LINKAGE uint64_t METHOD(set)(TYPENAME *self, size_t index, T value) {
+LINKAGE size_t METHOD(set)(TYPENAME *self, size_t index, T value) {
   AQUIRE_LOCK(self);
 
   assert(index < self->len);
@@ -99,7 +108,7 @@ LINKAGE uint64_t METHOD(set)(TYPENAME *self, size_t index, T value) {
   return index;
 }
 
-LINKAGE uint64_t METHOD(push)(TYPENAME *self, T value) {
+LINKAGE size_t METHOD(push)(TYPENAME *self, T value) {
   AQUIRE_LOCK(self);
 
   if (self->len >= self->cap) {
@@ -107,7 +116,7 @@ LINKAGE uint64_t METHOD(push)(TYPENAME *self, T value) {
     self->data = GROW(T, self->data, self->cap);
   }
 
-  uint64_t idx = self->len++;
+  size_t idx = self->len++;
   self->data[idx] = value;
 
   RELEASE_LOCK(self);
@@ -125,7 +134,7 @@ LINKAGE T METHOD(pop)(TYPENAME *self) {
 }
 
 #ifndef V_THREADSAFE
-LINKAGE T *METHOD(ref_at)(TYPENAME *self, uint64_t index) {
+LINKAGE T *METHOD(ref_at)(TYPENAME *self, size_t index) {
   assert(index < self->len);
   T *ref = self->data + index;
 
@@ -144,7 +153,7 @@ LINKAGE T *METHOD(emplace)(TYPENAME *self) {
 }
 #endif
 
-LINKAGE T METHOD(val_at)(TYPENAME *self, uint64_t index) {
+LINKAGE T METHOD(val_at)(TYPENAME *self, size_t index) {
   AQUIRE_LOCK(self);
 
   assert(index < self->len);
@@ -155,7 +164,7 @@ LINKAGE T METHOD(val_at)(TYPENAME *self, uint64_t index) {
   return v;
 }
 
-LINKAGE void METHOD(cap)(TYPENAME *self, uint64_t cap) {
+LINKAGE void METHOD(cap)(TYPENAME *self, size_t cap) {
   AQUIRE_LOCK(self);
 
   if (self->cap < cap) {
@@ -166,7 +175,7 @@ LINKAGE void METHOD(cap)(TYPENAME *self, uint64_t cap) {
   RELEASE_LOCK(self);
 }
 
-LINKAGE T METHOD(del)(TYPENAME *self, uint64_t index) {
+LINKAGE T METHOD(del)(TYPENAME *self, size_t index) {
   assert(index < self->len);
 
   AQUIRE_LOCK(self);
